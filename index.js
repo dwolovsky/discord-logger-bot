@@ -106,13 +106,13 @@ client.on(Events.InteractionCreate, async interaction => {
       priority3_label: priority3.label,
       priority3_value: priority3.value,
       priority3_unit: priority3.unit,
-      experiment: '', // left blank, since it's now in notes
+      experiment: '',
       satisfaction: interaction.fields.getTextInputValue('satisfaction') || '',
       notes: interaction.fields.getTextInputValue('notes') || ''
     };
 
-    // Send data to Google Apps Script webhook
     try {
+      // Send data to Google Apps Script webhook
       const response = await fetch(process.env.SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -123,14 +123,28 @@ client.on(Events.InteractionCreate, async interaction => {
         })
       });
       const result = await response.json();
+      
       if (result.success) {
-        await interaction.editReply('✅ Your log was recorded. Thanks!');
+        // Send private confirmation to the user
+        await interaction.editReply({ 
+          content: '✅ Your log was recorded. Thanks!',
+          ephemeral: true 
+        });
+
+        // Send public announcement in the channel
+        await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
       } else {
-        await interaction.editReply('❌ There was an error logging your entry.');
+        await interaction.editReply({ 
+          content: '❌ There was an error logging your entry.',
+          ephemeral: true 
+        });
       }
     } catch (err) {
       console.error('Error sending to Google Apps Script:', err);
-      await interaction.editReply('❌ There was an error sending your data. Please try again later.');
+      await interaction.editReply({ 
+        content: '❌ There was an error sending your data. Please try again later.',
+        ephemeral: true 
+      });
     }
   }
 });
