@@ -1,0 +1,103 @@
+require('dotenv').config();
+const { Client, GatewayIntentBits, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, Events, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+
+// Register the /log command on startup (for your server only)
+const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
+(async () => {
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(process.env.APPLICATION_ID, process.env.GUILD_ID),
+      { body: [
+        new SlashCommandBuilder()
+          .setName('log')
+          .setDescription('Open the daily log form')
+          .toJSON()
+      ]}
+    );
+    console.log('Slash command registered.');
+  } catch (error) {
+    console.error('Error registering slash command:', error);
+  }
+})();
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+client.once(Events.ClientReady, () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+client.on(Events.InteractionCreate, async interaction => {
+  // Show modal when /log is used
+  if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
+    const modal = new ModalBuilder()
+      .setCustomId('dailyLog')
+      .setTitle('Daily Log');
+
+    const makeInput = (id, label, style = TextInputStyle.Short) =>
+      new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(false);
+
+    const rows = [
+      makeInput('priority1_label', 'Priority 1 - What are you tracking?'),
+      makeInput('priority1_value', 'Priority 1 - How much?'),
+      makeInput('priority1_unit', 'Priority 1 - Unit (e.g., minutes, sessions, or leave blank for "effort")'),
+      makeInput('priority2_label', 'Priority 2 - What are you tracking?'),
+      makeInput('priority2_value', 'Priority 2 - How much?'),
+      makeInput('priority2_unit', 'Priority 2 - Unit (e.g., minutes, sessions, or leave blank for "effort")'),
+      makeInput('priority3_label', 'Priority 3 - What are you tracking?'),
+      makeInput('priority3_value', 'Priority 3 - How much?'),
+      makeInput('priority3_unit', 'Priority 3 - Unit (e.g., minutes, sessions, or leave blank for "effort")'),
+      makeInput('experiment', 'Experiment'),
+      makeInput('satisfaction', 'Satisfaction (0-10)'),
+      makeInput('notes', 'Notes', TextInputStyle.Paragraph)
+    ].map(inp => new ActionRowBuilder().addComponents(inp));
+
+    modal.addComponents(...rows);
+    return interaction.showModal(modal);
+  }
+
+  // Handle modal submission
+  if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
+    await interaction.deferReply({ ephemeral: true });
+
+    // Collect data from modal
+    const data = {
+      priority1_label: interaction.fields.getTextInputValue('priority1_label') || '',
+      priority1_value: interaction.fields.getTextInputValue('priority1_value') || '',
+      priority1_unit: interaction.fields.getTextInputValue('priority1_unit') || 'effort',
+      priority2_label: interaction.fields.getTextInputValue('priority2_label') || '',
+      priority2_value: interaction.fields.getTextInputValue('priority2_value') || '',
+      priority2_unit: interaction.fields.getTextInputValue('priority2_unit') || 'effort',
+      priority3_label: interaction.fields.getTextInputValue('priority3_label') || '',
+      priority3_value: interaction.fields.getTextInputValue('priority3_value') || '',
+      priority3_unit: interaction.fields.getTextInputValue('priority3_unit') || 'effort',
+      experiment: interaction.fields.getTextInputValue('experiment') || '',
+      satisfaction: interaction.fields.getTextInputValue('satisfaction') || '',
+      notes: interaction.fields.getTextInputValue('notes') || ''
+    };
+
+    // Send data to Google Apps Script webhook
+    try {
+      const response = await fetch(process.env.SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: interaction.user.id,
+          userTag: interaction.user.tag,
+          data
+        })
+      });
+      const result = await response.json();
+      if (result.success) {
+        await interaction.editReply('✅ Your log was recorded. Thanks!');
+      } else {
+        await interaction.editReply('❌ There was an error logging your entry.');
+      }
+    } catch (err) {
+      console.error('Error sending to Google Apps Script:', err);
+      await interaction.editReply('❌ There was an error sending your data. Please try again later.');
+    }
+  }
+});
+
+client.login(process.env.BOT_TOKEN);
