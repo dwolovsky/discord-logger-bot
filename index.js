@@ -40,13 +40,13 @@ client.on(Events.InteractionCreate, async interaction => {
     const rows = [
       makeInput('priority1_label', 'Priority 1 - What are you tracking?'),
       makeInput('priority1_value', 'Priority 1 - How much?'),
-      makeInput('priority1_unit', 'Priority 1 - Unit (e.g., minutes, sessions, or leave blank for "effort")'),
+      makeInput('priority1_unit', 'Priority 1 - Unit (e.g., mins, reps, or blank for "effort")'),
       makeInput('priority2_label', 'Priority 2 - What are you tracking?'),
       makeInput('priority2_value', 'Priority 2 - How much?'),
-      makeInput('priority2_unit', 'Priority 2 - Unit (e.g., minutes, sessions, or leave blank for "effort")'),
+      makeInput('priority2_unit', 'Priority 2 - Unit (e.g., mins, reps, or blank for "effort")'),
       makeInput('priority3_label', 'Priority 3 - What are you tracking?'),
       makeInput('priority3_value', 'Priority 3 - How much?'),
-      makeInput('priority3_unit', 'Priority 3 - Unit (e.g., minutes, sessions, or leave blank for "effort")'),
+      makeInput('priority3_unit', 'Priority 3 - Unit (e.g., mins, reps, or blank for "effort")'),
       makeInput('experiment', 'Experiment'),
       makeInput('satisfaction', 'Satisfaction (0-10)'),
       makeInput('notes', 'Notes', TextInputStyle.Paragraph)
