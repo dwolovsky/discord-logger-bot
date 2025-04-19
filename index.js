@@ -28,50 +28,85 @@ client.once(Events.ClientReady, () => {
 });
 
 client.on(Events.InteractionCreate, async interaction => {
-  // Show modal when /log is used
   if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
     const modal = new ModalBuilder()
       .setCustomId('dailyLog')
       .setTitle('Daily Log');
 
-    const makeInput = (id, label, style = TextInputStyle.Short) =>
-      new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(false);
+    // 1. Priority 1
+    const priority1 = new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('priority1')
+        .setLabel('Priority 1 (label - value - unit)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+    );
+    // 2. Priority 2
+    const priority2 = new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('priority2')
+        .setLabel('Priority 2 (label - value - unit)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+    );
+    // 3. Priority 3
+    const priority3 = new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('priority3')
+        .setLabel('Priority 3 (label - value - unit)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+    );
+    // 4. Satisfaction
+    const satisfaction = new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('satisfaction')
+        .setLabel('Satisfaction (0-10)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+    );
+    // 5. Notes & Experiment
+    const notes = new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('notes')
+        .setLabel('Notes & Experiment')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(false)
+    );
 
-    const rows = [
-      makeInput('priority1_label', 'Priority 1 - What are you tracking?'),
-      makeInput('priority1_value', 'P1 - How much (number)?'),
-      makeInput('priority1_unit', 'P1 Unit (e.g. mins, reps. Blank for "effort")'),
-      makeInput('priority2_label', 'Priority 2 - What are you tracking?'),
-      makeInput('priority2_value', 'P2 - How much (number)?'),
-      makeInput('priority2_unit', 'P2 Unit (e.g. mins, reps. Blank for "effort")'),
-      makeInput('priority3_label', 'Priority 3 - What are you tracking?'),
-      makeInput('priority3_value', 'P3 - How much (number)?'),
-      makeInput('priority3_unit', 'P3 Unit (e.g. mins, reps. Blank for "effort")'),
-      makeInput('experiment', 'Experiment'),
-      makeInput('satisfaction', 'Satisfaction (0-10)'),
-      makeInput('notes', 'Notes', TextInputStyle.Paragraph)
-    ].map(inp => new ActionRowBuilder().addComponents(inp));
-
-    modal.addComponents(...rows);
-    return interaction.showModal(modal);
+    modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
+    await interaction.showModal(modal);
   }
 
   // Handle modal submission
   if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
     await interaction.deferReply({ ephemeral: true });
 
-    // Collect data from modal
+    // Helper to parse "label - value - unit"
+    const parsePriority = (value) => {
+      const parts = value.split('-').map(p => p.trim());
+      return {
+        label: parts[0] || '',
+        value: parts[1] || '',
+        unit: parts[2] || 'effort'
+      };
+    };
+
+    const priority1 = parsePriority(interaction.fields.getTextInputValue('priority1'));
+    const priority2 = parsePriority(interaction.fields.getTextInputValue('priority2'));
+    const priority3 = parsePriority(interaction.fields.getTextInputValue('priority3'));
+
     const data = {
-      priority1_label: interaction.fields.getTextInputValue('priority1_label') || '',
-      priority1_value: interaction.fields.getTextInputValue('priority1_value') || '',
-      priority1_unit: interaction.fields.getTextInputValue('priority1_unit') || 'effort',
-      priority2_label: interaction.fields.getTextInputValue('priority2_label') || '',
-      priority2_value: interaction.fields.getTextInputValue('priority2_value') || '',
-      priority2_unit: interaction.fields.getTextInputValue('priority2_unit') || 'effort',
-      priority3_label: interaction.fields.getTextInputValue('priority3_label') || '',
-      priority3_value: interaction.fields.getTextInputValue('priority3_value') || '',
-      priority3_unit: interaction.fields.getTextInputValue('priority3_unit') || 'effort',
-      experiment: interaction.fields.getTextInputValue('experiment') || '',
+      priority1_label: priority1.label,
+      priority1_value: priority1.value,
+      priority1_unit: priority1.unit,
+      priority2_label: priority2.label,
+      priority2_value: priority2.value,
+      priority2_unit: priority2.unit,
+      priority3_label: priority3.label,
+      priority3_value: priority3.value,
+      priority3_unit: priority3.unit,
+      experiment: '', // left blank, since it's now in notes
       satisfaction: interaction.fields.getTextInputValue('satisfaction') || '',
       notes: interaction.fields.getTextInputValue('notes') || ''
     };
