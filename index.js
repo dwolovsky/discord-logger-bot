@@ -280,8 +280,7 @@ client.on(Events.InteractionCreate, async interaction => {
             ephemeral: true
           });
         }
-
-        // Notes (required)
+// Notes (required)
         const notes = interaction.fields.getTextInputValue('notes');
         if (!notes || !notes.trim()) {
           return await interaction.editReply({
@@ -300,22 +299,30 @@ client.on(Events.InteractionCreate, async interaction => {
           priority2_unit: priorities[1].unit,
           priority3_label: priorities[2].label,
           priority3_value: priorities[2].value,
-          priority3_unit: priorities[2].unit,
+          priority3_unit: priorities[3].unit,
           satisfaction: satisfaction,
           notes: notes
         };
 
-        // Send to Google Apps Script
-        const response = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'logDaily',
-            userId: interaction.user.id,
-            userTag: interaction.user.tag,
-            data
-          })
-        });
+        // Create timeout promise
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Request timed out')), 15000)
+        );
+
+        // Send to Google Apps Script with timeout
+        const response = await Promise.race([
+            fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'logDaily',
+                    userId: interaction.user.id,
+                    userTag: interaction.user.tag,
+                    data
+                })
+            }),
+            timeoutPromise
+        ]);
         const result = await response.json();
 
         if (result.success) {
@@ -350,7 +357,9 @@ client.on(Events.InteractionCreate, async interaction => {
         console.error('Error in modal submission:', err);
         try {
           await interaction.editReply({ 
-            content: '❌ There was an error sending your data. Please try again later.',
+            content: err.message === 'Request timed out'
+              ? '❌ The request took too long. Please try again.'
+              : '❌ There was an error sending your data. Please try again later.',
             ephemeral: true 
           });
         } catch (replyErr) {
