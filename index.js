@@ -177,13 +177,6 @@ client.on(Events.InteractionCreate, async interaction => {
       const result = await response.json();
       
       if (result.success) {
-        // Check if user needs to set timezone
-        if (result.needsTimezone) {
-          await interaction.user.send(
-            "Hi! You haven't set your timezone yet. Please use `/settimezone` (e.g., PST, EST, GMT) " +
-            "so your streaks and stats are accurate. If you don't set it, we'll use PST by default."
-          ).catch(err => console.error('Could not send timezone DM:', err));
-        }
 
         await interaction.editReply({ 
           content: '✅ Your log was recorded. Thanks!',
