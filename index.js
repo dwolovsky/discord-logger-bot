@@ -34,18 +34,10 @@ const TIMEZONE_CHOICES = [
   { name: 'Pakistan Standard Time (GMT+5)', value: 'PKT' },
   { name: 'Singapore Time (GMT+8)', value: 'SGT' },
   { name: 'China Standard Time (GMT+8)', value: 'CST_CN' },
-  { name: 'Hong Kong Time (GMT+8)', value: 'HKT' },
   { name: 'Japan Standard Time (GMT+9)', value: 'JST' },
   { name: 'Korea Standard Time (GMT+9)', value: 'KST' },
   { name: 'Australian Eastern Standard Time (GMT+10)', value: 'AEST' },
-  { name: 'Australian Eastern Daylight Time (GMT+11)', value: 'AEDT' },
-  { name: 'Australian Central Standard Time (GMT+9:30)', value: 'ACST' },
-  { name: 'Australian Central Daylight Time (GMT+10:30)', value: 'ACDT' },
-  { name: 'Australian Western Standard Time (GMT+8)', value: 'AWST' },
-  { name: 'New Zealand Standard Time (GMT+12)', value: 'NZST' },
-  { name: 'New Zealand Daylight Time (GMT+13)', value: 'NZDT' },
-  { name: 'Brazil Time (GMT-3)', value: 'BRT' },
-  { name: 'Argentina Time (GMT-3)', value: 'ART' }
+  { name: 'New Zealand Standard Time (GMT+12)', value: 'NZST' }
 ];
 
 // ====== REGISTER SLASH COMMANDS ======
