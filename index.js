@@ -100,7 +100,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const priority1 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority1')
-            .setLabel('Priority 1 (e.g. "Meditation, 30 minutes" or "Health, 8/10 effort")')
+            .setLabel('Priority 1 (Countable metric or effort rating)')
             .setStyle(TextInputStyle.Short)
             .setPlaceholder(placeholder)
             .setRequired(true)
@@ -108,7 +108,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const priority2 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority2')
-            .setLabel('Priority 2')
+            .setLabel('Priority 2 (Countable metric or effort rating)')
             .setStyle(TextInputStyle.Short)
             .setPlaceholder(placeholder)
             .setRequired(true)
@@ -116,7 +116,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const priority3 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority3')
-            .setLabel('Priority 3')
+            .setLabel('Priority 3 (Countable metric or effort rating)')
             .setStyle(TextInputStyle.Short)
             .setPlaceholder(placeholder)
             .setRequired(true)
