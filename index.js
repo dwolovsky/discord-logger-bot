@@ -1,67 +1,84 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-const { REST } = require('@discordjs/rest');
-const { Routes } = require('discord-api-types/v9');
 require('dotenv').config();
+const { 
+  Client, GatewayIntentBits, ModalBuilder, TextInputBuilder, TextInputStyle, 
+  ActionRowBuilder, Events, REST, Routes, SlashCommandBuilder 
+} = require('discord.js');
+const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
 
-const client = new Client({ 
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages
-  ] 
-});
+// ====== ENVIRONMENT VARIABLES ======
+const APPLICATION_ID = process.env.APPLICATION_ID;
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const GUILD_ID = process.env.GUILD_ID;
+const SCRIPT_URL = process.env.SCRIPT_URL;
 
-const GOOGLE_SCRIPT_URL = process.env.GOOGLE_SCRIPT_URL;
-
-// Command definitions
-const commands = [
-  new SlashCommandBuilder()
-    .setName('log')
-    .setDescription('Log your daily metrics'),
-
-  new SlashCommandBuilder()
-    .setName('settimezone')
-    .setDescription('Set your timezone')
-    .addStringOption(option =>
-      option.setName('timezone')
-        .setDescription('Your timezone code')
-        .setRequired(true)
-        .addChoices(
-          { name: 'Pacific Time (GMT-8)', value: 'PST' },
-          { name: 'Pacific Daylight (GMT-7)', value: 'PDT' },
-          { name: 'Mountain Time (GMT-7)', value: 'MST' },
-          { name: 'Mountain Daylight (GMT-6)', value: 'MDT' },
-          { name: 'Central Time (GMT-6)', value: 'CST' },
-          { name: 'Central Daylight (GMT-5)', value: 'CDT' },
-          { name: 'Eastern Time (GMT-5)', value: 'EST' },
-          { name: 'Eastern Daylight (GMT-4)', value: 'EDT' },
-          { name: 'Greenwich Mean Time', value: 'GMT' },
-          { name: 'British Summer Time (GMT+1)', value: 'BST' },
-          { name: 'Central European (GMT+1)', value: 'CET' },
-          { name: 'Eastern European (GMT+2)', value: 'EET' },
-          { name: 'India Standard (GMT+5:30)', value: 'IST' },
-          { name: 'China Standard (GMT+8)', value: 'CST_CN' },
-          { name: 'Japan Standard (GMT+9)', value: 'JST' },
-          { name: 'Australia Eastern (GMT+10)', value: 'AEST' },
-          { name: 'New Zealand (GMT+12)', value: 'NZST' }
-        )),
-
-  new SlashCommandBuilder()
-    .setName('streak')
-    .setDescription('Check your current streak'),
-
-  new SlashCommandBuilder()
-    .setName('leaderboard')
-    .setDescription('View the streak leaderboard')
+// ====== TIMEZONE CHOICES (from your CONFIG) ======
+const TIMEZONE_CHOICES = [
+  { name: 'Pacific Time (GMT-8)', value: 'PST' },
+  { name: 'Pacific Daylight (GMT-7)', value: 'PDT' },
+  { name: 'Mountain Time (GMT-7)', value: 'MST' },
+  { name: 'Mountain Daylight (GMT-6)', value: 'MDT' },
+  { name: 'Central Time (GMT-6)', value: 'CST' },
+  { name: 'Central Daylight (GMT-5)', value: 'CDT' },
+  { name: 'Eastern Time (GMT-5)', value: 'EST' },
+  { name: 'Eastern Daylight (GMT-4)', value: 'EDT' },
+  { name: 'Greenwich Mean Time', value: 'GMT' },
+  { name: 'Universal Time', value: 'UTC' },
+  { name: 'British Summer Time (GMT+1)', value: 'BST' },
+  { name: 'Central European Time (GMT+1)', value: 'CET' },
+  { name: 'Central European Summer Time (GMT+2)', value: 'CEST' },
+  { name: 'Eastern European Time (GMT+2)', value: 'EET' },
+  { name: 'Eastern European Summer Time (GMT+3)', value: 'EEST' },
+  { name: 'Moscow Time (GMT+3)', value: 'MSK' },
+  { name: 'South African Standard Time (GMT+2)', value: 'SAST' },
+  { name: 'India Standard Time (GMT+5:30)', value: 'IST' },
+  { name: 'Pakistan Standard Time (GMT+5)', value: 'PKT' },
+  { name: 'Singapore Time (GMT+8)', value: 'SGT' },
+  { name: 'China Standard Time (GMT+8)', value: 'CST_CN' },
+  { name: 'Hong Kong Time (GMT+8)', value: 'HKT' },
+  { name: 'Japan Standard Time (GMT+9)', value: 'JST' },
+  { name: 'Korea Standard Time (GMT+9)', value: 'KST' },
+  { name: 'Australian Eastern Standard Time (GMT+10)', value: 'AEST' },
+  { name: 'Australian Eastern Daylight Time (GMT+11)', value: 'AEDT' },
+  { name: 'Australian Central Standard Time (GMT+9:30)', value: 'ACST' },
+  { name: 'Australian Central Daylight Time (GMT+10:30)', value: 'ACDT' },
+  { name: 'Australian Western Standard Time (GMT+8)', value: 'AWST' },
+  { name: 'New Zealand Standard Time (GMT+12)', value: 'NZST' },
+  { name: 'New Zealand Daylight Time (GMT+13)', value: 'NZDT' },
+  { name: 'Brazil Time (GMT-3)', value: 'BRT' },
+  { name: 'Argentina Time (GMT-3)', value: 'ART' }
 ];
 
-// Register commands
-const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
-
+// ====== REGISTER SLASH COMMANDS ======
+const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 (async () => {
   try {
     await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
-      { body: commands },
+      Routes.applicationGuildCommands(APPLICATION_ID, GUILD_ID),
+      { body: [
+        new SlashCommandBuilder()
+          .setName('log')
+          .setDescription('Open the daily log form')
+          .toJSON(),
+        new SlashCommandBuilder()
+          .setName('settimezone')
+          .setDescription('Set your timezone')
+          .addStringOption(option => {
+            option.setName('timezone')
+              .setDescription('Your timezone (e.g., PST, EST, GMT)')
+              .setRequired(true);
+            TIMEZONE_CHOICES.forEach(tz => option.addChoices(tz));
+            return option;
+          })
+          .toJSON(),
+        new SlashCommandBuilder()
+          .setName('streak')
+          .setDescription('Check your current streak')
+          .toJSON(),
+        new SlashCommandBuilder()
+          .setName('leaderboard')
+          .setDescription('View the streak leaderboard')
+          .toJSON()
+      ]}
     );
     console.log('Slash commands registered.');
   } catch (error) {
@@ -69,239 +86,220 @@ const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
   }
 })();
 
-// Event handlers
-client.once('ready', () => {
+// ====== DISCORD CLIENT ======
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-client.on('interactionCreate', async interaction => {
+// ====== INTERACTION HANDLER ======
+client.on(Events.InteractionCreate, async interaction => {
   try {
-    if (interaction.isChatInputCommand()) {
-      // Handle slash commands
-      switch (interaction.commandName) {
-        case 'log':
-          await handleLogCommand(interaction);
-          break;
-        case 'settimezone':
-          await handleTimezoneCommand(interaction);
-          break;
-        case 'streak':
-          await handleStreakCommand(interaction);
-          break;
-        case 'leaderboard':
-          await handleLeaderboardCommand(interaction);
-          break;
+    // Handle /log command
+    if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
+      try {
+        const modal = new ModalBuilder()
+          .setCustomId('dailyLog')
+          .setTitle('Daily Log');
+
+        // Priority fields (all required, new format)
+        const placeholder = 'e.g. "Meditation, 30 minutes" OR "Health, 8/10 effort"';
+        const priority1 = new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('priority1')
+            .setLabel('Priority 1 (e.g. "Meditation, 30 minutes" or "Health, 8/10 effort")')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder(placeholder)
+            .setRequired(true)
+        );
+        const priority2 = new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('priority2')
+            .setLabel('Priority 2')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder(placeholder)
+            .setRequired(true)
+        );
+        const priority3 = new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('priority3')
+            .setLabel('Priority 3')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder(placeholder)
+            .setRequired(true)
+        );
+        const satisfaction = new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('satisfaction')
+            .setLabel('Satisfaction (0-10)')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        );
+        const notes = new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('notes')
+            .setLabel('Notes')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+        );
+
+        modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
+        await interaction.showModal(modal);
+      } catch (error) {
+        console.error('Error showing modal:', error);
+        if (!interaction.replied) {
+          await interaction.reply({ 
+            content: '❌ There was an error showing the form. Please try again.',
+            ephemeral: true 
+          });
+        }
       }
-    } else if (interaction.isModalSubmit()) {
-      // Handle modal submissions
-      if (interaction.customId === 'dailyLogModal') {
-        await handleDailyLogSubmission(interaction);
+      return;
+    }
+
+    // Handle /settimezone command
+    if (interaction.isChatInputCommand() && interaction.commandName === 'settimezone') {
+      try {
+        await interaction.deferReply({ ephemeral: true });
+        const timezone = interaction.options.getString('timezone');
+        const response = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'setTimezone',
+            userId: interaction.user.id,
+            userTag: interaction.user.tag,
+            timezone: timezone
+          })
+        });
+        const result = await response.json();
+        await interaction.editReply({
+          content: result.message,
+          ephemeral: true
+        });
+      } catch (error) {
+        console.error('Error setting timezone:', error);
+        await interaction.editReply({
+          content: '❌ Unable to set timezone. Please try again or contact support.',
+          ephemeral: true
+        });
       }
+      return;
     }
-  } catch (error) {
-    console.error('Error handling interaction:', error);
-    try {
-      const errorMessage = "❌ An error occurred. Please try again.";
-      if (interaction.deferred) {
-        await interaction.editReply({ content: errorMessage, ephemeral: true });
-      } else if (!interaction.replied) {
-        await interaction.reply({ content: errorMessage, ephemeral: true });
+
+    // Handle /streak command
+    if (interaction.isChatInputCommand() && interaction.commandName === 'streak') {
+      try {
+        await interaction.deferReply({ ephemeral: true });
+        const response = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'getStreak',
+            userId: interaction.user.id,
+            userTag: interaction.user.tag
+          })
+        });
+        const result = await response.json();
+        await interaction.editReply({
+          content: result.message,
+          ephemeral: true
+        });
+      } catch (error) {
+        console.error('Error getting streak:', error);
+        await interaction.editReply({
+          content: '❌ Unable to retrieve your streak. Please try again.',
+          ephemeral: true
+        });
       }
-    } catch (replyError) {
-      console.error('Error sending error message:', replyError);
+      return;
     }
-  }
-});
 
-async function handleLogCommand(interaction) {
-  const modal = new ModalBuilder()
-    .setCustomId('dailyLogModal')
-    .setTitle('Daily Log');
-
-  // Priority 1
-  const priority1Row = new ActionRowBuilder().addComponents(
-    new TextInputBuilder()
-      .setCustomId('priority1')
-      .setLabel('Priority 1 (format: label | value | unit)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g., Exercise | 30 | minutes')
-      .setRequired(true)
-  );
-
-  // Priority 2
-  const priority2Row = new ActionRowBuilder().addComponents(
-    new TextInputBuilder()
-      .setCustomId('priority2')
-      .setLabel('Priority 2 (optional)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g., Meditation | 15 | minutes')
-      .setRequired(false)
-  );
-
-  // Priority 3
-  const priority3Row = new ActionRowBuilder().addComponents(
-    new TextInputBuilder()
-      .setCustomId('priority3')
-      .setLabel('Priority 3 (optional)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g., Reading | 2 | chapters')
-      .setRequired(false)
-  );
-
-  // Satisfaction
-  const satisfactionRow = new ActionRowBuilder().addComponents(
-    new TextInputBuilder()
-      .setCustomId('satisfaction')
-      .setLabel('Satisfaction (1-10)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Rate your day (1-10)')
-      .setRequired(true)
-  );
-
-  // Notes
-  const notesRow = new ActionRowBuilder().addComponents(
-    new TextInputBuilder()
-      .setCustomId('notes')
-      .setLabel('Notes (optional)')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Any additional notes or reflections')
-      .setRequired(false)
-  );
-
-  modal.addComponents(priority1Row, priority2Row, priority3Row, satisfactionRow, notesRow);
-  await interaction.showModal(modal);
-}
-
-async function handleTimezoneCommand(interaction) {
-  try {
-    await interaction.deferReply({ ephemeral: true });
-    
-    const timezone = interaction.options.getString('timezone');
-    const userId = interaction.user.id;
-    
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'setTimezone',
-        userId: userId,
-        timezone: timezone
-      })
-    });
-
-    const result = await response.json();
-    
-    if (result.success) {
-      await interaction.editReply({
-        content: result.message,
-        ephemeral: true
-      });
-    } else {
-      await interaction.editReply({
-        content: result.message || "Failed to set timezone. Please try again.",
-        ephemeral: true
-      });
-    }
-  } catch (error) {
-    console.error('Error setting timezone:', error);
-    if (interaction.deferred) {
-      await interaction.editReply({
-        content: "❌ There was an error setting your timezone. Please try again.",
-        ephemeral: true
-      });
-    } else {
-      await interaction.reply({
-        content: "❌ There was an error setting your timezone. Please try again.",
-        ephemeral: true
-      });
-    }
-  }
-}
-
-async function handleStreakCommand(interaction) {
-  try {
-    await interaction.deferReply({ ephemeral: true });
-    
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'getStreak',
-        userId: interaction.user.id
-      })
-    });
-
-    const result = await response.json();
-    await interaction.editReply({
-      content: result.message,
-      ephemeral: true
-    });
-  } catch (error) {
-    console.error('Error getting streak:', error);
-    await interaction.editReply({
-      content: "❌ There was an error getting your streak. Please try again.",
-      ephemeral: true
-    });
-  }
-}
-
-async function handleLeaderboardCommand(interaction) {
-  try {
-    await interaction.deferReply();
-    
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'getLeaderboard',
-        userId: interaction.user.id
-      })
-    });
-
-    const result = await response.json();
-    await interaction.editReply(result.message);
-  } catch (error) {
-    console.error('Error getting leaderboard:', error);
-    await interaction.editReply("❌ There was an error getting the leaderboard. Please try again.");
-  }
-}
-
-async function handleDailyLogSubmission(interaction) {
-  try {
-    await interaction.deferReply({ ephemeral: true });
-
-    // Parse priorities
-    const priorities = [];
-    for (let i = 1; i <= 3; i++) {
-      const priorityInput = interaction.fields.getTextInputValue(`priority${i}`);
-      if (priorityInput) {
-        const [label, value, unit] = priorityInput.split('|').map(s => s.trim());
-        priorities.push({ label, value, unit });
-      } else {
-        priorities.push({ label: '', value: '', unit: '' });
+    // Handle /leaderboard command (ephemeral)
+    if (interaction.isChatInputCommand() && interaction.commandName === 'leaderboard') {
+      try {
+        await interaction.deferReply({ ephemeral: true });
+        const response = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'getLeaderboard',
+            userId: interaction.user.id,
+            userTag: interaction.user.tag
+          })
+        });
+        const result = await response.json();
+        await interaction.editReply({
+          content: result.message,
+          ephemeral: true
+        });
+      } catch (error) {
+        console.error('Error getting leaderboard:', error);
+        await interaction.editReply({
+          content: '❌ Unable to retrieve the leaderboard. Please try again.',
+          ephemeral: true
+        });
       }
+      return;
     }
 
-    const satisfaction = interaction.fields.getTextInputValue('satisfaction');
-    const notes = interaction.fields.getTextInputValue('notes');
+    // Handle modal submission
+    if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
+      try {
+        await interaction.deferReply({ ephemeral: true });
 
-    // Send to Google Apps Script
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'logDaily',
-        userId: interaction.user.id,
-        userTag: interaction.user.tag,
-        data: {
+        // ====== PRIORITY PARSING FUNCTION ======
+        function parsePriority(input) {
+          // Accepts: "Meditation, 30 minutes", "Focus: 8", "Health, 8/10", etc.
+          // Separators: comma, period, dash, underscore, colon
+          const regex = /^(.*?)[,\.\-_:]+\s*(\d+)\s*(.*)$/;
+          const match = input.trim().match(regex);
+          if (!match) return null;
+          let [_, label, value, unit] = match;
+          label = label.trim().substring(0, 500);
+          value = value.trim();
+          unit = unit.trim();
+          // If unit is blank, set to "effort"
+          if (!unit) unit = 'effort';
+          return { label, value, unit };
+        }
+
+        // Parse and validate priorities
+        const priorities = [];
+        for (let i = 1; i <= 3; i++) {
+          const input = interaction.fields.getTextInputValue(`priority${i}`);
+          const parsed = parsePriority(input);
+          if (!parsed || !parsed.label || !parsed.value) {
+            return await interaction.editReply({
+              content: `❌ Invalid format for Priority ${i}. Use: "Activity, value units" or "Rating, number/10 effort"`,
+              ephemeral: true
+            });
+          }
+          priorities.push(parsed);
+        }
+
+        // Validate satisfaction (0-10)
+        const satisfactionRaw = interaction.fields.getTextInputValue('satisfaction');
+        const satisfaction = parseInt(satisfactionRaw, 10);
+        if (isNaN(satisfaction) || satisfaction < 0 || satisfaction > 10) {
+          return await interaction.editReply({
+            content: "❌ Satisfaction must be a number between 0 and 10.",
+            ephemeral: true
+          });
+        }
+
+        // Notes (required)
+        const notes = interaction.fields.getTextInputValue('notes');
+        if (!notes || !notes.trim()) {
+          return await interaction.editReply({
+            content: "❌ Notes field is required.",
+            ephemeral: true
+          });
+        }
+
+        // Prepare data for Google Apps Script
+        const data = {
           priority1_label: priorities[0].label,
           priority1_value: priorities[0].value,
           priority1_unit: priorities[0].unit,
@@ -313,36 +311,71 @@ async function handleDailyLogSubmission(interaction) {
           priority3_unit: priorities[2].unit,
           satisfaction: satisfaction,
           notes: notes
+        };
+
+        // Send to Google Apps Script
+        const response = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'logDaily',
+            userId: interaction.user.id,
+            userTag: interaction.user.tag,
+            data
+          })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+          // Ephemeral confirmation
+          await interaction.editReply({ 
+            content: result.message || '✅ Your log was recorded. Thanks!',
+            ephemeral: true 
+          });
+
+          // Public channel announcement
+          if (result.milestone) {
+            await interaction.channel.send(result.milestone);
+          } else {
+            await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
+          }
+
+          // DM for milestone if provided
+          if (result.dmMessage) {
+            try {
+              await interaction.user.send(result.dmMessage);
+            } catch (dmError) {
+              console.error('Could not send DM:', dmError);
+            }
+          }
+        } else {
+          await interaction.editReply({ 
+            content: result.message || '❌ There was an error logging your entry.',
+            ephemeral: true 
+          });
         }
-      })
-    });
-
-    const result = await response.json();
-    
-    if (result.success) {
-      // Send the confirmation message to the user
-      await interaction.editReply({
-        content: result.message,
-        ephemeral: true
-      });
-
-      // If there are any milestones, announce them in the channel
-      if (result.milestone) {
-        await interaction.channel.send(result.milestone);
+      } catch (err) {
+        console.error('Error in modal submission:', err);
+        try {
+          await interaction.editReply({ 
+            content: '❌ There was an error sending your data. Please try again later.',
+            ephemeral: true 
+          });
+        } catch (replyErr) {
+          console.error('Error sending error message:', replyErr);
+        }
       }
-    } else {
-      await interaction.editReply({
-        content: "❌ Failed to log your entry. Please try again.",
-        ephemeral: true
+      return;
+    }
+  } catch (outerError) {
+    console.error('Error handling interaction:', outerError);
+    if (!interaction.replied) {
+      await interaction.reply({ 
+        content: '❌ An unexpected error occurred. Please try again.',
+        ephemeral: true 
       });
     }
-  } catch (error) {
-    console.error('Error handling daily log submission:', error);
-    await interaction.editReply({
-      content: "❌ There was an error submitting your log. Please try again.",
-      ephemeral: true
-    });
   }
-}
+});
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(DISCORD_TOKEN);
