@@ -210,7 +210,7 @@ client.on(Events.InteractionCreate, async interaction => {
             ephemeral: true
           });
         }
-// Notes (required)
+        // Notes (required)
         const notes = interaction.fields.getTextInputValue('notes');
         if (!notes || !notes.trim()) {
           return await interaction.editReply({
@@ -264,6 +264,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
           // Public channel announcement
           if (result.milestone) {
+            await handleRoleUpdate(interaction, result.currentStreak);
             await interaction.channel.send(result.milestone);
           } else {
             await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
@@ -308,5 +309,44 @@ client.on(Events.InteractionCreate, async interaction => {
     }
   }
 });
+
+async function handleRoleUpdate(interaction, streakCount) {
+  try {
+    const guild = interaction.guild;
+    const member = interaction.member;
+    
+    // Ensure roles exist or create them
+    const centuryRole = await ensureRole(guild, 'Century Scientist');
+    const millenniumRole = await ensureRole(guild, 'Millennium Scientist');
+
+    // Update roles based on streak
+    if (streakCount >= 1000) {
+      if (!member.roles.cache.has(millenniumRole.id)) {
+        await member.roles.add(millenniumRole.id);
+        if (member.roles.cache.has(centuryRole.id)) {
+          await member.roles.remove(centuryRole.id);
+        }
+      }
+    } else if (streakCount >= 100) {
+      if (!member.roles.cache.has(centuryRole.id)) {
+        await member.roles.add(centuryRole.id);
+      }
+    }
+  } catch (error) {
+    console.error('Error updating roles:', error);
+  }
+}
+
+async function ensureRole(guild, roleName) {
+  let role = guild.roles.cache.find(r => r.name === roleName);
+  if (!role) {
+    role = await guild.roles.create({
+      name: roleName,
+      color: roleName === 'Century Scientist' ? '#FFD700' : '#FF4500',
+      reason: 'Achievement role'
+    });
+  }
+  return role;
+}
 
 client.login(DISCORD_TOKEN);
