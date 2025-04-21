@@ -11,35 +11,6 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const SCRIPT_URL = process.env.SCRIPT_URL;
 
-// ====== TIMEZONE CHOICES (from your CONFIG) ======
-const TIMEZONE_CHOICES = [
-  { name: 'Pacific Time (GMT-8)', value: 'PST' },
-  { name: 'Pacific Daylight (GMT-7)', value: 'PDT' },
-  { name: 'Mountain Time (GMT-7)', value: 'MST' },
-  { name: 'Mountain Daylight (GMT-6)', value: 'MDT' },
-  { name: 'Central Time (GMT-6)', value: 'CST' },
-  { name: 'Central Daylight (GMT-5)', value: 'CDT' },
-  { name: 'Eastern Time (GMT-5)', value: 'EST' },
-  { name: 'Eastern Daylight (GMT-4)', value: 'EDT' },
-  { name: 'Greenwich Mean Time', value: 'GMT' },
-  { name: 'Universal Time', value: 'UTC' },
-  { name: 'British Summer Time (GMT+1)', value: 'BST' },
-  { name: 'Central European Time (GMT+1)', value: 'CET' },
-  { name: 'Central European Summer Time (GMT+2)', value: 'CEST' },
-  { name: 'Eastern European Time (GMT+2)', value: 'EET' },
-  { name: 'Eastern European Summer Time (GMT+3)', value: 'EEST' },
-  { name: 'Moscow Time (GMT+3)', value: 'MSK' },
-  { name: 'South African Standard Time (GMT+2)', value: 'SAST' },
-  { name: 'India Standard Time (GMT+5:30)', value: 'IST' },
-  { name: 'Pakistan Standard Time (GMT+5)', value: 'PKT' },
-  { name: 'Singapore Time (GMT+8)', value: 'SGT' },
-  { name: 'China Standard Time (GMT+8)', value: 'CST_CN' },
-  { name: 'Japan Standard Time (GMT+9)', value: 'JST' },
-  { name: 'Korea Standard Time (GMT+9)', value: 'KST' },
-  { name: 'Australian Eastern Standard Time (GMT+10)', value: 'AEST' },
-  { name: 'New Zealand Standard Time (GMT+12)', value: 'NZST' }
-];
-
 // ====== REGISTER SLASH COMMANDS ======
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 (async () => {
@@ -50,17 +21,6 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('log')
           .setDescription('Open the daily log form')
-          .toJSON(),
-        new SlashCommandBuilder()
-          .setName('settimezone')
-          .setDescription('Set your timezone')
-          .addStringOption(option => {
-            option.setName('timezone')
-              .setDescription('Your timezone (e.g., PST, EST, GMT)')
-              .setRequired(true);
-            TIMEZONE_CHOICES.forEach(tz => option.addChoices(tz));
-            return option;
-          })
           .toJSON(),
         new SlashCommandBuilder()
           .setName('streak')
@@ -146,36 +106,6 @@ client.on(Events.InteractionCreate, async interaction => {
             ephemeral: true 
           });
         }
-      }
-      return;
-    }
-
-    // Handle /settimezone command
-    if (interaction.isChatInputCommand() && interaction.commandName === 'settimezone') {
-      try {
-        await interaction.deferReply({ ephemeral: true });
-        const timezone = interaction.options.getString('timezone');
-        const response = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'setTimezone',
-            userId: interaction.user.id,
-            userTag: interaction.user.tag,
-            timezone: timezone
-          })
-        });
-        const result = await response.json();
-        await interaction.editReply({
-          content: result.message,
-          ephemeral: true
-        });
-      } catch (error) {
-        console.error('Error setting timezone:', error);
-        await interaction.editReply({
-          content: '❌ Unable to set timezone. Please try again or contact support.',
-          ephemeral: true
-        });
       }
       return;
     }
