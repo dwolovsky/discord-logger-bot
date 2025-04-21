@@ -453,8 +453,8 @@ async function handleRoleUpdate(interaction, streakCount) {
     const member = interaction.member;
     
     // Ensure roles exist or create them
-    const centuryRole = await ensureRole(guild, 'Century Scientist');
-    const millenniumRole = await ensureRole(guild, 'Millennium Scientist');
+    const centuryRole = await ensureRole(guild, 'Centurion Scholar');
+    const millenniumRole = await ensureRole(guild, 'Millennium Sage');
 
     // Update roles based on streak
     if (streakCount >= 1000) {
@@ -479,7 +479,9 @@ async function ensureRole(guild, roleName) {
   if (!role) {
     role = await guild.roles.create({
       name: roleName,
-      color: roleName === 'Century Scientist' ? '#FFD700' : '#FF4500',
+      color: roleName === 'Centurion Scholar' ? '#FFD700' : 
+             roleName === 'Millenium Sage' ? '#FF4500' : 
+             '#FFFFFF',  // default color if neither (shouldn't happen)
       reason: 'Achievement role'
     });
   }
