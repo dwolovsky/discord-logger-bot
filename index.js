@@ -299,7 +299,7 @@ client.on(Events.InteractionCreate, async interaction => {
           priority2_unit: priorities[1].unit,
           priority3_label: priorities[2].label,
           priority3_value: priorities[2].value,
-          priority3_unit: priorities[3].unit,
+          priority3_unit: priorities[2].unit,
           satisfaction: satisfaction,
           notes: notes
         };
