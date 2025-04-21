@@ -91,7 +91,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const notes = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('notes')
-            .setLabel('Notes')
+            .setLabel('Notes / Experiment ("I'm learning that...")')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
         );
