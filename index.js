@@ -56,11 +56,11 @@ client.on(Events.InteractionCreate, async interaction => {
           .setTitle('Daily Log');
 
         // Priority fields (all required, new format)
-        const placeholder = 'e.g. "Meditation, 30 minutes" OR "Health, 8/10 effort"';
+        const placeholder = 'e.g. "Meditation, 15 mins"';
         const priority1 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority1')
-            .setLabel('Priority 1 (Measurement or effort rating)')
+            .setLabel('Priority 1 (Measurement or Effort Rating)')
             .setStyle(TextInputStyle.Short)
             .setPlaceholder(placeholder)
             .setRequired(true)
@@ -68,7 +68,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const priority2 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority2')
-            .setLabel('Priority 2 (Measurement or effort rating)')
+            .setLabel('Priority 2 (Measurement or Effort Rating)')
             .setStyle(TextInputStyle.Short)
             .setPlaceholder(placeholder)
             .setRequired(true)
@@ -76,7 +76,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const priority3 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority3')
-            .setLabel('Priority 3 (Measurement or effort rating)')
+            .setLabel('Priority 3 (Measurement or Effort Rating)')
             .setStyle(TextInputStyle.Short)
             .setPlaceholder(placeholder)
             .setRequired(true)
