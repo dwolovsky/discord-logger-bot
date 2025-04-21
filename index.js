@@ -335,10 +335,15 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
             await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
           }
 
-          // DM for milestone if provided
-          if (result.dmMessage) {
+         // Send DMs for milestone and status instructions
+          if (result.dmMessage || result.statusMessage) {
             try {
-              await interaction.user.send(result.dmMessage);
+              if (result.dmMessage) {
+                await interaction.user.send(result.dmMessage);
+              }
+              if (result.statusMessage) {
+                await interaction.user.send(result.statusMessage);
+              }
             } catch (dmError) {
               console.error('Could not send DM:', dmError);
             }
