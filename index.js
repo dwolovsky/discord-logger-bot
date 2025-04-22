@@ -107,7 +107,7 @@ client.on(Events.InteractionCreate, async interaction => {
         if (!interaction.replied) {
           await interaction.reply({ 
             content: '❌ There was an error showing the form. Please try again.',
-            ephemeral: true 
+            flags: ['Ephemeral']
           });
         }
       }
@@ -168,7 +168,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
     if (!interaction.replied) {
       await interaction.reply({ 
         content: '❌ There was an error showing the form. Please try again.',
-        ephemeral: true 
+        flags: ['Ephemeral']
       });
     }
   }
@@ -191,13 +191,13 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         const result = await response.json();
         await interaction.editReply({
           content: result.message,
-          ephemeral: true
+          flags: ['Ephemeral']
         });
       } catch (error) {
         console.error('Error getting streak:', error);
         await interaction.editReply({
           content: '❌ Unable to retrieve your streak. Please try again.',
-          ephemeral: true
+          flags: ['Ephemeral']
         });
       }
       return;
@@ -219,13 +219,13 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         const result = await response.json();
         await interaction.editReply({
           content: result.message,
-          ephemeral: true
+          flags: ['Ephemeral']
         });
       } catch (error) {
         console.error('Error getting leaderboard:', error);
         await interaction.editReply({
           content: '❌ Unable to retrieve the leaderboard. Please try again.',
-          ephemeral: true
+          flags: ['Ephemeral']
         });
       }
       return;
@@ -260,7 +260,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
           if (!parsed || !parsed.label || !parsed.value) {
             return await interaction.editReply({
               content: `❌ Invalid format for Priority ${i}. Use: "Activity, value units" or "Rating, number/10 effort"`,
-              ephemeral: true
+              flags: ['Ephemeral']
             });
           }
           priorities.push(parsed);
@@ -272,7 +272,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         if (isNaN(satisfaction) || satisfaction < 0 || satisfaction > 10) {
           return await interaction.editReply({
             content: "❌ Satisfaction must be a number between 0 and 10.",
-            ephemeral: true
+            flags: ['Ephemeral']
           });
         }
         // Notes (required)
@@ -280,7 +280,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         if (!notes || !notes.trim()) {
           return await interaction.editReply({
             content: "❌ Notes field is required.",
-            ephemeral: true
+            flags: ['Ephemeral']
           });
         }
 
@@ -324,7 +324,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
   // Ephemeral confirmation
   await interaction.editReply({ 
     content: result.message || '✅ Your log was recorded. Thanks!',
-    ephemeral: true 
+    flags: ['Ephemeral']
   });
 
   // Public channel announcement
@@ -346,7 +346,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 } else {
           await interaction.editReply({ 
             content: result.message || '❌ There was an error logging your entry.',
-            ephemeral: true 
+            flags: ['Ephemeral'] 
           });
         }
       } catch (err) {
@@ -356,7 +356,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
             content: err.message === 'Request timed out'
               ? '❌ The request took too long. Please try again.'
               : '❌ There was an error sending your data. Please try again later.',
-            ephemeral: true 
+            flags: ['Ephemeral'] 
           });
         } catch (replyErr) {
           console.error('Error sending error message:', replyErr);
@@ -389,7 +389,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'testLogPreview') {
       if (!parsed || !parsed.label || !parsed.value) {
         return await interaction.reply({
           content: `❌ Invalid format for Priority ${i}. Use: "Activity, value units" or "Rating, number/10 effort"`,
-          ephemeral: true
+          flags: ['Ephemeral']
         });
       }
       priorities.push(parsed);
@@ -401,7 +401,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'testLogPreview') {
     if (isNaN(satisfaction) || satisfaction < 0 || satisfaction > 10) {
       return await interaction.reply({
         content: "❌ Satisfaction must be a number between 0 and 10.",
-        ephemeral: true
+        flags: ['Ephemeral']
       });
     }
 
@@ -410,7 +410,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'testLogPreview') {
     if (!notes || !notes.trim()) {
       return await interaction.reply({
         content: "❌ Notes field is required.",
-        ephemeral: true
+        flags: ['Ephemeral']
       });
     }
 
@@ -425,13 +425,13 @@ Satisfaction: ${satisfaction}/10
 Notes: ${notes}
 
 Ready to log for real? Use /log to begin your streak!`,
-      ephemeral: true
+      flags: ['Ephemeral']
     });
   } catch (error) {
     console.error('Error in test modal submission:', error);
     await interaction.reply({
       content: '❌ There was an error processing your test log. Please try again.',
-      ephemeral: true
+      flags: ['Ephemeral']
     });
   }
   return;
@@ -441,7 +441,7 @@ Ready to log for real? Use /log to begin your streak!`,
     if (!interaction.replied) {
       await interaction.reply({ 
         content: '❌ An unexpected error occurred. Please try again.',
-        ephemeral: true 
+        flags: ['Ephemeral']
       });
     }
   }
