@@ -328,7 +328,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
   });
 
   // Public channel announcement
-  if (result.roleInfo) {
+  if (result.milestone) {
     await handleRoleUpdate(interaction, result.currentStreak, result);
   } else {
     await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
