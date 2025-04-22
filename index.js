@@ -329,8 +329,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 
   // Public channel announcement
   if (result.milestone) {
-    await handleRoleUpdate(interaction, result.currentStreak);
-    await interaction.channel.send(result.milestone);
+    await handleRoleUpdate(interaction, result.currentStreak, result);
   } else {
     await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
   }
@@ -447,7 +446,7 @@ Ready to log for real? Use /log to begin your streak!`,
   }
 });
 
-async function handleRoleUpdate(interaction, streakCount) {
+async function handleRoleUpdate(interaction, streakCount, result) { // Add result parameter
   try {
     const guild = interaction.guild;
     const member = interaction.member;
