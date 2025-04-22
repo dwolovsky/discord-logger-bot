@@ -467,8 +467,7 @@ async function handleRoleUpdate(interaction, streakCount) {
       const newRole = await ensureRole(guild, result.roleInfo.name, result.roleInfo.color);
       await member.roles.add(newRole.id);
       await interaction.channel.send(
-        `🎊 ${member.user} has achieved the rank of ${result.roleInfo.name}! ` +
-        `(Day ${streakCount})`
+        `🎊 ${member.user} has achieved ${result.roleInfo.name} status for ${streakCount} consecutive days logged!`
       );
     }
   } catch (error) {
