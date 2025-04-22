@@ -458,20 +458,30 @@ async function handleRoleUpdate(interaction, streakCount) {
     const member = interaction.member;
     
     // Ensure roles exist or create them
-    const centuryRole = await ensureRole(guild, 'Centurion Scholar');
-    const millenniumRole = await ensureRole(guild, 'Millennium Sage');
+    const seedlingRole = await ensureRole(guild, 'Seedling', '#98FB98');  // Light green
+    const centuryRole = await ensureRole(guild, 'Centurion Scholar', '#FFD700');  // Gold
+    const millenniumRole = await ensureRole(guild, 'Millennium Sage', '#FF4500');  // Orange-red
 
     // Update roles based on streak
     if (streakCount >= 1000) {
       if (!member.roles.cache.has(millenniumRole.id)) {
         await member.roles.add(millenniumRole.id);
-        if (member.roles.cache.has(centuryRole.id)) {
-          await member.roles.remove(centuryRole.id);
-        }
+        // Remove previous roles
+        if (member.roles.cache.has(centuryRole.id)) await member.roles.remove(centuryRole.id);
+        if (member.roles.cache.has(seedlingRole.id)) await member.roles.remove(seedlingRole.id);
+        await interaction.channel.send(`👑 ${member.user} has achieved enlightenment with the Millennium Sage role!`);
       }
     } else if (streakCount >= 100) {
       if (!member.roles.cache.has(centuryRole.id)) {
         await member.roles.add(centuryRole.id);
+        // Remove previous role
+        if (member.roles.cache.has(seedlingRole.id)) await member.roles.remove(seedlingRole.id);
+        await interaction.channel.send(`🏆 ${member.user} has ascended to the Centurion Scholar role!`);
+      }
+    } else if (streakCount >= 1) {
+      if (!member.roles.cache.has(seedlingRole.id)) {
+        await member.roles.add(seedlingRole.id);
+        await interaction.channel.send(`🌱 ${member.user} has begun their journey and earned the Seedling role!`);
       }
     }
   } catch (error) {
@@ -479,14 +489,12 @@ async function handleRoleUpdate(interaction, streakCount) {
   }
 }
 
-async function ensureRole(guild, roleName) {
+async function ensureRole(guild, roleName, color) {
   let role = guild.roles.cache.find(r => r.name === roleName);
   if (!role) {
     role = await guild.roles.create({
       name: roleName,
-      color: roleName === 'Centurion Scholar' ? '#FFD700' : 
-             roleName === 'Millenium Sage' ? '#FF4500' : 
-             '#FFFFFF',  // default color if neither (shouldn't happen)
+      color: color,
       reason: 'Achievement role'
     });
   }
