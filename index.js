@@ -478,37 +478,27 @@ async function handleRoleUpdate(interaction, streakCount) {
     const guild = interaction.guild;
     const member = interaction.member;
     
-    // Get all role definitions sorted by days descending
-    const roleDefinitions = Object.values(ROLES)
-      .sort((a, b) => b.days - a.days);
+    // Get all existing streak roles from the user
+    const existingRoles = member.roles.cache.filter(role => 
+      role.tags?.botId === client.user.id  // Roles created by this bot
+    );
 
-    // Find the highest role the user qualifies for
-    const qualifiedRole = roleDefinitions.find(role => streakCount >= role.days);
-    
-    if (qualifiedRole) {
-      // Ensure the role exists
-      const newRole = await ensureRole(guild, qualifiedRole.name, qualifiedRole.color);
-      
-      // If user doesn't have this role yet
-      if (!member.roles.cache.has(newRole.id)) {
-        // Remove all other streak roles
-        for (const roleDef of roleDefinitions) {
-          const existingRole = guild.roles.cache.find(r => r.name === roleDef.name);
-          if (existingRole && member.roles.cache.has(existingRole.id)) {
-            await member.roles.remove(existingRole.id);
-          }
-        }
-        
-        // Add new role
-        await member.roles.add(newRole.id);
-        await interaction.channel.send(
-          `🎊 ${member.user} has achieved the rank of ${qualifiedRole.name}! ` +
-          `(Day ${streakCount})`
-        );
-      }
+    // Remove any existing streak roles
+    for (const [_, role] of existingRoles) {
+      await member.roles.remove(role.id);
+    }
+
+    // Create and assign the new role if roleInfo is provided
+    if (result.roleInfo) {
+      const newRole = await ensureRole(guild, result.roleInfo.name, result.roleInfo.color);
+      await member.roles.add(newRole.id);
+      await interaction.channel.send(
+        `🎊 ${member.user} has achieved the rank of ${result.roleInfo.name}! ` +
+        `(Day ${streakCount})`
+      );
     }
   } catch (error) {
-    console.error('Error updating roles:', error);
+    console.error('Error in handleRoleUpdate:', error);
   }
 }
 
