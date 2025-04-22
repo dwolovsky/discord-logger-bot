@@ -5,6 +5,32 @@ const {
 } = require('discord.js');
 const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
 
+const ROLES = {
+  SEEDLING: { name: 'Seedling Scholar', days: 1, color: '#98FB98' },
+  SAPLING: { name: 'Sapling Sage', days: 15, color: '#3CB371' },
+  GROVE: { name: 'Grove Guardian', days: 30, color: '#228B22' },
+  BEACON: { name: 'Beacon Bearer', days: 60, color: '#4169E1' },
+  CENTURION: { name: 'Centurion', days: 100, color: '#FFD700' },
+  MYSTIC: { name: 'Mystic Maven', days: 150, color: '#9370DB' },
+  LUMINARY: { name: 'Luminary', days: 200, color: '#E6BE8A' },
+  SOVEREIGN: { name: 'Sovereign Seeker', days: 250, color: '#8B4513' },
+  CELESTIAL: { name: 'Celestial Sage', days: 300, color: '#4B0082' },
+  CHRONICLE: { name: 'Chronicle Keeper', days: 365, color: '#B8860B' },
+  ETHEREAL: { name: 'Ethereal Elder', days: 400, color: '#483D8B' },
+  PARADIGM: { name: 'Paradigm Pioneer', days: 450, color: '#800080' },
+  QUANTUM: { name: 'Quantum Questor', days: 500, color: '#FF4500' },
+  ZENITH: { name: 'Zenith Zealot', days: 550, color: '#8B0000' },
+  NEXUS: { name: 'Nexus Navigator', days: 600, color: '#2F4F4F' },
+  PARAGON: { name: 'Paragon', days: 650, color: '#DAA520' },
+  APEX: { name: 'Apex Ascendant', days: 700, color: '#FF8C00' },
+  ETERNAL: { name: 'Eternal Elder', days: 750, color: '#4A0404' },
+  ORACLE: { name: 'Oracle', days: 800, color: '#FFD700' },
+  DIVINE: { name: 'Divine Delegate', days: 850, color: '#E5E4E2' },
+  COSMIC: { name: 'Cosmic Curator', days: 900, color: '#B9F2FF' },
+  INFINITY: { name: 'Infinity Initiate', days: 950, color: '#000000' },
+  TRANSCENDENT: { name: 'Transcendent', days: 1000, color: '#FF1493' }
+};
+
 // ====== ENVIRONMENT VARIABLES ======
 const APPLICATION_ID = process.env.APPLICATION_ID;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -453,7 +479,7 @@ async function handleRoleUpdate(interaction, streakCount) {
     const member = interaction.member;
     
     // Get all role definitions sorted by days descending
-    const roleDefinitions = Object.values(CONFIG.STREAK.MILESTONES.ROLES)
+    const roleDefinitions = Object.values(ROLES)
       .sort((a, b) => b.days - a.days);
 
     // Find the highest role the user qualifies for
