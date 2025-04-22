@@ -320,35 +320,30 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         ]);
         const result = await response.json();
 
-        if (result.success) {
-          // Ephemeral confirmation
-          await interaction.editReply({ 
-            content: result.message || '✅ Your log was recorded. Thanks!',
-            ephemeral: true 
-          });
+     if (result.success) {
+  // Ephemeral confirmation
+  await interaction.editReply({ 
+    content: result.message || '✅ Your log was recorded. Thanks!',
+    ephemeral: true 
+  });
 
-          // Public channel announcement
-          if (result.milestone) {
-            await handleRoleUpdate(interaction, result.currentStreak);
-            await interaction.channel.send(result.milestone);
-          } else {
-            await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
-          }
+  // Public channel announcement
+  if (result.milestone) {
+    await handleRoleUpdate(interaction, result.currentStreak);
+    await interaction.channel.send(result.milestone);
+  } else {
+    await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
+  }
 
-         // Send DMs for milestone and status instructions
-          if (result.dmMessage || result.statusMessage) {
-            try {
-              if (result.dmMessage) {
-                await interaction.user.send(result.dmMessage);
-              }
-              if (result.statusMessage) {
-                await interaction.user.send(result.statusMessage);
-              }
-            } catch (dmError) {
-              console.error('Could not send DM:', dmError);
-            }
-          }
-        } else {
+  // Send DM for milestone if provided
+  if (result.dmMessage) {
+    try {
+      await interaction.user.send(result.dmMessage);
+    } catch (dmError) {
+      console.error('Could not send DM:', dmError);
+    }
+  }
+} else {
           await interaction.editReply({ 
             content: result.message || '❌ There was an error logging your entry.',
             ephemeral: true 
