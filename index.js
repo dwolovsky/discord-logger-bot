@@ -58,6 +58,7 @@ client.once(Events.ClientReady, () => {
 
 async function processMessageQueue() {
   try {
+    console.log('Fetching messages from:', SCRIPT_URL); // Debug log
     const response = await fetch(SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -71,7 +72,12 @@ async function processMessageQueue() {
     }
     
     const result = await response.json();
-    if (!result.messages?.length) return;
+    console.log('Queue response:', result); // Debug log
+    
+    if (!result.messages?.length) {
+      console.log('No messages in queue'); // Debug log
+      return;
+    }
 
     console.log(`Processing ${result.messages.length} messages in queue`);
 
