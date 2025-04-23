@@ -236,6 +236,17 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       try {
         await interaction.deferReply({ ephemeral: true });
 
+    const now = new Date();
+        console.log('=== Log Submission Time Debug ===');
+        console.log('Time being sent to Apps Script:', {
+          rawDate: now,
+          localLA: now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }),
+          utc: now.toUTCString(),
+          hours: now.getHours(),
+          hoursUTC: now.getUTCHours(),
+          timestamp: now.getTime()
+        });
+        
         // ====== PRIORITY PARSING FUNCTION ======
         function parsePriority(input) {
           // Accepts: "Meditation, 30 minutes", "Focus: 8", "Health, 8/10", etc.
