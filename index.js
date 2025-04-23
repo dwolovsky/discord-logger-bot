@@ -500,3 +500,42 @@ async function ensureRole(guild, roleName, color) {
 }
 
 client.login(DISCORD_TOKEN);
+
+const STATS_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+// Add periodic check for stats messages
+setInterval(async () => {
+  try {
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getQueuedMessages'
+      })
+    });
+    
+    const result = await response.json();
+    if (result.messages) {
+      for (const msg of result.messages) {
+        try {
+          const user = await client.users.fetch(msg.userTag);
+          await user.send(msg.message);
+          
+          // Confirm delivery
+          await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'confirmMessageDelivery',
+              messageId: msg.id
+            })
+          });
+        } catch (dmError) {
+          console.error(`Failed to deliver stats to ${msg.userTag}:`, dmError);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking for queued messages:', error);
+  }
+}, STATS_CHECK_INTERVAL);
