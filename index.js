@@ -58,24 +58,29 @@ client.once(Events.ClientReady, () => {
 
 async function processMessageQueue() {
   try {
-    console.log('Fetching messages from:', SCRIPT_URL); // Debug log
+    console.log('Starting queue check...');
+    console.log('SCRIPT_URL:', SCRIPT_URL);
+    
+    const requestBody = {
+      action: 'getQueuedMessages'
+    };
+    console.log('Request body:', JSON.stringify(requestBody));
+
     const response = await fetch(SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'getQueuedMessages'
-      })
+      body: JSON.stringify(requestBody)
     });
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    console.log('Response status:', response.status);
+    const responseText = await response.text();
+    console.log('Raw response:', responseText);
     
-    const result = await response.json();
-    console.log('Queue response:', result); // Debug log
+    const result = JSON.parse(responseText);
+    console.log('Parsed response:', result);
     
     if (!result.messages?.length) {
-      console.log('No messages in queue'); // Debug log
+      console.log('No messages in queue');
       return;
     }
 
@@ -87,63 +92,54 @@ async function processMessageQueue() {
       console.log(`Processing batch ${Math.floor(i/QUEUE_CONFIG.BATCH_SIZE) + 1}`);
       
       for (const msg of batch) {
-        let retries = 0;
-        let delivered = false;
+        try {
+          console.log(`Attempting to deliver message ${msg.id} to user ${msg.userTag}`);
+          const user = await client.users.fetch(msg.userTag);
+          await user.send(msg.message);
+          console.log('Message sent successfully');
+          
+          // Confirm delivery
+          console.log(`Confirming delivery for message ${msg.id}`);
+          const confirmResponse = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'confirmDelivery',
+              messageId: msg.id
+            })
+          });
 
-        while (!delivered && retries < QUEUE_CONFIG.MAX_RETRIES) {
+          const confirmText = await confirmResponse.text();
+          console.log('Confirmation response:', confirmText);
+          
+          const confirmResult = JSON.parse(confirmText);
+          console.log('Parsed confirmation result:', confirmResult);
+
+          if (!confirmResult.success) {
+            throw new Error('Failed to confirm delivery: ' + (confirmResult.error || 'Unknown error'));
+          }
+          
+          console.log(`Successfully delivered and confirmed message to ${msg.userTag}`);
+
+        } catch (error) {
+          console.error(`Failed to process message ${msg.id}:`, error);
+          
           try {
-            // Try to fetch user and send message
-            const user = await client.users.fetch(msg.userTag);
-            await user.send(msg.message);
-            
-            // Confirm successful delivery
-            const confirmResponse = await fetch(SCRIPT_URL, {
+            console.log(`Reporting failure for message ${msg.id}`);
+            await fetch(SCRIPT_URL, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                action: 'confirmMessageDelivery',
-                messageId: msg.id
+                action: 'deliveryFailed',
+                messageId: msg.id,
+                error: error.message
               })
             });
-
-            if (!confirmResponse.ok) {
-              throw new Error(`Failed to confirm delivery: ${confirmResponse.status}`);
-            }
-            
-            delivered = true;
-            console.log(`Successfully delivered message to ${msg.userTag}`);
-
-          } catch (error) {
-            retries++;
-            console.error(`Delivery attempt ${retries} failed for ${msg.userTag}:`, error);
-            
-            if (retries < QUEUE_CONFIG.MAX_RETRIES) {
-              console.log(`Retrying in ${QUEUE_CONFIG.RETRY_DELAY/1000} seconds...`);
-              await new Promise(resolve => setTimeout(resolve, QUEUE_CONFIG.RETRY_DELAY));
-            } else {
-              // Report final failure
-              try {
-                await fetch(SCRIPT_URL, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    action: 'deliveryFailed',
-                    messageId: msg.id,
-                    error: error.message
-                  })
-                });
-                console.log(`Reported delivery failure for ${msg.userTag}`);
-              } catch (reportError) {
-                console.error('Failed to report message delivery failure:', reportError);
-              }
-            }
+            console.log(`Reported delivery failure for ${msg.userTag}`);
+          } catch (reportError) {
+            console.error('Failed to report message delivery failure:', reportError);
           }
         }
-      }
-      
-      // Add delay between batches if not the last batch
-      if (i + QUEUE_CONFIG.BATCH_SIZE < result.messages.length) {
-        await new Promise(resolve => setTimeout(resolve, QUEUE_CONFIG.BATCH_DELAY));
       }
     }
   } catch (error) {
@@ -151,8 +147,8 @@ async function processMessageQueue() {
   }
 }
 
-// Set up the interval (every 5 minutes)
-setInterval(processMessageQueue, 5 * 60 * 1000);
+// Set up the interval (every 3 minutes)
+setInterval(processMessageQueue, 3 * 60 * 1000);
 
 // Optional: Process queue on startup
 processMessageQueue().catch(console.error);
