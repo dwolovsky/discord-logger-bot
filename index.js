@@ -320,16 +320,21 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         ]);
         const result = await response.json();
 
-     if (result.success) {
+  if (result.success) {
   // Ephemeral confirmation
   await interaction.editReply({ 
     content: result.message || '✅ Your log was recorded. Thanks!',
     flags: ['Ephemeral']
   });
 
-  // Public channel announcement
+  // Handle role update if there's a milestone
   if (result.milestone) {
     await handleRoleUpdate(interaction, result.currentStreak, result);
+  }
+
+  // Always send the public message
+  if (result.milestone) {
+    await interaction.channel.send(result.milestone);
   } else {
     await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
   }
