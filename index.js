@@ -11,6 +11,13 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const SCRIPT_URL = process.env.SCRIPT_URL;
 
+const QUEUE_CONFIG = {
+  BATCH_SIZE: 10,
+  BATCH_DELAY: 1000, // 1 second between batches
+  MAX_RETRIES: 3,
+  RETRY_DELAY: 5000  // 5 seconds between retries
+};
+
 // ====== REGISTER SLASH COMMANDS ======
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 (async () => {
@@ -48,6 +55,101 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
+
+async function processMessageQueue() {
+  try {
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getQueuedMessages'
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    if (!result.messages?.length) return;
+
+    console.log(`Processing ${result.messages.length} messages in queue`);
+
+    // Process messages in batches
+    for (let i = 0; i < result.messages.length; i += QUEUE_CONFIG.BATCH_SIZE) {
+      const batch = result.messages.slice(i, i + QUEUE_CONFIG.BATCH_SIZE);
+      console.log(`Processing batch ${Math.floor(i/QUEUE_CONFIG.BATCH_SIZE) + 1}`);
+      
+      for (const msg of batch) {
+        let retries = 0;
+        let delivered = false;
+
+        while (!delivered && retries < QUEUE_CONFIG.MAX_RETRIES) {
+          try {
+            // Try to fetch user and send message
+            const user = await client.users.fetch(msg.userTag);
+            await user.send(msg.message);
+            
+            // Confirm successful delivery
+            const confirmResponse = await fetch(SCRIPT_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'confirmMessageDelivery',
+                messageId: msg.id
+              })
+            });
+
+            if (!confirmResponse.ok) {
+              throw new Error(`Failed to confirm delivery: ${confirmResponse.status}`);
+            }
+            
+            delivered = true;
+            console.log(`Successfully delivered message to ${msg.userTag}`);
+
+          } catch (error) {
+            retries++;
+            console.error(`Delivery attempt ${retries} failed for ${msg.userTag}:`, error);
+            
+            if (retries < QUEUE_CONFIG.MAX_RETRIES) {
+              console.log(`Retrying in ${QUEUE_CONFIG.RETRY_DELAY/1000} seconds...`);
+              await new Promise(resolve => setTimeout(resolve, QUEUE_CONFIG.RETRY_DELAY));
+            } else {
+              // Report final failure
+              try {
+                await fetch(SCRIPT_URL, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    action: 'deliveryFailed',
+                    messageId: msg.id,
+                    error: error.message
+                  })
+                });
+                console.log(`Reported delivery failure for ${msg.userTag}`);
+              } catch (reportError) {
+                console.error('Failed to report message delivery failure:', reportError);
+              }
+            }
+          }
+        }
+      }
+      
+      // Add delay between batches if not the last batch
+      if (i + QUEUE_CONFIG.BATCH_SIZE < result.messages.length) {
+        await new Promise(resolve => setTimeout(resolve, QUEUE_CONFIG.BATCH_DELAY));
+      }
+    }
+  } catch (error) {
+    console.error('Error in message queue processing:', error);
+  }
+}
+
+// Set up the interval (every 5 minutes)
+setInterval(processMessageQueue, 5 * 60 * 1000);
+
+// Optional: Process queue on startup
+processMessageQueue().catch(console.error);
 
 // ====== INTERACTION HANDLER ======
 client.on(Events.InteractionCreate, async interaction => {
