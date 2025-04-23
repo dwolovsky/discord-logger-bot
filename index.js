@@ -451,7 +451,7 @@ Ready to log for real? Use /log to begin your streak!`,
   }
 });
 
-async function handleRoleUpdate(interaction, streakCount, result) { // Add result parameter
+async function handleRoleUpdate(interaction, streakCount, result) {
   try {
     const guild = interaction.guild;
     const member = interaction.member;
@@ -470,9 +470,6 @@ async function handleRoleUpdate(interaction, streakCount, result) { // Add resul
     if (result.roleInfo) {
       const newRole = await ensureRole(guild, result.roleInfo.name, result.roleInfo.color);
       await member.roles.add(newRole.id);
-      await interaction.channel.send(
-        `🎊 ${member.user} has achieved ${result.roleInfo.name} status for ${streakCount} consecutive days logged!`
-      );
     }
   } catch (error) {
     console.error('Error in handleRoleUpdate:', error);
