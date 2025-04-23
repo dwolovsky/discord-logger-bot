@@ -333,11 +333,11 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
   }
 
   // Always send the public message
-  if (result.milestone) {
-    await interaction.channel.send(result.milestone);
-  } else {
+if (result.milestone && result.roleInfo) {
+    await interaction.channel.send(`🎊 ${interaction.user} has achieved ${result.roleInfo.name} status for ${result.currentStreak} consecutive days logged!`);
+} else {
     await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
-  }
+}
 
   // Send DM for milestone if provided
   if (result.dmMessage) {
