@@ -344,6 +344,25 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       return;
     }
 
+    // Add this alongside your other command handlers
+    if (interaction.isChatInputCommand() && interaction.commandName === 'runtest') {
+      if (interaction.user.id !== '1032380614290182174') {
+        await interaction.reply({
+          content: '❌ Unauthorized',
+          ephemeral: true
+        });
+        return;
+      }
+      
+      await interaction.deferReply({ ephemeral: true });
+      await runLogTests();
+      await interaction.editReply({
+        content: '✅ Tests completed. Check console for results.',
+        ephemeral: true
+      });
+      return;
+    }
+
     // Handle modal submission
     if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
       try {
@@ -359,6 +378,8 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
           hoursUTC: now.getUTCHours(),
           timestamp: now.getTime()
         });
+
+
         
         // ====== PRIORITY PARSING FUNCTION ======
         function parsePriority(input) {
@@ -638,6 +659,51 @@ async function ensureRole(guild, roleName, color) {
 
 
 // ====== TEST BLOCK - REMOVE WHEN READY ======
+async function handleLogSuccess(interaction, data, result) {
+  // Ephemeral reply with inspirational message
+  await interaction.editReply({ 
+    content: result.message,
+    flags: ['Ephemeral']
+  });
+
+  // Formatted log summary DM
+  const logSummary = [
+    '📝 **Daily Log Summary**',
+    '',
+    `• ${data.priority1_label}, ${data.priority1_value} ${data.priority1_unit}`,
+    `• ${data.priority2_label}, ${data.priority2_value} ${data.priority2_unit}`,
+    `• ${data.priority3_label}, ${data.priority3_value} ${data.priority3_unit}`,
+    `• Satisfaction: ${data.satisfaction}/10`,
+    '',
+    `**Notes:**\n${data.notes}`
+  ].join('\n');
+
+  try {
+    await interaction.user.send(logSummary);
+  } catch (dmError) {
+    console.error('Could not send log summary DM:', dmError);
+  }
+
+  // Handle milestone if present
+  if (result.milestone) {
+    if (result.dmMessage) {
+      try {
+        await interaction.user.send(result.dmMessage);
+      } catch (dmError) {
+        console.error('Could not send milestone DM:', dmError);
+      }
+    }
+
+    if (result.roleInfo) {
+      await interaction.channel.send(
+        `🎊 ${interaction.user.tag} has achieved ${result.roleInfo.name} status for ${result.currentStreak} consecutive days logged!`
+      );
+    }
+  } else {
+    await interaction.channel.send(`🎯 ${interaction.user.tag} just logged their daily metrics!`);
+  }
+}
+
 async function runLogTests() {
   console.log('=== Starting Log Tests ===');
   const mockInteraction = {
@@ -712,27 +778,6 @@ async function runLogTests() {
 
   console.log('\n=== Tests Complete ===');
 }
-
-// Add to your interaction handler
-if (interaction.isChatInputCommand() && interaction.commandName === 'runtest') {
-  if (interaction.user.id !== 'YOUR_ADMIN_ID') {
-    await interaction.reply({
-      content: '❌ Unauthorized',
-      ephemeral: true
-    });
-    return;
-  }
-  
-  await interaction.deferReply({ ephemeral: true });
-  await runLogTests();
-  await interaction.editReply({
-    content: '✅ Tests completed. Check console for results.',
-    ephemeral: true
-  });
-  return;
-}
 // ====== END TEST BLOCK ======
-
-client.login(DISCORD_TOKEN);
 
 client.login(DISCORD_TOKEN);
