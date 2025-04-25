@@ -40,13 +40,7 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('leaderboard')
           .setDescription('View the streak leaderboard')
-          .toJSON(),
-
-        new SlashCommandBuilder()
-      .setName('runtest')
-      .setDescription('Run internal tests')
-      .setDefaultMemberPermissions('0')
-      .toJSON()
+          .toJSON()
         
       ]}
     );
@@ -344,25 +338,6 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       return;
     }
 
-    // Add this alongside your other command handlers
-    if (interaction.isChatInputCommand() && interaction.commandName === 'runtest') {
-      if (interaction.user.id !== '1032380614290182174') {
-        await interaction.reply({
-          content: '❌ Unauthorized',
-          ephemeral: true
-        });
-        return;
-      }
-      
-      await interaction.deferReply({ ephemeral: true });
-      await runLogTests();
-      await interaction.editReply({
-        content: '✅ Tests completed. Check console for results.',
-        ephemeral: true
-      });
-      return;
-    }
-
     // Handle modal submission
     if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
       try {
@@ -486,15 +461,13 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 
   try {
     await interaction.user.send(logSummary);
-  } catch (dmError) {
+} catch (dmError) {
     console.error('Could not send log summary DM:', dmError);
-    logError_(dmError, {
-      action: 'send_log_summary',
-      userId: interaction.user.id,
-      context: 'Failed to send log summary DM'
+    await interaction.followUp({
+        content: "⚠️ I couldn't send you a DM with your log summary. To receive summaries, please:\n1. Right-click the server name\n2. Click 'Privacy Settings'\n3. Enable 'Direct Messages'",
+        flags: ['Ephemeral']
     });
-  }
-
+}
   // Handle role update if there's a milestone
   if (result.milestone) {
     await handleRoleUpdate(interaction, result.currentStreak, result);
@@ -655,129 +628,5 @@ async function ensureRole(guild, roleName, color) {
   }
   return role;
 }
-
-
-
-// ====== TEST BLOCK - REMOVE WHEN READY ======
-async function handleLogSuccess(interaction, data, result) {
-  // Ephemeral reply with inspirational message
-  await interaction.editReply({ 
-    content: result.message,
-    flags: ['Ephemeral']
-  });
-
-  // Formatted log summary DM
-  const logSummary = [
-    '📝 **Daily Log Summary**',
-    '',
-    `• ${data.priority1_label}, ${data.priority1_value} ${data.priority1_unit}`,
-    `• ${data.priority2_label}, ${data.priority2_value} ${data.priority2_unit}`,
-    `• ${data.priority3_label}, ${data.priority3_value} ${data.priority3_unit}`,
-    `• Satisfaction: ${data.satisfaction}/10`,
-    '',
-    `**Notes:**\n${data.notes}`
-  ].join('\n');
-
-  try {
-    await interaction.user.send(logSummary);
-  } catch (dmError) {
-    console.error('Could not send log summary DM:', dmError);
-  }
-
-  // Handle milestone if present
-  if (result.milestone) {
-    if (result.dmMessage) {
-      try {
-        await interaction.user.send(result.dmMessage);
-      } catch (dmError) {
-        console.error('Could not send milestone DM:', dmError);
-      }
-    }
-
-    if (result.roleInfo) {
-      await interaction.channel.send(
-        `🎊 ${interaction.user.tag} has achieved ${result.roleInfo.name} status for ${result.currentStreak} consecutive days logged!`
-      );
-    }
-  } else {
-    await interaction.channel.send(`🎯 ${interaction.user.tag} just logged their daily metrics!`);
-  }
-}
-
-async function runLogTests() {
-  console.log('=== Starting Log Tests ===');
-  const mockInteraction = {
-    user: {
-      id: '123456789',
-      tag: 'TestUser#1234',
-      send: async (message) => {
-        console.log('DM Sent:', message);
-        return Promise.resolve();
-      }
-    },
-    editReply: async (response) => {
-      console.log('Ephemeral Reply:', response.content);
-      return Promise.resolve();
-    },
-    channel: {
-      send: async (message) => {
-        console.log('Channel Message:', message);
-        return Promise.resolve();
-      }
-    }
-  };
-
-  const testData = {
-    priority1_label: 'Health',
-    priority1_value: '8',
-    priority1_unit: 'effort',
-    priority2_label: 'Meditation',
-    priority2_value: '15',
-    priority2_unit: 'mins',
-    priority3_label: 'Water',
-    priority3_value: '3',
-    priority3_unit: 'bottles',
-    satisfaction: 7,
-    notes: 'Had a great day!'
-  };
-
-  // Test cases
-  const tests = [
-    {
-      name: 'Normal Log',
-      result: {
-        success: true,
-        message: '✨ Great job logging your progress!'
-      }
-    },
-    {
-      name: 'Milestone Log',
-      result: {
-        success: true,
-        message: '🎉 Amazing progress!',
-        milestone: true,
-        currentStreak: 7,
-        dmMessage: 'Congratulations on your 7-day streak!',
-        roleInfo: {
-          name: 'Week Warrior',
-          color: '#FF0000'
-        }
-      }
-    }
-  ];
-
-  for (const test of tests) {
-    console.log(`\nTesting: ${test.name}`);
-    try {
-      await handleLogSuccess(mockInteraction, testData, test.result);
-      console.log(`✅ ${test.name} test passed`);
-    } catch (error) {
-      console.error(`❌ ${test.name} test failed:`, error);
-    }
-  }
-
-  console.log('\n=== Tests Complete ===');
-}
-// ====== END TEST BLOCK ======
 
 client.login(DISCORD_TOKEN);
