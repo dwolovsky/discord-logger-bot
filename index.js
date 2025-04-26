@@ -5,11 +5,53 @@ const {
 } = require('discord.js');
 const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
 
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
 // ====== ENVIRONMENT VARIABLES ======
 const APPLICATION_ID = process.env.APPLICATION_ID;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const SCRIPT_URL = process.env.SCRIPT_URL;
+
+// Add to your environment variables section
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// Initialize Gemini with error handling
+let genAI;
+try {
+  genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+} catch (error) {
+  console.error('Failed to initialize Gemini:', error);
+}
+
+// Add this function to test the AI integration
+async function testGeminiAPI() {
+  try {
+    if (!genAI) {
+      throw new Error('Gemini AI not initialized');
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    
+    const prompt = "Generate a short test response: What's the best thing about keeping a daily log?";
+    
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    return {
+      success: true,
+      message: text
+    };
+  } catch (error) {
+    console.error('Gemini API test failed:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 
 const QUEUE_CONFIG = {
   BATCH_SIZE: 10,
@@ -37,6 +79,13 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
           .setName('streak')
           .setDescription('Check your current streak')
           .toJSON(),
+        
+        // Add to your existing slash commands array
+        new SlashCommandBuilder()
+        .setName('testai')
+        .setDescription('Test the AI integration')
+        .toJSON(),
+        
         new SlashCommandBuilder()
           .setName('leaderboard')
           .setDescription('View the streak leaderboard')
@@ -310,6 +359,36 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       return;
     }
 
+
+    // Add this to your interaction handler
+if (interaction.isChatInputCommand() && interaction.commandName === 'testai') {
+  try {
+    await interaction.deferReply({ ephemeral: true });
+    
+    const result = await testGeminiAPI();
+    
+    if (result.success) {
+      await interaction.editReply({
+        content: `✅ AI Integration Test Successful!\n\nResponse:\n${result.message}`,
+        ephemeral: true
+      });
+    } else {
+      await interaction.editReply({
+        content: `❌ AI Integration Test Failed:\n${result.error}`,
+        ephemeral: true
+      });
+    }
+  } catch (error) {
+    console.error('Error in testai command:', error);
+    await interaction.editReply({
+      content: '❌ An error occurred while testing the AI integration.',
+      ephemeral: true
+    });
+  }
+  return;
+}
+
+    
     // Handle /leaderboard command (ephemeral)
     if (interaction.isChatInputCommand() && interaction.commandName === 'leaderboard') {
       try {
@@ -631,6 +710,35 @@ async function ensureRole(guild, roleName, color) {
     });
   }
   return role;
+}
+
+
+// Add this function to test the AI integration
+async function testGeminiAPI() {
+  try {
+    if (!genAI) {
+      throw new Error('Gemini AI not initialized');
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    
+    const prompt = "Generate a short test response: What's the best thing about keeping a daily log?";
+    
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    return {
+      success: true,
+      message: text
+    };
+  } catch (error) {
+    console.error('Gemini API test failed:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
 }
 
 client.login(DISCORD_TOKEN);
