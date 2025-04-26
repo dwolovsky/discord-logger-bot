@@ -759,6 +759,75 @@ Ready to log for real? Use /log to begin your streak!`,
   }
   return;
 }
+
+// Add this to your interaction handler in index.js
+if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7' || interaction.commandName === 'insights30')) {
+  try {
+    await interaction.deferReply({ ephemeral: true });
+    
+    const periodDays = interaction.commandName === 'insights7' ? 7 : 30;
+    
+    // Request insights data from Apps Script
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getInsights',
+        userId: interaction.user.id,
+        userTag: interaction.user.tag,
+        periodDays: periodDays
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to generate insights');
+    }
+
+    // If we have cached insights, return them
+    if (result.cached) {
+      await interaction.editReply({
+        content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.insights}`,
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Generate new insights
+    const insightsResult = await generateInsights(result.data);
+    
+    if (!insightsResult.success) {
+      throw new Error(insightsResult.error);
+    }
+
+    // Store insights in Apps Script
+    await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'storeInsights',
+        userId: interaction.user.id,
+        userTag: interaction.user.tag,
+        periodDays: periodDays,
+        insights: insightsResult
+      })
+    });
+
+    await interaction.editReply({
+      content: insightsResult.insights,
+      ephemeral: true
+    });
+
+  } catch (error) {
+    console.error('Error in insights command:', error);
+    await interaction.editReply({
+      content: '❌ ' + (error.message || 'An error occurred while generating insights. Please try again later.'),
+      ephemeral: true
+    });
+  }
+}
+    
   } catch (outerError) {
     console.error('Error handling interaction:', outerError);
     if (!interaction.replied) {
