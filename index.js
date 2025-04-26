@@ -712,33 +712,4 @@ async function ensureRole(guild, roleName, color) {
   return role;
 }
 
-
-// Add this function to test the AI integration
-async function testGeminiAPI() {
-  try {
-    if (!genAI) {
-      throw new Error('Gemini AI not initialized');
-    }
-
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-    
-    const prompt = "Generate a short test response: What's the best thing about keeping a daily log?";
-    
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    return {
-      success: true,
-      message: text
-    };
-  } catch (error) {
-    console.error('Gemini API test failed:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-}
-
 client.login(DISCORD_TOKEN);
