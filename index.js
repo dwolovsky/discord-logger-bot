@@ -123,7 +123,7 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 async function generateInsights(structuredData) {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const prompt = INSIGHTS_PROMPT_TEMPLATE.replace('${data}', JSON.stringify(structuredData));
+    const prompt = INSIGHTS_PROMPT_TEMPLATE(structuredData); // Pass the data to the template function
     
     const result = await model.generateContent({
       contents: [{ text: prompt }],
@@ -149,7 +149,7 @@ async function generateInsights(structuredData) {
   }
 }
 
-const INSIGHTS_PROMPT_TEMPLATE = `Analyze this user's data and provide a supportive, growth-focused summary:
+const INSIGHTS_PROMPT_TEMPLATE = (data) => `Analyze this user's data and provide a supportive, growth-focused summary:
 
 ### 🫂 Challenges
 Review their journey through:
