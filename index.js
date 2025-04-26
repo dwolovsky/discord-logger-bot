@@ -440,10 +440,14 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         ]);
         const result = await response.json();
 
- if (result.success) {
-  // Ephemeral reply with inspirational message
+   if (result.success) {
+   // Ephemeral reply with inspirational message and streak count
+  const [firstLine, ...restOfMessage] = result.message.split('\n\n');
+  const streakLine = `📈 **Current Streak**: ${result.currentStreak} days`;
+  const fullMessage = [firstLine, streakLine, ...restOfMessage].join('\n\n');
+  
   await interaction.editReply({ 
-    content: result.message,
+    content: fullMessage,
     flags: ['Ephemeral']
   });
 
