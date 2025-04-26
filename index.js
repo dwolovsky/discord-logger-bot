@@ -477,7 +477,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 if (result.milestone && result.roleInfo) {
     await interaction.channel.send(`🎊 ${interaction.user} has achieved ${result.roleInfo.name} status for ${result.currentStreak} consecutive days logged!`);
 } else {
-    await interaction.channel.send(`🎯 ${interaction.user} just logged their daily metrics!`);
+    await interaction.channel.send(`🎯 ${interaction.user} just extended their daily logging streak!`);
 }
 
   // Send DM for milestone if provided
