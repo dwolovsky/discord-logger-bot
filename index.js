@@ -16,6 +16,10 @@ const SCRIPT_URL = process.env.SCRIPT_URL;
 // Add to your environment variables section
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
+// Add near other constants/env vars
+const INSIGHTS_COOLDOWN = 3600000; // 1 hour in milliseconds
+const userInsightsCooldowns = new Map();
+
 // Initialize Gemini with error handling
 let genAI;
 try {
@@ -23,6 +27,14 @@ try {
 } catch (error) {
   console.error('Failed to initialize Gemini:', error);
 }
+
+// Add Gemini configuration here
+const GEMINI_CONFIG = {
+  temperature: 0.75,
+  topK: 50,
+  topP: 0.95,
+  maxOutputTokens: 1024
+};
 
 // Add this function to test the AI integration
 async function testGeminiAPI() {
@@ -89,8 +101,17 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('leaderboard')
           .setDescription('View the streak leaderboard')
+          .toJSON(),
+
+        new SlashCommandBuilder()
+          .setName('insights7')
+          .setDescription('Get AI insights from your last 7 days of logs')
+          .toJSON(),
+        new SlashCommandBuilder()
+          .setName('insights30')
+          .setDescription('Get AI insights from your last 30 days of logs')
           .toJSON()
-        
+                
       ]}
     );
     console.log('Slash commands registered.');
@@ -98,6 +119,80 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
     console.error('Error registering slash commands:', error);
   }
 })();
+
+async function generateInsights(structuredData) {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const prompt = INSIGHTS_PROMPT_TEMPLATE.replace('${data}', JSON.stringify(structuredData));
+    
+    const result = await model.generateContent({
+      contents: [{ text: prompt }],
+      generationConfig: GEMINI_CONFIG
+    });
+    
+    const response = await result.response;
+    return {
+      success: true,
+      insights: response.text(),
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        dataPoints: structuredData.priorities.length,
+        periodDays: structuredData.userMetrics.periodDays
+      }
+    };
+  } catch (error) {
+    console.error('Error generating insights:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+const INSIGHTS_PROMPT_TEMPLATE = `Analyze this user's data and provide a supportive, growth-focused summary:
+
+### 🫂 Challenges
+Review their journey through:
+- Priority Stats: ${data.priorities.map(p => `${p.label}: ${p.metrics.average} ${p.unit} (${p.metrics.trend})`).join('\n')}
+- Satisfaction Trend: ${data.satisfaction.map(s => s.value).join(', ')}
+- Notes trends and themes: ${data.notes.map(n => n.content).join('\n')}
+
+Acknowledge their challenges with compassion. Normalize their struggles. Focus on validating their experience without offering solutions yet.
+
+### 🌱 Transformations
+Analyze patterns in:
+- Priority Trends: ${data.priorities.map(p => 
+  `${p.label}: ${p.metrics.trend} (${p.metrics.variation}% variation)`
+).join('\n')}
+${data.correlations.length ? `- Correlations:\n${data.correlations.map(c => 
+  `${c.priority}: ${c.interpretation} (n=${c.n})`
+).join('\n')}` : ''}
+- Recent Notes: ${data.notes.map(n => `${n.date}: ${n.content}`).join('\n')}
+
+Look for subtle shifts in language, hidden wins, and emerging patterns. How are they evolving to become more like the person they want to become?
+
+### 🧪 Experiments
+Consider their complete journey:
+- Priorities & Trends:
+${data.priorities.map(p => 
+  `  • ${p.label}: ${p.metrics.average} ${p.unit}\n    Trend: ${p.metrics.trend}, Variation: ${p.metrics.variation}%\n    Days analyzed: ${p.consistencyPeriod.daysAnalyzed}`
+).join('\n')}
+
+- Satisfaction Patterns:
+  • Recent scores: ${data.satisfaction.map(s => s.value).join(', ')}
+  • Correlations: ${data.correlations.map(c => c.interpretation).join('\n  ')}
+
+- Note Themes:
+${data.notes.map(n => `  • ${n.date}: ${n.content}`).join('\n')}
+
+Based on this comprehensive view, suggest 3-5 experiments that:
+1. Build on patterns where they're seeing progress
+2. Address areas with high variation or declining trends
+3. Explore themes mentioned in their notes
+4. Mix familiar approaches with creative new directions
+
+### 💭 Reflection
+Choose an experiment for this week that interests you. This will be your top priority for the week. Remember: Experiments help us learn what we can and cannot control. Focus on learning rather than outcomes. What measurable action would you like to experiment with?`;
 
 // ====== DISCORD CLIENT ======
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
