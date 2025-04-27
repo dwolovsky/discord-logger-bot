@@ -778,11 +778,17 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
         periodDays: periodDays
       })
     });
-    
+
     const result = await response.json();
     
+    if (!response.ok) {
+      await interaction.editReply({ content: `❌ Error: ${result.error || 'Failed to get insights'}`, ephemeral: true });
+      return;
+    }
+
     if (!result.success) {
-      throw new Error(result.error || 'Failed to generate insights');
+      await interaction.editReply({ content: `❌ ${result.error || 'Failed to generate insights'}`, ephemeral: true });
+      return;
     }
 
     // If we have cached insights, return them
@@ -794,50 +800,25 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
       return;
     }
 
-    // Generate new insights
-    const insightsResult = await generateInsights(result.data);
-    
-    if (!insightsResult.success) {
-      throw new Error(insightsResult.error);
-    }
-
-    // Store insights in Apps Script
-    await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'storeInsights',
-        userId: interaction.user.id,
-        userTag: interaction.user.tag,
-        periodDays: periodDays,
-        insights: insightsResult
-      })
-    });
-
-    await interaction.editReply({
-      content: insightsResult.insights,
-      ephemeral: true
+    // Success case (non-cached)
+    await interaction.editReply({ 
+      content: `✅ Here are your ${periodDays}-day insights:\n\n${result.data.insights}`, 
+      ephemeral: true 
     });
 
   } catch (error) {
     console.error('Error in insights command:', error);
-    await interaction.editReply({
-      content: '❌ ' + (error.message || 'An error occurred while generating insights. Please try again later.'),
-      ephemeral: true
-    });
-  }
-}
-    
-  } catch (outerError) {
-    console.error('Error handling interaction:', outerError);
-    if (!interaction.replied) {
-      await interaction.reply({ 
-        content: '❌ An unexpected error occurred. Please try again.',
-        flags: ['Ephemeral']
-      });
+    try {
+      if (interaction.deferred) {
+        await interaction.editReply({ content: '❌ An unexpected error occurred. Please try again.', ephemeral: true });
+      } else {
+        await interaction.reply({ content: '❌ An unexpected error occurred. Please try again.', ephemeral: true });
+      }
+    } catch (followUpError) {
+      console.error('Error handling interaction:', followUpError);
     }
   }
-});
+}
 
 async function handleRoleUpdate(interaction, streakCount, result) {
   try {
