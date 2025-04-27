@@ -806,7 +806,7 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
       ephemeral: true 
     });
 
-  } catch (error) {
+ } catch (error) {
     console.error('Error in insights command:', error);
     try {
       if (interaction.deferred) {
@@ -818,7 +818,6 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
       console.error('Error handling interaction:', followUpError);
     }
   }
-}
 });
     
 async function handleRoleUpdate(interaction, streakCount, result) {
