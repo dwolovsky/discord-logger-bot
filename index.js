@@ -759,7 +759,7 @@ Ready to log for real? Use /log to begin your streak!`,
   }
   return;
 }
-
+    
 // Add this to your interaction handler in index.js
 if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7' || interaction.commandName === 'insights30')) {
   try {
@@ -819,7 +819,8 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
     }
   }
 }
-
+});
+    
 async function handleRoleUpdate(interaction, streakCount, result) {
   try {
     const guild = interaction.guild;
