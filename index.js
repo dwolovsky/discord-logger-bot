@@ -766,6 +766,13 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
     await interaction.deferReply({ ephemeral: true });
     
     const periodDays = interaction.commandName === 'insights7' ? 7 : 30;
+
+    console.log('Insights command debug:', {
+          command: interaction.commandName,
+          userId: interaction.user.id,
+          userTag: interaction.user.tag,
+          periodDays: periodDays
+        });
     
     // Request insights data from Apps Script
     const response = await fetch(SCRIPT_URL, {
