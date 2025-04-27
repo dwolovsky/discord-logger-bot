@@ -806,18 +806,19 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
       ephemeral: true 
     });
 
-} catch (error) {
-      console.error('Error in insights command:', error);
-      try {
-        if (interaction.deferred) {
-          await interaction.editReply({ content: '❌ An unexpected error occurred. Please try again.', ephemeral: true });
-        } else {
-          await interaction.reply({ content: '❌ An unexpected error occurred. Please try again.', ephemeral: true });
-        }
-      } catch (followUpError) {
-        console.error('Error handling interaction:', followUpError);
+  } catch (error) {
+    console.error('Error in insights command:', error);
+    try {
+      if (interaction.deferred) {
+        await interaction.editReply({ content: '❌ An unexpected error occurred. Please try again.', ephemeral: true });
+      } else {
+        await interaction.reply({ content: '❌ An unexpected error occurred. Please try again.', ephemeral: true });
       }
+    } catch (followUpError) {
+      console.error('Error handling interaction:', followUpError);
     }
+  }
+}
   } catch (error) {
     console.error('Unhandled interaction error:', error);
     try {
