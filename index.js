@@ -774,38 +774,40 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
           periodDays: periodDays
         });
     
-    // Request insights data from Apps Script
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'getInsights',
-        userId: interaction.user.id,
-        userTag: interaction.user.tag,
-        periodDays: periodDays
-      })
-    });
-
-    const result = await response.json();
-    
-    if (!response.ok) {
-      await interaction.editReply({ content: `❌ Error: ${result.error || 'Failed to get insights'}`, ephemeral: true });
-      return;
-    }
-
-    if (!result.success) {
-      await interaction.editReply({ content: `❌ ${result.error || 'Failed to generate insights'}`, ephemeral: true });
-      return;
-    }
-
-    // If we have cached insights, return them
-    if (result.cached) {
-      await interaction.editReply({
-        content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.insights}`,
-        ephemeral: true
+         // Request insights data from Apps Script
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'getInsights',
+          userId: interaction.user.id,
+          userTag: interaction.user.tag,
+          periodDays: periodDays
+        })
       });
-      return;
-    }
+      
+      // Parse response once
+      const responseText = await response.text();
+      console.log('Raw Apps Script Response:', responseText);
+      const result = JSON.parse(responseText);
+      console.log('Parsed result:', result);
+      
+      if (!response.ok || !result.success) {
+        await interaction.editReply({ 
+          content: result.message || `❌ ${result.error || 'Failed to generate insights'}`, 
+          ephemeral: true 
+        });
+        return;
+      }
+      
+      // If we have cached insights, return them
+      if (result.cached) {
+        await interaction.editReply({
+          content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.insights}`,
+          ephemeral: true
+        });
+        return;
+      }
 
     // Success case (non-cached)
     await interaction.editReply({ 
