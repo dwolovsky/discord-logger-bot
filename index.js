@@ -101,58 +101,49 @@ class LogCache {
     return data;
   }
 
-  // Add the new method here
-  async populateFromSheet(sheetId) {
-    try {
-      const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'getCacheData',
-          sheetId: sheetId,
-          daysBack: 7 // Only get entries from last 7 days
-        })
-      });
-      
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch sheet data');
-      }
-      
-      // Group by UserTag and get latest entry for each user
-      const latestEntries = result.data.reduce((acc, entry) => {
-        const existing = acc.get(entry.UserTag);
-        if (!existing || new Date(entry.Timestamp) > new Date(existing.Timestamp)) {
-          acc.set(entry.UserTag, entry);
-        }
-        return acc;
-      }, new Map());
-      
-      // Update cache with latest entries
-      latestEntries.forEach((entry, userTag) => {
-        this.memoryCache.set(userTag, {
-          priority1: `${entry.Priority1_Label}, ${entry.Priority1_Value} ${entry.Priority1_Unit}`,
-          priority2: `${entry.Priority2_Label}, ${entry.Priority2_Value} ${entry.Priority2_Unit}`,
-          priority3: `${entry.Priority3_Label}, ${entry.Priority3_Value} ${entry.Priority3_Unit}`,
-          timestamp: new Date(entry.Timestamp).getTime()
-        });
-      });
-      
-      this.isDirty = true;
-      await this.saveToFile();
-      
-      return {
-        success: true,
-        count: latestEntries.size
-      };
-    } catch (error) {
-      console.error('Error populating cache:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+ async populateFromSheet() {
+  try {
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getCacheData'  // This matches the action we'll add to Apps Script
+      })
+    });
+    
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to fetch sheet data');
     }
+    
+    // Clear existing cache
+    this.memoryCache.clear();
+    
+    // Populate with new data
+    result.data.forEach(entry => {
+      this.memoryCache.set(entry.UserTag, {
+        priority1: `${entry.Priority1_Label}, ${entry.Priority1_Value} ${entry.Priority1_Unit}`,
+        priority2: `${entry.Priority2_Label}, ${entry.Priority2_Value} ${entry.Priority2_Unit}`,
+        priority3: `${entry.Priority3_Label}, ${entry.Priority3_Value} ${entry.Priority3_Unit}`,
+        timestamp: new Date(entry.Timestamp).getTime()
+      });
+    });
+    
+    this.isDirty = true;
+    await this.saveToFile();
+    
+    return {
+      success: true,
+      count: result.data.length
+    };
+  } catch (error) {
+    console.error('Error populating cache:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
+ }
 }
 
 // Add this function to test the AI integration
