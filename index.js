@@ -100,6 +100,59 @@ class LogCache {
     }
     return data;
   }
+
+  // Add the new method here
+  async populateFromSheet(sheetId) {
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'getCacheData',
+          sheetId: sheetId,
+          daysBack: 7 // Only get entries from last 7 days
+        })
+      });
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch sheet data');
+      }
+      
+      // Group by UserTag and get latest entry for each user
+      const latestEntries = result.data.reduce((acc, entry) => {
+        const existing = acc.get(entry.UserTag);
+        if (!existing || new Date(entry.Timestamp) > new Date(existing.Timestamp)) {
+          acc.set(entry.UserTag, entry);
+        }
+        return acc;
+      }, new Map());
+      
+      // Update cache with latest entries
+      latestEntries.forEach((entry, userTag) => {
+        this.memoryCache.set(userTag, {
+          priority1: `${entry.Priority1_Label}, ${entry.Priority1_Value} ${entry.Priority1_Unit}`,
+          priority2: `${entry.Priority2_Label}, ${entry.Priority2_Value} ${entry.Priority2_Unit}`,
+          priority3: `${entry.Priority3_Label}, ${entry.Priority3_Value} ${entry.Priority3_Unit}`,
+          timestamp: new Date(entry.Timestamp).getTime()
+        });
+      });
+      
+      this.isDirty = true;
+      await this.saveToFile();
+      
+      return {
+        success: true,
+        count: latestEntries.size
+      };
+    } catch (error) {
+      console.error('Error populating cache:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
 }
 
 // Add this function to test the AI integration
@@ -176,6 +229,11 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('insights30')
           .setDescription('Get AI insights from your last 30 days of logs')
+          .toJSON(),
+        
+        new SlashCommandBuilder()
+          .setName('populatecache')
+          .setDescription('Populate cache from latest user logs')
           .toJSON()
                 
       ]}
@@ -529,33 +587,68 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 
 
     // Add this to your interaction handler
-if (interaction.isChatInputCommand() && interaction.commandName === 'testai') {
+    if (interaction.isChatInputCommand() && interaction.commandName === 'testai') {
+      try {
+        await interaction.deferReply({ ephemeral: true });
+        
+        const result = await testGeminiAPI();
+        
+        if (result.success) {
+          await interaction.editReply({
+            content: `✅ AI Integration Test Successful!\n\nResponse:\n${result.message}`,
+            ephemeral: true
+          });
+        } else {
+          await interaction.editReply({
+            content: `❌ AI Integration Test Failed:\n${result.error}`,
+            ephemeral: true
+          });
+        }
+      } catch (error) {
+        console.error('Error in testai command:', error);
+        await interaction.editReply({
+          content: '❌ An error occurred while testing the AI integration.',
+          ephemeral: true
+        });
+      }
+      return;
+    }
+
+       // Add this to your interaction handler
+if (interaction.isChatInputCommand() && interaction.commandName === 'populatecache') {
   try {
     await interaction.deferReply({ ephemeral: true });
     
-    const result = await testGeminiAPI();
+    // Only allow specific users/roles to use this command
+    if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+      await interaction.editReply({
+        content: '❌ You do not have permission to use this command.',
+        ephemeral: true
+      });
+      return;
+    }
+    
+    const result = await logCache.populateFromSheet();
     
     if (result.success) {
       await interaction.editReply({
-        content: `✅ AI Integration Test Successful!\n\nResponse:\n${result.message}`,
+        content: `✅ Successfully populated cache with ${result.count} entries.`,
         ephemeral: true
       });
     } else {
       await interaction.editReply({
-        content: `❌ AI Integration Test Failed:\n${result.error}`,
+        content: `❌ Failed to populate cache: ${result.error}`,
         ephemeral: true
       });
     }
   } catch (error) {
-    console.error('Error in testai command:', error);
+    console.error('Error in populatecache command:', error);
     await interaction.editReply({
-      content: '❌ An error occurred while testing the AI integration.',
+      content: '❌ An error occurred while populating the cache.',
       ephemeral: true
     });
   }
-  return;
 }
-
     
     // Handle /leaderboard command (ephemeral)
     if (interaction.isChatInputCommand() && interaction.commandName === 'leaderboard') {
@@ -600,8 +693,6 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testai') {
           hoursUTC: now.getUTCHours(),
           timestamp: now.getTime()
         });
-
-
         
         // ====== PRIORITY PARSING FUNCTION ======
         function parsePriority(input) {
