@@ -605,41 +605,38 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       return;
     }
 
-       // Add this to your interaction handler
-if (interaction.isChatInputCommand() && interaction.commandName === 'populatecache') {
-  try {
-    await interaction.deferReply({ ephemeral: true });
+    // Handle /populatecache command
+    if (interaction.isChatInputCommand() && interaction.commandName === 'populatecache') {
+      try {
+        // Check permissions first
+        if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+          await interaction.reply({
+            content: '❌ You do not have permission to use this command.',
+            ephemeral: true
+          });
+          return;
+        }
     
-    // Only allow specific users/roles to use this command
-    if (!interaction.member.permissions.has('ADMINISTRATOR')) {
-      await interaction.editReply({
-        content: '❌ You do not have permission to use this command.',
-        ephemeral: true
-      });
+        // Then try to populate cache
+        const result = await logCache.populateFromSheet();
+        
+        await interaction.reply({
+          content: result.success 
+            ? `✅ Successfully populated cache with ${result.count} entries.`
+            : `❌ Failed to populate cache: ${result.error}`,
+          ephemeral: true
+        });
+      } catch (error) {
+        console.error('Error in populatecache command:', error);
+        if (!interaction.replied) {
+          await interaction.reply({
+            content: '❌ An error occurred while populating the cache.',
+            ephemeral: true
+          });
+        }
+      }
       return;
     }
-    
-    const result = await logCache.populateFromSheet();
-    
-    if (result.success) {
-      await interaction.editReply({
-        content: `✅ Successfully populated cache with ${result.count} entries.`,
-        ephemeral: true
-      });
-    } else {
-      await interaction.editReply({
-        content: `❌ Failed to populate cache: ${result.error}`,
-        ephemeral: true
-      });
-    }
-  } catch (error) {
-    console.error('Error in populatecache command:', error);
-    await interaction.editReply({
-      content: '❌ An error occurred while populating the cache.',
-      ephemeral: true
-    });
-  }
-}
     
     // Handle /leaderboard command (ephemeral)
     if (interaction.isChatInputCommand() && interaction.commandName === 'leaderboard') {
