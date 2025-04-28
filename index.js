@@ -382,13 +382,13 @@ client.on(Events.InteractionCreate, async interaction => {
           .setTitle('Daily Log');
 
         // Priority fields (all required, new format)
-        // const placeholder = 'e.g. "Meditation, 15 mins"';
+        const lastLog = logCache.get(interaction.user.id);
         const priority1 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority1')
             .setLabel('Priority 1 (Measurement or Effort Rating)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('e.g. "Health, 7/10 effort"')
+            .setPlaceholder(lastLog ? lastLog.priority1 : 'e.g. "Health, 7/10 effort"')
             .setRequired(true)
         );
         const priority2 = new ActionRowBuilder().addComponents(
@@ -396,7 +396,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setCustomId('priority2')
             .setLabel('Priority 2 (Measurement or Effort Rating)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('e.g. "Meditation, 15 mins"')
+            .setPlaceholder(lastLog ? lastLog.priority2 : 'e.g. "Meditation, 15 mins"')
             .setRequired(true)
         );
         const priority3 = new ActionRowBuilder().addComponents(
@@ -404,7 +404,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setCustomId('priority3')
             .setLabel('Priority 3 (Measurement or Effort Rating)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('e.g. "Writing, 500 words"')
+            .setPlaceholder(lastLog ? lastLog.priority3 : 'e.g. "Writing, 500 words"')
             .setRequired(true)
         );
         const satisfaction = new ActionRowBuilder().addComponents(
@@ -688,6 +688,13 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testai') {
         const result = await response.json();
 
    if (result.success) {
+
+     logCache.set(interaction.user.id, {
+      priority1: `${data.priority1_label}, ${data.priority1_value} ${data.priority1_unit}`,
+      priority2: `${data.priority2_label}, ${data.priority2_value} ${data.priority2_unit}`,
+      priority3: `${data.priority3_label}, ${data.priority3_value} ${data.priority3_unit}`
+    });
+     
    // Ephemeral reply with inspirational message and streak count
   const [firstLine, ...restOfMessage] = result.message.split('\n\n');
   const streakLine = `📈 **Current Streak**: ${result.currentStreak} days`;
