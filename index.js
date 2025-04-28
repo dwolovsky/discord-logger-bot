@@ -7,6 +7,9 @@ const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+const fs = require('fs').promises;
+const path = require('path');
+
 // ====== ENVIRONMENT VARIABLES ======
 const APPLICATION_ID = process.env.APPLICATION_ID;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -35,6 +38,69 @@ const GEMINI_CONFIG = {
   topP: 0.95,
   maxOutputTokens: 1024
 };
+
+class LogCache {
+  constructor() {
+    this.cacheFile = path.join(__dirname, 'user_logs_cache.json');
+    this.memoryCache = new Map();
+    this.isDirty = false;
+    this.lastSave = Date.now();
+    this.SAVE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  }
+
+  async initialize() {
+      try {
+      const data = await fs.readFile(this.cacheFile, 'utf8');
+      const parsed = JSON.parse(data);
+      Object.entries(parsed).forEach(([key, value]) => {
+        this.memoryCache.set(key, value);
+      });
+      console.log(`Cache initialized: Loaded ${this.memoryCache.size} entries`);
+    } catch (err) {
+      console.log('No existing cache found - starting fresh');
+      await this.saveToFile(); // Create empty cache file
+    }
+    setInterval(() => this.periodicSave(), this.SAVE_INTERVAL);
+  }
+
+  async periodicSave() {
+    if (this.isDirty) {
+      await this.saveToFile();
+    }
+  }
+
+  async saveToFile() {
+    try {
+      const cacheObject = Object.fromEntries(this.memoryCache);
+      await fs.writeFile(
+        this.cacheFile,
+        JSON.stringify(cacheObject, null, 2)  // The '2' here makes it pretty-printed
+      );
+      this.isDirty = false;
+      this.lastSave = Date.now();
+      console.log('Cache saved to file');
+    } catch (err) {
+      console.error('Error saving cache:', err);
+    }
+  }
+
+ set(userId, data) {
+    console.log(`Caching log for user: ${userId}`);
+    this.memoryCache.set(userId, {
+      ...data,
+      timestamp: Date.now()
+    });
+    this.isDirty = true;
+  }
+
+  get(userId) {
+    const data = this.memoryCache.get(userId);
+    if (data) {
+      console.log(`Found cached log for user: ${userId}`);
+    }
+    return data;
+  }
+}
 
 // Add this function to test the AI integration
 async function testGeminiAPI() {
@@ -193,6 +259,11 @@ Based on this comprehensive view, suggest 3-5 experiments that:
 
 ### 💭 Reflection
 Choose an experiment for this week that interests you. This will be your top priority for the week. Remember: Experiments help us learn what we can and cannot control. Focus on learning rather than outcomes. What measurable action would you like to experiment with?`;
+
+const logCache = new LogCache();
+(async () => {
+  await logCache.initialize();
+})();
 
 // ====== DISCORD CLIENT ======
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -373,12 +444,13 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       .setTitle('Daily Log Preview');
 
     // Use exact same form components as /log
+    const lastLog = logCache.get(interaction.user.id);
     const priority1 = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('priority1')
         .setLabel('Priority 1 (Measurement or Effort Rating)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g. "Meditation, 15 mins"')
+        .setPlaceholder(lastLog ? lastLog.priority1 : 'e.g. "Meditation, 15 mins"')
         .setRequired(true)
     );
     const priority2 = new ActionRowBuilder().addComponents(
@@ -386,7 +458,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         .setCustomId('priority2')
         .setLabel('Priority 2 (Measurement or Effort Rating)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g. "Focus, 8/10 effort"')
+        .setPlaceholder(lastLog ? lastLog.priority2 : 'e.g. "Focus, 8/10 effort"')
         .setRequired(true)
     );
     const priority3 = new ActionRowBuilder().addComponents(
@@ -394,7 +466,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         .setCustomId('priority3')
         .setLabel('Priority 3 (Measurement or Effort Rating)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g. "Writing, 500 words"')
+        .setPlaceholder(lastLog ? lastLog.priority3 : 'e.g. "Writing, 500 words"')
         .setRequired(true)
     );
     const satisfaction = new ActionRowBuilder().addComponents(
@@ -417,6 +489,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
   } catch (error) {
     console.error('Error showing test modal:', error);
     if (!interaction.replied) {
+      
       await interaction.reply({ 
         content: '❌ There was an error showing the form. Please try again.',
         flags: ['Ephemeral']
@@ -737,6 +810,12 @@ if (interaction.isModalSubmit() && interaction.customId === 'testLogPreview') {
       });
     }
 
+logCache.set(interaction.user.id, {
+      priority1: `${priorities[0].label}, ${priorities[0].value} ${priorities[0].unit}`,
+      priority2: `${priorities[1].label}, ${priorities[1].value} ${priorities[1].unit}`,
+      priority3: `${priorities[2].label}, ${priorities[2].value} ${priorities[2].unit}`
+    });
+    
     // If all validation passes, show preview
     await interaction.reply({
       content: `✅ Your log would look like this:
