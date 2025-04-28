@@ -388,7 +388,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setCustomId('priority1')
             .setLabel('Priority 1 (Measurement or Effort Rating)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder(lastLog ? lastLog.priority1 : 'e.g. "Health, 7/10 effort"')
+            .setPlaceholder(lastLog ? `E.g. ${lastLog.priority1}` : 'e.g. "Health, 7/10 effort"')
             .setRequired(true)
         );
         const priority2 = new ActionRowBuilder().addComponents(
@@ -396,7 +396,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setCustomId('priority2')
             .setLabel('Priority 2 (Measurement or Effort Rating)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder(lastLog ? lastLog.priority2 : 'e.g. "Meditation, 15 mins"')
+            .setPlaceholder(lastLog ? `E.g. ${lastLog.priority2}` : 'e.g. "Meditation, 15 mins"')
             .setRequired(true)
         );
         const priority3 = new ActionRowBuilder().addComponents(
@@ -404,7 +404,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setCustomId('priority3')
             .setLabel('Priority 3 (Measurement or Effort Rating)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder(lastLog ? lastLog.priority3 : 'e.g. "Writing, 500 words"')
+            .setPlaceholder(lastLog ? `E.g. ${lastLog.priority3}` : 'e.g. "Writing, 500 words"')
             .setRequired(true)
         );
         const satisfaction = new ActionRowBuilder().addComponents(
@@ -450,7 +450,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         .setCustomId('priority1')
         .setLabel('Priority 1 (Measurement or Effort Rating)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder(lastLog ? lastLog.priority1 : 'e.g. "Meditation, 15 mins"')
+        .setPlaceholder(lastLog ? `E.g. ${lastLog.priority1}` : 'e.g. "Meditation, 15 mins"')
         .setRequired(true)
     );
     const priority2 = new ActionRowBuilder().addComponents(
@@ -458,7 +458,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         .setCustomId('priority2')
         .setLabel('Priority 2 (Measurement or Effort Rating)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder(lastLog ? lastLog.priority2 : 'e.g. "Focus, 8/10 effort"')
+        .setPlaceholder(lastLog ? `E.g. ${lastLog.priority2}` : 'e.g. "Focus, 8/10 effort"')
         .setRequired(true)
     );
     const priority3 = new ActionRowBuilder().addComponents(
@@ -466,7 +466,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         .setCustomId('priority3')
         .setLabel('Priority 3 (Measurement or Effort Rating)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder(lastLog ? lastLog.priority3 : 'e.g. "Writing, 500 words"')
+        .setPlaceholder(lastLog ? `E.g. ${lastLog.priority3}` : 'e.g. "Writing, 500 words"')
         .setRequired(true)
     );
     const satisfaction = new ActionRowBuilder().addComponents(
