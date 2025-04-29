@@ -298,7 +298,7 @@ ${data.priorities.map(p =>
 - Note Themes:
 ${data.notes.map(n => `  • ${n.date}: ${n.content}`).join('\n')}
 
-Based on this comprehensive view, suggest 3-5 experiments that:
+Based on this comprehensive view, suggest 2-3 experiments that:
 1. Build on patterns where they're seeing progress
 2. Address areas with high variation or declining trends
 3. Explore themes mentioned in their notes
