@@ -240,11 +240,8 @@ async function generateInsights(structuredData) {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     const prompt = INSIGHTS_PROMPT_TEMPLATE(structuredData); // Pass the data to the template function
-    
-    const result = await model.generateContent({
-      contents: [{ text: prompt }],
-      generationConfig: GEMINI_CONFIG
-    });
+
+    const result = await model.generateContent(prompt);
     
     const response = await result.response;
     return {
