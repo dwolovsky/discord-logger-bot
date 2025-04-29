@@ -979,7 +979,7 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
     console.log('Raw result:', result);
     
     // Generate AI insights
-    const aiResult = await generateInsights(result.data);
+    const aiResult = await generateInsights(result.data.insights);
     
     if (!aiResult.success) {
       await interaction.editReply({
