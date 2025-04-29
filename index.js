@@ -367,7 +367,7 @@ async function processMessageQueue() {
       for (const msg of batch) {
         try {
           console.log(`Attempting to deliver message ${msg.id} to user ${msg.userTag}`);
-          const user = await client.users.fetch(msg.userTag);
+          const user = await client.users.fetch(msg.userId);
           await user.send(msg.message);
           console.log('Message sent successfully');
           
