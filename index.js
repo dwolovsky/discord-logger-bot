@@ -975,12 +975,23 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
         return;
       }
 
-   // Success case (non-cached)
+    // Success case (non-cached)
     console.log('Raw result:', result);
-    console.log('Full result structure:', JSON.stringify(result, null, 2));  // Add this line
-    await interaction.editReply({ 
-      content: `Here are your ${periodDays}-day insights:\n\n${JSON.stringify(result.data, null, 2)}`, 
-      ephemeral: true 
+    
+    // Generate AI insights
+    const aiResult = await generateInsights(result.data);
+    
+    if (!aiResult.success) {
+      await interaction.editReply({
+        content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
+        ephemeral: true
+      });
+      return;
+    }
+
+    await interaction.editReply({
+      content: aiResult.insights,
+      ephemeral: true
     });
 
   } catch (error) {
