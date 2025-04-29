@@ -978,7 +978,7 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
 
     // Success case (non-cached)
     console.log('Raw result:', result);
-    
+    console.log('Data being passed to generateInsights:', result.data);
     // Generate AI insights
     const aiResult = await generateInsights(result.data.insights);
     
