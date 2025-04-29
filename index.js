@@ -955,6 +955,7 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
       const responseText = await response.text();
       console.log('Raw Apps Script Response:', responseText);
       const result = JSON.parse(responseText);
+      console.log('Complete result structure:', JSON.stringify(result, null, 2));
       console.log('Parsed result:', result);
       
       if (!response.ok || !result.success) {
