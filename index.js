@@ -262,7 +262,7 @@ async function generateInsights(structuredData) {
   }
 }
 
-const INSIGHTS_PROMPT_TEMPLATE = (data) => `Analyze this user's data and provide a supportive, growth-focused summary:
+const INSIGHTS_PROMPT_TEMPLATE = (data) => `Please provide a concise analysis (under 1850 characters total) of this user's data with a supportive, growth-focused summary:
 
 ### 🫂 Challenges
 Review their journey through:
