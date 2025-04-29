@@ -149,24 +149,39 @@ class LogCache {
 // Add this function to test the AI integration
 async function testGeminiAPI() {
   try {
+    console.log("Starting testGeminiAPI");
+    
     if (!genAI) {
+      console.error("genAI not initialized. GEMINI_API_KEY:", 
+        GEMINI_API_KEY ? "present" : "missing");
       throw new Error('Gemini AI not initialized');
     }
 
+    console.log("Creating model instance");
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     
     const prompt = "Generate a short test response: What's the best thing about keeping a daily log?";
+    console.log("Sending test prompt:", prompt);
     
     const result = await model.generateContent(prompt);
+    console.log("Raw result:", result);
+    
     const response = await result.response;
+    console.log("Response object:", response);
+    
     const text = response.text();
+    console.log("Final text:", text);
     
     return {
       success: true,
       message: text
     };
   } catch (error) {
-    console.error('Gemini API test failed:', error);
+    console.error('Detailed Gemini API test error:', {
+      error: error.toString(),
+      stack: error.stack,
+      message: error.message
+    });
     return {
       success: false,
       error: error.message
