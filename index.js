@@ -20,7 +20,7 @@ const SCRIPT_URL = process.env.SCRIPT_URL;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Add near other constants/env vars
-const INSIGHTS_COOLDOWN = 3600000; // 1 hour in milliseconds
+const INSIGHTS_COOLDOWN = 0 //3600000; // 1 hour in milliseconds
 const userInsightsCooldowns = new Map();
 
 // Initialize Gemini with error handling
