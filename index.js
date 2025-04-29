@@ -975,24 +975,17 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
         });
         return;
       }
-
-    // Success case (non-cached)
-    console.log('Raw result:', result);
-    console.log('Data being passed to generateInsights:', result.data);
-    // Generate AI insights
     const aiResult = await generateInsights(result.data.insights);
-    
-    if (!aiResult.success) {
-      await interaction.editReply({
-        content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
-        ephemeral: true
-      });
-      return;
-    }
-
-    await interaction.editReply({
-      content: aiResult.insights,
+     if (!aiResult.success) {
+     await interaction.editReply({
+      content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
       ephemeral: true
+     });
+     return;
+     }
+    await interaction.editReply({
+    content: aiResult.insights,
+    ephemeral: true
     });
 
   } catch (error) {
@@ -1009,22 +1002,13 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
   }
 }
   } catch (error) {
-    console.error('Unhandled interaction error:', error);
-    try {
-      const errorMessage = {
-        content: '❌ An unexpected error occurred. Please try again later.',
-        ephemeral: true
-      };
-      
-      if (interaction.deferred) {
-        await interaction.editReply(errorMessage);
-      } else if (!interaction.replied) {
-        await interaction.reply(errorMessage);
-      }
-    } catch (followUpError) {
-      console.error('Error while handling error response:', followUpError);
-    }
+  console.error('Unhandled interaction error:', error);
+  if (interaction.deferred) {
+    await interaction.editReply({ content: '❌ An unexpected error occurred. Please try again later.', ephemeral: true });
+  } else if (!interaction.replied) {
+    await interaction.reply({ content: '❌ An unexpected error occurred. Please try again later.', ephemeral: true });
   }
+}
 });
     
 async function handleRoleUpdate(interaction, streakCount, result) {
