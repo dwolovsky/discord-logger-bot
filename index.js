@@ -236,6 +236,7 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 })();
 
 async function generateInsights(structuredData) {
+  console.log('generateInsights called with:', structuredData);
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     const prompt = INSIGHTS_PROMPT_TEMPLATE(structuredData); // Pass the data to the template function
