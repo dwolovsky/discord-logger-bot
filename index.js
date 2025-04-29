@@ -974,11 +974,18 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
         return;
       }
 
-    // Success case (non-cached)
-    await interaction.editReply({ 
-      content: `✅ Here are your ${periodDays}-day insights:\n\n${result.data.insights}`, 
-      ephemeral: true 
-    });
+    if (result.success) {
+      const message = result.data?.message || result.message || result.data;
+      await interaction.editReply({ 
+        content: `Here are your ${periodDays}-day insights:\n\n${message}`, 
+        ephemeral: true 
+      });
+    } else {
+      await interaction.editReply({ 
+        content: result.message || `❌ ${result.error || 'Failed to generate insights'}`, 
+        ephemeral: true 
+      });
+    }
 
   } catch (error) {
     console.error('Error in insights command:', error);
