@@ -974,13 +974,11 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
         return;
       }
 
-// Success case (non-cached)
+   // Success case (non-cached)
     console.log('Raw result:', result);
-    console.log('Result context:', result.context);
-    const parsedContext = JSON.parse(result.context);
-    console.log('Parsed context:', parsedContext);
+    console.log('Full result structure:', JSON.stringify(result, null, 2));  // Add this line
     await interaction.editReply({ 
-      content: `Here are your ${periodDays}-day insights:\n\n${JSON.stringify(parsedContext.data.insights, null, 2)}`, 
+      content: `Here are your ${periodDays}-day insights:\n\n${JSON.stringify(result.data, null, 2)}`, 
       ephemeral: true 
     });
 
