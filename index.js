@@ -975,7 +975,10 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
       }
 
 // Success case (non-cached)
+    console.log('Raw result:', result);
+    console.log('Result context:', result.context);
     const parsedContext = JSON.parse(result.context);
+    console.log('Parsed context:', parsedContext);
     await interaction.editReply({ 
       content: `Here are your ${periodDays}-day insights:\n\n${JSON.stringify(parsedContext.data.insights, null, 2)}`, 
       ephemeral: true 
