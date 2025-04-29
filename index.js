@@ -968,25 +968,43 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
       }
       
       // If we have cached insights, return them
-      if (result.cached) {
-        await interaction.editReply({
-          content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.insights}`,
-          ephemeral: true
-        });
+    if (result.cached && result.data.aiText) {
+      await interaction.editReply({
+       content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.aiText}`,
+       ephemeral: true
+      });
         return;
-      }
-    const aiResult = await generateInsights(result.data.insights);
-     if (!aiResult.success) {
-     await interaction.editReply({
-      content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
-      ephemeral: true
-     });
-     return;
      }
-    await interaction.editReply({
-    content: aiResult.insights,
+    
+    const aiResult = await generateInsights(result.data.insights);
+if (!aiResult.success) {
+  await interaction.editReply({
+    content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
     ephemeral: true
-    });
+  });
+  return;
+}
+
+await fetch(SCRIPT_URL, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    action: 'storeInsights',
+    userId: interaction.user.id,
+    userTag: interaction.user.tag,
+    periodDays: periodDays,
+    insights: {
+      structuredData: result.data.insights,
+      aiText: aiResult.insights,
+      dataPoints: result.data.insights.userMetrics.dataPoints
+    }
+  })
+});
+
+await interaction.editReply({
+  content: aiResult.insights,
+  ephemeral: true
+});
 
   } catch (error) {
     console.error('Error in insights command:', error);
