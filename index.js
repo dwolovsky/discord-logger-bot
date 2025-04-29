@@ -975,10 +975,10 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
       }
 
      // Success case (non-cached)
-      await interaction.editReply({ 
-        content: `Here are your ${periodDays}-day insights:\n\n${JSON.stringify(result.data.insights.insights, null, 2)}`, 
-        ephemeral: true 
-      });
+    await interaction.editReply({ 
+      content: `Here are your ${periodDays}-day insights:\n\n${JSON.stringify(result.data.insights, null, 2)}`, 
+      ephemeral: true 
+    });
 
   } catch (error) {
     console.error('Error in insights command:', error);
