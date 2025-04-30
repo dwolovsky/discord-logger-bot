@@ -337,6 +337,11 @@ client.on(Events.InteractionCreate, async interaction => {
           .setCustomId('dailyLog')
           .setTitle('Daily Log');
 
+        console.log('Sending request to get weekly priorities:', {
+                userId: interaction.user.id,
+                action: 'getWeeklyPriorities'
+            });
+        
         const response = await fetch(SCRIPT_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -347,6 +352,7 @@ client.on(Events.InteractionCreate, async interaction => {
         });
 
         const result = await response.json();
+        console.log('Raw result from getWeeklyPriorities:', result);
         const weeklyPriorities = result.success ? result.priorities : null;
         console.log('Weekly priorities for user:', interaction.user.tag, weeklyPriorities);
         
