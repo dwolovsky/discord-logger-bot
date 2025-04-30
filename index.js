@@ -33,7 +33,7 @@ try {
 
 // Add Gemini configuration here
 const GEMINI_CONFIG = {
-  temperature: 0.75,
+  temperature: 0.8,
   topK: 50,
   topP: 0.95,
   maxOutputTokens: 1024
@@ -326,8 +326,7 @@ Based on this comprehensive view, suggest 2-3 experiments that:
 3. Explore themes mentioned in their notes
 4. Mix familiar approaches with creative new directions
 
-### 💭 Reflection
-Choose an experiment for this week that interests you. This will be your top priority for the week. Remember: Experiments help us learn what we can and cannot control. Focus on learning rather than outcomes. What measurable action would you like to experiment with?`;
+Remember: Keep the total response under 1800 characters while maintaining a supportive tone.`;
 
 const logCache = new LogCache();
 (async () => {
@@ -1020,8 +1019,9 @@ await fetch(SCRIPT_URL, {
   })
 });
 
+await interaction.user.send(aiResult.insights);
 await interaction.editReply({
-  content: aiResult.insights,
+  content: "✨ Self Science Lab Assistant just sent you a DM ✅",
   ephemeral: true
 });
 
