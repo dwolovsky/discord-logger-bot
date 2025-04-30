@@ -115,6 +115,8 @@ class LogCache {
     });
     
     const result = await response.json();
+    console.log('Raw data from sheet:', result);  // Add this line
+    console.log('Discord IDs received:', result.data.map(entry => ({tag: entry.UserTag, id: entry.DiscordId})));
     console.log('Starting cache population from sheet');
     console.log('Data received from sheet:', result.data);
     if (!result.success) {
