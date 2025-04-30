@@ -585,6 +585,26 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       try {
         await interaction.deferReply({ ephemeral: true });
 
+        // Get the weekly priorities first
+        const prioritiesResponse = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'getWeeklyPriorities',
+            userId: interaction.user.id
+          })
+        });
+        
+        const prioritiesResult = await prioritiesResponse.json();
+        const weeklyPriorities = prioritiesResult.success ? prioritiesResult.priorities : null;
+        
+        if (!weeklyPriorities) {
+          return await interaction.editReply({
+            content: '❌ Could not retrieve your priorities. Please set them using /setweek first.',
+            ephemeral: true
+          });
+        }
+
     const now = new Date();
         console.log('=== Log Submission Time Debug ===');
         console.log('Time being sent to Apps Script:', {
@@ -595,37 +615,20 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
           hoursUTC: now.getUTCHours(),
           timestamp: now.getTime()
         });
-        
-        // ====== PRIORITY PARSING FUNCTION ======
-        function parsePriority(input) {
-          // Accepts: "Meditation, 30 minutes", "Focus: 8", "Health, 8/10", etc.
-          // Separators: comma, period, dash, underscore, colon
-          const regex = /^(.*?)[,\.\-_:]+\s*(\d+)\s*(.*)$/;
-          const match = input.trim().match(regex);
-          if (!match) return null;
-          let [_, label, value, unit] = match;
-          label = label.trim().substring(0, 500);
-          value = value.trim();
-          unit = unit.trim();
-          // If unit is blank, set to "effort"
-          if (!unit) unit = 'effort';
-          return { label, value, unit };
-        }
 
-        // Parse and validate priorities
+        // Get values from modal inputs
         const priorities = [];
         for (let i = 1; i <= 3; i++) {
-          const input = interaction.fields.getTextInputValue(`priority${i}`);
-          const parsed = parsePriority(input);
-          if (!parsed || !parsed.label || !parsed.value) {
+          const value = interaction.fields.getTextInputValue(`priority${i}`);
+          if (!value || !value.trim()) {
             return await interaction.editReply({
-              content: `❌ Invalid format for Priority ${i}. Use: "Activity, value units" or "Rating, number/10 effort"`,
+              content: `❌ Value required for Priority ${i}.`,
               flags: ['Ephemeral']
             });
           }
-          priorities.push(parsed);
+          priorities.push({ value: value.trim() });
         }
-
+        
         // Validate satisfaction (0-10)
         const satisfactionRaw = interaction.fields.getTextInputValue('satisfaction');
         const satisfaction = parseInt(satisfactionRaw, 10);
@@ -646,15 +649,15 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 
         // Prepare data for Google Apps Script
         const data = {
-          priority1_label: priorities[0].label,
+          priority1_label: weeklyPriorities.Priority1.label,
           priority1_value: priorities[0].value,
-          priority1_unit: priorities[0].unit,
-          priority2_label: priorities[1].label,
+          priority1_unit: weeklyPriorities.Priority1.unit,
+          priority2_label: weeklyPriorities.Priority2.label,
           priority2_value: priorities[1].value,
-          priority2_unit: priorities[1].unit,
-          priority3_label: priorities[2].label,
+          priority2_unit: weeklyPriorities.Priority2.unit,
+          priority3_label: weeklyPriorities.Priority3.label,
           priority3_value: priorities[2].value,
-          priority3_unit: priorities[2].unit,
+          priority3_unit: weeklyPriorities.Priority3.unit,
           satisfaction: satisfaction,
           notes: notes
         };
