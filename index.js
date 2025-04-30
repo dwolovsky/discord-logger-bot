@@ -523,7 +523,6 @@ client.on(Events.InteractionCreate, async interaction => {
   // Setweek Command handler with deferReply
   if (interaction.isChatInputCommand() && interaction.commandName === 'setweek') {
   try {
-    await interaction.deferReply({ ephemeral: true });
 
     const modal = new ModalBuilder()
       .setCustomId('weeklyPriorities')
