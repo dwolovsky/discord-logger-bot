@@ -333,31 +333,40 @@ client.on(Events.InteractionCreate, async interaction => {
     // Handle /log command
     if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
   try {
-    // Defer reply immediately
     await interaction.deferReply({ ephemeral: true });
 
-    const modal = new ModalBuilder()
-      .setCustomId('dailyLog')
-      .setTitle('Daily Log');
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Request timed out')), 5000)
+    );
 
-    console.log('Sending request to get weekly priorities:', {
-      userId: interaction.user.id,
-      action: 'getWeeklyPriorities'
-    });
-    
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'getWeeklyPriorities',
-        userId: interaction.user.id
-      })
-    });
+    const response = await Promise.race([
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'getWeeklyPriorities',
+          userId: interaction.user.id
+        })
+      }),
+      timeoutPromise
+    ]);
 
     const result = await response.json();
     console.log('Raw result from getWeeklyPriorities:', result);
     const weeklyPriorities = result.success ? result.priorities : null;
+    
+    if (!result.success) {
+      return await interaction.editReply({
+        content: '❌ Failed to load your priorities. Please try again.',
+        ephemeral: true
+      });
+    }
+
     console.log('Weekly priorities for user:', interaction.user.tag, weeklyPriorities);
+
+    const modal = new ModalBuilder()
+      .setCustomId('dailyLog')
+      .setTitle('Daily Log');
 
     const priority1 = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
@@ -369,7 +378,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setPlaceholder('Enter number')
         .setRequired(true)
     );
-    
+
     const priority2 = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('priority2')
@@ -380,7 +389,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setPlaceholder('Enter number')
         .setRequired(true)
     );
-    
+
     const priority3 = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('priority3')
@@ -391,7 +400,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setPlaceholder('Enter number')
         .setRequired(true)
     );
-        
+
     const satisfaction = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('satisfaction')
@@ -408,7 +417,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setRequired(true)
     );
 
-    // Add debug logging for labels
+    // Debug logging
     console.log('Modal labels:', {
       p1: priority1.components[0].data.label,
       p2: priority2.components[0].data.label,
@@ -416,18 +425,42 @@ client.on(Events.InteractionCreate, async interaction => {
     });
 
     modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
-    
-    // Delete deferred reply before showing modal
-    await interaction.deleteReply();
-    return await interaction.showModal(modal);
 
-  } catch (error) {
-    console.error('Error showing modal:', error);
-    if (!interaction.replied) {
+    try {
+      await interaction.deleteReply();
+      return await interaction.showModal(modal);
+    } catch (modalError) {
+      console.error('Error showing modal after API call:', modalError);
       return await interaction.editReply({
         content: '❌ There was an error showing the form. Please try again.',
         ephemeral: true
       });
+    }
+
+  } catch (error) {
+    console.error('Error in /log command:', error);
+    
+    if (error.message === 'Request timed out') {
+      return await interaction.editReply({
+        content: '❌ The request took too long. Please try again.',
+        ephemeral: true
+      });
+    }
+
+    try {
+      if (interaction.deferred) {
+        return await interaction.editReply({
+          content: '❌ There was an error showing the form. Please try again.',
+          ephemeral: true
+        });
+      } else {
+        return await interaction.reply({
+          content: '❌ There was an error showing the form. Please try again.',
+          ephemeral: true
+        });
+      }
+    } catch (followUpError) {
+      console.error('Error handling error response:', followUpError);
     }
   }
   return;
