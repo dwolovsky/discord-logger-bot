@@ -559,7 +559,6 @@ client.on(Events.InteractionCreate, async interaction => {
     );
 
     modal.addComponents(priority1, priority2, priority3);
-    await interaction.deleteReply(); // Delete the "thinking" message
     await interaction.showModal(modal);
 
   } catch (error) {
