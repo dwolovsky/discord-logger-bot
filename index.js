@@ -524,14 +524,14 @@ client.on(Events.InteractionCreate, async interaction => {
   try {
     const modal = new ModalBuilder()
       .setCustomId('weeklyPriorities')
-      .setTitle('📝 Set Weekly Priorities (Format: Label, Unit)');
+      .setTitle('📝 Set Weekly Priorities');
 
     const priority1 = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('priority1')
         .setLabel('Priority 1 (Label, Unit)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Meditation, minutes')
+        .setPlaceholder('E.g. Meditation, minutes')
         .setMaxLength(44)
         .setRequired(true)
     );
@@ -541,7 +541,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setCustomId('priority2')
         .setLabel('Priority 2 (Label, Unit)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Writing, words')
+        .setPlaceholder('E.g. Writing, words')
         .setMaxLength(44)
         .setRequired(true)
     );
@@ -551,7 +551,7 @@ client.on(Events.InteractionCreate, async interaction => {
         .setCustomId('priority3')
         .setLabel('Priority 3 (Label, Unit)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Health, effort')
+        .setPlaceholder('E.g. Health, effort')
         .setMaxLength(44)
         .setRequired(true)
     );
