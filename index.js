@@ -393,12 +393,12 @@ client.on(Events.InteractionCreate, async interaction => {
             .setRequired(true)
         );
 
-        modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
-        await interaction.showModal(modal);
+         modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
+        return await interaction.showModal(modal);  
       } catch (error) {
         console.error('Error showing modal:', error);
         if (!interaction.replied) {
-          await interaction.reply({ 
+          return await interaction.reply({  
             content: '❌ There was an error showing the form. Please try again.',
             flags: ['Ephemeral']
           });
