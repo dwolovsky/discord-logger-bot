@@ -451,6 +451,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // Priority fields (all required, new format)
         const lastLog = logCache.get(interaction.user.id);
+        console.log('Last log data for user:', interaction.user.tag, lastLog);
         const priority1 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority1')
