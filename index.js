@@ -333,121 +333,81 @@ client.on(Events.InteractionCreate, async interaction => {
     // Handle /log command
     if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
   try {
-    // Make the API call with timeout
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Request timed out')), 5000)
-    );
-
-    const response = await Promise.race([
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'getWeeklyPriorities',
-          userId: interaction.user.id
-        })
-      }),
-      timeoutPromise
-    ]);
+    // Immediate API call without timeout wrapper
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getWeeklyPriorities',
+        userId: interaction.user.id
+      })
+    });
 
     const result = await response.json();
-    console.log('Raw result from getWeeklyPriorities:', result);
     const weeklyPriorities = result.success ? result.priorities : null;
-    
-    if (!result.success) {
-      return await interaction.reply({
-        content: '❌ Failed to load your priorities. Please try again.',
-        ephemeral: true
-      });
-    }
-
-    console.log('Weekly priorities for user:', interaction.user.tag, weeklyPriorities);
 
     const modal = new ModalBuilder()
       .setCustomId('dailyLog')
       .setTitle('Daily Log');
 
-    const priority1 = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('priority1')
-        .setLabel(weeklyPriorities ? 
-          `${weeklyPriorities.Priority1}, ${weeklyPriorities.Unit1}` : 
-          'Priority 1')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Enter number')
-        .setRequired(true)
-    );
+    // Create components first
+    const components = [
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('priority1')
+          .setLabel(weeklyPriorities ? 
+            `${weeklyPriorities.Priority1}, ${weeklyPriorities.Unit1}` : 
+            'Priority 1')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('priority2')
+          .setLabel(weeklyPriorities ? 
+            `${weeklyPriorities.Priority2}, ${weeklyPriorities.Unit2}` : 
+            'Priority 2')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('priority3')
+          .setLabel(weeklyPriorities ? 
+            `${weeklyPriorities.Priority3}, ${weeklyPriorities.Unit3}` : 
+            'Priority 3')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('satisfaction')
+          .setLabel('Satisfaction (0-10)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('notes')
+          .setLabel('Experiment Notes, Questions, Thoughts')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+      )
+    ];
 
-    const priority2 = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('priority2')
-        .setLabel(weeklyPriorities ? 
-          `${weeklyPriorities.Priority2}, ${weeklyPriorities.Unit2}` : 
-          'Priority 2')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Enter number')
-        .setRequired(true)
-    );
+    // Add all components at once
+    modal.addComponents(...components);
 
-    const priority3 = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('priority3')
-        .setLabel(weeklyPriorities ? 
-          `${weeklyPriorities.Priority3}, ${weeklyPriorities.Unit3}` : 
-          'Priority 3')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Enter number')
-        .setRequired(true)
-    );
-
-    const satisfaction = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('satisfaction')
-        .setLabel('Satisfaction (0-10)')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-    );
-
-    const notes = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('notes')
-        .setLabel('Experiment Notes, Questions, Thoughts')
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true)
-    );
-
-    console.log('Modal labels:', {
-      p1: priority1.components[0].data.label,
-      p2: priority2.components[0].data.label,
-      p3: priority3.components[0].data.label
-    });
-
-    modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
-
-    // Show modal directly
+    // Show modal immediately
     return await interaction.showModal(modal);
 
   } catch (error) {
     console.error('Error in /log command:', error);
-    
-    try {
-      // Handle timeout specifically
-      if (error.message === 'Request timed out') {
-        return await interaction.reply({
-          content: '❌ The request took too long. Please try again.',
-          ephemeral: true
-        });
-      }
-
-      // Handle other errors
-      if (!interaction.replied) {
-        return await interaction.reply({
-          content: '❌ There was an error showing the form. Please try again.',
-          ephemeral: true
-        });
-      }
-    } catch (followUpError) {
-      console.error('Error handling error response:', followUpError);
+    if (!interaction.replied) {
+      return await interaction.reply({ 
+        content: '❌ There was an error showing the form. Please try again.',
+        ephemeral: true 
+      });
     }
   }
   return;
