@@ -356,10 +356,10 @@ client.on(Events.InteractionCreate, async interaction => {
         const weeklyPriorities = result.success ? result.priorities : null;
         console.log('Weekly priorities for user:', interaction.user.tag, weeklyPriorities);
         
-       const priority1 = new ActionRowBuilder().addComponents(
+        const priority1 = new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('priority1')
-          .setLabel(weeklyPriorities ? weeklyPriorities[0] : 'Priority 1')
+          .setLabel(weeklyPriorities ? `${weeklyPriorities.Priority1}, ${weeklyPriorities.Unit1}` : 'Priority 1')
           .setStyle(TextInputStyle.Short)
           .setPlaceholder('Enter number')
           .setRequired(true)
@@ -368,7 +368,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const priority2 = new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('priority2')
-          .setLabel(weeklyPriorities ? weeklyPriorities[1] : 'Priority 2')
+          .setLabel(weeklyPriorities ? `${weeklyPriorities.Priority2}, ${weeklyPriorities.Unit2}` : 'Priority 2')
           .setStyle(TextInputStyle.Short)
           .setPlaceholder('Enter number')
           .setRequired(true)
@@ -377,7 +377,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const priority3 = new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('priority3')
-          .setLabel(weeklyPriorities ? weeklyPriorities[2] : 'Priority 3')
+          .setLabel(weeklyPriorities ? `${weeklyPriorities.Priority3}, ${weeklyPriorities.Unit3}` : 'Priority 3')
           .setStyle(TextInputStyle.Short)
           .setPlaceholder('Enter number')
           .setRequired(true)
