@@ -126,13 +126,15 @@ class LogCache {
     
     // Populate with new data
     result.data.forEach(entry => {
-      this.memoryCache.set(entry.UserTag, {
-        priority1: `${entry.Priority1_Label}, ${entry.Priority1_Value} ${entry.Priority1_Unit}`,
-        priority2: `${entry.Priority2_Label}, ${entry.Priority2_Value} ${entry.Priority2_Unit}`,
-        priority3: `${entry.Priority3_Label}, ${entry.Priority3_Value} ${entry.Priority3_Unit}`,
-        timestamp: new Date(entry.Timestamp).getTime()
-      });
+  if (entry.DiscordId) {  // Only cache if we have a Discord ID
+    this.memoryCache.set(entry.DiscordId, {
+      priority1: `${entry.Priority1_Label}, ${entry.Priority1_Value} ${entry.Priority1_Unit}`,
+      priority2: `${entry.Priority2_Label}, ${entry.Priority2_Value} ${entry.Priority2_Unit}`,
+      priority3: `${entry.Priority3_Label}, ${entry.Priority3_Value} ${entry.Priority3_Unit}`,
+      timestamp: new Date(entry.Timestamp).getTime()
     });
+  }
+});
     
     this.isDirty = true;
     await this.saveToFile();
@@ -641,27 +643,34 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
           });
           return;
         }
+
+        // Defer the reply immediately
+       await interaction.deferReply({ ephemeral: true });
     
         // Then try to populate cache
         const result = await logCache.populateFromSheet();
-        
-        await interaction.reply({
-          content: result.success 
-            ? `✅ Successfully populated cache with ${result.count} entries.`
-            : `❌ Failed to populate cache: ${result.error}`,
-          ephemeral: true
-        });
-      } catch (error) {
-        console.error('Error in populatecache command:', error);
-        if (!interaction.replied) {
-          await interaction.reply({
-            content: '❌ An error occurred while populating the cache.',
-            ephemeral: true
-          });
-        }
-      }
-      return;
+
+        // Edit the deferred reply
+     await interaction.editReply({
+      content: result.success 
+        ? `✅ Successfully populated cache with ${result.count} entries.`
+        : `❌ Failed to populate cache: ${result.error}`,
+    });
+   } catch (error) {
+    console.error('Error in populatecache command:', error);
+    if (interaction.deferred) {
+      await interaction.editReply({
+        content: '❌ An error occurred while populating the cache.'
+      });
+    } else if (!interaction.replied) {
+      await interaction.reply({
+        content: '❌ An error occurred while populating the cache.',
+        ephemeral: true
+      });
     }
+   }
+    return;
+  }
     
     // Handle /leaderboard command (ephemeral)
     if (interaction.isChatInputCommand() && interaction.commandName === 'leaderboard') {
