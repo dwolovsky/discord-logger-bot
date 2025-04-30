@@ -520,10 +520,8 @@ client.on(Events.InteractionCreate, async interaction => {
       return;
     }
 
-  // Setweek Command handler with deferReply
   if (interaction.isChatInputCommand() && interaction.commandName === 'setweek') {
   try {
-
     const modal = new ModalBuilder()
       .setCustomId('weeklyPriorities')
       .setTitle('📝 Set Your Weekly Priorities');
@@ -559,18 +557,17 @@ client.on(Events.InteractionCreate, async interaction => {
     );
 
     modal.addComponents(priority1, priority2, priority3);
-    await interaction.showModal(modal);
+    return await interaction.showModal(modal);
 
   } catch (error) {
     console.error('Error showing setweek modal:', error);
-    if (!interaction.replied) {
-      await interaction.editReply({
-        content: '❌ There was an error showing the form. Please try again.',
-        ephemeral: true
-      });
-    }
-    }
+    return await interaction.reply({
+      content: '❌ There was an error showing the form. Please try again.',
+      ephemeral: true
+    });
   }
+  return;
+}
     
 // Handle /testlog command
 if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
