@@ -245,6 +245,12 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
           .setName('insights30')
           .setDescription('Get AI insights from your last 30 days of logs')
           .toJSON(),
+
+        // Add this to your slash commands array in the registration section
+        new SlashCommandBuilder()
+          .setName('setweek')
+          .setDescription('Set your weekly priority labels and units')
+          .toJSON(),
         
         new SlashCommandBuilder()
           .setName('populatecache')
@@ -514,6 +520,60 @@ client.on(Events.InteractionCreate, async interaction => {
       return;
     }
 
+  // Setweek Command handler with deferReply
+  if (interaction.isChatInputCommand() && interaction.commandName === 'setweek') {
+  try {
+    await interaction.deferReply({ ephemeral: true });
+
+    const modal = new ModalBuilder()
+      .setCustomId('weeklyPriorities')
+      .setTitle('📝 Set Your Weekly Priorities');
+
+    const priority1 = new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('priority1')
+        .setLabel('Priority 1 (Label, Unit)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Meditation, minutes')
+        .setMaxLength(44)
+        .setRequired(true)
+    );
+
+    const priority2 = new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('priority2')
+        .setLabel('Priority 2 (Label, Unit)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Writing, words')
+        .setMaxLength(44)
+        .setRequired(true)
+    );
+
+    const priority3 = new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('priority3')
+        .setLabel('Priority 3 (Label, Unit)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Health, effort')
+        .setMaxLength(44)
+        .setRequired(true)
+    );
+
+    modal.addComponents(priority1, priority2, priority3);
+    await interaction.deleteReply(); // Delete the "thinking" message
+    await interaction.showModal(modal);
+
+  } catch (error) {
+    console.error('Error showing setweek modal:', error);
+    if (!interaction.replied) {
+      await interaction.editReply({
+        content: '❌ There was an error showing the form. Please try again.',
+        ephemeral: true
+      });
+    }
+    }
+  }
+    
 // Handle /testlog command
 if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
   try {
@@ -955,6 +1015,89 @@ Ready to log for real? Use /log to begin your streak!`,
     });
   }
   return;
+}
+
+// Modal submission handler
+if (interaction.isModalSubmit() && interaction.customId === 'weeklyPriorities') {
+  try {
+    await interaction.deferReply({ ephemeral: true });
+
+    // Get and validate priorities
+    const priorities = [];
+    for (let i = 1; i <= 3; i++) {
+      const input = interaction.fields.getTextInputValue(`priority${i}`).trim();
+      
+      // Check comma format
+      if (!input.includes(',')) {
+        await interaction.editReply({
+          content: `❌ Priority ${i} must include a comma to separate the label and unit.\nExample: "Meditation, minutes"`,
+          ephemeral: true
+        });
+        return;
+      }
+
+      // Split and trim
+      const [label, unit] = input.split(',').map(part => part.trim());
+      
+      if (!label || !unit) {
+        await interaction.editReply({
+          content: `❌ Priority ${i} must have both a label and unit.\nExample: "Meditation, minutes"`,
+          ephemeral: true
+        });
+        return;
+      }
+
+      priorities.push(input);
+    }
+
+    // Send to Google Apps Script
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'updateWeeklyPriorities',
+        userId: interaction.user.id,
+        userTag: interaction.user.tag,
+        priorities: priorities
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      // Update local cache
+      logCache.set(interaction.user.id, {
+        priority1: priorities[0],
+        priority2: priorities[1],
+        priority3: priorities[2]
+      });
+
+      // Show confirmation
+      const confirmationMessage = [
+        '✅ Weekly priorities set!',
+        '',
+        'Your priorities:',
+        ...priorities.map((p, i) => `${i + 1}. **${p}**`)
+      ].join('\n');
+
+      await interaction.editReply({
+        content: confirmationMessage,
+        ephemeral: true
+      });
+    } else {
+      await interaction.editReply({
+        content: `❌ ${result.error || 'Failed to set priorities. Please try again.'}`,
+        ephemeral: true
+      });
+    }
+
+  } catch (error) {
+    console.error('Error in weekly priorities submission:', error);
+    await interaction.editReply({
+      content: '❌ An error occurred while saving your priorities. Please try again.',
+      ephemeral: true
+    });
+  }
 }
     
 // Add this to your interaction handler in index.js
