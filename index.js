@@ -256,12 +256,19 @@ async function generateInsights(structuredData) {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     const prompt = INSIGHTS_PROMPT_TEMPLATE(structuredData); // Pass the data to the template function
 
-    const result = await model.generateContent(prompt);
-    
+   const result = await model.generateContent(prompt);
     const response = await result.response;
+    const text = response.text();
+    
+    // Maximum possible length while staying under Discord's 2000 limit
+    const MAX_LENGTH = 1999;
+    const finalText = text.length > MAX_LENGTH 
+      ? text.substring(0, MAX_LENGTH) + "..."
+      : text;
+
     return {
       success: true,
-      insights: response.text(),
+      insights: finalText,
       metadata: {
         generatedAt: new Date().toISOString(),
         dataPoints: structuredData.priorities.length,
