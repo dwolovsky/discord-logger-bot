@@ -39,122 +39,6 @@ const GEMINI_CONFIG = {
   maxOutputTokens: 1024
 };
 
-class LogCache {
-  constructor() {
-    this.cacheFile = path.join(__dirname, 'user_logs_cache.json');
-    this.memoryCache = new Map();
-    this.isDirty = false;
-    this.lastSave = Date.now();
-    this.SAVE_INTERVAL = 5 * 60 * 1000; // 5 minutes
-  }
-
-  async initialize() {
-    console.log('Initializing cache at:', this.cacheFile);
-      try {
-      const data = await fs.readFile(this.cacheFile, 'utf8');
-      const parsed = JSON.parse(data);
-      Object.entries(parsed).forEach(([key, value]) => {
-        this.memoryCache.set(key, value);
-      });
-      console.log(`Cache initialized: Loaded ${this.memoryCache.size} entries`);
-    } catch (err) {
-      console.log('No existing cache found - starting fresh');
-      await this.saveToFile(); // Create empty cache file
-    }
-    setInterval(() => this.periodicSave(), this.SAVE_INTERVAL);
-  }
-
-  async periodicSave() {
-    if (this.isDirty) {
-      await this.saveToFile();
-    }
-  }
-
-  async saveToFile() {
-    console.log('Saving cache to file:', this.cacheFile);  // ADD THIS LINE HERE
-    console.log('Cache contents:', Object.fromEntries(this.memoryCache));  // AND THIS LINE HERE
-    try {
-      const cacheObject = Object.fromEntries(this.memoryCache);
-      await fs.writeFile(
-        this.cacheFile,
-        JSON.stringify(cacheObject, null, 2)  // The '2' here makes it pretty-printed
-      );
-      this.isDirty = false;
-      this.lastSave = Date.now();
-      console.log('Cache saved to file');
-    } catch (err) {
-      console.error('Error saving cache:', err);
-    }
-  }
-
- set(userId, data) {
-    console.log(`Caching log for user: ${userId}`);
-    this.memoryCache.set(userId, {
-      ...data,
-      timestamp: Date.now()
-    });
-    this.isDirty = true;
-  }
-
-  get(userId) {
-    const data = this.memoryCache.get(userId);
-    if (data) {
-      console.log(`Found cached log for user: ${userId}`);
-    }
-    return data;
-  }
-
- async populateFromSheet() {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'getCacheData'  // This matches the action we'll add to Apps Script
-      })
-    });
-    
-    const result = await response.json();
-    console.log('Raw data from sheet:', result);  // Add this line
-    console.log('Discord IDs received:', result.data.map(entry => ({tag: entry.UserTag, id: entry.DiscordId})));
-    console.log('Starting cache population from sheet');
-    console.log('Data received from sheet:', result.data);
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to fetch sheet data');
-    }
-    
-    // Clear existing cache
-    this.memoryCache.clear();
-    
-    // Populate with new data
-    result.data.forEach(entry => {
-  if (entry.DiscordId) {  // Only cache if we have a Discord ID
-    this.memoryCache.set(entry.DiscordId, {
-      priority1: `${entry.Priority1_Label}, ${entry.Priority1_Value} ${entry.Priority1_Unit}`,
-      priority2: `${entry.Priority2_Label}, ${entry.Priority2_Value} ${entry.Priority2_Unit}`,
-      priority3: `${entry.Priority3_Label}, ${entry.Priority3_Value} ${entry.Priority3_Unit}`,
-      timestamp: new Date(entry.Timestamp).getTime()
-    });
-  }
-});
-    
-    this.isDirty = true;
-    await this.saveToFile();
-    
-    return {
-      success: true,
-      count: result.data.length
-    };
-  } catch (error) {
-    console.error('Error populating cache:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
- }
-}
-
 // Add this function to test the AI integration
 async function testGeminiAPI() {
   try {
@@ -250,13 +134,7 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('setweek')
           .setDescription('Set your weekly priority labels and units')
-          .toJSON(),
-        
-        new SlashCommandBuilder()
-          .setName('populatecache')
-          .setDescription('Populate cache from latest user logs')
           .toJSON()
-                
       ]}
     );
     console.log('Slash commands registered.');
@@ -342,11 +220,6 @@ Based on this comprehensive view, suggest 2-3 experiments that:
 4. Mix familiar approaches with creative new directions
 
 Remember: Keep the total response under 1800 characters while maintaining a supportive tone.`;
-
-const logCache = new LogCache();
-(async () => {
-  await logCache.initialize();
-})();
 
 // ====== DISCORD CLIENT ======
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -464,33 +337,47 @@ client.on(Events.InteractionCreate, async interaction => {
           .setCustomId('dailyLog')
           .setTitle('Daily Log');
 
-        // Priority fields (all required, new format)
-        const lastLog = logCache.get(interaction.user.id);
-        console.log('Last log data for user:', interaction.user.tag, lastLog);
+        const response = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'getWeeklyPriorities',
+            userId: interaction.user.id
+          })
+        });
+
+        const result = await response.json();
+        const weeklyPriorities = result.success ? result.priorities : null;
+        console.log('Weekly priorities for user:', interaction.user.tag, weeklyPriorities);
+        
+        // Then modify the TextInputBuilder parts to use weeklyPriorities instead of lastLog:
         const priority1 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority1')
-            .setLabel('Priority 1 (Measurement or Effort Rating)')
+            .setLabel(weeklyPriorities ? `${weeklyPriorities.priority1}` : 'Priority 1')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder(lastLog ? `E.g. ${lastLog.priority1}` : 'e.g. "Health, 7/10 effort"')
+            .setPlaceholder('Enter number')  // Simple placeholder since label has the priority
             .setRequired(true)
         );
+        
         const priority2 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority2')
-            .setLabel('Priority 2 (Measurement or Effort Rating)')
+            .setLabel(weeklyPriorities ? `${weeklyPriorities.priority2}` : 'Priority 2')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder(lastLog ? `E.g. ${lastLog.priority2}` : 'e.g. "Meditation, 15 mins"')
+            .setPlaceholder('Enter number')
             .setRequired(true)
         );
+        
         const priority3 = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('priority3')
-            .setLabel('Priority 3 (Measurement or Effort Rating)')
+            .setLabel(weeklyPriorities ? `${weeklyPriorities.priority3}` : 'Priority 3')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder(lastLog ? `E.g. ${lastLog.priority3}` : 'e.g. "Writing, 500 words"')
+            .setPlaceholder('Enter number')
             .setRequired(true)
         );
+        
         const satisfaction = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('satisfaction')
@@ -577,13 +464,12 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       .setTitle('Daily Log Preview');
 
     // Use exact same form components as /log
-    const lastLog = logCache.get(interaction.user.id);
     const priority1 = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('priority1')
         .setLabel('Priority 1 (Measurement or Effort Rating)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder(lastLog ? `E.g. ${lastLog.priority1}` : 'e.g. "Meditation, 15 mins"')
+        .setPlaceholder('e.g. "Meditation, 15 mins"')
         .setRequired(true)
     );
     const priority2 = new ActionRowBuilder().addComponents(
@@ -591,7 +477,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         .setCustomId('priority2')
         .setLabel('Priority 2 (Measurement or Effort Rating)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder(lastLog ? `E.g. ${lastLog.priority2}` : 'e.g. "Focus, 8/10 effort"')
+        .setPlaceholder('e.g. "Focus, 8/10 effort"')
         .setRequired(true)
     );
     const priority3 = new ActionRowBuilder().addComponents(
@@ -599,7 +485,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         .setCustomId('priority3')
         .setLabel('Priority 3 (Measurement or Effort Rating)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder(lastLog ? `E.g. ${lastLog.priority3}` : 'e.g. "Writing, 500 words"')
+        .setPlaceholder('e.g. "Writing, 500 words"')
         .setRequired(true)
     );
     const satisfaction = new ActionRowBuilder().addComponents(
@@ -688,42 +574,6 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       }
       return;
     }
-
-    // Handle /populatecache command
-    if (interaction.isChatInputCommand() && interaction.commandName === 'populatecache') {
-  try {
-    // Check permissions first
-    if (!interaction.member.permissions.has('ADMINISTRATOR')) {
-      await interaction.reply({
-        content: '❌ You do not have permission to use this command.',
-        ephemeral: true
-      });
-      return;
-    }
-
-    // Defer the reply immediately
-    await interaction.deferReply({ ephemeral: true });
-
-    // Then try to populate cache
-    const result = await logCache.populateFromSheet();
-    
-    // Edit the deferred reply with the result
-    await interaction.editReply({
-      content: result.success 
-        ? `✅ Successfully populated cache with ${result.count} entries.`
-        : `❌ Failed to populate cache: ${result.error}`
-    });
-
-  } catch (error) {
-    console.error('Error in populatecache command:', error);
-    if (interaction.deferred && !interaction.replied) {
-      await interaction.editReply({
-        content: '❌ An error occurred while populating the cache.'
-      });
-    }
-  }
-  return;
-}
     
     // Handle /leaderboard command (ephemeral)
     if (interaction.isChatInputCommand() && interaction.commandName === 'leaderboard') {
@@ -854,13 +704,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
         const result = await response.json();
 
    if (result.success) {
-
-     logCache.set(interaction.user.id, {
-      priority1: `${data.priority1_label}, ${data.priority1_value} ${data.priority1_unit}`,
-      priority2: `${data.priority2_label}, ${data.priority2_value} ${data.priority2_unit}`,
-      priority3: `${data.priority3_label}, ${data.priority3_value} ${data.priority3_unit}`
-    });
-     
+ 
    // Ephemeral reply with inspirational message and streak count
   const [firstLine, ...restOfMessage] = result.message.split('\n\n');
   const streakLine = `📈 **Current Streak**: ${result.currentStreak} days`;
@@ -982,12 +826,6 @@ if (interaction.isModalSubmit() && interaction.customId === 'testLogPreview') {
         flags: ['Ephemeral']
       });
     }
-
-logCache.set(interaction.user.id, {
-      priority1: `${priorities[0].label}, ${priorities[0].value} ${priorities[0].unit}`,
-      priority2: `${priorities[1].label}, ${priorities[1].value} ${priorities[1].unit}`,
-      priority3: `${priorities[2].label}, ${priorities[2].value} ${priorities[2].unit}`
-    });
     
     // If all validation passes, show preview
     await interaction.reply({
@@ -1060,13 +898,6 @@ if (interaction.isModalSubmit() && interaction.customId === 'weeklyPriorities') 
     const result = await response.json();
 
     if (result.success) {
-      // Update local cache
-      logCache.set(interaction.user.id, {
-        priority1: priorities[0],
-        priority2: priorities[1],
-        priority3: priorities[2]
-      });
-
       // Show confirmation
       const confirmationMessage = [
         '✅ Weekly priorities set!',
