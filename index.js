@@ -580,6 +580,41 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       return;
     }
 
+      // Handle /setweek command
+      if (interaction.isChatInputCommand() && interaction.commandName === 'setweek') {
+        try {
+          const modal = new ModalBuilder()
+            .setCustomId('weeklyPriorities')
+            .setTitle('Set Weekly Priorities');
+      
+          const components = [];
+          for (let i = 1; i <= 3; i++) {
+            components.push(
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId(`priority${i}`)
+                  .setLabel(`Priority ${i} (e.g. "Meditation, minutes")`)
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+              )
+            );
+          }
+      
+          modal.addComponents(...components);
+          await interaction.showModal(modal);
+        } catch (error) {
+          console.error('Error showing setweek modal:', error);
+          if (!interaction.replied) {
+            await interaction.reply({
+              content: '❌ There was an error showing the form. Please try again.',
+              ephemeral: true
+            });
+          }
+        }
+        return;
+      }
+
+    
    // Handle modal submission
 if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
   await interaction.deferReply({ ephemeral: true });
