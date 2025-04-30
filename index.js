@@ -754,7 +754,6 @@ if (result.milestone && result.roleInfo) {
             content: result.message || '❌ There was an error logging your entry.',
             flags: ['Ephemeral'] 
           });
-        }
       } catch (err) {
   console.error('❌ Error in modal submission:', err);
 
