@@ -332,9 +332,13 @@ client.on(Events.InteractionCreate, async interaction => {
   try {
     // Handle /log command
     if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
+  let timeoutId;
   try {
-    // Immediate API call without timeout wrapper
-    const response = await fetch(SCRIPT_URL, {
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('Timeout')), 2500);
+    });
+
+    const fetchPromise = fetch(SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -342,6 +346,13 @@ client.on(Events.InteractionCreate, async interaction => {
         userId: interaction.user.id
       })
     });
+
+    const response = await Promise.race([fetchPromise, timeoutPromise]);
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
     const result = await response.json();
     const weeklyPriorities = result.success ? result.priorities : null;
@@ -356,7 +367,7 @@ client.on(Events.InteractionCreate, async interaction => {
         new TextInputBuilder()
           .setCustomId('priority1')
           .setLabel(weeklyPriorities ? 
-            `${weeklyPriorities.Priority1}, ${weeklyPriorities.Unit1}` : 
+            `${weeklyPriorities.Priority1.label}, ${weeklyPriorities.Priority1.unit}` : 
             'Priority 1')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
@@ -365,7 +376,7 @@ client.on(Events.InteractionCreate, async interaction => {
         new TextInputBuilder()
           .setCustomId('priority2')
           .setLabel(weeklyPriorities ? 
-            `${weeklyPriorities.Priority2}, ${weeklyPriorities.Unit2}` : 
+            `${weeklyPriorities.Priority2.label}, ${weeklyPriorities.Priority2.unit}` : 
             'Priority 2')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
@@ -374,7 +385,7 @@ client.on(Events.InteractionCreate, async interaction => {
         new TextInputBuilder()
           .setCustomId('priority3')
           .setLabel(weeklyPriorities ? 
-            `${weeklyPriorities.Priority3}, ${weeklyPriorities.Unit3}` : 
+            `${weeklyPriorities.Priority3.label}, ${weeklyPriorities.Priority3.unit}` : 
             'Priority 3')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
@@ -402,7 +413,16 @@ client.on(Events.InteractionCreate, async interaction => {
     return await interaction.showModal(modal);
 
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error('Error in /log command:', error);
+    
+    if (error.message === 'Timeout') {
+      return await interaction.reply({
+        content: '❌ Request timed out. Please try again.',
+        ephemeral: true
+      });
+    }
+
     if (!interaction.replied) {
       return await interaction.reply({ 
         content: '❌ There was an error showing the form. Please try again.',
