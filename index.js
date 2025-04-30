@@ -582,8 +582,17 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 
     // Handle modal submission
     if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
+      await interaction.deferReply({ ephemeral: true });
+
       try {
-        await interaction.deferReply({ ephemeral: true });
+            console.log('Parsed modal data:', {
+      priority1: interaction.fields.getTextInputValue('priority1'),
+      priority2: interaction.fields.getTextInputValue('priority2'),
+      priority3: interaction.fields.getTextInputValue('priority3'),
+      satisfaction: interaction.fields.getTextInputValue('satisfaction'),
+      notes: interaction.fields.getTextInputValue('notes')
+    });
+
 
         // Get the weekly priorities first
         const prioritiesResponse = await fetch(SCRIPT_URL, {
@@ -664,7 +673,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 
         // Create timeout promise
         const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Request timed out')), 15000)
+            setTimeout(() => reject(new Error('Request timed out')), 25000)
         );
 
         // Send to Google Apps Script with timeout
@@ -681,6 +690,10 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
             }),
             timeoutPromise
         ]);
+        if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
         const result = await response.json();
 
    if (result.success) {
@@ -743,20 +756,30 @@ if (result.milestone && result.roleInfo) {
           });
         }
       } catch (err) {
-        console.error('Error in modal submission:', err);
-        try {
-          await interaction.editReply({ 
-            content: err.message === 'Request timed out'
-              ? '❌ The request took too long. Please try again.'
-              : '❌ There was an error sending your data. Please try again later.',
-            flags: ['Ephemeral'] 
-          });
-        } catch (replyErr) {
-          console.error('Error sending error message:', replyErr);
-        }
-      }
-      return;
+  console.error('❌ Error in modal submission:', err);
+
+  try {
+    if (typeof response !== 'undefined' && response?.text) {
+      const rawText = await response.text();
+      if (rawText) console.error('❗ Raw response text:', rawText);
     }
+  } catch (_) {}
+
+  try {
+    await interaction.editReply({
+      content: err.message === 'Request timed out'
+        ? '❌ The request took too long. Please try again.'
+        : '❌ There was an error sending your data. Please try again later.',
+      flags: ['Ephemeral']
+    });
+  } catch (replyErr) {
+    console.error('❌ Error sending fallback reply:', replyErr);
+  }
+
+  return;
+}
+
+
 
 // Handle test modal submission
 if (interaction.isModalSubmit() && interaction.customId === 'testLogPreview') {
