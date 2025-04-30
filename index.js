@@ -634,43 +634,39 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 
     // Handle /populatecache command
     if (interaction.isChatInputCommand() && interaction.commandName === 'populatecache') {
-      try {
-        // Check permissions first
-        if (!interaction.member.permissions.has('ADMINISTRATOR')) {
-          await interaction.reply({
-            content: '❌ You do not have permission to use this command.',
-            ephemeral: true
-          });
-          return;
-        }
+  try {
+    // Check permissions first
+    if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+      await interaction.reply({
+        content: '❌ You do not have permission to use this command.',
+        ephemeral: true
+      });
+      return;
+    }
 
-        // Defer the reply immediately
-       await interaction.deferReply({ ephemeral: true });
+    // Defer the reply immediately
+    await interaction.deferReply({ ephemeral: true });
+
+    // Then try to populate cache
+    const result = await logCache.populateFromSheet();
     
-        // Then try to populate cache
-        const result = await logCache.populateFromSheet();
-
-        // Edit the deferred reply
-     await interaction.editReply({
+    // Edit the deferred reply with the result
+    await interaction.editReply({
       content: result.success 
         ? `✅ Successfully populated cache with ${result.count} entries.`
-        : `❌ Failed to populate cache: ${result.error}`,
+        : `❌ Failed to populate cache: ${result.error}`
     });
-   } catch (error) {
+
+  } catch (error) {
     console.error('Error in populatecache command:', error);
-    if (interaction.deferred) {
+    if (interaction.deferred && !interaction.replied) {
       await interaction.editReply({
         content: '❌ An error occurred while populating the cache.'
       });
-    } else if (!interaction.replied) {
-      await interaction.reply({
-        content: '❌ An error occurred while populating the cache.',
-        ephemeral: true
-      });
     }
-   }
-    return;
   }
+  return;
+}
     
     // Handle /leaderboard command (ephemeral)
     if (interaction.isChatInputCommand() && interaction.commandName === 'leaderboard') {
