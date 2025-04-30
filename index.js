@@ -580,12 +580,12 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       return;
     }
 
-    // Handle modal submission
-    if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
-      await interaction.deferReply({ ephemeral: true });
+   // Handle modal submission
+if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
+  await interaction.deferReply({ ephemeral: true });
 
-      try {
-            console.log('Parsed modal data:', {
+  try {
+    console.log('Parsed modal data:', {
       priority1: interaction.fields.getTextInputValue('priority1'),
       priority2: interaction.fields.getTextInputValue('priority2'),
       priority3: interaction.fields.getTextInputValue('priority3'),
@@ -593,189 +593,189 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       notes: interaction.fields.getTextInputValue('notes')
     });
 
+    // Get the weekly priorities first
+    const prioritiesResponse = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getWeeklyPriorities',
+        userId: interaction.user.id
+      })
+    });
 
-        // Get the weekly priorities first
-        const prioritiesResponse = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'getWeeklyPriorities',
-            userId: interaction.user.id
-          })
-        });
-        
-        const prioritiesResult = await prioritiesResponse.json();
-        const weeklyPriorities = prioritiesResult.success ? prioritiesResult.priorities : null;
-        
-        if (!weeklyPriorities) {
-          return await interaction.editReply({
-            content: '❌ Could not retrieve your priorities. Please set them using /setweek first.',
-            ephemeral: true
-          });
-        }
+    const prioritiesResult = await prioritiesResponse.json();
+    const weeklyPriorities = prioritiesResult.success ? prioritiesResult.priorities : null;
+
+    if (!weeklyPriorities) {
+      return await interaction.editReply({
+        content: '❌ Could not retrieve your priorities. Please set them using /setweek first.',
+        ephemeral: true
+      });
+    }
 
     const now = new Date();
-        console.log('=== Log Submission Time Debug ===');
-        console.log('Time being sent to Apps Script:', {
-          rawDate: now,
-          localLA: now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }),
-          utc: now.toUTCString(),
-          hours: now.getHours(),
-          hoursUTC: now.getUTCHours(),
-          timestamp: now.getTime()
+    console.log('=== Log Submission Time Debug ===');
+    console.log('Time being sent to Apps Script:', {
+      rawDate: now,
+      localLA: now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }),
+      utc: now.toUTCString(),
+      hours: now.getHours(),
+      hoursUTC: now.getUTCHours(),
+      timestamp: now.getTime()
+    });
+
+    // Get values from modal inputs
+    const priorities = [];
+    for (let i = 1; i <= 3; i++) {
+      const value = interaction.fields.getTextInputValue(`priority${i}`);
+      if (!value || !value.trim()) {
+        return await interaction.editReply({
+          content: `❌ Value required for Priority ${i}.`,
+          flags: ['Ephemeral']
         });
+      }
+      priorities.push({ value: value.trim() });
+    }
 
-        // Get values from modal inputs
-        const priorities = [];
-        for (let i = 1; i <= 3; i++) {
-          const value = interaction.fields.getTextInputValue(`priority${i}`);
-          if (!value || !value.trim()) {
-            return await interaction.editReply({
-              content: `❌ Value required for Priority ${i}.`,
-              flags: ['Ephemeral']
-            });
-          }
-          priorities.push({ value: value.trim() });
-        }
-        
-        // Validate satisfaction (0-10)
-        const satisfactionRaw = interaction.fields.getTextInputValue('satisfaction');
-        const satisfaction = parseInt(satisfactionRaw, 10);
-        if (isNaN(satisfaction) || satisfaction < 0 || satisfaction > 10) {
-          return await interaction.editReply({
-            content: "❌ Satisfaction must be a number between 0 and 10.",
-            flags: ['Ephemeral']
-          });
-        }
-        // Notes (required)
-        const notes = interaction.fields.getTextInputValue('notes');
-        if (!notes || !notes.trim()) {
-          return await interaction.editReply({
-            content: "❌ Notes field is required.",
-            flags: ['Ephemeral']
-          });
-        }
+    // Validate satisfaction (0-10)
+    const satisfactionRaw = interaction.fields.getTextInputValue('satisfaction');
+    const satisfaction = parseInt(satisfactionRaw, 10);
+    if (isNaN(satisfaction) || satisfaction < 0 || satisfaction > 10) {
+      return await interaction.editReply({
+        content: "❌ Satisfaction must be a number between 0 and 10.",
+        flags: ['Ephemeral']
+      });
+    }
 
-        // Prepare data for Google Apps Script
-        const data = {
-          priority1_label: weeklyPriorities.Priority1.label,
-          priority1_value: priorities[0].value,
-          priority1_unit: weeklyPriorities.Priority1.unit,
-          priority2_label: weeklyPriorities.Priority2.label,
-          priority2_value: priorities[1].value,
-          priority2_unit: weeklyPriorities.Priority2.unit,
-          priority3_label: weeklyPriorities.Priority3.label,
-          priority3_value: priorities[2].value,
-          priority3_unit: weeklyPriorities.Priority3.unit,
-          satisfaction: satisfaction,
-          notes: notes
-        };
+    // Notes (required)
+    const notes = interaction.fields.getTextInputValue('notes');
+    if (!notes || !notes.trim()) {
+      return await interaction.editReply({
+        content: "❌ Notes field is required.",
+        flags: ['Ephemeral']
+      });
+    }
 
-        // Create timeout promise
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Request timed out')), 25000)
-        );
+    // Prepare data for Google Apps Script
+    const data = {
+      priority1_label: weeklyPriorities.Priority1.label,
+      priority1_value: priorities[0].value,
+      priority1_unit: weeklyPriorities.Priority1.unit,
+      priority2_label: weeklyPriorities.Priority2.label,
+      priority2_value: priorities[1].value,
+      priority2_unit: weeklyPriorities.Priority2.unit,
+      priority3_label: weeklyPriorities.Priority3.label,
+      priority3_value: priorities[2].value,
+      priority3_unit: weeklyPriorities.Priority3.unit,
+      satisfaction: satisfaction,
+      notes: notes
+    };
 
-        // Send to Google Apps Script with timeout
-        const response = await Promise.race([
-            fetch(SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'logDaily',
-                    userId: interaction.user.id,
-                    userTag: interaction.user.tag,
-                    data
-                })
-            }),
-            timeoutPromise
-        ]);
-        if (!response.ok) {
+    // Create timeout promise
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Request timed out')), 25000)
+    );
+
+    // Send to Google Apps Script with timeout
+    const response = await Promise.race([
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'logDaily',
+          userId: interaction.user.id,
+          userTag: interaction.user.tag,
+          data
+        })
+      }),
+      timeoutPromise
+    ]);
+
+    if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.success) {
+      const [firstLine, ...restOfMessage] = result.message.split('\n\n');
+      const streakLine = `📈 **Current Streak**: ${result.currentStreak} days`;
+      const fullMessage = [firstLine, streakLine, ...restOfMessage].join('\n\n');
+
+      await interaction.editReply({
+        content: fullMessage,
+        flags: ['Ephemeral']
+      });
+
+      const logSummary = [
+        '📝 **Daily Log Summary**',
+        '',
+        `• ${data.priority1_label}, ${data.priority1_value} ${data.priority1_unit}`,
+        `• ${data.priority2_label}, ${data.priority2_value} ${data.priority2_unit}`,
+        `• ${data.priority3_label}, ${data.priority3_value} ${data.priority3_unit}`,
+        `• Satisfaction: ${data.satisfaction}/10`,
+        '',
+        `**Notes:**\n${data.notes}`
+      ].join('\n');
+
+      try {
+        await interaction.user.send(logSummary);
+      } catch (dmError) {
+        console.error('Could not send log summary DM:', dmError);
+        await interaction.followUp({
+          content: "⚠️ I couldn't send you a DM with your log summary. To receive summaries, please:\n1. Right-click the server name\n2. Click 'Privacy Settings'\n3. Enable 'Direct Messages'",
+          flags: ['Ephemeral']
+        });
       }
 
-        const result = await response.json();
+      if (result.milestone) {
+        await handleRoleUpdate(interaction, result.currentStreak, result);
+      }
 
-   if (result.success) {
- 
-   // Ephemeral reply with inspirational message and streak count
-  const [firstLine, ...restOfMessage] = result.message.split('\n\n');
-  const streakLine = `📈 **Current Streak**: ${result.currentStreak} days`;
-  const fullMessage = [firstLine, streakLine, ...restOfMessage].join('\n\n');
-  
-  await interaction.editReply({ 
-    content: fullMessage,
-    flags: ['Ephemeral']
-  });
+      if (result.milestone && result.roleInfo) {
+        await interaction.channel.send(`🎊 ${interaction.user} has achieved ${result.roleInfo.name} status for ${result.currentStreak} consecutive days logged!`);
+      } else {
+        await interaction.channel.send(`🎯 ${interaction.user} just extended their daily logging streak!`);
+      }
 
-  // Formatted log summary DM
-  const logSummary = [
-    '📝 **Daily Log Summary**',
-    '',
-    `• ${data.priority1_label}, ${data.priority1_value} ${data.priority1_unit}`,
-    `• ${data.priority2_label}, ${data.priority2_value} ${data.priority2_unit}`,
-    `• ${data.priority3_label}, ${data.priority3_value} ${data.priority3_unit}`,
-    `• Satisfaction: ${data.satisfaction}/10`,
-    '',
-    `**Notes:**\n${data.notes}`
-  ].join('\n');
+      if (result.dmMessage) {
+        try {
+          await interaction.user.send(result.dmMessage);
+        } catch (dmError) {
+          console.error('Could not send DM:', dmError);
+        }
+      }
 
-  try {
-    await interaction.user.send(logSummary);
-} catch (dmError) {
-    console.error('Could not send log summary DM:', dmError);
-    await interaction.followUp({
-        content: "⚠️ I couldn't send you a DM with your log summary. To receive summaries, please:\n1. Right-click the server name\n2. Click 'Privacy Settings'\n3. Enable 'Direct Messages'",
+    } else {
+      await interaction.editReply({
+        content: result.message || '❌ There was an error logging your entry.',
         flags: ['Ephemeral']
-    });
-}
-  // Handle role update if there's a milestone
-  if (result.milestone) {
-    await handleRoleUpdate(interaction, result.currentStreak, result);
-  }
+      });
+    }
 
-  // Always send the public message
-if (result.milestone && result.roleInfo) {
-    await interaction.channel.send(`🎊 ${interaction.user} has achieved ${result.roleInfo.name} status for ${result.currentStreak} consecutive days logged!`);
-} else {
-    await interaction.channel.send(`🎯 ${interaction.user} just extended their daily logging streak!`);
-}
+  } catch (err) {
+    console.error('❌ Error in modal submission:', err);
 
-  // Send DM for milestone if provided
-  if (result.dmMessage) {
     try {
-      await interaction.user.send(result.dmMessage);
-    } catch (dmError) {
-      console.error('Could not send DM:', dmError);
+      if (typeof response !== 'undefined' && response?.text) {
+        const rawText = await response.text();
+        if (rawText) console.error('❗ Raw response text:', rawText);
+      }
+    } catch (_) {}
+
+    try {
+      await interaction.editReply({
+        content: err.message === 'Request timed out'
+          ? '❌ The request took too long. Please try again.'
+          : '❌ There was an error sending your data. Please try again later.',
+        flags: ['Ephemeral']
+      });
+    } catch (replyErr) {
+      console.error('❌ Error sending fallback reply:', replyErr);
     }
+
+    return;
   }
-} else {
-          await interaction.editReply({ 
-            content: result.message || '❌ There was an error logging your entry.',
-            flags: ['Ephemeral'] 
-          });
-      } catch (err) {
-  console.error('❌ Error in modal submission:', err);
-
-  try {
-    if (typeof response !== 'undefined' && response?.text) {
-      const rawText = await response.text();
-      if (rawText) console.error('❗ Raw response text:', rawText);
-    }
-  } catch (_) {}
-
-  try {
-    await interaction.editReply({
-      content: err.message === 'Request timed out'
-        ? '❌ The request took too long. Please try again.'
-        : '❌ There was an error sending your data. Please try again later.',
-      flags: ['Ephemeral']
-    });
-  } catch (replyErr) {
-    console.error('❌ Error sending fallback reply:', replyErr);
-  }
-
-  return;
 }
 
 
