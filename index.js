@@ -333,8 +333,7 @@ client.on(Events.InteractionCreate, async interaction => {
     // Handle /log command
     if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
   try {
-    await interaction.deferReply({ ephemeral: true });
-
+    // Make the API call with timeout
     const timeoutPromise = new Promise((_, reject) => 
       setTimeout(() => reject(new Error('Request timed out')), 5000)
     );
@@ -356,7 +355,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const weeklyPriorities = result.success ? result.priorities : null;
     
     if (!result.success) {
-      return await interaction.editReply({
+      return await interaction.reply({
         content: '❌ Failed to load your priorities. Please try again.',
         ephemeral: true
       });
@@ -417,7 +416,6 @@ client.on(Events.InteractionCreate, async interaction => {
         .setRequired(true)
     );
 
-    // Debug logging
     console.log('Modal labels:', {
       p1: priority1.components[0].data.label,
       p2: priority2.components[0].data.label,
@@ -426,34 +424,23 @@ client.on(Events.InteractionCreate, async interaction => {
 
     modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
 
-    try {
-      await interaction.deleteReply();
-      return await interaction.showModal(modal);
-    } catch (modalError) {
-      console.error('Error showing modal after API call:', modalError);
-      return await interaction.editReply({
-        content: '❌ There was an error showing the form. Please try again.',
-        ephemeral: true
-      });
-    }
+    // Show modal directly
+    return await interaction.showModal(modal);
 
   } catch (error) {
     console.error('Error in /log command:', error);
     
-    if (error.message === 'Request timed out') {
-      return await interaction.editReply({
-        content: '❌ The request took too long. Please try again.',
-        ephemeral: true
-      });
-    }
-
     try {
-      if (interaction.deferred) {
-        return await interaction.editReply({
-          content: '❌ There was an error showing the form. Please try again.',
+      // Handle timeout specifically
+      if (error.message === 'Request timed out') {
+        return await interaction.reply({
+          content: '❌ The request took too long. Please try again.',
           ephemeral: true
         });
-      } else {
+      }
+
+      // Handle other errors
+      if (!interaction.replied) {
         return await interaction.reply({
           content: '❌ There was an error showing the form. Please try again.',
           ephemeral: true
