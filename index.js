@@ -350,33 +350,32 @@ client.on(Events.InteractionCreate, async interaction => {
         const weeklyPriorities = result.success ? result.priorities : null;
         console.log('Weekly priorities for user:', interaction.user.tag, weeklyPriorities);
         
-        // Then modify the TextInputBuilder parts to use weeklyPriorities instead of lastLog:
-        const priority1 = new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('priority1')
-            .setLabel(weeklyPriorities ? `${weeklyPriorities.priority1}` : 'Priority 1')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter number')  // Simple placeholder since label has the priority
-            .setRequired(true)
-        );
-        
-        const priority2 = new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('priority2')
-            .setLabel(weeklyPriorities ? `${weeklyPriorities.priority2}` : 'Priority 2')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter number')
-            .setRequired(true)
-        );
-        
-        const priority3 = new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('priority3')
-            .setLabel(weeklyPriorities ? `${weeklyPriorities.priority3}` : 'Priority 3')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter number')
-            .setRequired(true)
-        );
+       const priority1 = new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('priority1')
+          .setLabel(weeklyPriorities ? weeklyPriorities[0] : 'Priority 1')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Enter number')
+          .setRequired(true)
+      );
+      
+      const priority2 = new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('priority2')
+          .setLabel(weeklyPriorities ? weeklyPriorities[1] : 'Priority 2')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Enter number')
+          .setRequired(true)
+      );
+      
+      const priority3 = new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('priority3')
+          .setLabel(weeklyPriorities ? weeklyPriorities[2] : 'Priority 3')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Enter number')
+          .setRequired(true)
+      );
         
         const satisfaction = new ActionRowBuilder().addComponents(
           new TextInputBuilder()
