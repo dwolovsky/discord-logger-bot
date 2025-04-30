@@ -49,6 +49,7 @@ class LogCache {
   }
 
   async initialize() {
+    console.log('Initializing cache at:', this.cacheFile);
       try {
       const data = await fs.readFile(this.cacheFile, 'utf8');
       const parsed = JSON.parse(data);
@@ -70,6 +71,8 @@ class LogCache {
   }
 
   async saveToFile() {
+    console.log('Saving cache to file:', this.cacheFile);  // ADD THIS LINE HERE
+    console.log('Cache contents:', Object.fromEntries(this.memoryCache));  // AND THIS LINE HERE
     try {
       const cacheObject = Object.fromEntries(this.memoryCache);
       await fs.writeFile(
@@ -112,6 +115,8 @@ class LogCache {
     });
     
     const result = await response.json();
+    console.log('Starting cache population from sheet');
+    console.log('Data received from sheet:', result.data);
     if (!result.success) {
       throw new Error(result.error || 'Failed to fetch sheet data');
     }
