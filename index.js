@@ -524,7 +524,7 @@ client.on(Events.InteractionCreate, async interaction => {
   try {
     const modal = new ModalBuilder()
       .setCustomId('weeklyPriorities')
-      .setTitle('📝 Set Your Weekly Priorities');
+      .setTitle('📝 Set Weekly Priorities (Format: Label, Unit)');
 
     const priority1 = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
