@@ -332,32 +332,34 @@ client.on(Events.InteractionCreate, async interaction => {
   try {
     // Handle /log command
     if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
-      try {
-        const modal = new ModalBuilder()
-          .setCustomId('dailyLog')
-          .setTitle('Daily Log');
+  try {
+    // Defer reply immediately
+    await interaction.deferReply({ ephemeral: true });
 
-        console.log('Sending request to get weekly priorities:', {
-                userId: interaction.user.id,
-                action: 'getWeeklyPriorities'
-            });
-        
-        const response = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'getWeeklyPriorities',
-            userId: interaction.user.id
-          })
-        });
+    const modal = new ModalBuilder()
+      .setCustomId('dailyLog')
+      .setTitle('Daily Log');
 
-        const result = await response.json();
-        console.log('Raw result from getWeeklyPriorities:', result);
-        const weeklyPriorities = result.success ? result.priorities : null;
-        console.log('Weekly priorities for user:', interaction.user.tag, weeklyPriorities);
+    console.log('Sending request to get weekly priorities:', {
+      userId: interaction.user.id,
+      action: 'getWeeklyPriorities'
+    });
+    
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getWeeklyPriorities',
+        userId: interaction.user.id
+      })
+    });
 
+    const result = await response.json();
+    console.log('Raw result from getWeeklyPriorities:', result);
+    const weeklyPriorities = result.success ? result.priorities : null;
+    console.log('Weekly priorities for user:', interaction.user.tag, weeklyPriorities);
 
-          const priority1 = new ActionRowBuilder().addComponents(
+    const priority1 = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('priority1')
         .setLabel(weeklyPriorities ? 
@@ -390,80 +392,43 @@ client.on(Events.InteractionCreate, async interaction => {
         .setRequired(true)
     );
         
-        const satisfaction = new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('satisfaction')
-            .setLabel('Satisfaction (0-10)')
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true)
-        );
-        const notes = new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId('notes')
-            .setLabel('Experiment Notes, Questions, Thoughts')
-            .setStyle(TextInputStyle.Paragraph)
-            .setRequired(true)
-        );
-
-         modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
-        return await interaction.showModal(modal);  
-      } catch (error) {
-        console.error('Error showing modal:', error);
-        if (!interaction.replied) {
-          return await interaction.reply({  
-            content: '❌ There was an error showing the form. Please try again.',
-            flags: ['Ephemeral']
-          });
-        }
-      }
-      return;
-    }
-
-  if (interaction.isChatInputCommand() && interaction.commandName === 'setweek') {
-  try {
-    const modal = new ModalBuilder()
-      .setCustomId('weeklyPriorities')
-      .setTitle('📝 Set Weekly Priorities');
-
-    const priority1 = new ActionRowBuilder().addComponents(
+    const satisfaction = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
-        .setCustomId('priority1')
-        .setLabel('Priority 1 (Label, Unit)')
+        .setCustomId('satisfaction')
+        .setLabel('Satisfaction (0-10)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('E.g. Meditation, minutes')
-        .setMaxLength(44)
         .setRequired(true)
     );
 
-    const priority2 = new ActionRowBuilder().addComponents(
+    const notes = new ActionRowBuilder().addComponents(
       new TextInputBuilder()
-        .setCustomId('priority2')
-        .setLabel('Priority 2 (Label, Unit)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('E.g. Writing, words')
-        .setMaxLength(44)
+        .setCustomId('notes')
+        .setLabel('Experiment Notes, Questions, Thoughts')
+        .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
     );
 
-    const priority3 = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('priority3')
-        .setLabel('Priority 3 (Label, Unit)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('E.g. Health, effort')
-        .setMaxLength(44)
-        .setRequired(true)
-    );
+    // Add debug logging for labels
+    console.log('Modal labels:', {
+      p1: priority1.components[0].data.label,
+      p2: priority2.components[0].data.label,
+      p3: priority3.components[0].data.label
+    });
 
-    modal.addComponents(priority1, priority2, priority3);
+    modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
+    
+    // Delete deferred reply before showing modal
+    await interaction.deleteReply();
     return await interaction.showModal(modal);
 
   } catch (error) {
-    console.error('Error showing setweek modal:', error);
-    return await interaction.reply({
-      content: '❌ There was an error showing the form. Please try again.',
-      ephemeral: true
-    });
+    console.error('Error showing modal:', error);
+    if (!interaction.replied) {
+      return await interaction.editReply({
+        content: '❌ There was an error showing the form. Please try again.',
+        ephemeral: true
+      });
+    }
   }
   return;
 }
