@@ -1021,7 +1021,7 @@ await fetch(SCRIPT_URL, {
 
 await interaction.user.send(aiResult.insights);
 await interaction.editReply({
-  content: "✨ Self Science Lab Assistant just sent you a DM ✅",
+  content: "✨ Check your DMs for insights! 🚀",
   ephemeral: true
 });
 
