@@ -434,7 +434,7 @@ client.on(Events.InteractionCreate, async interaction => {
   } catch (error) {
     clearTimeout(timeoutId);
     console.error('Error in /log command:', error);
-
+  }
     if (error.name === 'AbortError') {
   try {
     await interaction.reply({
