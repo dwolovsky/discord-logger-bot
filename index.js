@@ -381,7 +381,7 @@ client.on(Events.InteractionCreate, async interaction => {
       return;
     }
 
-    console.log("📦 getWeeklyPriorities result:", JSON.stringify(result, null, 2));
+    console.log("📦 getWeeklyPriorities:", Object.keys(result.priorities));
     const weeklyPriorities = result.priorities;
 
     const modal = new ModalBuilder()
@@ -435,7 +435,7 @@ client.on(Events.InteractionCreate, async interaction => {
     clearTimeout(timeoutId);
     console.error('Error in /log command:', error);
 
-    if (err.name === 'AbortError') {
+    if (error.name === 'AbortError') {
   try {
     await interaction.reply({
       content: '🚗 Had to warm up the engine. Please run `/log` again now.',
