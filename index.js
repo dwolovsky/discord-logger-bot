@@ -456,8 +456,6 @@ client.on(Events.InteractionCreate, async interaction => {
     }
   }
   return;
-});
-
     
     
 // Handle /testlog command
@@ -691,7 +689,6 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
       });
      }
 
-
     const now = new Date();
     console.log('=== Log Submission Time Debug ===');
     console.log('Time being sent to Apps Script:', {
@@ -785,7 +782,6 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
   return;
   }
 
-
     if (result.success) {
       const [firstLine, ...restOfMessage] = result.message.split('\n\n');
       const streakLine = `📈 **Current Streak**: ${result.currentStreak} days`;
@@ -874,8 +870,6 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
     return;
   }
 }
-
-
 
 // Handle test modal submission
 if (interaction.isModalSubmit() && interaction.customId === 'testLogPreview') {
@@ -1004,7 +998,6 @@ if (interaction.isModalSubmit() && interaction.customId === 'weeklyPriorities') 
   return;
   }
 
-
     if (result.success) {
       // Show confirmation
       const confirmationMessage = [
@@ -1107,7 +1100,7 @@ await fetch(SCRIPT_URL, {
       dataPoints: result.data.insights.userMetrics.dataPoints
     }
   })
-});
+  });
 
 await interaction.user.send(aiResult.insights);
 await interaction.editReply({
@@ -1127,7 +1120,7 @@ await interaction.editReply({
       console.error('Error handling interaction:', followUpError);
     }
   }
-}
+    });
     
 async function handleRoleUpdate(interaction, streakCount, result) {
   try {
