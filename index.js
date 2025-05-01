@@ -342,7 +342,7 @@ async function processMessageQueue() {
 client.on(Events.InteractionCreate, async interaction => {
   try {
     // Handle /log command
-    if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
+  if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
   let timeoutId;
   try {
     const timeoutPromise = new Promise((_, reject) => {
@@ -366,49 +366,46 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     const result = await response.json();
+
     if (!result.success) {
-  console.error("❌ Script returned error:", result.error);
-  await interaction.editReply({
-    content: "❌ Script error: " + (result.error || "Unknown error"),
-    ephemeral: true
-  });
-  return;
-  }
+      console.error("❌ Script returned error:", result.error);
+      try {
+        await interaction.reply({
+          content: "❌ Script error: " + (result.error || "Unknown error"),
+          ephemeral: true
+        });
+      } catch (replyError) {
+        console.error("⚠️ Failed to reply with script error:", replyError);
+      }
+      return;
+    }
+
     console.log("📦 getWeeklyPriorities result:", JSON.stringify(result, null, 2));
-
-
-    const weeklyPriorities = result.success ? result.priorities : null;
+    const weeklyPriorities = result.priorities;
 
     const modal = new ModalBuilder()
       .setCustomId('dailyLog')
       .setTitle('Daily Log');
 
-    // Create components first
     const components = [
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('priority1')
-          .setLabel(weeklyPriorities ? 
-            `${weeklyPriorities.Priority1.label}, ${weeklyPriorities.Priority1.unit}` : 
-            'Priority 1')
+          .setLabel(`${weeklyPriorities.Priority1.label}, ${weeklyPriorities.Priority1.unit}`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('priority2')
-          .setLabel(weeklyPriorities ? 
-            `${weeklyPriorities.Priority2.label}, ${weeklyPriorities.Priority2.unit}` : 
-            'Priority 2')
+          .setLabel(`${weeklyPriorities.Priority2.label}, ${weeklyPriorities.Priority2.unit}`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('priority3')
-          .setLabel(weeklyPriorities ? 
-            `${weeklyPriorities.Priority3.label}, ${weeklyPriorities.Priority3.unit}` : 
-            'Priority 3')
+          .setLabel(`${weeklyPriorities.Priority3.label}, ${weeklyPriorities.Priority3.unit}`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
       ),
@@ -428,32 +425,39 @@ client.on(Events.InteractionCreate, async interaction => {
       )
     ];
 
-    // Add all components at once
     modal.addComponents(...components);
 
-    // Show modal immediately
+    // This is the only interaction acknowledgment
     return await interaction.showModal(modal);
 
   } catch (error) {
     clearTimeout(timeoutId);
     console.error('Error in /log command:', error);
-    
+
     if (error.message === 'Timeout') {
-      return await interaction.reply({
-        content: '❌ Request timed out. Please try again.',
-        ephemeral: true
-      });
+      try {
+        await interaction.reply({
+          content: '❌ Request timed out. Please try again.',
+          ephemeral: true
+        });
+      } catch (replyError) {
+        console.error("⚠️ Failed to send timeout reply:", replyError);
+      }
+      return;
     }
 
-    if (!interaction.replied) {
-      return await interaction.reply({ 
+    try {
+      await interaction.reply({
         content: '❌ There was an error showing the form. Please try again.',
-        ephemeral: true 
+        ephemeral: true
       });
+    } catch (replyError) {
+      console.error("⚠️ Failed to send error reply:", replyError);
     }
   }
   return;
 }
+    
     
 // Handle /testlog command
 if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
