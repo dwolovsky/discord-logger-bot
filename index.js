@@ -1127,15 +1127,6 @@ await interaction.editReply({
     }
   }
 }
-  } catch (error) {
-  console.error('Unhandled interaction error:', error);
-  if (interaction.deferred) {
-    await interaction.editReply({ content: '❌ An unexpected error occurred. Please try again later.', ephemeral: true });
-  } else if (!interaction.replied) {
-    await interaction.reply({ content: '❌ An unexpected error occurred. Please try again later.', ephemeral: true });
-  }
-}
-});
     
 async function handleRoleUpdate(interaction, streakCount, result) {
   try {
