@@ -735,7 +735,6 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
     };
 
     // Create timeout promise
-    await interaction.deferReply({ ephemeral: true });
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Request timed out')), 25000)
     );
