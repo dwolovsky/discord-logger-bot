@@ -683,7 +683,6 @@ client.on(Events.InteractionCreate, async interaction => {
       }
     }
   } // end of isChatInputCommand if
-}); // end of client.on(Events.InteractionCreate)
 
 
    // Handle modal submission
@@ -1054,7 +1053,8 @@ if (interaction.isModalSubmit() && interaction.customId === 'weeklyPriorities') 
       ephemeral: true
     });
   }
-}
+ }
+}); // end of client.on(Events.InteractionCreate)
 
 // Helper functions outside the interaction handler
 async function handleRoleUpdate(interaction, streakCount, result) {
