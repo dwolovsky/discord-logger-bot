@@ -1154,6 +1154,7 @@ async function ensureRole(guild, roleName, color) {
       name: roleName,
       color: color,
       reason: 'Achievement role'
+    });
   }
   return role;
 }
