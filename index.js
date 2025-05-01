@@ -1035,78 +1035,78 @@ if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7'
     const periodDays = interaction.commandName === 'insights7' ? 7 : 30;
 
     console.log('Insights command debug:', {
-          command: interaction.commandName,
-          userId: interaction.user.id,
-          userTag: interaction.user.tag,
-          periodDays: periodDays
-        });
+      command: interaction.commandName,
+      userId: interaction.user.id,
+      userTag: interaction.user.tag,
+      periodDays: periodDays
+    });
     
-         // Request insights data from Apps Script
-      const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'getInsights',
-          userId: interaction.user.id,
-          userTag: interaction.user.tag,
-          periodDays: periodDays
-        })
+    // Request insights data from Apps Script
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'getInsights',
+        userId: interaction.user.id,
+        userTag: interaction.user.tag,
+        periodDays: periodDays
+      })
+    });
+    
+    // Parse response once
+    const responseText = await response.text();
+    console.log('Raw Apps Script Response:', responseText);
+    const result = JSON.parse(responseText);
+    console.log('Complete result structure:', JSON.stringify(result, null, 2));
+    console.log('Parsed result:', result);
+    
+    if (!response.ok || !result.success) {
+      await interaction.editReply({ 
+        content: result.message || `❌ ${result.error || 'Failed to generate insights'}`, 
+        ephemeral: true 
       });
-      
-      // Parse response once
-      const responseText = await response.text();
-      console.log('Raw Apps Script Response:', responseText);
-      const result = JSON.parse(responseText);
-      console.log('Complete result structure:', JSON.stringify(result, null, 2));
-      console.log('Parsed result:', result);
-      
-      if (!response.ok || !result.success) {
-        await interaction.editReply({ 
-          content: result.message || `❌ ${result.error || 'Failed to generate insights'}`, 
-          ephemeral: true 
-        });
-        return;
-      }
-      
-      // If we have cached insights, return them
+      return;
+    }
+    
+    // If we have cached insights, return them
     if (result.cached && result.data.aiText) {
       await interaction.editReply({
-       content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.aiText}`,
-       ephemeral: true
+        content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.aiText}`,
+        ephemeral: true
       });
-        return;
-     }
+      return;
+    }
     
     const aiResult = await generateInsights(result.data.insights);
-if (!aiResult.success) {
-  await interaction.editReply({
-    content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
-    ephemeral: true
-  });
-  return;
-}
-
-await fetch(SCRIPT_URL, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    action: 'storeInsights',
-    userId: interaction.user.id,
-    userTag: interaction.user.tag,
-    periodDays: periodDays,
-    insights: {
-      structuredData: result.data.insights,
-      aiText: aiResult.insights,
-      dataPoints: result.data.insights.userMetrics.dataPoints
+    if (!aiResult.success) {
+      await interaction.editReply({
+        content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
+        ephemeral: true
+      });
+      return;
     }
-  })
-  });
 
-await interaction.user.send(aiResult.insights);
-await interaction.editReply({
-  content: "✨ Check your DMs for insights! 🚀",
-  ephemeral: true
-});
+    await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'storeInsights',
+        userId: interaction.user.id,
+        userTag: interaction.user.tag,
+        periodDays: periodDays,
+        insights: {
+          structuredData: result.data.insights,
+          aiText: aiResult.insights,
+          dataPoints: result.data.insights.userMetrics.dataPoints
+        }
+      })
+    });
+
+    await interaction.user.send(aiResult.insights);
+    await interaction.editReply({
+      content: "✨ Check your DMs for insights! 🚀",
+      ephemeral: true
+    });
 
   } catch (error) {
     console.error('Error in insights command:', error);
@@ -1120,8 +1120,10 @@ await interaction.editReply({
       console.error('Error handling interaction:', followUpError);
     }
   }
-    
-}};
+} // Close the insights command if block
+}); // Close the client.on(Events.InteractionCreate) handler
+
+// Helper functions outside the interaction handler
 async function handleRoleUpdate(interaction, streakCount, result) {
   try {
     const guild = interaction.guild;
@@ -1163,4 +1165,3 @@ client.login(DISCORD_TOKEN).catch(err => {
   console.error('❌ Failed to login to Discord:', err);
   process.exit(1);
 });
-)
