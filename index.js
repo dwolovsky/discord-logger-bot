@@ -682,13 +682,14 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
 
     const prioritiesResult = await prioritiesResponse.json();
     const weeklyPriorities = prioritiesResult.success ? prioritiesResult.priorities : null;
-
+    
     if (!weeklyPriorities) {
-      return await interaction.editReply({
+      return await interaction.reply({
         content: '❌ Could not retrieve your priorities. Please set them using /setweek first.',
         ephemeral: true
       });
-    }
+     }
+
 
     const now = new Date();
     console.log('=== Log Submission Time Debug ===');
@@ -851,16 +852,24 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
     } catch (_) {}
 
     try {
-      await interaction.editReply({
-        content: err.message === 'Request timed out'
-          ? '❌ The request took too long. Please try again.'
-          : '❌ There was an error sending your data. Please try again later.',
-        flags: ['Ephemeral']
-      });
-    } catch (replyErr) {
-      console.error('❌ Error sending fallback reply:', replyErr);
-    }
-
+  if (interaction.deferred) {
+    await interaction.editReply({
+      content: err.message === 'Request timed out'
+        ? '❌ The request took too long. Please try again.'
+        : '❌ There was an error sending your data. Please try again later.',
+      flags: ['Ephemeral']
+    });
+  } else if (!interaction.replied) {
+    await interaction.reply({
+      content: err.message === 'Request timed out'
+        ? '❌ The request took too long. Please try again.'
+        : '❌ There was an error sending your data. Please try again later.',
+      ephemeral: true
+    });
+  }
+ } catch (fallbackError) {
+  console.error('❌ Error sending fallback reply:', fallbackError);
+ }
     return;
   }
 }
