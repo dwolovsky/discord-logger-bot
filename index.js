@@ -343,23 +343,24 @@ client.on(Events.InteractionCreate, async interaction => {
   try {
     // Handle /log command
   if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
-  let timeoutId;
-  try {
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error('Timeout')), 25000);
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2800); // 2.8s limit for /log modal
+    
+    let response;
+    try {
+      response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'getWeeklyPriorities',
+          userId: interaction.user.id
+        }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
-    const fetchPromise = fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'getWeeklyPriorities',
-        userId: interaction.user.id
-      })
-    });
-
-    const response = await Promise.race([fetchPromise, timeoutPromise]);
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
