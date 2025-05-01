@@ -19,6 +19,17 @@ const SCRIPT_URL = process.env.SCRIPT_URL;
 // Add to your environment variables section
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
+// ====== Global Error Handlers ======
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔥 Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+process.on('uncaughtException', err => {
+  console.error('💥 Uncaught Exception thrown:', err);
+  process.exit(1);
+});
+
 // Add near other constants/env vars
 const INSIGHTS_COOLDOWN = 0 //3600000; // 1 hour in milliseconds
 const userInsightsCooldowns = new Map();
@@ -1150,4 +1161,8 @@ async function ensureRole(guild, roleName, color) {
   return role;
 }
 
-client.login(DISCORD_TOKEN);
+client.login(DISCORD_TOKEN).catch(err => {
+  console.error('❌ Failed to login to Discord:', err);
+  process.exit(1);
+});
+
