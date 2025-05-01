@@ -629,12 +629,11 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
     }
 
       // Handle /setweek command
-      if (interaction.isChatInputCommand() && interaction.commandName === 'setweek') {
+    if (interaction.isChatInputCommand() && interaction.commandName === 'setweek') {
   let acknowledged = false;
 
   try {
     console.log('🧪 Building modal for /setweek...');
-
     const modal = new ModalBuilder()
       .setCustomId('weeklyPriorities')
       .setTitle('Set Weekly Priorities');
@@ -654,7 +653,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 
     modal.addComponents(...components);
 
-    // Timeout safeguard (Discord requires reply in <3s)
+    console.log('🚀 About to show modal for /setweek...');
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Modal show timed out')), 2800)
     );
@@ -683,6 +682,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
 
   return;
 }
+
 
 
     
