@@ -340,6 +340,12 @@ async function processMessageQueue() {
 
 // ====== INTERACTION HANDLER ======
 client.on(Events.InteractionCreate, async interaction => {
+   console.log(`⚡ Received interaction:`, {
+    type: interaction.type,
+    isCommand: interaction.isChatInputCommand?.(),
+    command: interaction.commandName,
+    user: interaction.user?.tag
+  });
   try {
     // Handle /log command
   if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
