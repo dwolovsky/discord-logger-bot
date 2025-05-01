@@ -1163,4 +1163,4 @@ client.login(DISCORD_TOKEN).catch(err => {
   console.error('❌ Failed to login to Discord:', err);
   process.exit(1);
 });
-
+});
