@@ -335,7 +335,7 @@ client.on(Events.InteractionCreate, async interaction => {
   let timeoutId;
   try {
     const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error('Timeout')), 2500);
+      timeoutId = setTimeout(() => reject(new Error('Timeout')), 25000);
     });
 
     const fetchPromise = fetch(SCRIPT_URL, {
