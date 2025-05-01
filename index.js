@@ -434,17 +434,17 @@ client.on(Events.InteractionCreate, async interaction => {
     clearTimeout(timeoutId);
     console.error('Error in /log command:', error);
 
-    if (error.message === 'Timeout') {
-      try {
-        await interaction.reply({
-          content: '❌ Request timed out. Please try again.',
-          ephemeral: true
-        });
-      } catch (replyError) {
-        console.error("⚠️ Failed to send timeout reply:", replyError);
-      }
-      return;
-    }
+    if (err.name === 'AbortError') {
+  try {
+    await interaction.reply({
+      content: '🚗 Had to warm up the engine. Please run `/log` again now.',
+      ephemeral: true
+    });
+  } catch (replyErr) {
+    console.error('⚠️ Failed to reply after timeout:', replyErr);
+  }
+  return;
+}
 
     try {
       await interaction.reply({
