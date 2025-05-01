@@ -355,6 +355,15 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     const result = await response.json();
+    if (!result.success) {
+  console.error("❌ Script returned error:", result.error);
+  await interaction.editReply({
+    content: "❌ Script error: " + (result.error || "Unknown error"),
+    ephemeral: true
+  });
+  return;
+  }
+
     const weeklyPriorities = result.success ? result.priorities : null;
 
     const modal = new ModalBuilder()
@@ -509,6 +518,14 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
           })
         });
         const result = await response.json();
+       if (!result.success) {
+  console.error("❌ Script returned error:", result.error);
+  await interaction.editReply({
+    content: "❌ Script error: " + (result.error || "Unknown error"),
+    ephemeral: true
+  });
+  return;
+  }     
         await interaction.editReply({
           content: result.message,
           flags: ['Ephemeral']
@@ -566,6 +583,15 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
           })
         });
         const result = await response.json();
+        if (!result.success) {
+  console.error("❌ Script returned error:", result.error);
+  await interaction.editReply({
+    content: "❌ Script error: " + (result.error || "Unknown error"),
+    ephemeral: true
+  });
+  return;
+  }
+
         await interaction.editReply({
           content: result.message,
           flags: ['Ephemeral']
@@ -731,6 +757,15 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
     }
 
     const result = await response.json();
+    if (!result.success) {
+  console.error("❌ Script returned error:", result.error);
+  await interaction.editReply({
+    content: "❌ Script error: " + (result.error || "Unknown error"),
+    ephemeral: true
+  });
+  return;
+  }
+
 
     if (result.success) {
       const [firstLine, ...restOfMessage] = result.message.split('\n\n');
@@ -933,6 +968,15 @@ if (interaction.isModalSubmit() && interaction.customId === 'weeklyPriorities') 
     });
 
     const result = await response.json();
+    if (!result.success) {
+  console.error("❌ Script returned error:", result.error);
+  await interaction.editReply({
+    content: "❌ Script error: " + (result.error || "Unknown error"),
+    ephemeral: true
+  });
+  return;
+  }
+
 
     if (result.success) {
       // Show confirmation
