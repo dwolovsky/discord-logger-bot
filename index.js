@@ -363,6 +363,8 @@ client.on(Events.InteractionCreate, async interaction => {
   });
   return;
   }
+    console.log("📦 getWeeklyPriorities result:", JSON.stringify(result, null, 2));
+
 
     const weeklyPriorities = result.success ? result.priorities : null;
 
