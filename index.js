@@ -339,356 +339,353 @@ async function processMessageQueue() {
 }
 
 // ====== INTERACTION HANDLER ======
+// ====== INTERACTION HANDLER ======
 client.on(Events.InteractionCreate, async interaction => {
-   console.log(`⚡ Received interaction:`, {
+  console.log(`⚡ Received interaction:`, {
     type: interaction.type,
     isCommand: interaction.isChatInputCommand?.(),
     command: interaction.commandName,
     user: interaction.user?.tag
   });
-  try {
-    // Handle /log command
-  if (interaction.isChatInputCommand() && interaction.commandName === 'log') {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2800); // 2.8s limit for /log modal
-    
-    let response;
+
+  if (interaction.isChatInputCommand()) {
     try {
-      response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'getWeeklyPriorities',
-          userId: interaction.user.id
-        }),
-        signal: controller.signal
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
+      switch (interaction.commandName) {
+        case 'log': {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 2800);
+
+          let response;
+          try {
+            response = await fetch(SCRIPT_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'getWeeklyPriorities',
+                userId: interaction.user.id
+              }),
+              signal: controller.signal
+            });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          const result = await response.json();
+
+          if (!result.success) {
+            await interaction.reply({
+              content: "❌ Script error: " + (result.error || "Unknown error"),
+              ephemeral: true
+            });
+            return;
+          }
+
+          const weeklyPriorities = result.priorities;
+
+          const modal = new ModalBuilder()
+            .setCustomId('dailyLog')
+            .setTitle('Daily Log');
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('priority1')
+                .setLabel(`${weeklyPriorities.Priority1.label}, ${weeklyPriorities.Priority1.unit}`)
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('priority2')
+                .setLabel(`${weeklyPriorities.Priority2.label}, ${weeklyPriorities.Priority2.unit}`)
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('priority3')
+                .setLabel(`${weeklyPriorities.Priority3.label}, ${weeklyPriorities.Priority3.unit}`)
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('satisfaction')
+                .setLabel('Satisfaction (0-10)')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('notes')
+                .setLabel('Experiment Notes, Questions, Thoughts')
+                .setStyle(TextInputStyle.Paragraph)
+                .setRequired(true)
+            )
+          );
+
+          return await interaction.showModal(modal);
+        }
+
+        case 'testlog': {
+          const modal = new ModalBuilder()
+            .setCustomId('testLogPreview')
+            .setTitle('Daily Log Preview');
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('priority1')
+                .setLabel('Priority 1 (Measurement or Effort Rating)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. "Meditation, 15 mins"')
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('priority2')
+                .setLabel('Priority 2 (Measurement or Effort Rating)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. "Focus, 8/10 effort"')
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('priority3')
+                .setLabel('Priority 3 (Measurement or Effort Rating)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. "Writing, 500 words"')
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('satisfaction')
+                .setLabel('Satisfaction (0-10)')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('notes')
+                .setLabel('Notes / Experiment / \"I'm learning...\"')
+                .setStyle(TextInputStyle.Paragraph)
+                .setRequired(true)
+            )
+          );
+
+          return await interaction.showModal(modal);
+        }
 
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+        case 'streak': {
+          await interaction.deferReply({ ephemeral: true });
 
-    const result = await response.json();
-
-    if (!result.success) {
-      console.error("❌ Script returned error:", result.error);
-      try {
-        await interaction.reply({
-          content: "❌ Script error: " + (result.error || "Unknown error"),
-          ephemeral: true
-        });
-      } catch (replyError) {
-        console.error("⚠️ Failed to reply with script error:", replyError);
-      }
-      return;
-    }
-
-    console.log("📦 getWeeklyPriorities:", Object.keys(result.priorities));
-    const weeklyPriorities = result.priorities;
-
-    const modal = new ModalBuilder()
-      .setCustomId('dailyLog')
-      .setTitle('Daily Log');
-
-    const components = [
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('priority1')
-          .setLabel(`${weeklyPriorities.Priority1.label}, ${weeklyPriorities.Priority1.unit}`)
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('priority2')
-          .setLabel(`${weeklyPriorities.Priority2.label}, ${weeklyPriorities.Priority2.unit}`)
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('priority3')
-          .setLabel(`${weeklyPriorities.Priority3.label}, ${weeklyPriorities.Priority3.unit}`)
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('satisfaction')
-          .setLabel('Satisfaction (0-10)')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('notes')
-          .setLabel('Experiment Notes, Questions, Thoughts')
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true)
-      )
-    ];
-
-    modal.addComponents(...components);
-
-    // This is the only interaction acknowledgment
-    return await interaction.showModal(modal);
-  }
-  } catch (error) {
-    console.error('Error in /log command:', error);
-  
-    if (error.name === 'AbortError') {
-  try {
-    await interaction.reply({
-      content: '🚗 Had to warm up the engine. Please run `/log` again now.',
-      ephemeral: true
-    });
-  } catch (replyErr) {
-    console.error('⚠️ Failed to reply after timeout:', replyErr);
-  }
-  return;
-}
-
-    try {
-      await interaction.reply({
-        content: '❌ There was an error showing the form. Please try again.',
-        ephemeral: true
-      });
-    } catch (replyError) {
-      console.error("⚠️ Failed to send error reply:", replyError);
-    }
-  }
-  return;
-    
-    
-// Handle /testlog command
-if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
-  try {
-    const modal = new ModalBuilder()
-      .setCustomId('testLogPreview')  // Different customId to differentiate from real logs
-      .setTitle('Daily Log Preview');
-
-    // Use exact same form components as /log
-    const priority1 = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('priority1')
-        .setLabel('Priority 1 (Measurement or Effort Rating)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g. "Meditation, 15 mins"')
-        .setRequired(true)
-    );
-    const priority2 = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('priority2')
-        .setLabel('Priority 2 (Measurement or Effort Rating)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g. "Focus, 8/10 effort"')
-        .setRequired(true)
-    );
-    const priority3 = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('priority3')
-        .setLabel('Priority 3 (Measurement or Effort Rating)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g. "Writing, 500 words"')
-        .setRequired(true)
-    );
-    const satisfaction = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('satisfaction')
-        .setLabel('Satisfaction (0-10)')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-    );
-    const notes = new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('notes')
-        .setLabel('Notes / Experiment / "I\'m learning..."')
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true)
-    );
-
-    modal.addComponents(priority1, priority2, priority3, satisfaction, notes);
-    await interaction.showModal(modal);
-  } catch (error) {
-    console.error('Error showing test modal:', error);
-    if (!interaction.replied) {
-      
-      await interaction.reply({ 
-        content: '❌ There was an error showing the form. Please try again.',
-        flags: ['Ephemeral']
-      });
-    }
-  }
-  return;
-}
-    
-    // Handle /streak command
-    if (interaction.isChatInputCommand() && interaction.commandName === 'streak') {
-      try {
-        await interaction.deferReply({ ephemeral: true });
-        const response = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'getStreak',
-            userId: interaction.user.id,
-            userTag: interaction.user.tag
-          })
-        });
-        const result = await response.json();
-       if (!result.success) {
-  console.error("❌ Script returned error:", result.error);
-  await interaction.editReply({
-    content: "❌ Script error: " + (result.error || "Unknown error"),
-    ephemeral: true
-  });
-  return;
-  }     
-        await interaction.editReply({
-          content: result.message,
-          flags: ['Ephemeral']
-        });
-      } catch (error) {
-        console.error('Error getting streak:', error);
-        await interaction.editReply({
-          content: '❌ Unable to retrieve your streak. Please try again.',
-          flags: ['Ephemeral']
-        });
-      }
-      return;
-    }
-
-
-    // Add this to your interaction handler
-    if (interaction.isChatInputCommand() && interaction.commandName === 'testai') {
-      try {
-        await interaction.deferReply({ ephemeral: true });
-        
-        const result = await testGeminiAPI();
-        
-        if (result.success) {
-          await interaction.editReply({
-            content: `✅ AI Integration Test Successful!\n\nResponse:\n${result.message}`,
-            ephemeral: true
+          const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'getStreak',
+              userId: interaction.user.id,
+              userTag: interaction.user.tag
+            })
           });
-        } else {
-          await interaction.editReply({
-            content: `❌ AI Integration Test Failed:\n${result.error}`,
+
+          const result = await response.json();
+
+          if (!result.success) {
+            return await interaction.editReply({
+              content: "❌ Script error: " + (result.error || "Unknown error"),
+              ephemeral: true
+            });
+          }
+
+          return await interaction.editReply({
+            content: result.message,
             ephemeral: true
           });
         }
-      } catch (error) {
-        console.error('Error in testai command:', error);
-        await interaction.editReply({
-          content: '❌ An error occurred while testing the AI integration.',
-          ephemeral: true
-        });
+        case 'testai': {
+          await interaction.deferReply({ ephemeral: true });
+
+          const result = await testGeminiAPI();
+
+          const message = result.success
+            ? `✅ AI Integration Test Successful!\n\nResponse:\n${result.message}`
+            : `❌ AI Integration Test Failed:\n${result.error}`;
+
+          return await interaction.editReply({
+            content: message,
+            ephemeral: true
+          });
+        }
+
+        case 'leaderboard': {
+          await interaction.deferReply({ ephemeral: true });
+
+          const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'getLeaderboard',
+              userId: interaction.user.id,
+              userTag: interaction.user.tag
+            })
+          });
+
+          const result = await response.json();
+
+          if (!result.success) {
+            return await interaction.editReply({
+              content: "❌ Script error: " + (result.error || "Unknown error"),
+              ephemeral: true
+            });
+          }
+
+          return await interaction.editReply({
+            content: result.message,
+            ephemeral: true
+          });
+        }
+
+        case 'setweek': {
+          let acknowledged = false;
+
+          try {
+            const modal = new ModalBuilder()
+              .setCustomId('weeklyPriorities')
+              .setTitle('Set Weekly Priorities');
+
+            for (let i = 1; i <= 3; i++) {
+              modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                  new TextInputBuilder()
+                    .setCustomId(`priority${i}`)
+                    .setLabel(`Priority ${i} (e.g. "Meditation, minutes")`)
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true)
+                )
+              );
+            }
+
+            const timeoutPromise = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Modal show timed out')), 2800)
+            );
+
+            await Promise.race([
+              interaction.showModal(modal),
+              timeoutPromise
+            ]);
+
+            acknowledged = true;
+          } catch (error) {
+            console.error('❌ Error in /setweek:', error);
+
+            if (!acknowledged && !interaction.replied && !interaction.deferred) {
+              try {
+                await interaction.reply({
+                  content: '❌ There was an error showing the form. Please try again.',
+                  ephemeral: true
+                });
+              } catch (fallbackError) {
+                console.error('⚠️ Failed to send fallback error reply:', fallbackError);
+              }
+            }
+          }
+
+          return;
+        }
+
+        case 'insights7':
+        case 'insights30': {
+          await interaction.deferReply({ ephemeral: true });
+
+          const periodDays = interaction.commandName === 'insights7' ? 7 : 30;
+
+          const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'getInsights',
+              userId: interaction.user.id,
+              userTag: interaction.user.tag,
+              periodDays: periodDays
+            })
+          });
+
+          const responseText = await response.text();
+          const result = JSON.parse(responseText);
+
+          if (!response.ok || !result.success) {
+            return await interaction.editReply({
+              content: result.message || `❌ ${result.error || 'Failed to generate insights'}`,
+              ephemeral: true
+            });
+          }
+
+          if (result.cached && result.data.aiText) {
+            return await interaction.editReply({
+              content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.aiText}`,
+              ephemeral: true
+            });
+          }
+
+          const aiResult = await generateInsights(result.data.insights);
+          if (!aiResult.success) {
+            return await interaction.editReply({
+              content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
+              ephemeral: true
+            });
+          }
+
+          await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'storeInsights',
+              userId: interaction.user.id,
+              userTag: interaction.user.tag,
+              periodDays: periodDays,
+              insights: {
+                structuredData: result.data.insights,
+                aiText: aiResult.insights,
+                dataPoints: result.data.insights.userMetrics.dataPoints
+              }
+            })
+          });
+
+          await interaction.user.send(aiResult.insights);
+
+          return await interaction.editReply({
+            content: "✨ Check your DMs for insights! 🚀",
+            ephemeral: true
+          });
+        }
+        default: {
+          console.warn('⚠️ Unrecognized command:', interaction.commandName);
+          return await interaction.reply({
+            content: '🤔 Unknown command. Please try again or contact support.',
+            ephemeral: true
+          });
+        }
+      } // end of switch
+    } catch (error) {
+      console.error('❌ Error in command handler:', error);
+      if (!interaction.replied && !interaction.deferred) {
+        try {
+          await interaction.reply({
+            content: '❌ Something went wrong while handling your command.',
+            ephemeral: true
+          });
+        } catch (fallbackError) {
+          console.error('⚠️ Failed to send fallback error reply:', fallbackError);
+        }
       }
-      return;
     }
-    
-    // Handle /leaderboard command (ephemeral)
-    if (interaction.isChatInputCommand() && interaction.commandName === 'leaderboard') {
-      try {
-        await interaction.deferReply({ ephemeral: true });
-        const response = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'getLeaderboard',
-            userId: interaction.user.id,
-            userTag: interaction.user.tag
-          })
-        });
-        const result = await response.json();
-        if (!result.success) {
-  console.error("❌ Script returned error:", result.error);
-  await interaction.editReply({
-    content: "❌ Script error: " + (result.error || "Unknown error"),
-    ephemeral: true
-  });
-  return;
-  }
-
-        await interaction.editReply({
-          content: result.message,
-          flags: ['Ephemeral']
-        });
-      } catch (error) {
-        console.error('Error getting leaderboard:', error);
-        await interaction.editReply({
-          content: '❌ Unable to retrieve the leaderboard. Please try again.',
-          flags: ['Ephemeral']
-        });
-      }
-      return;
-    }
-
-     console.log('🔎 Reached before setweek if-block:', interaction.commandName);
-
-  
-      // Handle /setweek command
-    if (interaction.isChatInputCommand() && interaction.commandName === 'setweek') {
-  let acknowledged = false;
-
-  try {
-    console.log('🧪 Building modal for /setweek...');
-    const modal = new ModalBuilder()
-      .setCustomId('weeklyPriorities')
-      .setTitle('Set Weekly Priorities');
-
-    const components = [];
-    for (let i = 1; i <= 3; i++) {
-      components.push(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId(`priority${i}`)
-            .setLabel(`Priority ${i} (e.g. "Meditation, minutes")`)
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true)
-        )
-      );
-    }
-
-    modal.addComponents(...components);
-
-    console.log('🚀 About to show modal for /setweek...');
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Modal show timed out')), 2800)
-    );
-
-    await Promise.race([
-      interaction.showModal(modal),
-      timeoutPromise
-    ]);
-
-    acknowledged = true;
-    console.log('✅ Modal successfully shown for /setweek');
-  } catch (error) {
-    console.error('❌ Error in /setweek:', error);
-
-    if (!acknowledged && !interaction.replied && !interaction.deferred) {
-      try {
-        await interaction.reply({
-          content: '❌ There was an error showing the form. Please try again.',
-          ephemeral: true
-        });
-      } catch (fallbackError) {
-        console.error('⚠️ Failed to send fallback error reply:', fallbackError);
-      }
-    }
-  }
-
-  return;
-}
+  } // end of isChatInputCommand if
+}); // end of client.on(Events.InteractionCreate)
 
 
-
-    
    // Handle modal submission
 if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
  
@@ -1058,102 +1055,6 @@ if (interaction.isModalSubmit() && interaction.customId === 'weeklyPriorities') 
     });
   }
 }
-    
-// Add this to your interaction handler in index.js
-if (interaction.isChatInputCommand() && (interaction.commandName === 'insights7' || interaction.commandName === 'insights30')) {
-  try {
-    await interaction.deferReply({ ephemeral: true });
-    
-    const periodDays = interaction.commandName === 'insights7' ? 7 : 30;
-
-    console.log('Insights command debug:', {
-      command: interaction.commandName,
-      userId: interaction.user.id,
-      userTag: interaction.user.tag,
-      periodDays: periodDays
-    });
-    
-    // Request insights data from Apps Script
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'getInsights',
-        userId: interaction.user.id,
-        userTag: interaction.user.tag,
-        periodDays: periodDays
-      })
-    });
-    
-    // Parse response once
-    const responseText = await response.text();
-    console.log('Raw Apps Script Response:', responseText);
-    const result = JSON.parse(responseText);
-    console.log('Complete result structure:', JSON.stringify(result, null, 2));
-    console.log('Parsed result:', result);
-    
-    if (!response.ok || !result.success) {
-      await interaction.editReply({ 
-        content: result.message || `❌ ${result.error || 'Failed to generate insights'}`, 
-        ephemeral: true 
-      });
-      return;
-    }
-    
-    // If we have cached insights, return them
-    if (result.cached && result.data.aiText) {
-      await interaction.editReply({
-        content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.aiText}`,
-        ephemeral: true
-      });
-      return;
-    }
-    
-    const aiResult = await generateInsights(result.data.insights);
-    if (!aiResult.success) {
-      await interaction.editReply({
-        content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
-        ephemeral: true
-      });
-      return;
-    }
-
-    await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'storeInsights',
-        userId: interaction.user.id,
-        userTag: interaction.user.tag,
-        periodDays: periodDays,
-        insights: {
-          structuredData: result.data.insights,
-          aiText: aiResult.insights,
-          dataPoints: result.data.insights.userMetrics.dataPoints
-        }
-      })
-    });
-
-    await interaction.user.send(aiResult.insights);
-    await interaction.editReply({
-      content: "✨ Check your DMs for insights! 🚀",
-      ephemeral: true
-    });
-
-  } catch (error) {
-    console.error('Error in insights command:', error);
-    try {
-      if (interaction.deferred) {
-        await interaction.editReply({ content: '❌ An unexpected error occurred. Please try again.', ephemeral: true });
-      } else {
-        await interaction.reply({ content: '❌ An unexpected error occurred. Please try again.', ephemeral: true });
-      }
-    } catch (followUpError) {
-      console.error('Error handling interaction:', followUpError);
-    }
-  }
-} // Close the insights command if block
-}); // Close the client.on(Events.InteractionCreate) handler
 
 // Helper functions outside the interaction handler
 async function handleRoleUpdate(interaction, streakCount, result) {
