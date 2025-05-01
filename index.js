@@ -430,11 +430,11 @@ client.on(Events.InteractionCreate, async interaction => {
 
     // This is the only interaction acknowledgment
     return await interaction.showModal(modal);
-
+  }
   } catch (error) {
     clearTimeout(timeoutId);
     console.error('Error in /log command:', error);
-  }
+  
     if (error.name === 'AbortError') {
   try {
     await interaction.reply({
