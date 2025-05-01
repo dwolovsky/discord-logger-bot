@@ -468,7 +468,7 @@ client.on(Events.InteractionCreate, async interaction => {
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('notes')
-                .setLabel('Notes / Experiment / \"I'm learning...\"')
+                .setLabel('Notes / Experiment / Good & Bad')
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(true)
             )
