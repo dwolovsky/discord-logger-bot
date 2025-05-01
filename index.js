@@ -628,6 +628,9 @@ if (interaction.isChatInputCommand() && interaction.commandName === 'testlog') {
       return;
     }
 
+     console.log('🔎 Reached before setweek if-block:', interaction.commandName);
+
+  
       // Handle /setweek command
     if (interaction.isChatInputCommand() && interaction.commandName === 'setweek') {
   let acknowledged = false;
