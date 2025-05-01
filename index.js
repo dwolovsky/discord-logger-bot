@@ -1121,7 +1121,7 @@ await interaction.editReply({
     }
   }
     
-});
+}};
 async function handleRoleUpdate(interaction, streakCount, result) {
   try {
     const guild = interaction.guild;
@@ -1162,3 +1162,5 @@ async function ensureRole(guild, roleName, color) {
 client.login(DISCORD_TOKEN).catch(err => {
   console.error('❌ Failed to login to Discord:', err);
   process.exit(1);
+});
+)
