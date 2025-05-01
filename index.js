@@ -456,7 +456,8 @@ client.on(Events.InteractionCreate, async interaction => {
     }
   }
   return;
-}
+});
+
     
     
 // Handle /testlog command
