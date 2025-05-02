@@ -669,12 +669,18 @@ client.on(Events.InteractionCreate, async interaction => {
           });
         }
       } // end of switch
-    } catch (error) {
+        } catch (error) {
       console.error('❌ Error in command handler:', error);
+
+      const timeoutMessage = '🚗 Had to warm up the engine. Please try again now.';
+      const genericMessage = '❌ Something went wrong while handling your command.';
+
+      const message = error.name === 'AbortError' ? timeoutMessage : genericMessage;
+
       if (!interaction.replied && !interaction.deferred) {
         try {
           await interaction.reply({
-            content: '❌ Something went wrong while handling your command.',
+            content: message,
             ephemeral: true
           });
         } catch (fallbackError) {
