@@ -192,21 +192,28 @@ const INSIGHTS_PROMPT_TEMPLATE = (data) => `Please provide a concise analysis (u
 
 ### 🫂 Challenges
 Review their journey through:
-- Priority Stats: ${data.priorities.map(p => `${p.label}: ${p.metrics.average} ${p.unit} (${p.metrics.trend})`).join('\n')}
+- Priority Stats:
+${data.priorities.map(p => 
+  `  • ${p.label}: ${p.metrics.average} ${p.unit}\n    Variation: ${p.metrics.variation}%`
+).join('\n')}
+
 - Satisfaction Trend: ${data.satisfaction.map(s => s.value).join(', ')}
-- Notes trends and themes: ${data.notes.map(n => n.content).join('\n')}
+- Notes trends and themes:
+${data.notes.map(n => `  • ${n.content}`).join('\n')}
 
 Acknowledge their challenges with compassion. Normalize their struggles. Focus on validating their experience without offering solutions yet.
 
 ### 🌱 Transformations
 Analyze patterns in:
-- Priority Trends: ${data.priorities.map(p => 
-  `${p.label}: ${p.metrics.trend} (${p.metrics.variation}% variation)`
+- Priority Trends:
+${data.priorities.map(p => 
+  `  • ${p.label}: ${p.metrics.average} ${p.unit}\n    Variation: ${p.metrics.variation}%`
 ).join('\n')}
-${data.correlations.length ? `- Correlations:\n${data.correlations.map(c => 
-  `${c.priority}: ${c.interpretation} (n=${c.n})`
+${data.correlations?.length ? `- Correlations:\n${data.correlations.map(c => 
+  `  • ${c.priority}: ${c.interpretation} (n=${c.n})`
 ).join('\n')}` : ''}
-- Recent Notes: ${data.notes.map(n => `${n.date}: ${n.content}`).join('\n')}
+- Recent Notes:
+${data.notes.map(n => `  • ${n.date}: ${n.content}`).join('\n')}
 
 Look for subtle shifts in language, hidden wins, and emerging patterns. How are they evolving to become more like the person they want to become?
 
@@ -214,12 +221,13 @@ Look for subtle shifts in language, hidden wins, and emerging patterns. How are 
 Consider their complete journey:
 - Priorities & Trends:
 ${data.priorities.map(p => 
-  `  • ${p.label}: ${p.metrics.average} ${p.unit}\n    Trend: ${p.metrics.trend}, Variation: ${p.metrics.variation}%\n    Days analyzed: ${p.consistencyPeriod.daysAnalyzed}`
+  `  • ${p.label}: ${p.metrics.average} ${p.unit}\n    Variation: ${p.metrics.variation}%`
 ).join('\n')}
 
 - Satisfaction Patterns:
   • Recent scores: ${data.satisfaction.map(s => s.value).join(', ')}
-  • Correlations: ${data.correlations.map(c => c.interpretation).join('\n  ')}
+  • Correlations: ${data.correlations?.map(c => c.interpretation).join('\n  ') || 'None'}
+
 
 - Note Themes:
 ${data.notes.map(n => `  • ${n.date}: ${n.content}`).join('\n')}
@@ -231,6 +239,7 @@ Based on this comprehensive view, suggest 2-3 experiments that:
 4. Mix familiar approaches with creative new directions
 
 Remember: Keep the total response under 1800 characters while maintaining a supportive tone.`;
+
 
 // ====== DISCORD CLIENT ======
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
