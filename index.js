@@ -639,7 +639,7 @@ client.on(Events.InteractionCreate, async interaction => {
             });
           }
 
-          const aiResult = await generateInsights(result.data.insights);
+          const aiResult = await generateInsights(result.data.insights.stats);
           if (!aiResult.success) {
             return await interaction.editReply({
               content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
