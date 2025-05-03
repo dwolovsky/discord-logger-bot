@@ -560,31 +560,50 @@ client.on(Events.InteractionCreate, async interaction => {
         case 'setweek': {
           let acknowledged = false;
 
-          try {
-            const modal = new ModalBuilder()
-              .setCustomId('weeklyPriorities')
-              .setTitle('Set Weekly Priorities');
+         try {
+        const modal = new ModalBuilder()
+          .setCustomId('weeklyPriorities')
+          .setTitle('Set Weekly Priorities');
+      
+         const inputLabels = [
+        'Input 1 (e.g. "Meditation, minutes")',
+        'Input 2 (e.g. "Reading, pages")',
+        'Input 3 (e.g. "Walking, steps")'
+      ];
+      
+      for (let i = 1; i <= 3; i++) {
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId(`priority${i}`)
+              .setLabel(inputLabels[i - 1]) // Use the array for specific examples
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+      }
+      
+        // Add the output field (outside the loop!)
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('output')
+              .setLabel('Output of this week's experiment')
+              .setPlaceholder('e.g. "Satisfaction, Optimism, progress"')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+      
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Modal show timed out')), 2800)
+        );
+      
+        await Promise.race([
+          interaction.showModal(modal),
+          timeoutPromise
+        ]);
 
-            for (let i = 1; i <= 3; i++) {
-              modal.addComponents(
-                new ActionRowBuilder().addComponents(
-                  new TextInputBuilder()
-                    .setCustomId(`priority${i}`)
-                    .setLabel(`Priority ${i} (e.g. "Meditation, minutes")`)
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true)
-                )
-              );
-            }
-
-            const timeoutPromise = new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Modal show timed out')), 2800)
-            );
-
-            await Promise.race([
-              interaction.showModal(modal),
-              timeoutPromise
-            ]);
 
             acknowledged = true;
           } catch (error) {
