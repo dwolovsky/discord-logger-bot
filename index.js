@@ -588,7 +588,7 @@ client.on(Events.InteractionCreate, async interaction => {
           new ActionRowBuilder().addComponents(
             new TextInputBuilder()
               .setCustomId('output')
-              .setLabel('Output of this week's experiment')
+              .setLabel('Output of your next experiment')
               .setPlaceholder('e.g. "Satisfaction, Optimism, progress"')
               .setStyle(TextInputStyle.Short)
               .setRequired(true)
