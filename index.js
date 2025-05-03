@@ -155,7 +155,7 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 })();
 
 async function generateInsights(structuredData) {
-  console.log('generateInsights called with:', structuredData);
+  console.log("🧠 generateInsights received:", JSON.stringify(structuredData, null, 2));
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     const prompt = INSIGHTS_PROMPT_TEMPLATE(structuredData); // Pass the data to the template function
@@ -639,13 +639,26 @@ client.on(Events.InteractionCreate, async interaction => {
             });
           }
 
-          const aiResult = await generateInsights(result.data.insights.stats);
-          if (!aiResult.success) {
-            return await interaction.editReply({
-              content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
-              ephemeral: true
-            });
-          }
+         console.log("📦 Full result from GAS:", JSON.stringify(result));
+
+        if (!result?.data?.insights?.stats) {
+          console.error("❌ Missing stats in GAS response");
+          await interaction.editReply({
+            content: "⚠️ Couldn't generate insights — no stats were returned.",
+          });
+          return;
+        }
+        
+        console.log("🎯 generateInsights called with:", JSON.stringify(result.data.insights.stats));
+        
+        const aiResult = await generateInsights(result.data.insights.stats);
+        
+        if (!aiResult.success) {
+          return await interaction.editReply({
+            content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
+          });
+        }
+
 
           await fetch(SCRIPT_URL, {
             method: 'POST',
