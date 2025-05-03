@@ -641,7 +641,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
          console.log("📦 Full result from GAS:", JSON.stringify(result));
 
-        if (!result?.data?.insights?.stats) {
+        if (!result?.data?.insights?.priorities) {
           console.error("❌ Missing stats in GAS response");
           await interaction.editReply({
             content: "⚠️ Couldn't generate insights — no stats were returned.",
@@ -651,7 +651,7 @@ client.on(Events.InteractionCreate, async interaction => {
         
         console.log("🎯 generateInsights called with:", JSON.stringify(result.data.insights.stats));
         
-        const aiResult = await generateInsights(result.data.insights.stats);
+        const aiResult = await generateInsights(result.data.insights);
         
         if (!aiResult.success) {
           return await interaction.editReply({
