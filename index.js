@@ -607,6 +607,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         case 'insights7':
         case 'insights30': {
+          console.log("💡 Reached insights command handler");
           await interaction.deferReply({ ephemeral: true });
 
           const periodDays = interaction.commandName === 'insights7' ? 7 : 30;
@@ -625,6 +626,14 @@ client.on(Events.InteractionCreate, async interaction => {
           const responseText = await response.text();
           const result = JSON.parse(responseText);
 
+          if (!result?.data?.insights?.priorities) {
+            console.error("🧨 Unexpected result structure:", JSON.stringify(result, null, 2));
+            await interaction.editReply({
+              content: "⚠️ No priorities found in response.",
+            });
+            return;
+          }
+
           if (!response.ok || !result.success) {
             return await interaction.editReply({
               content: result.message || `❌ ${result.error || 'Failed to generate insights'}`,
@@ -641,23 +650,24 @@ client.on(Events.InteractionCreate, async interaction => {
 
          console.log("📦 Full result from GAS:", JSON.stringify(result));
 
-        if (!result?.data?.insights?.priorities) {
-          console.error("❌ Missing stats in GAS response");
-          await interaction.editReply({
-            content: "⚠️ Couldn't generate insights — no stats were returned.",
-          });
-          return;
-        }
-        
-        console.log("🎯 generateInsights called with:", JSON.stringify(result.data.insights.stats));
-        
-        const aiResult = await generateInsights(result.data.insights);
-        
-        if (!aiResult.success) {
-          return await interaction.editReply({
-            content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
-          });
-        }
+              if (!result?.data?.insights?.priorities) {
+        console.error("❌ Missing stats in GAS response");
+        await interaction.editReply({
+          content: "⚠️ Couldn't generate insights — no stats were returned.",
+        });
+        return;
+      }
+      
+      console.log("🎯 generateInsights called with:", JSON.stringify(result.data.insights));
+      
+      const aiResult = await generateInsights(result.data.insights);
+      
+      if (!aiResult.success) {
+        return await interaction.editReply({
+          content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
+        });
+      }
+
 
 
           await fetch(SCRIPT_URL, {
