@@ -645,7 +645,7 @@ client.on(Events.InteractionCreate, async interaction => {
           const responseText = await response.text();
           const result = JSON.parse(responseText);
 
-          if (!result?.data?.insights?.priorities) {
+          if (!result?.data?.priorities) {
             console.error("🧨 Unexpected result structure:", JSON.stringify(result, null, 2));
             await interaction.editReply({
               content: "⚠️ No priorities found in response.",
@@ -668,18 +668,9 @@ client.on(Events.InteractionCreate, async interaction => {
           }
 
          console.log("📦 Full result from GAS:", JSON.stringify(result));
-
-              if (!result?.data?.insights?.priorities) {
-        console.error("❌ Missing stats in GAS response");
-        await interaction.editReply({
-          content: "⚠️ Couldn't generate insights — no stats were returned.",
-        });
-        return;
-      }
+         console.log("🎯 generateInsights called with:", JSON.stringify(result.data));
       
-      console.log("🎯 generateInsights called with:", JSON.stringify(result.data.insights));
-      
-      const aiResult = await generateInsights(result.data.insights);
+      const aiResult = await generateInsights(result.data);
       
       if (!aiResult.success) {
         return await interaction.editReply({
@@ -698,9 +689,9 @@ client.on(Events.InteractionCreate, async interaction => {
               userTag: interaction.user.tag,
               periodDays: periodDays,
               insights: {
-                structuredData: result.data.insights,
+                structuredData: result.data,
                 aiText: aiResult.insights,
-                dataPoints: result.data.insights.userMetrics.dataPoints
+                dataPoints: result.data.userMetrics.dataPoints
               }
             })
           });
