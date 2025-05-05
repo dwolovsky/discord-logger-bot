@@ -239,30 +239,35 @@ ${(notes.length > 0)
   : '  No notes available for this period.'
 }
 
+// This replaces the part starting "Provide analysis in three sections:"
+// in the INSIGHTS_PROMPT_TEMPLATE function in index.js
+
 Provide analysis in three sections:
 
 ### 🫂 Challenges & Consistency
 Review their journey, focusing on friction points and consistency patterns across the weekly summaries and notes.
 - Pinpoint recurring friction points or areas where consistency fluctuates, using both notes and weekly summary data (e.g., high metric variation).
+- **If possible, connect these friction points directly to specific phrases or feelings the user expressed in their notes around that time.** (e.g., 'The lower consistency for [Metric X] around [Date] might relate to when you mentioned feeling "[Quote from note]"').
 - Notice patterns in their consistency: *When* do they seem most consistent or inconsistent according to the data and notes?
-- Where does their effort seem persistent, even if results vary? Validate this effort.
-- Acknowledge any struggles mentioned with compassion and normalize their struggles.
+- Where does their effort seem persistent, even if results vary? Validate this effort clearly.
+- Acknowledge any struggles mentioned with compassion and normalize their struggles as part of the experimentation process.
 
-### 🌱 Transformations & Trends
-Highlight evidence of growth, adaptation, and the impact of sustained effort by analyzing patterns across the 4 summaries and notes.
-- Are priorities or their measured outcomes (average, variation) trending positively or negatively across the weeks?
-- Connect trends in metrics with potential past experiments, themes, or events mentioned in the notes. Are there signs that previous tweaks might be working?
-- Look for subtle shifts in language in notes, "hidden wins" (e.g., maintaining consistency despite challenges), or emerging positive patterns that signal progress.
+### 🌱 Growth Highlights
+Highlight evidence of growth, adaptation, and the impact of sustained effort by analyzing patterns across the 4 summaries and notes. Start by celebrating their consistency (mention current streak if known) and the most significant positive trend or achievement observed.
+- Are priorities or their measured outcomes (average, variation) trending positively or negatively across the weeks? How has their focus evolved (e.g., changes in tracked priority labels/units visible in summaries)?
+- Point out any potentially interesting (even if subtle) connections observed between metric trends and themes found in the notes.
+- Look for subtle shifts in language in notes, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress.
+- **Also, select 1-2 particularly insightful or representative short quotes directly from the provided 'Notes' that capture a key moment of learning, challenge, or success during this period, and weave them into your analysis where relevant (citing the date if possible).**
 - How are their consistent small actions leading to evolution, as seen in the weekly data and reflections?
 
 ### 🧪 Experiments & Metaphor
-Suggest 3 small, actionable experiments (tweaks) for the upcoming week, designed to make their current positive actions easier, more consistent, or slightly more impactful, based on the analysis above. Frame these as curious explorations, not fixes. Experiments should aim to:
-1. Build on momentum from positive trends or consistent efforts identified in the 'Transformations' section.
+Remember, small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 2-3 small, actionable experiments (tweaks) for the upcoming week, designed to make their current positive actions easier, more consistent, or slightly more impactful, based on the analysis above. Frame these as curious explorations, not fixes. Experiments should aim to:
+1. Build on momentum from positive trends or consistent efforts identified in the 'Growth Highlights' section.
 2. Directly address the friction points or consistency challenges identified in the 'Challenges' section by suggesting small modifications.
-3. Explore specific questions or ideas raised in recent notes.
-4. Focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. Make 1 suggestion a more creative and slightly larger tweak.
+3. **Prioritize suggesting experiments that directly explore questions, ideas, or 'what ifs' explicitly mentioned in the user's recent notes.** (Quote the relevant part of the note briefly if it helps frame the experiment).
+4. Focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits.
 
-**Finally, conclude with a single, concise metaphor** that accurately captures the essence of their journey, growth, or transformation over this ${periodDays}-day period, based on everything analyzed. (Examples: "Your journey this month feels like a sculptor refining their work..." or "You've been like a scientist carefully adjusting variables...").
+**Finally, conclude with a single, concise metaphor *that specifically reflects the key challenge or transformation discussed in this user's analysis*. *If possible, subtly draw inspiration for the metaphor's theme from recurring concepts or tones found in the user's notes.* ** (Examples: "Your journey this month feels like a sculptor refining their work..." or "You've been like a scientist carefully adjusting variables...").
 
 Keep the total response under 1890 characters.`;
 };
@@ -808,10 +813,12 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLog') {
     const priorities = [];
     for (let i = 1; i <= 3; i++) {
       const value = interaction.fields.getTextInputValue(`priority${i}`);
-      if (!value || !value.trim()) {
-        return await interaction.editReply({
-          content: `❌ Value required for Priority ${i}.`,
-          flags: ['Ephemeral']
+      const parsedValue = parseFloat(value); // Try converting string to number (allows decimals)
+      if (isNaN(parsedValue)) { // Check if the result is Not-a-Number (catches text, empty, spaces)
+        // Interaction already deferred earlier in this handler (line 148 assumed)
+        return await interaction.editReply({ // Use editReply since interaction is deferred
+          content: `❌ Value for Priority ${i} must be a number (e.g., 8, 8.5, 150). You entered: "${value}"`,
+          ephemeral: true // Keep ephemeral flag
         });
       }
       priorities.push({ value: value.trim() });
