@@ -188,57 +188,86 @@ async function generateInsights(structuredData) {
   }
 }
 
-const INSIGHTS_PROMPT_TEMPLATE = (data) => `Please provide a concise analysis (under 1850 characters total) of this user's data with a supportive, growth-focused summary:
 
-### 🫂 Challenges
-Review their journey through:
-- Priority Stats:
-${data.priorities.map(p => 
-  `  • ${p.label}: ${p.metrics.average} ${p.unit}\n    Variation: ${p.metrics.variation}%`
-).join('\n')}
+const INSIGHTS_PROMPT_TEMPLATE = (data) => {
+  // Helper to format a single stats summary for the prompt (No changes needed here)
+  const formatSummary = (summary, index) => {
+    // Basic check if summary object is valid
+    if (!summary || typeof summary !== 'object') return `  Summary ${index + 1}: Not Available\n`;
+    const generatedDateObj = summary.summaryGeneratedAt ? new Date(summary.summaryGeneratedAt) : null;
+    const generatedDate = generatedDateObj instanceof Date && !isNaN(generatedDateObj) ? generatedDateObj.toLocaleDateString() : 'Unknown Date';
+    let text = `  Summary ${index + 1} (Generated: ${generatedDate}):\n`;
+    if (summary.priorities && Array.isArray(summary.priorities) && summary.priorities.length > 0) {
+      summary.priorities.forEach(p => {
+        if (p && typeof p === 'object') {
+          const metrics = p.metrics || {};
+          text += `    - ${p.label || 'N/A'} (${p.unit || 'N/A'}): Avg ${metrics.average ?? 'N/A'}, Var ${metrics.variation ?? 'N/A'}%\n`;
+        }
+      });
+    } else { text += `    - No priority stats available for this summary.\n`; }
+    if (summary.correlations && Array.isArray(summary.correlations) && summary.correlations.length > 0) {
+      text += `    - Correlations vs Satisfaction:\n`;
+      summary.correlations.forEach(c => {
+         if (c && typeof c === 'object') { text += `      * ${c.priority || 'N/A'}: ${c.interpretation || 'N/A'}\n`; }
+      });
+    }
+    return text;
+  };
 
-- Satisfaction Trend: ${data.satisfaction.map(s => s.value).join(', ')}
-- Notes trends and themes:
-${data.notes.map(n => `  • ${n.content}`).join('\n')}
+  // Safely access data (No changes needed here)
+  const userMetrics = data?.userMetrics || {};
+  const periodDays = userMetrics.periodDays || 'Unknown';
+  const currentStreak = userMetrics.currentStreak ?? 0;
+  const longestStreak = userMetrics.longestStreak ?? 0;
+  const notes = data?.notes || [];
+  const pastSummaries = data?.pastFourStatsSummaries || [];
 
-Acknowledge their challenges with compassion. Normalize their struggles. Focus on validating their experience without offering solutions yet.
+  // Construct the prompt with refined instructions
+  return `Analyze the user's habit tracking data (last ${periodDays} logs) with a supportive, growth-focused tone. The goal is to provide insights that inspire the user to continue their journey of consistent small actions and encourage thoughtful experimentation with tweaks to make these actions easier and more impactful. Keep the total response concise (under 1890 characters).
 
-### 🌱 Transformations
-Analyze patterns in:
-- Priority Trends:
-${data.priorities.map(p => 
-  `  • ${p.label}: ${p.metrics.average} ${p.unit}\n    Variation: ${p.metrics.variation}%`
-).join('\n')}
-${data.correlations?.length ? `- Correlations:\n${data.correlations.map(c => 
-  `  • ${c.priority}: ${c.interpretation} (n=${c.n})`
-).join('\n')}` : ''}
-- Recent Notes:
-${data.notes.map(n => `  • ${n.date}: ${n.content}`).join('\n')}
+Data Overview:
+- User Metrics: Current Streak ${currentStreak}, Longest ${longestStreak}
+- Period Analyzed: ${periodDays} logs, ending ${new Date().toLocaleDateString()}
+- Last 4 Weekly Stats Summaries (Newest First):
+${(pastSummaries.length > 0)
+  ? pastSummaries.map(formatSummary).join('\n')
+  : '  No past stats summaries available.'
+}
+- Notes from the last ${periodDays} logs:
+${(notes.length > 0)
+  ? notes.map(n => `  • ${n?.date || 'Unknown Date'}: ${n?.content || ''}`).join('\n')
+  : '  No notes available for this period.'
+}
 
-Look for subtle shifts in language, hidden wins, and emerging patterns. How are they evolving to become more like the person they want to become?
+Provide analysis in three sections:
 
-### 🧪 Experiments
-Consider their complete journey:
-- Priorities & Trends:
-${data.priorities.map(p => 
-  `  • ${p.label}: ${p.metrics.average} ${p.unit}\n    Variation: ${p.metrics.variation}%`
-).join('\n')}
+### 🫂 Challenges & Consistency
+Review their journey, focusing on friction points and consistency patterns across the weekly summaries and notes.
+- Pinpoint recurring friction points or areas where consistency fluctuates, using both notes and weekly summary data (e.g., high metric variation).
+- Notice patterns in their consistency: *When* do they seem most consistent or inconsistent according to the data and notes?
+- Where does their effort seem persistent, even if results vary? Validate this effort.
+- Acknowledge any struggles mentioned with compassion and normalize their struggles.
 
-- Satisfaction Patterns:
-  • Recent scores: ${data.satisfaction.map(s => s.value).join(', ')}
-  • Correlations: ${data.correlations?.map(c => c.interpretation).join('\n  ') || 'None'}
+### 🌱 Transformations & Trends
+Highlight evidence of growth, adaptation, and the impact of sustained effort by analyzing patterns across the 4 summaries and notes.
+- Are priorities or their measured outcomes (average, variation) trending positively or negatively across the weeks?
+- Connect trends in metrics with potential past experiments, themes, or events mentioned in the notes. Are there signs that previous tweaks might be working?
+- Look for subtle shifts in language in notes, "hidden wins" (e.g., maintaining consistency despite challenges), or emerging positive patterns that signal progress.
+- How are their consistent small actions leading to evolution, as seen in the weekly data and reflections?
 
+### 🧪 Experiments & Metaphor
+Suggest 3 small, actionable experiments (tweaks) for the upcoming week, designed to make their current positive actions easier, more consistent, or slightly more impactful, based on the analysis above. Frame these as curious explorations, not fixes. Experiments should aim to:
+1. Build on momentum from positive trends or consistent efforts identified in the 'Transformations' section.
+2. Directly address the friction points or consistency challenges identified in the 'Challenges' section by suggesting small modifications.
+3. Explore specific questions or ideas raised in recent notes.
+4. Focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. Make 1 suggestion a more creative and slightly larger tweak.
 
-- Note Themes:
-${data.notes.map(n => `  • ${n.date}: ${n.content}`).join('\n')}
+**Finally, conclude with a single, concise metaphor** that accurately captures the essence of their journey, growth, or transformation over this ${periodDays}-day period, based on everything analyzed. (Examples: "Your journey this month feels like a sculptor refining their work..." or "You've been like a scientist carefully adjusting variables...").
 
-Based on this comprehensive view, suggest 2-3 experiments that:
-1. Build on patterns where they're seeing progress
-2. Address areas with high variation or declining trends
-3. Explore themes mentioned in their notes
-4. Mix familiar approaches with creative new directions
+Keep the total response under 1890 characters.`;
+};
 
-Remember: Keep the total response under 1800 characters while maintaining a supportive tone.`;
+// >>>>> End of replacement block <<<<<
 
 
 // ====== DISCORD CLIENT ======
