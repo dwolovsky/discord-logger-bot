@@ -377,7 +377,6 @@ async function processMessageQueue() {
 }
 
 // ====== INTERACTION HANDLER ======
-// ====== INTERACTION HANDLER ======
 client.on(Events.InteractionCreate, async interaction => {
   console.log(`⚡ Received interaction:`, {
     type: interaction.type,
@@ -423,7 +422,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
           const modal = new ModalBuilder()
             .setCustomId('dailyLog')
-            .setTitle('Daily Log');
+            .setTitle('Fuel Your Experiment');
 
           modal.addComponents(
             new ActionRowBuilder().addComponents(
