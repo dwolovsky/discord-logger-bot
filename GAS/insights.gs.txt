@@ -1,0 +1,759 @@
+
+
+// Ensure access to shared utilities
+if (typeof logError_ === 'undefined') {
+  logError_ = function(error, context) {
+    console.error('Error:', error, 'Context:', context);
+  };
+}
+
+if (typeof findOrCreateUserRow_ === 'undefined') {
+  findOrCreateUserRow_ = function(sheet, data, userId, userTag) {
+    return -1;
+  };
+}
+
+
+function gatherInsightsData_(userId, userTag, periodDays) {
+  Logger.log(`[Gather] Starting for ${userTag}, period ${periodDays}`);
+  try {
+    // Validate inputs - Already done by caller handleInsightsCommand_
+
+    // Get required sheets
+    Logger.log('[Gather] Accessing sheets...');
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    // Removed sheet fetching for statsSheet, insightsSheet as they aren't needed here
+    const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+    const streakSheet = ss.getSheetByName(CONFIG.SHEETS.STREAK_DATA);
+     Logger.log(`[Gather] Master Sheet found: ${!!masterSheet}, Streak Sheet found: ${!!streakSheet}`);
+
+    if (!masterSheet) { // Removed check for insightsSheet, statsSheet
+      throw new Error('System error: Unable to access Master Data sheet.');
+    }
+     if (!streakSheet) { // Added check for streakSheet
+      Logger.log('[Gather] Warning: Streak_Data sheet not found. Streaks will be 0.');
+      // Allow proceeding without streak data, default streaks to 0
+    }
+
+
+    // Calculate date range
+    const now = new Date();
+    now.setHours(23, 59, 59, 999);
+    const cutoffDate = new Date(now);
+    cutoffDate.setDate(now.getDate() - (periodDays - 1));
+    cutoffDate.setHours(0, 0, 0, 0);
+    const cutoffDateString = Utilities.formatDate(cutoffDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    Logger.log(`[Gather] Cutoff date: ${cutoffDateString}`);
+
+    // Get master data for log count and date range
+    Logger.log('[Gather] Reading Master Data...');
+    const masterData = masterSheet.getDataRange().getValues();
+    Logger.log(`[Gather] Read ${masterData.length} rows from Master Data.`);
+    const userLogsInDataRange = masterData.slice(1) // Skip header
+       .filter(row => {
+           // Check userTag and if date is within the period
+           try {
+               // Ensure date in column 1 (index 0) is valid before comparing
+               const logDate = new Date(row[CONFIG.COLUMNS.DATE - 1]);
+               return row[CONFIG.COLUMNS.USERTAG - 1] === userTag &&
+                      !isNaN(logDate.getTime()) && // Check if date is valid
+                      logDate >= cutoffDate;
+           } catch (e) {
+               Logger.log(`[Gather] Error processing date in master row: ${row}. Error: ${e}`);
+               return false;
+           }
+       });
+
+    const dataPoints = userLogsInDataRange.length;
+    Logger.log(`[Gather] Found ${dataPoints} logs for user in period. Min required: ${CONFIG.INSIGHTS.MIN_LOGS}`);
+
+    // Check minimum logs requirement
+    if (dataPoints < CONFIG.INSIGHTS.MIN_LOGS) {
+      Logger.log('[Gather] Insufficient logs found.');
+      return {
+        success: false,
+        error: 'insufficient_logs',
+        message: `Keep logging for at least ${CONFIG.INSIGHTS.MIN_LOGS} days (within the ${periodDays}-day period) to unlock your personal insights!`
+      };
+    }
+
+    // Get streak data
+    let currentStreak = 0;
+    let longestStreak = 0;
+    if (streakSheet) { // Check if streakSheet exists
+        Logger.log('[Gather] Reading Streak Data...');
+        try {
+            const streakData = streakSheet.getDataRange().getValues();
+            Logger.log(`[Gather] Read ${streakData.length} rows from Streak Data.`);
+            // Find user by userId (Column A, index 0)
+            const userStreakRow = streakData.slice(1).find(row => row[0] === userId);
+            if (userStreakRow) {
+                 // Ensure values are treated as numbers, default to 0 if invalid
+                 currentStreak = Number(userStreakRow[CONFIG.STREAK.COLUMNS.CURRENT_STREAK - 1]) || 0;
+                 longestStreak = Number(userStreakRow[CONFIG.STREAK.COLUMNS.LONGEST_STREAK - 1]) || 0;
+            } else {
+                 Logger.log(`[Gather] Streak row not found for userId: ${userId}`);
+            }
+        } catch (e) {
+             Logger.log(`[Gather] Error reading streak data: ${e}`);
+             logError_(e, { action: 'insights_gather_streak', userId: userId, userTag: userTag, context: 'Failed to read/parse streak data' });
+             // Continue without streak data, defaults remain 0
+        }
+    }
+     Logger.log(`[Gather] Streak data: Current=${currentStreak}, Longest=${longestStreak}`);
+
+
+    // --- REMOVED INCORRECT weeklyStats MAPPING ---
+    // We don't need to read Weekly_Stats sheet here. generateAIInsights_ does that.
+
+
+    // Compile insights data structure
+    const compiledData = {
+      userTag: userTag,
+      // generatedAt: new Date().toISOString(), // Add this in handleInsightsCommand instead
+      periodDays: periodDays,
+      streak: {
+        current: currentStreak,
+        longest: longestStreak
+      },
+      // weeklyStats: [], // Removed this incorrect property
+      dataPoints: dataPoints, // Use count from logs within the period
+      dataRange: {
+        start: cutoffDateString,
+        end: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+      }
+      // NOTE: Detailed priorities, notes, satisfaction, correlations
+      // will be added by generateAIInsights_ function later by reading
+      // the necessary sheets (Weekly_Stats JSON, Master Data).
+    };
+
+    Logger.log('[Gather] Successfully compiled initial data.');
+    return {
+      success: true,
+      // cacheKey: cacheKey, // Remove cacheKey logic from here
+      data: compiledData
+    };
+
+  } catch (error) {
+    Logger.log(`[Gather] ERROR in gatherInsightsData_: ${error} Stack: ${error.stack}`);
+    logError_(error, { action: 'insights_data_gathering', userId: userId, userTag: userTag, context: 'General error in gatherInsightsData_' });
+    return {
+      success: false,
+      error: 'processing_error',
+      message: 'An error occurred while gathering insights data: ' + error.message
+    };
+  }
+}
+
+
+function handleInsightsCommand_(userId, userTag, periodDays) {
+  Logger.log(`[Insights: ${userTag}] --- Function Start --- Period: ${periodDays}, UserID: ${userId}`);
+  try {
+
+    console.log("Starting handleInsightsCommand_ with:", {userId, userTag, periodDays});  // Add this line
+    // Validate inputs
+    if (!userId || !userTag || !CONFIG.INSIGHTS.VALID_PERIODS.includes(periodDays)) {
+      throw new Error('Invalid input parameters');
+    }
+
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    let insightsSheet;
+    
+    try {
+      insightsSheet = ss.getSheetByName(CONFIG.INSIGHTS.SHEET);
+      logError_('Sheet access attempt', {
+        action: 'insights_sheet_access',
+        context: JSON.stringify({
+          sheetFound: !!insightsSheet,
+          sheetName: CONFIG.INSIGHTS.SHEET,
+          canAccess: insightsSheet ? 'yes' : 'no'
+        })
+      });
+    } catch (sheetError) {
+      logError_('Sheet access error', {
+        action: 'insights_sheet_access',
+        error: sheetError.toString(),
+        context: 'Error accessing insights sheet'
+      });
+      throw new Error('Failed to access insights sheet: ' + sheetError.message);
+    }
+
+    if (!insightsSheet) {
+      logError_('Sheet not found', {
+        action: 'insights_sheet_access',
+        context: JSON.stringify({
+          expectedName: CONFIG.INSIGHTS.SHEET,
+          availableSheets: ss.getSheets().map(s => s.getName())
+        })
+      });
+      throw new Error('Required sheet not found');
+    }
+
+    // Check for recent cached insights (within 1 hour or 24hr fallback)
+    const now = new Date();
+    const cacheExpiry = new Date(now.getTime() - (CONFIG.INSIGHTS.CACHE_DURATION_HOURS * 60 * 60 * 1000));
+    const fallbackExpiry = new Date(now.getTime() - (24 * 60 * 60 * 1000)); // 24 hour fallback
+
+    const insightsDataSheet = insightsSheet.getDataRange().getValues();
+    const userInsights = insightsDataSheet.slice(1)
+      .filter(row => row[0] === userTag && row[2] === periodDays) // Filter by UserTag & PeriodDays
+      .sort((a, b) => new Date(b[1]) - new Date(a[1])); // Sort by GeneratedAt descending
+
+    const mostRecent = userInsights[0]; // Most recent entry for this user/period
+
+    if (mostRecent) { // If any cache entry exists
+        const generatedAtDate = new Date(mostRecent[1]); // Column B
+        const hasRecentCache = generatedAtDate > cacheExpiry;
+        const hasFallbackCache = generatedAtDate > fallbackExpiry;
+
+        if (hasRecentCache || hasFallbackCache) { // If within relevant cache period
+             try {
+                 const cachedObject = JSON.parse(mostRecent[4]); // Column E (InsightsJSON)
+                 // cachedObject should now contain { structuredData: {...}, aiText: "..." }
+
+                 const returnData = cachedObject.structuredData || {}; // Get the structured data part
+                 const dataPointsFromCache = mostRecent[3] || returnData?.userMetrics?.dataPoints || 0; // Column D (DataPoints)
+
+                 // ** Check if the cached data actually looks valid (has priorities) **
+                 // This prevents issues if old, differently structured data was cached
+                 if (!returnData.priorities || returnData.priorities.length === 0) {
+                      Logger.log(`Cached data for ${userTag} (period ${periodDays}) is missing priorities or invalid structure. Forcing regeneration.`);
+                      // Don't return, proceed to generate new data below
+                 } else {
+                      // --- RETURN CACHED DATA (Consistent Structure) ---
+                      Logger.log(`Returning cached insights for ${userTag} (period ${periodDays}). Fallback: ${!hasRecentCache}`);
+                      return {
+                          success: true,
+                          cached: true,
+                          fallback: !hasRecentCache && hasFallbackCache, // Mark if it's older fallback data
+                          data: returnData, // The object containing priorities, userMetrics, etc.
+                          aiText: cachedObject.aiText || '', // Pass cached AI text separately
+                          metadata: { // Consistent metadata structure
+                               generatedAt: generatedAtDate,
+                               periodDays: mostRecent[2], // Column C
+                               dataPoints: dataPointsValue // Use value read from sheet
+                          }
+                      };
+                      // --- END RETURN CACHED DATA ---
+                 }
+             } catch (parseError) {
+                  Logger.log(`Error parsing cached JSON for ${userTag} (period ${periodDays}). Forcing regeneration. Error: ${parseError}`);
+                  logError_(parseError, { action: 'insights_cache_parse', userId: userId, userTag: userTag, context: 'Failed to parse cached insights JSON' });
+                  // Don't return, proceed to generate new data below
+             }
+        }
+    } // End check for existing cache entry
+
+    // If we haven't returned cached data, proceed to generate new insights...
+    // ... existing code to call gatherInsightsData_, generateAIInsights_ ...
+    // ...
+    // Ensure the return structure for NEW data is also consistent:
+    // ... inside the try block for generating new data ...
+     return {
+        success: true,
+        cached: false,
+        fallback: false, // Not fallback if newly generated
+        data: aiDataResult.data, // The object containing priorities, metrics, etc.
+        aiText: null, // No AI text generated yet by GAS
+        metadata: {
+            generatedAt: now, // Use generation time 'now'
+            periodDays: periodDays,
+            dataPoints: aiDataResult.data.userMetrics.dataPoints
+        }
+     };
+
+    // Try to generate new insights
+    try {
+      // Gather fresh data
+      const gatherResult = gatherInsightsData_(userId, userTag, periodDays);
+
+      console.log("Gather result:", JSON.stringify(gatherResult));
+
+    if (!gatherResult.success) {
+        return gatherResult;
+    }
+
+      // Structure data for AI processing
+      const aiDataResult = generateAIInsights_(gatherResult.data);
+    if (!aiDataResult.success) {
+        return aiDataResult;  // Pass through the AI error object
+      }
+
+      // Store new insights
+      const newRow = [
+        userTag,
+        now,
+        periodDays,
+        aiDataResult.data.dataPoints,
+        JSON.stringify({
+          insights: aiDataResult.data,
+          metadata: {
+            generatedAt: now.toISOString(),
+            periodDays: periodDays,
+            dataPoints: aiDataResult.data.dataPoints,
+            dataRange: aiDataResult.data.dataRange
+          }
+        })
+      ];
+
+      insightsSheet.appendRow(newRow);
+
+      return {
+        success: true,
+        cached: false,
+        data: aiDataResult.data,
+        metadata: {
+          generatedAt: now,
+          periodDays: periodDays,
+          dataPoints: aiDataResult.data.dataPoints,
+          dataRange: aiDataResult.data.dataRange
+        }
+      };
+
+    } catch (genError) {
+      // Log the generation error
+      logError_(genError, {
+        action: 'ai_insights_generation',
+        userId: userId,
+        userTag: userTag,
+        context: 'Failed to generate new insights'
+      });
+
+      // If we have fallback cache, use it
+      if (hasFallbackCache) {
+        const fallbackData = JSON.parse(mostRecent[4]);
+        return {
+          success: true,
+          cached: true,
+          fallback: true, // Indicate this is a fallback response
+          data: fallbackData,
+          metadata: {
+            generatedAt: new Date(mostRecent[1]),
+            periodDays: mostRecent[2],
+            dataPoints: mostRecent[3]
+          },
+          message: "We had trouble generating new insights. Please try again in a few minutes. In the meantime, here are your last insights, in case anything new stands out."
+        };
+      }
+
+      // No fallback available
+      throw genError;
+    }
+
+  } catch (error) {
+    logError_(error, {
+      action: 'ai_insights_processing',
+      userId: userId,
+      userTag: userTag,
+      context: 'Processing insights command'
+    });
+
+    return {
+      success: false,
+      error: 'Failed to process insights command',
+      message: 'An error occurred while processing your insights. Please try again in a few minutes.'
+    };
+  }
+}
+
+
+function generateAIInsights_(insightsData) {
+  Logger.log('[AIPrep] Entering generateAIInsights_'); // Log function entry
+  try {
+    // Check input structure
+    if (!insightsData || !insightsData.userTag || !insightsData.periodDays) {
+        Logger.log('[AIPrep] ERROR: Invalid insightsData input received.');
+        return { success: false, error: 'internal_error', message: 'Invalid data for AI prep.' };
+    }
+     Logger.log(`[AIPrep] Preparing for ${insightsData.userTag}, Period: ${insightsData.periodDays}. Input data points: ${insightsData.dataPoints}`);
+
+    // Check min data points again
+    if (!insightsData.dataPoints || insightsData.dataPoints < CONFIG.INSIGHTS.MIN_LOGS) {
+        Logger.log(`[AIPrep] ERROR: Insufficient data points (${insightsData.dataPoints}).`);
+        return { success: false, error: 'insufficient_data', message: `AI insights require at least ${CONFIG.INSIGHTS.MIN_LOGS} logs.` };
+    }
+
+    // Initialize structure
+    const structuredData = {
+      userMetrics: insightsData.streak ? {
+        currentStreak: insightsData.streak.current || 0, longestStreak: insightsData.streak.longest || 0,
+        periodDays: insightsData.periodDays, dataPoints: insightsData.dataPoints
+      } : { currentStreak: 0, longestStreak: 0, periodDays: insightsData.periodDays, dataPoints: insightsData.dataPoints },
+      priorities: [], notes: [], satisfaction: [], correlations: []
+    };
+    Logger.log('[AIPrep] Initial structure created.');
+
+    // Get data from Weekly_Stats
+    let weeklyStats = null;
+    let userStatsRowFound = false; // Flag
+    try {
+        Logger.log('[AIPrep] Accessing Weekly_Stats sheet...');
+        const ss_stats = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8'); // Use different variable name just in case
+        const statsSheet = ss_stats.getSheetByName(STATS_CONFIG.SHEETS.WEEKLY_STATS);
+        if (!statsSheet) throw new Error('Weekly_Stats sheet not found');
+        Logger.log('[AIPrep] Reading Weekly_Stats data...');
+        const statsData = statsSheet.getDataRange().getValues();
+        Logger.log(`[AIPrep] Read ${statsData.length} rows from Weekly_Stats.`);
+
+        const userStatsRows = statsData.slice(1).filter(row => row[0] === insightsData.userTag);
+         Logger.log(`[AIPrep] Found ${userStatsRows.length} rows for user ${insightsData.userTag} in Weekly_Stats.`);
+
+        if (userStatsRows.length > 0) {
+            const userStatsRow = userStatsRows.sort((a, b) => new Date(b[1]) - new Date(a[1]))[0]; // Get most recent
+             Logger.log(`[AIPrep] Most recent Weekly_Stats row found. Date: ${userStatsRow[1]}`);
+             userStatsRowFound = true; // Mark as found
+             if (userStatsRow[2]) { // Check JSON column exists
+                 Logger.log('[AIPrep] Parsing Weekly_Stats JSON...');
+                 const jsonString = userStatsRow[2];
+                 weeklyStats = JSON.parse(jsonString);
+                  Logger.log('[AIPrep] Parsed Weekly_Stats JSON successfully.');
+             } else {
+                  Logger.log('[AIPrep] Weekly_Stats JSON column (C) is empty.');
+             }
+        } else {
+             Logger.log(`[AIPrep] No Weekly_Stats entry found for ${insightsData.userTag}.`);
+        }
+    } catch (e) {
+        Logger.log(`[AIPrep] ERROR reading or parsing Weekly_Stats: ${e}`);
+        logError_(e, { action: 'insights_ai_prep_stats', userTag: insightsData.userTag, context: 'Error processing Weekly_Stats data' });
+        // Continue, defaults below handle missing stats
+    }
+
+    // Populate from parsed stats
+    structuredData.priorities = weeklyStats?.priorities || [];
+    structuredData.correlations = weeklyStats?.correlations || [];
+     Logger.log(`[AIPrep] Populated Priorities: ${structuredData.priorities.length}, Correlations: ${structuredData.correlations.length}`);
+
+
+    // Get Notes & Satisfaction from Master Data
+    try {
+        Logger.log('[AIPrep] Accessing Master Data sheet...');
+        const ss_master = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+        const masterSheet = ss_master.getSheetByName(CONFIG.SHEETS.MASTER);
+        if (!masterSheet) throw new Error('Master Data sheet not found');
+        Logger.log('[AIPrep] Reading Master Data...');
+        const masterData = masterSheet.getDataRange().getValues();
+         Logger.log(`[AIPrep] Read ${masterData.length} rows from Master Data.`);
+
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - insightsData.periodDays);
+        cutoffDate.setHours(0, 0, 0, 0);
+         Logger.log(`[AIPrep] Master Data cutoff: ${cutoffDate.toISOString()}`);
+
+        const recentLogs = masterData.slice(1).filter(row => { /* ... filter logic ... */ }).map(row => ({ /* ... map logic ... */ }));
+        // Include filter and map logic from previous correct version
+         const satisfactionColIndex = CONFIG.COLUMNS.SATISFACTION - 1;
+         const notesColIndex = CONFIG.COLUMNS.NOTES - 1;
+         const userTagColIndex = CONFIG.COLUMNS.USERTAG - 1;
+         const dateColIndex = CONFIG.COLUMNS.DATE - 1;
+
+         const filteredLogs = masterData.slice(1).filter(row => {
+             try {
+                 const rowDate = new Date(row[dateColIndex]);
+                 return row[userTagColIndex] === insightsData.userTag && !isNaN(rowDate.getTime()) && rowDate >= cutoffDate;
+              } catch(e) { Logger.log(`[AIPrep] Error processing row in Master filter: ${row}. Error: ${e}`); return false;}
+            });
+          Logger.log(`[AIPrep] Found ${filteredLogs.length} relevant logs in Master Data.`);
+
+         structuredData.notes = filteredLogs
+             .map(row => ({ date: new Date(row[dateColIndex]), content: row[notesColIndex] }))
+             .filter(log => log.content && log.content.trim() !== '')
+             .map(log => ({ date: log.date.toISOString().split('T')[0], content: log.content }));
+
+         structuredData.satisfaction = filteredLogs
+             .map(row => ({ date: new Date(row[dateColIndex]), value: row[satisfactionColIndex] }))
+             .filter(log => log.value !== null && log.value !== '' && !isNaN(parseFloat(log.value)))
+             .map(log => ({ date: log.date.toISOString().split('T')[0], value: parseFloat(log.value) }));
+
+         Logger.log(`[AIPrep] Populated Notes: ${structuredData.notes.length}, Satisfaction: ${structuredData.satisfaction.length}`);
+
+    } catch (e) {
+        Logger.log(`[AIPrep] ERROR processing Master Data: ${e}`);
+        logError_(e, { action: 'insights_ai_prep_master', /* ... */ });
+        return { success: false, error: 'processing_error', message: 'Failed to process historical log data.' };
+    }
+
+    Logger.log('[AIPrep] Successfully structured data for AI. Returning success.');
+    return { success: true, data: structuredData };
+
+  } catch (error) {
+     // Log any unexpected error within this function
+     Logger.log(`[AIPrep] UNEXPECTED TOP-LEVEL ERROR in generateAIInsights_: ${error} Stack: ${error.stack}`);
+     logError_(error, { action: 'ai_insights_generation_structure', userTag: insightsData?.userTag || 'unknown', context: 'Outer catch in generateAIInsights_' });
+     return { success: false, error: 'Failed to prepare insights data', message: 'An error occurred while preparing your insights.' };
+  }
+}
+
+
+function getInsights(userId, userTag, periodDays) {
+  try {
+    logError_('Debug: Starting getInsights', {
+      action: 'getInsights_function',
+      userId: userId,
+      userTag: userTag,
+      context: `Starting insights processing for period: ${periodDays}`
+    });
+
+    const result = handleInsightsCommand_(userId, userTag, periodDays);
+    
+    logError_('Debug: getInsights result', {
+      action: 'getInsights_result',
+      userId: userId,
+      userTag: userTag,
+      context: JSON.stringify(result)
+    });
+
+    return result;
+  } catch (error) {
+    logError_(error, {
+      action: CONFIG.INSIGHTS.ERROR_TYPES.GATHERING,
+      userId: userId,
+      userTag: userTag,
+      context: 'Getting insights'
+    });
+    return {
+      success: false,
+      error: error.message || 'Failed to get insights'
+    };
+  }
+}
+
+
+function storeInsights(userId, userTag, periodDays, insights) {
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    let insightsSheet = ss.getSheetByName(CONFIG.INSIGHTS.SHEET);
+
+    if (!insightsSheet) {
+      // ... (create sheet and headers if needed - keep existing logic) ...
+      insightsSheet = ss.insertSheet(CONFIG.INSIGHTS.SHEET);
+      // Ensure column order matches expected read order: UserTag, GeneratedAt, PeriodDays, DataPoints, InsightsJSON
+      insightsSheet.getRange('A1:E1').setValues([['UserTag', 'GeneratedAt', 'PeriodDays', 'DataPoints', 'InsightsJSON']]);
+      insightsSheet.setFrozenRows(1);
+    }
+
+    // --- CHANGE HERE: Store structuredData and aiText directly ---
+    const dataToStore = JSON.stringify({
+        structuredData: insights.structuredData, // Store the data object directly
+        aiText: insights.aiText                  // Store the AI text alongside it
+        // Removed nested metadata - rely on sheet columns
+    });
+
+    // Ensure dataPoints are stored correctly in the dedicated column (index 3 is column D)
+    const dataPointsValue = insights.dataPoints || insights.structuredData?.userMetrics?.dataPoints || 0;
+
+    insightsSheet.appendRow([
+      userTag,                // Column A
+      new Date(),             // Column B (GeneratedAt)
+      periodDays,             // Column C
+      dataPointsValue,        // Column D (DataPoints)
+      dataToStore             // Column E (InsightsJSON)
+      ]);
+
+    return { success: true, message: 'Insights stored successfully' };
+  } catch (error) {
+    logError_(error, { /* ... */ });
+    return { success: false, /* ... */ };
+  }
+}
+
+
+
+
+// Add this helper function first
+function getUserLogs_(userTag, periodDays) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+  const data = masterSheet.getDataRange().getValues();
+  const headers = data[0];
+  
+  // Get column indices
+  const dateCol = headers.indexOf('Date');
+  const userTagCol = headers.indexOf('UserTag');
+  const p1LabelCol = headers.indexOf('Priority1_Label');
+  const p1ValueCol = headers.indexOf('Priority1_Value');
+  const p1UnitCol = headers.indexOf('Priority1_Unit');
+  const p2LabelCol = headers.indexOf('Priority2_Label');
+  const p2ValueCol = headers.indexOf('Priority2_Value');
+  const p2UnitCol = headers.indexOf('Priority2_Unit');
+  const p3LabelCol = headers.indexOf('Priority3_Label');
+  const p3ValueCol = headers.indexOf('Priority3_Value');
+  const p3UnitCol = headers.indexOf('Priority3_Unit');
+  const satisfactionCol = headers.indexOf('Satisfaction');
+  const notesCol = headers.indexOf('Notes');
+
+  // Calculate date range
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - periodDays);
+
+  // Filter and map the data
+  const logs = data.slice(1) // Skip header row
+    .filter(row => {
+      const rowDate = new Date(row[dateCol]);
+      const rowUserTag = row[userTagCol];
+      return rowUserTag === userTag && 
+             rowDate >= startDate && 
+             rowDate <= endDate;
+    })
+    .map(row => ({
+      date: row[dateCol],
+      priorities: [
+        {
+          label: row[p1LabelCol],
+          value: row[p1ValueCol],
+          unit: row[p1UnitCol]
+        },
+        {
+          label: row[p2LabelCol],
+          value: row[p2ValueCol],
+          unit: row[p2UnitCol]
+        },
+        {
+          label: row[p3LabelCol],
+          value: row[p3ValueCol],
+          unit: row[p3UnitCol]
+        }
+      ],
+      satisfaction: row[satisfactionCol],
+      notes: row[notesCol]
+    }));
+
+  return logs;
+}
+
+function testUserLogs() {
+  const userTag = 'davewolo';
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+  const data = masterSheet.getDataRange().getValues();
+  
+  // Skip header and filter for user
+  const userLogs = data.slice(1)
+    .filter(row => row[2] === userTag)
+    .map(row => ({
+      date: row[0],
+      userTag: row[2]
+    }));
+  
+  // Get unique dates
+  const uniqueDates = [...new Set(userLogs.map(log => log.date))].sort();
+  
+  // Check for gaps
+  let gaps = [];
+  for(let i = 0; i < uniqueDates.length - 1; i++) {
+    const currentDate = new Date(uniqueDates[i]);
+    const nextDate = new Date(uniqueDates[i + 1]);
+    const diffDays = Math.floor((nextDate - currentDate) / (1000 * 60 * 60 * 24));
+    if(diffDays > 1) {
+      gaps.push({
+        between: [currentDate.toISOString().split('T')[0], 
+                 nextDate.toISOString().split('T')[0]],
+        gapSize: diffDays - 1
+      });
+    }
+  }
+  
+  console.log("Test Results:", {
+    totalRows: data.length,
+    userLogsFound: userLogs.length,
+    uniqueDates: uniqueDates.map(d => new Date(d).toISOString().split('T')[0]),
+    uniqueDatesCount: uniqueDates.length,
+    dateRange: {
+      first: new Date(uniqueDates[0]).toISOString().split('T')[0],
+      last: new Date(uniqueDates[uniqueDates.length - 1]).toISOString().split('T')[0]
+    },
+    gaps: gaps,
+    hasGaps: gaps.length > 0,
+    isConsecutive: gaps.length === 0
+  });
+  
+  return "Check logs for test results";
+}
+
+function testStatsAndInsights() {
+  const sheet = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8').getSheetByName('Master Data');
+  const data = sheet.getDataRange().getValues();
+  const stats = calculateUserStats(data, 'davewolo');
+
+  Logger.log(JSON.stringify(stats, null, 2));
+}
+
+
+// =====================================
+// ADD THIS NEW TEST FUNCTION to your Apps Script project
+// =====================================
+function testInsightsManually() {
+  // --- !!! SET THESE TO A VALID USER FOR TESTING !!! ---
+  const testUserId = '1032380614290182174'; // Discord User ID for 'davewolo' (from previous logs)
+  const testUserTag = 'davewolo';         // Discord User Tag
+  const testPeriodDays = 7;              // Test insights period (7 or 30)
+  // -----------------------------------------------------
+
+  Logger.log(`Starting manual insights test for ${testUserTag} (ID: ${testUserId}), period: ${testPeriodDays}`);
+
+  try {
+    // Call the main insights handling function directly
+    const result = handleInsightsCommand_(testUserId, testUserTag, testPeriodDays);
+
+    // Log the entire result object returned
+    Logger.log("Result from handleInsightsCommand_:");
+    Logger.log(JSON.stringify(result, null, 2)); // Pretty-print the JSON result
+
+    if (result && result.success) {
+      Logger.log("Test function finished: handleInsightsCommand_ reported SUCCESS.");
+    } else {
+      Logger.log(`Test function finished: handleInsightsCommand_ reported FAILURE. Error: ${result ? result.error : 'N/A'}, Message: ${result ? result.message : 'N/A'}`);
+    }
+
+  } catch (error) {
+    // Catch any errors that might not have been caught inside handleInsightsCommand_ itself
+    Logger.log(`<<<<< UNCAUGHT ERROR in testInsightsManually >>>>>`);
+    Logger.log(`Error Message: ${error.toString()}`);
+    Logger.log(`Error Stack: ${error.stack}`);
+    Logger.log(`<<<<< END UNCAUGHT ERROR >>>>>`);
+  }
+  Logger.log(`Manual insights test completed for ${testUserTag}`);
+}
+// =====================================
+// End of new testInsightsManually function
+// =====================================
+
+// =====================================
+// ADD THIS NEW TEST FUNCTION to your Apps Script project
+// =====================================
+function testGatherInsightsDataOnly() {
+  // --- !!! Use the same valid user info !!! ---
+  const testUserId = '1032380614290182174'; // Discord User ID for 'davewolo'
+  const testUserTag = 'davewolo';         // Discord User Tag
+  const testPeriodDays = 7;              // Test insights period
+  // -----------------------------------------------------
+
+  Logger.log(`Starting manual test for gatherInsightsData_ ONLY for ${testUserTag}, period: ${testPeriodDays}`);
+
+  try {
+    // Call the data gathering function directly
+    const result = gatherInsightsData_(testUserId, testUserTag, testPeriodDays);
+
+    // Log the entire result object returned
+    Logger.log("Result from gatherInsightsData_:");
+    Logger.log(JSON.stringify(result, null, 2)); // Pretty-print the JSON result
+
+    if (result && result.success) {
+      Logger.log("Test function finished: gatherInsightsData_ reported SUCCESS.");
+    } else {
+      Logger.log(`Test function finished: gatherInsightsData_ reported FAILURE. Error: ${result ? result.error : 'N/A'}, Message: ${result ? result.message : 'N/A'}`);
+    }
+
+  } catch (error) {
+    // Catch any errors during the gather function call
+    Logger.log(`<<<<< UNCAUGHT ERROR in testGatherInsightsDataOnly >>>>>`);
+    Logger.log(`Error Message: ${error.toString()}`);
+    Logger.log(`Error Stack: ${error.stack}`);
+    Logger.log(`<<<<< END UNCAUGHT ERROR >>>>>`);
+  }
+   Logger.log(`Manual test for gatherInsightsData_ completed for ${testUserTag}`);
+}
+// =====================================
+// End of new testGatherInsightsDataOnly function
+// =====================================
