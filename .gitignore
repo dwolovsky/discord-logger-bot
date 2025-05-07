@@ -1,0 +1,16 @@
+# Bot specific ignores 
+# Node dependencies
+node_modules/
+
+# Environment variables file
+.env
+
+# Firebase service account key (if you place it here for local testing)
+firebase-service-account-key.json
+
+# Log files (example)
+*.log
+
+# OS-specific files (examples)
+.DS_Store
+Thumbs.db
