@@ -73,9 +73,6 @@ const STREAK_CONFIG = {
     }
 };
 
-const MMW_TARGET_MINUTES = [5, 15, 25, 35, 50, 55]; // Your chosen MMWs
-const MMW_FLEXIBILITY = 3; // +/- 3 minutes for hitting the target
-
 // --- Default Reminder Messages (Editable Array) ---
 const defaultReminderMessages = [
     "What if this ends up being your favorite part of today?",
@@ -2902,32 +2899,26 @@ exports.getComparativeExperimentStats = onCall(async (request) => {
 
 });
 
-function determineMaxReminders(frequencyString) {
-    if (frequencyString === 'daily_1' || frequencyString === 'every_other_day') return 1;
-    if (frequencyString === 'daily_2') return 2;
-    if (frequencyString === 'daily_3') return 3;
-    if (frequencyString === 'daily_4') return 4;
-    return 0; // Default for 'none' or unknown
-}
-
-function getDayOfYear(date) { // [cite: 819, 820]
-    const start = new Date(date.getUTCFullYear(), 0, 0);
-    const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
-    const oneDay = 1000 * 60 * 60 * 24;
-    return Math.floor(diff / oneDay);
-}
-
 /**
  * Scheduled function to check for and trigger user reminders.
  * Runs periodically (e.g., every 30 minutes).
  */
-exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) => {
+exports.sendScheduledReminders = onSchedule("every 30 minutes", async (event) => {
     logger.log("sendScheduledReminders: Scheduled function triggered.", event.scheduleTime);
     const db = admin.firestore();
-    const now = new Date();
+    const now = new Date(); // Current server time in UTC
     const currentUTCHour = now.getUTCHours();
-    const currentUTCMinute = now.getUTCMinutes();
-    const currentUTCDayOfYear = getDayOfYear(now); // Make sure getDayOfYear is available
+    const currentUTCDayOfYear = getDayOfYear(now); // Helper function needed
+
+    // Helper function to get day of the year (1-366)
+    function getDayOfYear(date) {
+        const start = new Date(date.getUTCFullYear(), 0, 0);
+        const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+        const oneDay = 1000 * 60 * 60 * 24;
+        return Math.floor(diff / oneDay);
+    }
+
+    const SEND_PROBABILITY = 0.70; // 70% chance to send an eligible reminder per check
 
     try {
         const usersSnapshot = await db.collection('users').get();
@@ -2946,7 +2937,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 userData.experimentCurrentSchedule.reminderFrequency &&
                 userData.experimentCurrentSchedule.reminderFrequency !== 'none' &&
                 userData.experimentCurrentSchedule.experimentEndTimestamp &&
-                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() > now) {
+                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() > now) { // Experiment is still active
 
                 const schedule = userData.experimentCurrentSchedule;
                 const {
@@ -2954,125 +2945,130 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     reminderWindowEndUTC,
                     reminderFrequency,
                     lastReminderSentDayOfYearUTC,
-                    remindersSentOnLastDay // This counter is per UTC day
+                    remindersSentOnLastDay
                 } = schedule;
 
                 if (typeof reminderWindowStartUTC !== 'number' || typeof reminderWindowEndUTC !== 'number') {
                     logger.warn(`sendScheduledReminders: User ${userId} has incomplete UTC reminder window settings. Skipping.`);
-                    return;
+                    return; 
                 }
 
-                const maxRemindersToday = determineMaxReminders(reminderFrequency);
-                let actualRemindersSentToday = 0;
-                if (lastReminderSentDayOfYearUTC === currentUTCDayOfYear) {
-                    actualRemindersSentToday = remindersSentOnLastDay || 0;
-                }
-
-                // 1. Limit Check
-                if (actualRemindersSentToday >= maxRemindersToday) {
-                    return; // Daily limit met
-                }
-
-                // 2. "Every other day" logic
-                if (reminderFrequency === 'every_other_day') {
-                    const currentEpochDayUTC = Math.floor(now.getTime() / (1000 * 60 * 60 * 24));
-                    const lastSentEpochDayUTC = schedule.lastReminderSentEpochDayUTC; 
-
-                    if (typeof lastSentEpochDayUTC === 'number') {
-                        if (currentEpochDayUTC === lastSentEpochDayUTC) {
-                            return; // Already sent on this epoch day
-                        }
-                        if (currentEpochDayUTC - lastSentEpochDayUTC < 2) {
-                            return; // Sent on the immediately preceding epoch day, so skip today
-                        }
-                    }
-                }
-
-                // 3. Magic Minute Window Hit Check
-                let magicMinuteHit = false;
-                const effectiveHourForWindowCheck = currentUTCHour; 
-
-                for (const targetMin of MMW_TARGET_MINUTES) {
-                    if (currentUTCMinute >= (targetMin - MMW_FLEXIBILITY) && currentUTCMinute <= (targetMin + MMW_FLEXIBILITY)) {
-                        magicMinuteHit = true;
-                        break;
-                    }
-                }
-
-                if (!magicMinuteHit) {
-                    return; // Not a magic minute time
-                }
-
-                // 4. Window Check
+                let windowDurationHours;
                 let isInWindow = false;
-                const isFullDayWindow = reminderWindowStartUTC === reminderWindowEndUTC && reminderFrequency !== 'none'; // [cite: 832]
 
-                if (isFullDayWindow) {
-                    isInWindow = true;
-                } else if (reminderWindowStartUTC <= reminderWindowEndUTC) { 
-                    if (effectiveHourForWindowCheck >= reminderWindowStartUTC && effectiveHourForWindowCheck < reminderWindowEndUTC) {
+                if (reminderWindowStartUTC <= reminderWindowEndUTC) { 
+                    windowDurationHours = reminderWindowEndUTC - reminderWindowStartUTC;
+                    if (currentUTCHour >= reminderWindowStartUTC && currentUTCHour < reminderWindowEndUTC) {
                         isInWindow = true;
                     }
                 } else { 
-                    if (effectiveHourForWindowCheck >= reminderWindowStartUTC || effectiveHourForWindowCheck < reminderWindowEndUTC) {
+                    windowDurationHours = (24 - reminderWindowStartUTC) + reminderWindowEndUTC;
+                    if (currentUTCHour >= reminderWindowStartUTC || currentUTCHour < reminderWindowEndUTC) {
                         isInWindow = true;
                     }
                 }
-
+                
+                const isFullDayWindow = reminderWindowStartUTC === 0 && reminderWindowEndUTC === 0 && reminderFrequency !== 'none';
+                if (windowDurationHours <= 0 && !isFullDayWindow) {
+                    logger.info(`sendScheduledReminders: User ${userId} has a zero or negative duration reminder window (${reminderWindowStartUTC}-${reminderWindowEndUTC} UTC) and it's not a full day window. No reminders will be sent.`);
+                    return; 
+                }
+                
                 if (!isInWindow) {
-                    return; // Outside user's window
+                    return; 
                 }
 
-                // 5. All checks passed - Send Reminder
-                logger.log(`sendScheduledReminders: User ${userId} attempting send. Freq: ${reminderFrequency}, SentToday: ${actualRemindersSentToday}/${maxRemindersToday}. Time: ${currentUTCHour}:${String(currentUTCMinute).padStart(2,'0')}`);
-
-                const randomDefaultMessage = defaultReminderMessages[Math.floor(Math.random() * defaultReminderMessages.length)]; // [cite: 845]
-                let finalReminderMessage = randomDefaultMessage;
-                if (schedule.scheduledExperimentSettings) { // [cite: 846]
-                    const settings = schedule.scheduledExperimentSettings;
-                    const activeInputLabels = [];
-                    if (settings.input1?.label?.trim()) activeInputLabels.push(settings.input1.label); // [cite: 847, 848]
-                    if (settings.input2?.label?.trim()) activeInputLabels.push(settings.input2.label); // [cite: 849]
-                    if (settings.input3?.label?.trim()) activeInputLabels.push(settings.input3.label); // [cite: 850]
-                    if (activeInputLabels.length > 0) {
-                        const randomInputLabel = activeInputLabels[Math.floor(Math.random() * activeInputLabels.length)]; // [cite: 851]
-                        finalReminderMessage = `${randomInputLabel}: ${randomDefaultMessage}`; // [cite: 851]
+                let shouldAttemptSendThisCheck = false; 
+                const newRemindersSentThisUTCDay = (lastReminderSentDayOfYearUTC === currentUTCDayOfYear) ? (remindersSentOnLastDay || 0) : 0;
+                
+                if (reminderFrequency === 'daily_1') {
+                    if (newRemindersSentThisUTCDay < 1) {
+                        if (Math.random() < SEND_PROBABILITY) {
+                            shouldAttemptSendThisCheck = true;
+                        } else {
+                            logger.log(`sendScheduledReminders: User ${userId} (daily_1) - Eligible, but probabilistically skipped this run (${((1-SEND_PROBABILITY)*100).toFixed(0)}% chance).`);
+                        }
+                    }
+                } else if (reminderFrequency === 'daily_2') {
+                    if (newRemindersSentThisUTCDay < 2) {
+                        if (Math.random() < SEND_PROBABILITY) {
+                            shouldAttemptSendThisCheck = true;
+                        } else {
+                            logger.log(`sendScheduledReminders: User ${userId} (daily_2, attempt for reminder #${newRemindersSentThisUTCDay + 1}) - Eligible, but probabilistically skipped this run (${((1-SEND_PROBABILITY)*100).toFixed(0)}% chance).`);
+                        }
+                    }
+                } else if (reminderFrequency === 'every_other_day') {
+                    if (newRemindersSentThisUTCDay < 1) {
+                        if (lastReminderSentDayOfYearUTC === null || (currentUTCDayOfYear % 2 !== lastReminderSentDayOfYearUTC % 2)) {
+                            shouldAttemptSendThisCheck = true;
+                        }
                     }
                 }
 
-                const reminderDocId = db.collection('pendingReminderDMs').doc().id; // [cite: 855]
-                const updatePayload = {
-                    'experimentCurrentSchedule.lastReminderSentDayOfYearUTC': currentUTCDayOfYear,
-                    'experimentCurrentSchedule.remindersSentOnLastDay': actualRemindersSentToday + 1
-                };
+                if (shouldAttemptSendThisCheck) {
+                    logger.log(`sendScheduledReminders: User ${userId} is IN window (${reminderWindowStartUTC}-${reminderWindowEndUTC} UTC, current: ${currentUTCHour}) and Attempting Send (Freq: ${reminderFrequency}, Prior Sent Today: ${newRemindersSentThisUTCDay}).`);
+                    
+                    const randomDefaultMessage = defaultReminderMessages[Math.floor(Math.random() * defaultReminderMessages.length)];
+                    let finalReminderMessage = randomDefaultMessage;
 
-                if (reminderFrequency === 'every_other_day') {
-                    updatePayload['experimentCurrentSchedule.lastReminderSentEpochDayUTC'] = Math.floor(now.getTime() / (1000 * 60 * 60 * 24));
+                    if (schedule.scheduledExperimentSettings) {
+                        const settings = schedule.scheduledExperimentSettings;
+                        const activeInputLabels = []; // Changed from activeInputs to activeInputLabels
+
+                        if (settings.input1 && settings.input1.label && settings.input1.label.trim() !== "") {
+                            activeInputLabels.push(settings.input1.label); // Store only the label
+                        }
+                        if (settings.input2 && settings.input2.label && settings.input2.label.trim() !== "") {
+                            activeInputLabels.push(settings.input2.label); // Store only the label
+                        }
+                        if (settings.input3 && settings.input3.label && settings.input3.label.trim() !== "") {
+                            activeInputLabels.push(settings.input3.label); // Store only the label
+                        }
+
+                        if (activeInputLabels.length > 0) {
+                            const randomInputLabel = activeInputLabels[Math.floor(Math.random() * activeInputLabels.length)]; // Select a label string
+                            // Construct message without the unit
+                            finalReminderMessage = `${randomInputLabel}: ${randomDefaultMessage}`; 
+                            logger.log(`sendScheduledReminders: User ${userId} - Selected input for reminder: "${randomInputLabel}". Full message: "${finalReminderMessage}"`);
+                        } else {
+                            logger.warn(`sendScheduledReminders: User ${userId} - No active input labels found in scheduledExperimentSettings. Using default format: "${finalReminderMessage}"`);
+                        }
+                    } else {
+                        logger.warn(`sendScheduledReminders: User ${userId} - scheduledExperimentSettings not found. Using default reminder format: "${finalReminderMessage}"`);
+                    }
+                    
+                    const reminderDocId = db.collection('pendingReminderDMs').doc().id;
+                    const reminderPromise = db.collection('pendingReminderDMs').doc(reminderDocId).set({
+                        userId: userId,
+                        userTag: userData.userTag || `User_${userId}`,
+                        messageToSend: finalReminderMessage,
+                        experimentId: schedule.experimentId || null,
+                        status: 'pending',
+                        createdAt: FieldValue.serverTimestamp(),
+                    }).then(() => {
+                        logger.log(`sendScheduledReminders: Created pendingReminderDM ${reminderDocId} for user ${userId}.`);
+                        return userDoc.ref.update({
+                            'experimentCurrentSchedule.lastReminderSentDayOfYearUTC': currentUTCDayOfYear,
+                            'experimentCurrentSchedule.remindersSentOnLastDay': newRemindersSentThisUTCDay + 1
+                        });
+                    }).catch(err => {
+                        logger.error(`sendScheduledReminders: Failed to write pendingReminderDM or update user doc for ${userId}`, err);
+                    });
+                    reminderPromises.push(reminderPromise);
+                } else if (isInWindow) {
+                     logger.log(`sendScheduledReminders: User ${userId} is IN window but NOT attempting send this check. Freq: ${reminderFrequency}, Prior Sent Today: ${newRemindersSentThisUTCDay}, Current UTC Day: ${currentUTCDayOfYear}.`);
                 }
-
-                const reminderPromise = db.collection('pendingReminderDMs').doc(reminderDocId).set({ // [cite: 856]
-                    userId: userId,
-                    userTag: userData.userTag || `User_${userId}`, // [cite: 856]
-                    messageToSend: finalReminderMessage,
-                    experimentId: schedule.experimentId || null, // [cite: 857]
-                    status: 'pending', // [cite: 857]
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(), // [cite: 857] // Corrected
-                }).then(() => {
-                    logger.log(`sendScheduledReminders: Created pendingReminderDM ${reminderDocId} for user ${userId}.`); // [cite: 858]
-                    return userDoc.ref.update(updatePayload); // [cite: 858, 859]
-                }).catch(err => {
-                    logger.error(`sendScheduledReminders: Failed to write pendingReminderDM or update user doc for ${userId}`, err); // [cite: 859]
-                });
-                reminderPromises.push(reminderPromise); // [cite: 860]
+            } else {
+                 // logger.log(`sendScheduledReminders: User ${userId} has no active reminder schedule or experiment ended.`);
             }
         });
 
-        await Promise.all(reminderPromises); // [cite: 862]
-        logger.log(`sendScheduledReminders: Processing complete. Dispatched ${reminderPromises.length} potential reminders.`); // [cite: 862]
+        await Promise.all(reminderPromises);
+        logger.log(`sendScheduledReminders: Processing complete. Dispatched ${reminderPromises.length} potential reminders.`);
         return null;
 
     } catch (error) {
-        logger.error("sendScheduledReminders: Overall error in scheduled function:", error); // [cite: 863]
+        logger.error("sendScheduledReminders: Overall error in scheduled function:", error);
         return null;
     }
 });

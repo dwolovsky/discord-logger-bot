@@ -1,0 +1,996 @@
+[
+  {
+    "insertId": "681d42de000843c8216ffb33",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://getfirebaseauthtoken-2iqtupwiaq-uc.a.run.app/",
+      "requestSize": "375",
+      "status": 200,
+      "responseSize": "927",
+      "userAgent": "node-fetch",
+      "remoteIp": "142.255.76.203",
+      "serverIp": "34.143.79.2",
+      "latency": "0.096358335s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "service_name": "getfirebaseauthtoken",
+        "location": "us-central1",
+        "configuration_name": "getfirebaseauthtoken",
+        "revision_name": "getfirebaseauthtoken-00005-qis"
+      }
+    },
+    "timestamp": "2025-05-08T23:48:46.432107Z",
+    "severity": "INFO",
+    "labels": {
+      "deployment-callable": "true",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "goog-drz-cloudfunctions-location": "us-central1"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/8745ab50f6bd0e3942fba0162a56cbde",
+    "receiveTimestamp": "2025-05-08T23:48:46.547681147Z",
+    "spanId": "aa1768467a801337",
+    "traceSampled": true
+  },
+  {
+    "insertId": "681d42de0006e1e24c4b5686",
+    "jsonPayload": {
+      "message": "Callable request verification passed",
+      "verifications": {
+        "app": "MISSING",
+        "auth": "MISSING"
+      }
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "location": "us-central1",
+        "service_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "configuration_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-08T23:48:46.451042Z",
+    "severity": "DEBUG",
+    "labels": {
+      "firebase-log-type": "callable-request-verification",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "deployment-callable": "true",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "execution_id": "g0qga9hvqfxb"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/8745ab50f6bd0e3942fba0162a56cbde",
+    "receiveTimestamp": "2025-05-08T23:48:46.461199565Z",
+    "spanId": "12256379562824307511"
+  },
+  {
+    "textPayload": "Attempting to create token for userId: 1032380614290182174",
+    "insertId": "681d42de0006e2e453a1cee5",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "service_name": "getfirebaseauthtoken",
+        "location": "us-central1",
+        "project_id": "self-science-bot",
+        "configuration_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-08T23:48:46.451300Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "deployment-callable": "true",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "execution_id": "g0qga9hvqfxb",
+      "goog-managed-by": "cloudfunctions"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/8745ab50f6bd0e3942fba0162a56cbde",
+    "receiveTimestamp": "2025-05-08T23:48:46.789913165Z",
+    "spanId": "12256379562824307511"
+  },
+  {
+    "textPayload": "Successfully created token for userId: 1032380614290182174",
+    "insertId": "681d42de00083e469f9ce189",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "service_name": "getfirebaseauthtoken",
+        "configuration_name": "getfirebaseauthtoken",
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-08T23:48:46.540230Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "execution_id": "g0qga9hvqfxb",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "deployment-callable": "true",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-drz-cloudfunctions-location": "us-central1"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/8745ab50f6bd0e3942fba0162a56cbde",
+    "receiveTimestamp": "2025-05-08T23:48:46.789913165Z",
+    "spanId": "12256379562824307511"
+  },
+  {
+    "insertId": "681d42df0001cd93b504e648",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://us-central1-self-science-bot.cloudfunctions.net/getLeaderboard",
+      "requestSize": "1212",
+      "status": 200,
+      "responseSize": "513",
+      "userAgent": "node",
+      "remoteIp": "142.255.76.203",
+      "serverIp": "216.239.36.54",
+      "latency": "0.234396899s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "service_name": "getleaderboard",
+        "revision_name": "getleaderboard-00001-cis",
+        "location": "us-central1",
+        "configuration_name": "getleaderboard"
+      }
+    },
+    "timestamp": "2025-05-08T23:48:46.874941Z",
+    "severity": "INFO",
+    "labels": {
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "instanceId": "007f65c6d202a85e6a6234cb5e7f87bf1e0957c427d56fc66edc19b752c6779b9a34ef8bbfb9d9e1898fed6757f01cfe43ae795e5d93604ba9ccd8ea163d6593a9f7d5f0e5726cf20a5ebd14963867",
+      "deployment-callable": "true",
+      "goog-managed-by": "cloudfunctions"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/1409393c8492c78519440827de0b3def",
+    "receiveTimestamp": "2025-05-08T23:48:47.127544446Z",
+    "spanId": "60db03825d427156",
+    "traceSampled": true
+  },
+  {
+    "insertId": "681d42de000d8f273a6ede08",
+    "jsonPayload": {
+      "verifications": {
+        "auth": "VALID",
+        "app": "MISSING"
+      },
+      "message": "Callable request verification passed"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "getleaderboard",
+        "service_name": "getleaderboard",
+        "location": "us-central1",
+        "revision_name": "getleaderboard-00001-cis",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-08T23:48:46.888615Z",
+    "severity": "DEBUG",
+    "labels": {
+      "firebase-log-type": "callable-request-verification",
+      "execution_id": "g0qgmezeuqmh",
+      "instanceId": "007f65c6d202a85e6a6234cb5e7f87bf1e0957c427d56fc66edc19b752c6779b9a34ef8bbfb9d9e1898fed6757f01cfe43ae795e5d93604ba9ccd8ea163d6593a9f7d5f0e5726cf20a5ebd14963867",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-managed-by": "cloudfunctions",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/1409393c8492c78519440827de0b3def",
+    "receiveTimestamp": "2025-05-08T23:48:46.897734568Z",
+    "spanId": "6979175905985982806"
+  },
+  {
+    "textPayload": "getLeaderboard called by authenticated user: 1032380614290182174",
+    "insertId": "681d42de000d8fe633e43686",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getleaderboard",
+        "revision_name": "getleaderboard-00001-cis",
+        "location": "us-central1",
+        "configuration_name": "getleaderboard",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-08T23:48:46.888806Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "007f65c6d202a85e6a6234cb5e7f87bf1e0957c427d56fc66edc19b752c6779b9a34ef8bbfb9d9e1898fed6757f01cfe43ae795e5d93604ba9ccd8ea163d6593a9f7d5f0e5726cf20a5ebd14963867",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-managed-by": "cloudfunctions",
+      "execution_id": "g0qgmezeuqmh",
+      "deployment-callable": "true",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/1409393c8492c78519440827de0b3def",
+    "receiveTimestamp": "2025-05-08T23:48:47.228149368Z",
+    "spanId": "6979175905985982806"
+  },
+  {
+    "insertId": "681d43200007c909ac733529",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://getfirebaseauthtoken-2iqtupwiaq-uc.a.run.app/",
+      "requestSize": "375",
+      "status": 200,
+      "responseSize": "927",
+      "userAgent": "node-fetch",
+      "remoteIp": "142.255.76.203",
+      "serverIp": "34.143.79.2",
+      "latency": "0.074321892s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "service_name": "getfirebaseauthtoken",
+        "location": "us-central1",
+        "project_id": "self-science-bot",
+        "configuration_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-08T23:49:52.423873Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "deployment-callable": "true",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "goog-drz-cloudfunctions-location": "us-central1"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/2d4c4d95fb90f0ad764f4e026b639825",
+    "receiveTimestamp": "2025-05-08T23:49:52.514499323Z",
+    "spanId": "5c86c951079bcb9d",
+    "traceSampled": true
+  },
+  {
+    "insertId": "681d43200006b5df7cf6ef01",
+    "jsonPayload": {
+      "verifications": {
+        "app": "MISSING",
+        "auth": "MISSING"
+      },
+      "message": "Callable request verification passed"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "configuration_name": "getfirebaseauthtoken",
+        "service_name": "getfirebaseauthtoken",
+        "location": "us-central1",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-08T23:49:52.439775Z",
+    "severity": "DEBUG",
+    "labels": {
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "execution_id": "g0rv7brs9t8u",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "firebase-log-type": "callable-request-verification",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "goog-managed-by": "cloudfunctions",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/2d4c4d95fb90f0ad764f4e026b639825",
+    "receiveTimestamp": "2025-05-08T23:49:52.442597022Z",
+    "spanId": "6667237648225782685"
+  },
+  {
+    "textPayload": "Attempting to create token for userId: 1032380614290182174",
+    "insertId": "681d43200006bb1afb4f3af9",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getfirebaseauthtoken",
+        "configuration_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-08T23:49:52.441114Z",
+    "severity": "INFO",
+    "labels": {
+      "execution_id": "g0rv7brs9t8u",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "deployment-callable": "true",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-managed-by": "cloudfunctions",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/2d4c4d95fb90f0ad764f4e026b639825",
+    "receiveTimestamp": "2025-05-08T23:49:52.780765594Z",
+    "spanId": "6667237648225782685"
+  },
+  {
+    "textPayload": "Successfully created token for userId: 1032380614290182174",
+    "insertId": "681d43200007c0dbc4f69ce9",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getfirebaseauthtoken",
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "location": "us-central1",
+        "configuration_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-08T23:49:52.508123Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "execution_id": "g0rv7brs9t8u",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "deployment-callable": "true",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "goog-managed-by": "cloudfunctions"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/2d4c4d95fb90f0ad764f4e026b639825",
+    "receiveTimestamp": "2025-05-08T23:49:52.780765594Z",
+    "spanId": "6667237648225782685"
+  },
+  {
+    "insertId": "681d43240006c837b262ddb2",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://us-central1-self-science-bot.cloudfunctions.net/updateWeeklySettings",
+      "requestSize": "1369",
+      "status": 200,
+      "responseSize": "471",
+      "userAgent": "node",
+      "remoteIp": "142.255.76.203",
+      "serverIp": "216.239.36.54",
+      "latency": "3.136732301s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "revision_name": "updateweeklysettings-00001-luq",
+        "project_id": "self-science-bot",
+        "configuration_name": "updateweeklysettings",
+        "service_name": "updateweeklysettings"
+      }
+    },
+    "timestamp": "2025-05-08T23:49:52.897405Z",
+    "severity": "INFO",
+    "labels": {
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "deployment-callable": "true",
+      "goog-managed-by": "cloudfunctions",
+      "instanceId": "007f65c6d28fd6c02c0898aa0e01cbd3d2a795a0b139760e861a6cca0cbf8ec835599df46019a1d89bd3e624c3dea07c9bf7e9225bdd4aa749f6fda52209e859673f1036f561e081fd126055bc6e1b"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/460ccfffa89fbda5cee45875ea79b95d",
+    "receiveTimestamp": "2025-05-08T23:49:56.451856487Z",
+    "spanId": "f1dec7df2adf241c",
+    "traceSampled": true
+  },
+  {
+    "textPayload": "Default STARTUP TCP probe succeeded after 1 attempt for container \"worker\" on port 8080.",
+    "insertId": "681d43230000899a92bd8247",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "updateweeklysettings-00001-luq",
+        "service_name": "updateweeklysettings",
+        "location": "us-central1",
+        "configuration_name": "updateweeklysettings",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-08T23:49:55.035226Z",
+    "severity": "INFO",
+    "labels": {
+      "deployment-callable": "true",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "instanceId": "007f65c6d28fd6c02c0898aa0e01cbd3d2a795a0b139760e861a6cca0cbf8ec835599df46019a1d89bd3e624c3dea07c9bf7e9225bdd4aa749f6fda52209e859673f1036f561e081fd126055bc6e1b",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "goog-managed-by": "cloudfunctions"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2025-05-08T23:49:55.040589208Z"
+  },
+  {
+    "insertId": "681d43230003f662a6dd0ad9",
+    "jsonPayload": {
+      "verifications": {
+        "auth": "VALID",
+        "app": "MISSING"
+      },
+      "message": "Callable request verification passed"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "updateweeklysettings",
+        "project_id": "self-science-bot",
+        "revision_name": "updateweeklysettings-00001-luq",
+        "service_name": "updateweeklysettings",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-08T23:49:55.259682Z",
+    "severity": "DEBUG",
+    "labels": {
+      "execution_id": "g0rxaylj9c4a",
+      "goog-managed-by": "cloudfunctions",
+      "firebase-log-type": "callable-request-verification",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "deployment-callable": "true",
+      "instanceId": "007f65c6d28fd6c02c0898aa0e01cbd3d2a795a0b139760e861a6cca0cbf8ec835599df46019a1d89bd3e624c3dea07c9bf7e9225bdd4aa749f6fda52209e859673f1036f561e081fd126055bc6e1b",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/460ccfffa89fbda5cee45875ea79b95d",
+    "receiveTimestamp": "2025-05-08T23:49:55.268159704Z",
+    "spanId": "17428587369281299484"
+  },
+  {
+    "textPayload": "updateWeeklySettings called by user: 1032380614290182174 for problem: \"trying to have some fun\"",
+    "insertId": "681d43230003fab41e4742da",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "service_name": "updateweeklysettings",
+        "project_id": "self-science-bot",
+        "configuration_name": "updateweeklysettings",
+        "revision_name": "updateweeklysettings-00001-luq"
+      }
+    },
+    "timestamp": "2025-05-08T23:49:55.260788Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "execution_id": "g0rxaylj9c4a",
+      "deployment-callable": "true",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "instanceId": "007f65c6d28fd6c02c0898aa0e01cbd3d2a795a0b139760e861a6cca0cbf8ec835599df46019a1d89bd3e624c3dea07c9bf7e9225bdd4aa749f6fda52209e859673f1036f561e081fd126055bc6e1b"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/460ccfffa89fbda5cee45875ea79b95d",
+    "receiveTimestamp": "2025-05-08T23:49:55.603967845Z",
+    "spanId": "17428587369281299484"
+  },
+  {
+    "insertId": "681d432400068b9beec303f9",
+    "jsonPayload": {
+      "message": "Successfully updated weekly settings for user 1032380614290182174:",
+      "input3": {
+        "goal": 90,
+        "unit": "two",
+        "label": "seven"
+      },
+      "input2": {
+        "label": "done",
+        "unit": "things",
+        "goal": 89
+      },
+      "deeperProblem": "trying to have some fun",
+      "lastUpdated": {},
+      "output": {
+        "unit": "am",
+        "label": "funtime",
+        "goal": 12
+      },
+      "input1": {
+        "goal": 9,
+        "unit": "seconds",
+        "label": "trying"
+      }
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "updateweeklysettings",
+        "revision_name": "updateweeklysettings-00001-luq",
+        "project_id": "self-science-bot",
+        "service_name": "updateweeklysettings",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-08T23:49:56.428955Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "deployment-callable": "true",
+      "execution_id": "g0rxaylj9c4a",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "instanceId": "007f65c6d28fd6c02c0898aa0e01cbd3d2a795a0b139760e861a6cca0cbf8ec835599df46019a1d89bd3e624c3dea07c9bf7e9225bdd4aa749f6fda52209e859673f1036f561e081fd126055bc6e1b",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/460ccfffa89fbda5cee45875ea79b95d",
+    "receiveTimestamp": "2025-05-08T23:49:56.596278066Z",
+    "spanId": "17428587369281299484"
+  },
+  {
+    "insertId": "681d4329000c5368e56f547c",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://getfirebaseauthtoken-2iqtupwiaq-uc.a.run.app/",
+      "requestSize": "374",
+      "status": 200,
+      "responseSize": "927",
+      "userAgent": "node-fetch",
+      "remoteIp": "142.255.76.203",
+      "serverIp": "34.143.79.2",
+      "latency": "0.616481128s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "getfirebaseauthtoken",
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "service_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:01.189756Z",
+    "severity": "INFO",
+    "labels": {
+      "deployment-callable": "true",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/1c0f1551235f01b6ffa59a625797617f",
+    "receiveTimestamp": "2025-05-08T23:50:01.858605624Z",
+    "spanId": "fcfb8e3f9acf36e7"
+  },
+  {
+    "insertId": "681d43290002f966dce3b3a3",
+    "jsonPayload": {
+      "verifications": {
+        "app": "MISSING",
+        "auth": "MISSING"
+      },
+      "message": "Callable request verification passed"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "location": "us-central1",
+        "service_name": "getfirebaseauthtoken",
+        "configuration_name": "getfirebaseauthtoken",
+        "revision_name": "getfirebaseauthtoken-00005-qis"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:01.194918Z",
+    "severity": "DEBUG",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "deployment-callable": "true",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "firebase-log-type": "callable-request-verification",
+      "execution_id": "g0s1yijabpwc",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/1c0f1551235f01b6ffa59a625797617f",
+    "receiveTimestamp": "2025-05-08T23:50:01.459582937Z",
+    "spanId": "18229320320543569639"
+  },
+  {
+    "textPayload": "Attempting to create token for userId: 1032380614290182174",
+    "insertId": "681d43290002fa69ad355250",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getfirebaseauthtoken",
+        "location": "us-central1",
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "project_id": "self-science-bot",
+        "configuration_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:01.195177Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-managed-by": "cloudfunctions",
+      "deployment-callable": "true",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "execution_id": "g0s1yijabpwc",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/1c0f1551235f01b6ffa59a625797617f",
+    "receiveTimestamp": "2025-05-08T23:50:01.459582937Z",
+    "spanId": "18229320320543569639"
+  },
+  {
+    "textPayload": "Successfully created token for userId: 1032380614290182174",
+    "insertId": "681d4329000c4ef9fb7146e2",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "location": "us-central1",
+        "configuration_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:01.806649Z",
+    "severity": "INFO",
+    "labels": {
+      "deployment-callable": "true",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "execution_id": "g0s1yijabpwc",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/1c0f1551235f01b6ffa59a625797617f",
+    "receiveTimestamp": "2025-05-08T23:50:02.118475037Z",
+    "spanId": "18229320320543569639"
+  },
+  {
+    "insertId": "681d432a000588b7b9211cc6",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://us-central1-self-science-bot.cloudfunctions.net/getWeeklySettings",
+      "requestSize": "1215",
+      "status": 200,
+      "responseSize": "489",
+      "userAgent": "node",
+      "remoteIp": "142.255.76.203",
+      "serverIp": "216.239.36.54",
+      "latency": "0.236109278s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "configuration_name": "getweeklysettings",
+        "revision_name": "getweeklysettings-00001-cal",
+        "service_name": "getweeklysettings",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:02.109973Z",
+    "severity": "INFO",
+    "labels": {
+      "deployment-callable": "true",
+      "instanceId": "007f65c6d26b4673528691ba1f21dfa421009ab919bd33d79aab90db3fa40bcd5cb1090c2f8951a3aeb3dcedf2d3a71eab03b72dc42b821adabd5c2c6b494627a12d03bacfc26c15679a005ef10ede",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-managed-by": "cloudfunctions"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/3bd53a1bf65817d4961dd239fdd7c775",
+    "receiveTimestamp": "2025-05-08T23:50:02.381672734Z",
+    "spanId": "cd00306c5c32e4ef",
+    "traceSampled": true
+  },
+  {
+    "insertId": "681d432a0001fddc5b459ff3",
+    "jsonPayload": {
+      "message": "Callable request verification passed",
+      "verifications": {
+        "app": "MISSING",
+        "auth": "VALID"
+      }
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getweeklysettings",
+        "location": "us-central1",
+        "configuration_name": "getweeklysettings",
+        "project_id": "self-science-bot",
+        "revision_name": "getweeklysettings-00001-cal"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:02.130524Z",
+    "severity": "DEBUG",
+    "labels": {
+      "instanceId": "007f65c6d26b4673528691ba1f21dfa421009ab919bd33d79aab90db3fa40bcd5cb1090c2f8951a3aeb3dcedf2d3a71eab03b72dc42b821adabd5c2c6b494627a12d03bacfc26c15679a005ef10ede",
+      "goog-managed-by": "cloudfunctions",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "deployment-callable": "true",
+      "firebase-log-type": "callable-request-verification",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "execution_id": "g0s2ohqpzqyl"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/3bd53a1bf65817d4961dd239fdd7c775",
+    "receiveTimestamp": "2025-05-08T23:50:02.136595483Z",
+    "spanId": "14771860019736667375"
+  },
+  {
+    "textPayload": "getWeeklySettings called by authenticated user: 1032380614290182174",
+    "insertId": "681d432a0001fe937273c430",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "revision_name": "getweeklysettings-00001-cal",
+        "service_name": "getweeklysettings",
+        "location": "us-central1",
+        "configuration_name": "getweeklysettings"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:02.130707Z",
+    "severity": "INFO",
+    "labels": {
+      "deployment-callable": "true",
+      "goog-managed-by": "cloudfunctions",
+      "execution_id": "g0s2ohqpzqyl",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "instanceId": "007f65c6d26b4673528691ba1f21dfa421009ab919bd33d79aab90db3fa40bcd5cb1090c2f8951a3aeb3dcedf2d3a71eab03b72dc42b821adabd5c2c6b494627a12d03bacfc26c15679a005ef10ede"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/3bd53a1bf65817d4961dd239fdd7c775",
+    "receiveTimestamp": "2025-05-08T23:50:02.468711382Z",
+    "spanId": "14771860019736667375"
+  },
+  {
+    "textPayload": "Found weekly settings for user 1032380614290182174.",
+    "insertId": "681d432a00058407ac3af2a2",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getweeklysettings",
+        "project_id": "self-science-bot",
+        "location": "us-central1",
+        "revision_name": "getweeklysettings-00001-cal",
+        "configuration_name": "getweeklysettings"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:02.361479Z",
+    "severity": "INFO",
+    "labels": {
+      "deployment-callable": "true",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "execution_id": "g0s2ohqpzqyl",
+      "instanceId": "007f65c6d26b4673528691ba1f21dfa421009ab919bd33d79aab90db3fa40bcd5cb1090c2f8951a3aeb3dcedf2d3a71eab03b72dc42b821adabd5c2c6b494627a12d03bacfc26c15679a005ef10ede",
+      "goog-managed-by": "cloudfunctions",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/3bd53a1bf65817d4961dd239fdd7c775",
+    "receiveTimestamp": "2025-05-08T23:50:02.468711382Z",
+    "spanId": "14771860019736667375"
+  },
+  {
+    "insertId": "681d434000009b1970f4471b",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://getfirebaseauthtoken-2iqtupwiaq-uc.a.run.app/",
+      "requestSize": "374",
+      "status": 200,
+      "responseSize": "927",
+      "userAgent": "node-fetch",
+      "remoteIp": "142.255.76.203",
+      "serverIp": "34.143.79.2",
+      "latency": "0.086306904s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "getfirebaseauthtoken",
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "location": "us-central1",
+        "project_id": "self-science-bot",
+        "service_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:23.951193Z",
+    "severity": "INFO",
+    "labels": {
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "goog-managed-by": "cloudfunctions",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/c280ebba7a57270aea173a5af386a125",
+    "receiveTimestamp": "2025-05-08T23:50:24.045619717Z",
+    "spanId": "5a3a21fa0826992d",
+    "traceSampled": true
+  },
+  {
+    "insertId": "681d433f000e9b1a055102bf",
+    "jsonPayload": {
+      "verifications": {
+        "auth": "MISSING",
+        "app": "MISSING"
+      },
+      "message": "Callable request verification passed"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "location": "us-central1",
+        "service_name": "getfirebaseauthtoken",
+        "configuration_name": "getfirebaseauthtoken",
+        "revision_name": "getfirebaseauthtoken-00005-qis"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:23.957210Z",
+    "severity": "DEBUG",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "execution_id": "g0sjismsaa0o",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "deployment-callable": "true",
+      "firebase-log-type": "callable-request-verification",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/c280ebba7a57270aea173a5af386a125",
+    "receiveTimestamp": "2025-05-08T23:50:23.961403731Z",
+    "spanId": "6501546369825020205"
+  },
+  {
+    "textPayload": "Attempting to create token for userId: 1032380614290182174",
+    "insertId": "681d433f000e9bb850e76269",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "service_name": "getfirebaseauthtoken",
+        "location": "us-central1",
+        "configuration_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:23.957368Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "deployment-callable": "true",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "execution_id": "g0sjismsaa0o",
+      "goog-drz-cloudfunctions-location": "us-central1"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/c280ebba7a57270aea173a5af386a125",
+    "receiveTimestamp": "2025-05-08T23:50:24.295769450Z",
+    "spanId": "6501546369825020205"
+  },
+  {
+    "textPayload": "Successfully created token for userId: 1032380614290182174",
+    "insertId": "681d43400000954f1d7669ae",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getfirebaseauthtoken",
+        "revision_name": "getfirebaseauthtoken-00005-qis",
+        "location": "us-central1",
+        "configuration_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:24.038223Z",
+    "severity": "INFO",
+    "labels": {
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250420_20_18_3_RC00",
+      "deployment-callable": "true",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "instanceId": "007f65c6d27ed64bf2e70fcaba6a8bc577806936d9cf065a853d903431e553b31c04682dbf1b95998b5af52be7a522d086d1f66c8fe72d817bee8714c805349bb1c00d585e3da2147558613c2a4961",
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "goog-managed-by": "cloudfunctions",
+      "execution_id": "g0sjismsaa0o"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/c280ebba7a57270aea173a5af386a125",
+    "receiveTimestamp": "2025-05-08T23:50:24.295769450Z",
+    "spanId": "6501546369825020205"
+  },
+  {
+    "textPayload": "The request was not authorized to invoke this service. Read more at https://cloud.google.com/run/docs/securing/authenticating Additional troubleshooting documentation can be found at: https://cloud.google.com/run/docs/troubleshooting#401",
+    "insertId": "681d4340000651b8ad05df89",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://us-central1-self-science-bot.cloudfunctions.net/submitLog",
+      "requestSize": "1276",
+      "status": 401,
+      "userAgent": "node",
+      "remoteIp": "142.255.76.203",
+      "serverIp": "216.239.36.54",
+      "latency": "0s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "project_id": "self-science-bot",
+        "revision_name": "submitlog-00003-map",
+        "configuration_name": "submitlog",
+        "service_name": "submitlog"
+      }
+    },
+    "timestamp": "2025-05-08T23:50:24.362102Z",
+    "severity": "WARNING",
+    "labels": {
+      "firebase-functions-hash": "96fc5ecc1760a17c10e0e5903c672d4c4d60d5b2",
+      "deployment-callable": "true",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-drz-cloudfunctions-id": "submitlog"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/f3cbadd50b25191db70f8ff85598b2e1",
+    "receiveTimestamp": "2025-05-08T23:50:24.419905730Z",
+    "spanId": "6fc8f466ad17e6ca",
+    "traceSampled": true
+  }
+]

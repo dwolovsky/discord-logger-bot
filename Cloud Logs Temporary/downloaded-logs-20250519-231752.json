@@ -1,0 +1,846 @@
+[
+  {
+    "insertId": "682bf239000c5ee8d833a834",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://getfirebaseauthtoken-2iqtupwiaq-uc.a.run.app/",
+      "requestSize": "375",
+      "status": 200,
+      "responseSize": "927",
+      "userAgent": "node-fetch",
+      "remoteIp": "3.134.238.10",
+      "serverIp": "34.143.78.2",
+      "latency": "0.071270198s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "configuration_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "revision_name": "getfirebaseauthtoken-00034-hez",
+        "service_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:41.727045Z",
+    "severity": "INFO",
+    "labels": {
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "deployment-callable": "true",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "instanceId": "007f65c6d2e2ba2a6f7a74986aacd7df20358f67b08c8008cbaab73d915409b9e21e25e1109997a7d01488203ec7c569c80fc0e2b1414297e7ff27a1d08db5b644c16f25309d695153bc4e3d7b45d6",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-managed-by": "cloudfunctions"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/89a2af02a037d5c8de04b2c81ec988fe",
+    "receiveTimestamp": "2025-05-20T03:08:41.819516323Z",
+    "spanId": "a56d79e0b11b66a6",
+    "traceSampled": true
+  },
+  {
+    "insertId": "682bf239000b5474de9f6711",
+    "jsonPayload": {
+      "verifications": {
+        "auth": "MISSING",
+        "app": "MISSING"
+      },
+      "message": "Callable request verification passed"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "getfirebaseauthtoken-00034-hez",
+        "configuration_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "location": "us-central1",
+        "service_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:41.742516Z",
+    "severity": "DEBUG",
+    "labels": {
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "firebase-log-type": "callable-request-verification",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "execution_id": "vxpx8usn5osk",
+      "deployment-callable": "true",
+      "instanceId": "007f65c6d2e2ba2a6f7a74986aacd7df20358f67b08c8008cbaab73d915409b9e21e25e1109997a7d01488203ec7c569c80fc0e2b1414297e7ff27a1d08db5b644c16f25309d695153bc4e3d7b45d6",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/89a2af02a037d5c8de04b2c81ec988fe",
+    "receiveTimestamp": "2025-05-20T03:08:41.758367683Z",
+    "spanId": "11920317794670569126"
+  },
+  {
+    "textPayload": "Attempting to create token for userId: 1032380614290182174",
+    "insertId": "682bf239000b5504ef01f289",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "location": "us-central1",
+        "revision_name": "getfirebaseauthtoken-00034-hez",
+        "configuration_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:41.742660Z",
+    "severity": "INFO",
+    "labels": {
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "goog-managed-by": "cloudfunctions",
+      "deployment-callable": "true",
+      "execution_id": "vxpx8usn5osk",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "instanceId": "007f65c6d2e2ba2a6f7a74986aacd7df20358f67b08c8008cbaab73d915409b9e21e25e1109997a7d01488203ec7c569c80fc0e2b1414297e7ff27a1d08db5b644c16f25309d695153bc4e3d7b45d6"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/89a2af02a037d5c8de04b2c81ec988fe",
+    "receiveTimestamp": "2025-05-20T03:08:42.093750072Z",
+    "spanId": "11920317794670569126"
+  },
+  {
+    "textPayload": "Successfully created token for userId: 1032380614290182174",
+    "insertId": "682bf239000c5acdcc467546",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "revision_name": "getfirebaseauthtoken-00034-hez",
+        "location": "us-central1",
+        "configuration_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:41.809677Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "007f65c6d2e2ba2a6f7a74986aacd7df20358f67b08c8008cbaab73d915409b9e21e25e1109997a7d01488203ec7c569c80fc0e2b1414297e7ff27a1d08db5b644c16f25309d695153bc4e3d7b45d6",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "deployment-callable": "true",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "execution_id": "vxpx8usn5osk",
+      "goog-managed-by": "cloudfunctions"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/89a2af02a037d5c8de04b2c81ec988fe",
+    "receiveTimestamp": "2025-05-20T03:08:42.093750072Z",
+    "spanId": "11920317794670569126"
+  },
+  {
+    "insertId": "682bf23d00020b8a1d3fd063",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://us-central1-self-science-bot.cloudfunctions.net/fetchOrGenerateAiInsights",
+      "requestSize": "1268",
+      "status": 200,
+      "responseSize": "1640",
+      "userAgent": "undici",
+      "remoteIp": "3.134.238.10",
+      "serverIp": "216.239.36.54",
+      "latency": "2.902851765s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "fetchorgenerateaiinsights-00004-bub",
+        "service_name": "fetchorgenerateaiinsights",
+        "location": "us-central1",
+        "configuration_name": "fetchorgenerateaiinsights",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:42.044008Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights",
+      "deployment-callable": "true",
+      "goog-managed-by": "cloudfunctions"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/dceca08d09e4d1ac4ad50575b23d2cba",
+    "receiveTimestamp": "2025-05-20T03:08:45.140344936Z",
+    "spanId": "3abb3479f300ad08",
+    "traceSampled": true
+  },
+  {
+    "textPayload": "Error accessing functions.config().gemini.key. This might happen during initial cold start or if config is not set. Error: functions.config() is no longer available in Cloud Functions for Firebase v2. Please see the latest documentation for information on how to transition to using environment variables\n    at config (/workspace/node_modules/firebase-functions/lib/v1/config.js:45:15)\n    at Object.<anonymous> (/workspace/index.js:141:20)\n    at Module._compile (node:internal/modules/cjs/loader:1529:14)\n    at Module._extensions..js (node:internal/modules/cjs/loader:1613:10)\n    at Module.load (node:internal/modules/cjs/loader:1275:32)\n    at Module._load (node:internal/modules/cjs/loader:1096:12)\n    at Module.require (node:internal/modules/cjs/loader:1298:19)\n    at require (node:internal/modules/helpers:182:18)\n    at getUserFunction (/layers/google.nodejs.functions-framework/functions-framework/node_modules/@google-cloud/functions-framework/build/src/loader.js:98:30)\n    at async main (/layers/google.nodejs.functions-framework/functions-framework/node_modules/@google-cloud/functions-framework/build/src/main.js:40:32)",
+    "insertId": "682bf23b000ef78defabe2c8",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "fetchorgenerateaiinsights-00004-bub",
+        "location": "us-central1",
+        "project_id": "self-science-bot",
+        "service_name": "fetchorgenerateaiinsights",
+        "configuration_name": "fetchorgenerateaiinsights"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:43.980877Z",
+    "severity": "ERROR",
+    "labels": {
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights",
+      "goog-managed-by": "cloudfunctions",
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2025-05-20T03:08:43.986078409Z",
+    "errorGroups": [
+      {
+        "id": "CJKN5KeY6q3tZQ"
+      }
+    ]
+  },
+  {
+    "textPayload": "Falling back to process.env.GEMINI_API_KEY for local testing.",
+    "insertId": "682bf23b000efb061c670925",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "fetchorgenerateaiinsights",
+        "service_name": "fetchorgenerateaiinsights",
+        "revision_name": "fetchorgenerateaiinsights-00004-bub",
+        "project_id": "self-science-bot",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:43.981766Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "receiveTimestamp": "2025-05-20T03:08:43.988630670Z"
+  },
+  {
+    "textPayload": "GoogleGenerativeAI initialized successfully.",
+    "insertId": "682bf23b000efb7ebc19c85a",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "service_name": "fetchorgenerateaiinsights",
+        "revision_name": "fetchorgenerateaiinsights-00004-bub",
+        "configuration_name": "fetchorgenerateaiinsights",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:43.981886Z",
+    "severity": "INFO",
+    "labels": {
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-managed-by": "cloudfunctions",
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights",
+      "deployment-callable": "true",
+      "goog-drz-cloudfunctions-location": "us-central1"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "receiveTimestamp": "2025-05-20T03:08:44.324733662Z"
+  },
+  {
+    "textPayload": "Default STARTUP TCP probe succeeded after 1 attempt for container \"worker\" on port 8080.",
+    "insertId": "682bf23c00000e319a7b9f5c",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "service_name": "fetchorgenerateaiinsights",
+        "location": "us-central1",
+        "configuration_name": "fetchorgenerateaiinsights",
+        "revision_name": "fetchorgenerateaiinsights-00004-bub"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:44.003633Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2025-05-20T03:08:44.009688583Z"
+  },
+  {
+    "insertId": "682bf23c0002c04c10e9999c",
+    "jsonPayload": {
+      "verifications": {
+        "app": "MISSING",
+        "auth": "VALID"
+      },
+      "message": "Callable request verification passed"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "service_name": "fetchorgenerateaiinsights",
+        "revision_name": "fetchorgenerateaiinsights-00004-bub",
+        "configuration_name": "fetchorgenerateaiinsights",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:44.180300Z",
+    "severity": "DEBUG",
+    "labels": {
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "execution_id": "vxpz1tj9pu69",
+      "deployment-callable": "true",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights",
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "firebase-log-type": "callable-request-verification"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/dceca08d09e4d1ac4ad50575b23d2cba",
+    "receiveTimestamp": "2025-05-20T03:08:44.324733662Z",
+    "spanId": "4232033973217307912"
+  },
+  {
+    "insertId": "682bf23c0002c5bd033bdfcd",
+    "jsonPayload": {
+      "targetExperimentId": "T10Xc0lBGga7z0mVAYdy",
+      "message": "[fetchOrGenerateAiInsights] Function called. Request data:"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "fetchorgenerateaiinsights",
+        "location": "us-central1",
+        "project_id": "self-science-bot",
+        "service_name": "fetchorgenerateaiinsights",
+        "revision_name": "fetchorgenerateaiinsights-00004-bub"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:44.181693Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "deployment-callable": "true",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "execution_id": "vxpz1tj9pu69",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/dceca08d09e4d1ac4ad50575b23d2cba",
+    "receiveTimestamp": "2025-05-20T03:08:44.324733662Z",
+    "spanId": "4232033973217307912"
+  },
+  {
+    "textPayload": "[fetchOrGenerateAiInsights] Processing request for user: 1032380614290182174 (User_1032380614290182174), targetExperimentId: T10Xc0lBGga7z0mVAYdy",
+    "insertId": "682bf23c0002c64b0ee2d035",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "project_id": "self-science-bot",
+        "service_name": "fetchorgenerateaiinsights",
+        "configuration_name": "fetchorgenerateaiinsights",
+        "revision_name": "fetchorgenerateaiinsights-00004-bub"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:44.181835Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights",
+      "deployment-callable": "true",
+      "execution_id": "vxpz1tj9pu69",
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/dceca08d09e4d1ac4ad50575b23d2cba",
+    "receiveTimestamp": "2025-05-20T03:08:44.324733662Z",
+    "spanId": "4232033973217307912"
+  },
+  {
+    "textPayload": "[fetchOrGenerateAiInsights] Successfully fetched targetExperimentStatsData for T10Xc0lBGga7z0mVAYdy.",
+    "insertId": "682bf23d0000c1894d362074",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "fetchorgenerateaiinsights",
+        "configuration_name": "fetchorgenerateaiinsights",
+        "location": "us-central1",
+        "project_id": "self-science-bot",
+        "revision_name": "fetchorgenerateaiinsights-00004-bub"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:45.049545Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-managed-by": "cloudfunctions",
+      "execution_id": "vxpz1tj9pu69",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/dceca08d09e4d1ac4ad50575b23d2cba",
+    "receiveTimestamp": "2025-05-20T03:08:45.318100033Z",
+    "spanId": "4232033973217307912"
+  },
+  {
+    "textPayload": "[fetchOrGenerateAiInsights] Serving cached insight for experiment T10Xc0lBGga7z0mVAYdy for user 1032380614290182174.",
+    "insertId": "682bf23d0001dcdb3e36af69",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "fetchorgenerateaiinsights",
+        "service_name": "fetchorgenerateaiinsights",
+        "location": "us-central1",
+        "project_id": "self-science-bot",
+        "revision_name": "fetchorgenerateaiinsights-00004-bub"
+      }
+    },
+    "timestamp": "2025-05-20T03:08:45.122075Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "execution_id": "vxpz1tj9pu69",
+      "instanceId": "007f65c6d2adf1841f5bb38febc547b1ade9366b76ce585cd041d5bfc26ff7433f41773d335423a8d9223470baef6fdc5fd0ea6ee41ddde5bf840ae0902d7b00b94b55ae4b558dd6cbf32be12de096",
+      "goog-drz-cloudfunctions-id": "fetchorgenerateaiinsights",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "deployment-callable": "true",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/dceca08d09e4d1ac4ad50575b23d2cba",
+    "receiveTimestamp": "2025-05-20T03:08:45.318100033Z",
+    "spanId": "4232033973217307912"
+  },
+  {
+    "insertId": "682bf3ce000b2b165f0c1002",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://getfirebaseauthtoken-2iqtupwiaq-uc.a.run.app/",
+      "requestSize": "375",
+      "status": 200,
+      "responseSize": "927",
+      "userAgent": "node-fetch",
+      "remoteIp": "3.134.238.10",
+      "serverIp": "34.143.78.2",
+      "latency": "0.096831919s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getfirebaseauthtoken",
+        "configuration_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "revision_name": "getfirebaseauthtoken-00034-hez",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:26.621927Z",
+    "severity": "INFO",
+    "labels": {
+      "instanceId": "007f65c6d2e2ba2a6f7a74986aacd7df20358f67b08c8008cbaab73d915409b9e21e25e1109997a7d01488203ec7c569c80fc0e2b1414297e7ff27a1d08db5b644c16f25309d695153bc4e3d7b45d6",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "goog-managed-by": "cloudfunctions",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/9d45aa4afe765bd9caf29a233b120f36",
+    "receiveTimestamp": "2025-05-20T03:15:26.740908522Z",
+    "spanId": "5ac722d640234925",
+    "traceSampled": true
+  },
+  {
+    "insertId": "682bf3ce0009bbd27deaaa9c",
+    "jsonPayload": {
+      "verifications": {
+        "auth": "MISSING",
+        "app": "MISSING"
+      },
+      "message": "Callable request verification passed"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "revision_name": "getfirebaseauthtoken-00034-hez",
+        "configuration_name": "getfirebaseauthtoken",
+        "service_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:26.637906Z",
+    "severity": "DEBUG",
+    "labels": {
+      "instanceId": "007f65c6d2e2ba2a6f7a74986aacd7df20358f67b08c8008cbaab73d915409b9e21e25e1109997a7d01488203ec7c569c80fc0e2b1414297e7ff27a1d08db5b644c16f25309d695153bc4e3d7b45d6",
+      "firebase-log-type": "callable-request-verification",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-managed-by": "cloudfunctions",
+      "execution_id": "vxylnxdufwg6",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/9d45aa4afe765bd9caf29a233b120f36",
+    "receiveTimestamp": "2025-05-20T03:15:26.702496955Z",
+    "spanId": "6541235287373334821"
+  },
+  {
+    "textPayload": "Attempting to create token for userId: 1032380614290182174",
+    "insertId": "682bf3ce0009bc5198d46112",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "revision_name": "getfirebaseauthtoken-00034-hez",
+        "project_id": "self-science-bot",
+        "service_name": "getfirebaseauthtoken",
+        "location": "us-central1",
+        "configuration_name": "getfirebaseauthtoken"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:26.638033Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-managed-by": "cloudfunctions",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "instanceId": "007f65c6d2e2ba2a6f7a74986aacd7df20358f67b08c8008cbaab73d915409b9e21e25e1109997a7d01488203ec7c569c80fc0e2b1414297e7ff27a1d08db5b644c16f25309d695153bc4e3d7b45d6",
+      "deployment-callable": "true",
+      "execution_id": "vxylnxdufwg6",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/9d45aa4afe765bd9caf29a233b120f36",
+    "receiveTimestamp": "2025-05-20T03:15:26.977033364Z",
+    "spanId": "6541235287373334821"
+  },
+  {
+    "textPayload": "Successfully created token for userId: 1032380614290182174",
+    "insertId": "682bf3ce000b270254378887",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "configuration_name": "getfirebaseauthtoken",
+        "service_name": "getfirebaseauthtoken",
+        "project_id": "self-science-bot",
+        "revision_name": "getfirebaseauthtoken-00034-hez",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:26.730882Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "deployment-callable": "true",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "execution_id": "vxylnxdufwg6",
+      "goog-drz-cloudfunctions-id": "getfirebaseauthtoken",
+      "goog-managed-by": "cloudfunctions",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "instanceId": "007f65c6d2e2ba2a6f7a74986aacd7df20358f67b08c8008cbaab73d915409b9e21e25e1109997a7d01488203ec7c569c80fc0e2b1414297e7ff27a1d08db5b644c16f25309d695153bc4e3d7b45d6"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/9d45aa4afe765bd9caf29a233b120f36",
+    "receiveTimestamp": "2025-05-20T03:15:26.977033364Z",
+    "spanId": "6541235287373334821"
+  },
+  {
+    "insertId": "682bf3cf0002c92d16a74aa2",
+    "httpRequest": {
+      "requestMethod": "POST",
+      "requestUrl": "https://us-central1-self-science-bot.cloudfunctions.net/getWeeklySettings",
+      "requestSize": "1218",
+      "status": 200,
+      "responseSize": "538",
+      "userAgent": "undici",
+      "remoteIp": "3.134.238.10",
+      "serverIp": "216.239.36.54",
+      "latency": "0.139829505s",
+      "protocol": "HTTP/1.1"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "revision_name": "getweeklysettings-00030-fik",
+        "location": "us-central1",
+        "configuration_name": "getweeklysettings",
+        "service_name": "getweeklysettings"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:27.033157Z",
+    "severity": "INFO",
+    "labels": {
+      "deployment-callable": "true",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-managed-by": "cloudfunctions",
+      "instanceId": "007f65c6d2b92180e22fff6a2a1b51a0dd866603176588ff3f6fd51d2d6e058ef7649632d75ce3f13b70032d27c333f2084cd0229e8f458c509b50eb83ca89cbd905df2ce649715b6876972245a4",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "goog-drz-cloudfunctions-id": "getweeklysettings"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Frequests",
+    "trace": "projects/self-science-bot/traces/e324e9cb351e3a09e706630c7c225baf",
+    "receiveTimestamp": "2025-05-20T03:15:27.187377532Z",
+    "spanId": "bc26fe5a9659ebca",
+    "traceSampled": true
+  },
+  {
+    "insertId": "682bf3cf0000c012b195f8ca",
+    "jsonPayload": {
+      "verifications": {
+        "app": "MISSING",
+        "auth": "VALID"
+      },
+      "message": "Callable request verification passed"
+    },
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "revision_name": "getweeklysettings-00030-fik",
+        "service_name": "getweeklysettings",
+        "configuration_name": "getweeklysettings",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:27.049170Z",
+    "severity": "DEBUG",
+    "labels": {
+      "goog-drz-cloudfunctions-id": "getweeklysettings",
+      "instanceId": "007f65c6d2b92180e22fff6a2a1b51a0dd866603176588ff3f6fd51d2d6e058ef7649632d75ce3f13b70032d27c333f2084cd0229e8f458c509b50eb83ca89cbd905df2ce649715b6876972245a4",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "deployment-callable": "true",
+      "execution_id": "vxylzbhzrmml",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-managed-by": "cloudfunctions",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "firebase-log-type": "callable-request-verification"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/e324e9cb351e3a09e706630c7c225baf",
+    "receiveTimestamp": "2025-05-20T03:15:27.059966236Z",
+    "spanId": "13557803393268444106"
+  },
+  {
+    "textPayload": "[getWeeklySettings] Invoked by User: 1032380614290182174. Start Time: 1747710927050",
+    "insertId": "682bf3cf0000c0c3ea02150f",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "location": "us-central1",
+        "service_name": "getweeklysettings",
+        "configuration_name": "getweeklysettings",
+        "revision_name": "getweeklysettings-00030-fik"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:27.049347Z",
+    "severity": "INFO",
+    "labels": {
+      "deployment-callable": "true",
+      "goog-managed-by": "cloudfunctions",
+      "instanceId": "007f65c6d2b92180e22fff6a2a1b51a0dd866603176588ff3f6fd51d2d6e058ef7649632d75ce3f13b70032d27c333f2084cd0229e8f458c509b50eb83ca89cbd905df2ce649715b6876972245a4",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-drz-cloudfunctions-id": "getweeklysettings",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "execution_id": "vxylzbhzrmml",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/e324e9cb351e3a09e706630c7c225baf",
+    "receiveTimestamp": "2025-05-20T03:15:27.388116345Z",
+    "spanId": "13557803393268444106"
+  },
+  {
+    "textPayload": "[getWeeklySettings] User: 1032380614290182174 - Authenticated. Proceeding to fetch settings.",
+    "insertId": "682bf3cf0000c1ab4991045f",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "service_name": "getweeklysettings",
+        "project_id": "self-science-bot",
+        "configuration_name": "getweeklysettings",
+        "revision_name": "getweeklysettings-00030-fik",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:27.049579Z",
+    "severity": "INFO",
+    "labels": {
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "goog-drz-cloudfunctions-id": "getweeklysettings",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-managed-by": "cloudfunctions",
+      "deployment-callable": "true",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "execution_id": "vxylzbhzrmml",
+      "instanceId": "007f65c6d2b92180e22fff6a2a1b51a0dd866603176588ff3f6fd51d2d6e058ef7649632d75ce3f13b70032d27c333f2084cd0229e8f458c509b50eb83ca89cbd905df2ce649715b6876972245a4"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/e324e9cb351e3a09e706630c7c225baf",
+    "receiveTimestamp": "2025-05-20T03:15:27.388116345Z",
+    "spanId": "13557803393268444106"
+  },
+  {
+    "textPayload": "[getWeeklySettings] User: 1032380614290182174 - Attempting Firestore read for 'users/1032380614290182174'. Read Start Time: 1747710927050 (Delta from function start: 0ms)",
+    "insertId": "682bf3cf0000c2fd7c9a1d15",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "location": "us-central1",
+        "revision_name": "getweeklysettings-00030-fik",
+        "service_name": "getweeklysettings",
+        "configuration_name": "getweeklysettings",
+        "project_id": "self-science-bot"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:27.049917Z",
+    "severity": "INFO",
+    "labels": {
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "execution_id": "vxylzbhzrmml",
+      "goog-managed-by": "cloudfunctions",
+      "instanceId": "007f65c6d2b92180e22fff6a2a1b51a0dd866603176588ff3f6fd51d2d6e058ef7649632d75ce3f13b70032d27c333f2084cd0229e8f458c509b50eb83ca89cbd905df2ce649715b6876972245a4",
+      "goog-drz-cloudfunctions-id": "getweeklysettings",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/e324e9cb351e3a09e706630c7c225baf",
+    "receiveTimestamp": "2025-05-20T03:15:27.388116345Z",
+    "spanId": "13557803393268444106"
+  },
+  {
+    "textPayload": "[getWeeklySettings] User: 1032380614290182174 - Firestore read for 'users/1032380614290182174' completed. Exists: true. Duration: 130ms. Read End Time: 1747710927180 (Delta from function start: 130ms)",
+    "insertId": "682bf3cf0002c0032190c703",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "revision_name": "getweeklysettings-00030-fik",
+        "configuration_name": "getweeklysettings",
+        "service_name": "getweeklysettings",
+        "location": "us-central1"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:27.180227Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-drz-cloudfunctions-id": "getweeklysettings",
+      "goog-managed-by": "cloudfunctions",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "execution_id": "vxylzbhzrmml",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "instanceId": "007f65c6d2b92180e22fff6a2a1b51a0dd866603176588ff3f6fd51d2d6e058ef7649632d75ce3f13b70032d27c333f2084cd0229e8f458c509b50eb83ca89cbd905df2ce649715b6876972245a4",
+      "deployment-callable": "true",
+      "goog-drz-cloudfunctions-location": "us-central1"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/e324e9cb351e3a09e706630c7c225baf",
+    "receiveTimestamp": "2025-05-20T03:15:27.388116345Z",
+    "spanId": "13557803393268444106"
+  },
+  {
+    "textPayload": "[getWeeklySettings] User: 1032380614290182174 - Found weeklySettings in document.",
+    "insertId": "682bf3cf0002c299edee79b5",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "revision_name": "getweeklysettings-00030-fik",
+        "service_name": "getweeklysettings",
+        "location": "us-central1",
+        "configuration_name": "getweeklysettings"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:27.180889Z",
+    "severity": "INFO",
+    "labels": {
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "execution_id": "vxylzbhzrmml",
+      "deployment-callable": "true",
+      "instanceId": "007f65c6d2b92180e22fff6a2a1b51a0dd866603176588ff3f6fd51d2d6e058ef7649632d75ce3f13b70032d27c333f2084cd0229e8f458c509b50eb83ca89cbd905df2ce649715b6876972245a4",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "goog-drz-cloudfunctions-id": "getweeklysettings",
+      "goog-managed-by": "cloudfunctions",
+      "goog-drz-cloudfunctions-location": "us-central1"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/e324e9cb351e3a09e706630c7c225baf",
+    "receiveTimestamp": "2025-05-20T03:15:27.388116345Z",
+    "spanId": "13557803393268444106"
+  },
+  {
+    "textPayload": "[getWeeklySettings] User: 1032380614290182174 - Successfully completed. Total Duration: 131ms. End Time: 1747710927181",
+    "insertId": "682bf3cf0002c2fb31fbbb67",
+    "resource": {
+      "type": "cloud_run_revision",
+      "labels": {
+        "project_id": "self-science-bot",
+        "service_name": "getweeklysettings",
+        "configuration_name": "getweeklysettings",
+        "location": "us-central1",
+        "revision_name": "getweeklysettings-00030-fik"
+      }
+    },
+    "timestamp": "2025-05-20T03:15:27.180987Z",
+    "severity": "INFO",
+    "labels": {
+      "goog-drz-cloudfunctions-id": "getweeklysettings",
+      "run.googleapis.com/base_image_versions": "us-docker.pkg.dev/serverless-runtimes/google-22-full/runtimes/nodejs20:nodejs20_20250511_20_19_1_RC00",
+      "instanceId": "007f65c6d2b92180e22fff6a2a1b51a0dd866603176588ff3f6fd51d2d6e058ef7649632d75ce3f13b70032d27c333f2084cd0229e8f458c509b50eb83ca89cbd905df2ce649715b6876972245a4",
+      "goog-drz-cloudfunctions-location": "us-central1",
+      "goog-managed-by": "cloudfunctions",
+      "execution_id": "vxylzbhzrmml",
+      "firebase-functions-hash": "220b3cd4bbb510dbcdc00de75c21a4d0e232ef1d",
+      "deployment-callable": "true"
+    },
+    "logName": "projects/self-science-bot/logs/run.googleapis.com%2Fstdout",
+    "trace": "projects/self-science-bot/traces/e324e9cb351e3a09e706630c7c225baf",
+    "receiveTimestamp": "2025-05-20T03:15:27.388116345Z",
+    "spanId": "13557803393268444106"
+  }
+]

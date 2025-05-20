@@ -5,417 +5,10 @@ const {
   ButtonBuilder, ButtonStyle, MessageFlags, EmbedBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder
 } = require('discord.js');
 
-const admin = require('firebase-admin');
-
-// Correct way to load service account based on Render's environment
-let serviceAccount;
-if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY_JSON) {
-    try {
-        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY_JSON);
-        if (serviceAccount && serviceAccount.private_key) {
-            serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-        }
-          } catch (e) {
-        console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY_JSON:', e);
-        // Consider how to handle this error: e.g., process.exit(1) or disable features that need admin
-    }
-} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    // If you've set the GOOGLE_APPLICATION_CREDENTIALS env var to the path of the key file on Render
-    // This is often a common pattern for Google Cloud services.
-    // Firebase Admin SDK can pick it up automatically if the path is correct.
-    console.log('Attempting to use GOOGLE_APPLICATION_CREDENTIALS for Firebase Admin.');
-} else {
-    console.error('Firebase Admin: Service account key JSON not found in env FIREBASE_SERVICE_ACCOUNT_KEY_JSON or GOOGLE_APPLICATION_CREDENTIALS not set. Admin features will be disabled.');
-    // Consider how to handle this error
-}
-
-let dbAdmin; // Declare dbAdmin here so it's accessible
-
-if (serviceAccount) {
-    try {
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount),
-            // Add your databaseURL if it's needed by other parts of your admin usage
-            // or if you encounter issues without it. For Firestore, projectId from the key is usually enough.
-            // databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
-        });
-        console.log("Firebase Admin SDK Initialized successfully using service account JSON.");
-        dbAdmin = admin.firestore(); // Initialize dbAdmin here
-    } catch (error) {
-        console.error("Firebase Admin SDK Initialization Error with service account JSON:", error);
-        // Consider how to handle this error
-    }
-} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    // This branch is for when GOOGLE_APPLICATION_CREDENTIALS is set, but FIREBASE_SERVICE_ACCOUNT_KEY_JSON is not.
-    // The Admin SDK will attempt to use the credentials file pointed to by the env var.
-    try {
-        admin.initializeApp(); // No arguments needed if GOOGLE_APPLICATION_CREDENTIALS is set correctly
-        console.log("Firebase Admin SDK Initialized successfully using GOOGLE_APPLICATION_CREDENTIALS.");
-        dbAdmin = admin.firestore(); // Initialize dbAdmin here
-    } catch (error) {
-        console.error("Firebase Admin SDK Initialization Error with GOOGLE_APPLICATION_CREDENTIALS:", error);
-        // Consider how to handle this error
-    }
-} else {
-    // This 'else' corresponds to the initial check where neither env var was found
-    console.warn("Firebase Admin SDK NOT Initialized - Firestore listener for stats notifications and other admin features will NOT work.");
-}
-
-function setupStatsNotificationListener(client) {
-  console.log("<<<<< SETUP STATS LISTENER FUNCTION ENTERED - NEW CODE RUNNING >>>>>");
-  if (!admin.apps.length || !dbAdmin) { // Check if dbAdmin is initialized
-      console.warn("Firebase Admin SDK not initialized. Stats notification listener will NOT run.");
-      return;
-  }
-
-  console.log("Setting up Firestore listener for 'pendingStatsNotifications'...");
-
-  const notificationsRef = dbAdmin.collection('pendingStatsNotifications');
-
-  notificationsRef.where('status', '==', 'ready').onSnapshot(snapshot => {
-      console.log(`[StatsListener DEBUG] Snapshot received. Empty: ${snapshot.empty}. Size: ${snapshot.size}. Timestamp: ${new Date().toISOString()}`);
-          if (!snapshot.empty) {
-              console.log(`[StatsListener DEBUG] Iterating ${snapshot.docChanges().length} document changes in this snapshot:`);
-              snapshot.docChanges().forEach(change => { // Log docChanges to see what's happening
-                  console.log(`[StatsListener DEBUG]   Doc ID in snapshot: ${change.doc.id}, Change Type: ${change.type}, Status: ${change.doc.data().status}`);
-              });
-          }
-
-          if (snapshot.empty) {
-              // console.log("No pending 'ready' stats notifications found."); // Can be noisy, enable if debugging
-              return;
-          }
-
-      snapshot.docChanges().forEach(async (change) => {
-        console.log("<<<<< SETUP STATS LISTENER FUNCTION ENTERED - NEW CODE RUNNING >>>>>");
-          if (change.type === 'added' || change.type === 'modified') { // Process new and re-processed notifications
-              const notification = change.doc.data();
-              const docId = change.doc.id; // Firestore document ID (e.g., userId_experimentId)
-              const { userId, experimentId, userTag, statsDocumentId } = notification;
-
-              console.log(`[StatsListener] Detected 'ready' notification for user ${userId}, experiment ${experimentId}. Doc ID: ${docId}`);
-
-              let discordUser = null; 
-                try {
-                    discordUser = await client.users.fetch(userId); 
-                    if (!discordUser) { // Defensive check, fetch usually throws on major errors but good to be safe
-                        console.error(`[StatsListener] Fetched Discord user is null or undefined for userId: ${userId}. Doc ID: ${docId}`);
-                        await change.doc.ref.update({ 
-                            status: 'error_user_not_found', 
-                            processedAt: admin.firestore.FieldValue.serverTimestamp(), 
-                            errorMessage: 'Fetched Discord user object was null or undefined for stats.' 
-                        });
-                        return; // Stop processing THIS notification
-                    }
-                    // Use discordUser.tag if available, otherwise fall back to userTag from notificationData
-                    const effectiveUserTag = discordUser.tag || userTag || 'Unknown User';
-                    console.log(`[StatsListener] Successfully fetched Discord user ${effectiveUserTag} (${userId}) for stats.`);
-                } catch (userFetchError) {
-                    console.error(`[StatsListener] Failed to fetch Discord user ${userId} for stats. Doc ID: ${docId}:`, userFetchError);
-                    await change.doc.ref.update({ 
-                        status: 'error_user_not_found', 
-                        processedAt: admin.firestore.FieldValue.serverTimestamp(), 
-                        errorMessage: `Failed to fetch Discord user for stats: ${userFetchError.message}`.substring(0, 499) 
-                    });
-                    return; // Stop processing THIS notification
-                }
-
-               try {
-                  // 1. Fetch the full stats report from users/{userId}/experimentStats/{experimentId}
-                  //    (using statsDocumentId which should be the same as experimentId in this flow)
-                  const statsReportRef = dbAdmin.collection('users').doc(userId)
-                                           .collection('experimentStats').doc(statsDocumentId || experimentId);
-                  const statsReportSnap = await statsReportRef.get();
-
-                    if (statsReportSnap.exists) {
-                        const statsReportData = statsReportSnap.data();
-
-                        // This log was very helpful, let's keep it for now or you can remove it later
-                        console.log("<<<<< !!! STATS REPORT DATA OBJECT IS !!! >>>>>", JSON.stringify(statsReportData, null, 2));
-
-                        // The DEBUG logs for individual parts (optional, you can remove if the one above is sufficient)
-                        console.log(`[StatsListener] DEBUG: statsReportData.calculatedMetricStats RAW:`, statsReportData.calculatedMetricStats);
-                        console.log(`[StatsListener] DEBUG: Type of statsReportData.calculatedMetricStats: ${typeof statsReportData.calculatedMetricStats}`);
-                        console.log(`[StatsListener] DEBUG: statsReportData.correlations RAW:`, statsReportData.correlations);
-                        console.log(`[StatsListener] DEBUG: Type of statsReportData.correlations: ${typeof statsReportData.correlations}`);
-                        if (statsReportData && statsReportData.calculatedMetricStats) {
-                            console.log(`[StatsListener] DEBUG: Keys in statsReportData.calculatedMetricStats: ${Object.keys(statsReportData.calculatedMetricStats).join(', ')}`);
-                        }
-
-                        const statsEmbed = new EmbedBuilder()
-                            .setColor(0x0099FF)
-                            .setTitle(`Experiment Stats Ready`)
-                            .setDescription(`Estimated Read Time: 90 seconds`)
-                            .addFields(
-                                { 
-                                    name: 'Total Logs Processed', 
-                                    value: statsReportData.totalLogsInPeriodProcessed !== undefined 
-                                        ? statsReportData.totalLogsInPeriodProcessed.toString() 
-                                        : (statsReportData.totalLogsProcessed !== undefined ? statsReportData.totalLogsProcessed.toString() : 'N/A'), // Fallback to totalLogsProcessed if new one isn't there
-                                    inline: true 
-                                }
-                            )
-                            .setTimestamp()
-                            .setFooter({ text: `Experiment ID: ${statsReportData.experimentId || 'N/A'}` });
-
-                        // Add detailed STATISTICS fields dynamically
-                        if (statsReportData.calculatedMetricStats && typeof statsReportData.calculatedMetricStats === 'object' && Object.keys(statsReportData.calculatedMetricStats).length > 0) {
-                            statsEmbed.addFields({ name: '\u200B', value: '**📊 CORE STATISTICS**' }); // Added icon for consistency
-                            for (const metricKey in statsReportData.calculatedMetricStats) {
-                                const metricDetails = statsReportData.calculatedMetricStats[metricKey];
-                                let fieldValue = '';
-                                if (metricDetails.status === 'skipped_insufficient_data') {
-                                    fieldValue = `Average: N/A (Needs ${metricDetails.dataPoints !== undefined ? 5 : 'more'} data points)\nVaration %: N/A\nData Points: ${metricDetails.dataPoints !== undefined ? metricDetails.dataPoints : 'N/A'}`;
-                                } else {
-                                    if (metricDetails.average !== undefined && !isNaN(metricDetails.average)) fieldValue += `Average: ${parseFloat(metricDetails.average).toFixed(2)}\n`;
-                                    else fieldValue += `Average: N/A\n`;
-                                    if (metricDetails.variationPercentage !== undefined && !isNaN(metricDetails.variationPercentage)) fieldValue += `Var: ${parseFloat(metricDetails.variationPercentage).toFixed(2)}%\n`;
-                                    else fieldValue += `Varation: N/A\n`;
-                                    if (metricDetails.dataPoints !== undefined) fieldValue += `Data Points: ${metricDetails.dataPoints}\n`;
-                                    else fieldValue += `Data Points: N/A\n`;
-                                }
-                                
-                                if (fieldValue.trim() !== '') {
-                                    const fieldName = (metricDetails.label ? metricDetails.label.charAt(0).toUpperCase() + metricDetails.label.slice(1) : metricKey.charAt(0).toUpperCase() + metricKey.slice(1));
-                                    statsEmbed.addFields({ name: fieldName, value: fieldValue.trim(), inline: true });
-                                }
-                            }
-                        } else {
-                            statsEmbed.addFields({ name: '📊 Core Statistics', value: 'No detailed core statistics were found in this report.', inline: false });
-                        }
-
-                        // Add CORRELATION fields dynamically (now showing Influence as R-squared)
-                        if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
-                            statsEmbed.addFields({ name: '\u200B', value: '**Action → Outcome IMPACTS**' });
-                            for (const inputMetricKey in statsReportData.correlations) {
-                                if (Object.prototype.hasOwnProperty.call(statsReportData.correlations, inputMetricKey)) {
-                                    const corr = statsReportData.correlations[inputMetricKey];
-                                    let influenceFieldValue = `Influence: N/A\nPairs: ${corr.n_pairs || 'N/A'}\n*${(corr.interpretation || 'Not calculated')}*`; // Default text updated
-
-                                    if (corr.status === 'calculated' && corr.coefficient !== undefined && !isNaN(corr.coefficient)) {
-                                        const r = parseFloat(corr.coefficient);
-                                        const rSquared = r * r; // Calculate R-squared
-                                        // Display R-squared as a percentage with one decimal place
-                                        influenceFieldValue = `Influence %: **${(rSquared * 100).toFixed(1)}%**\nPairs: ${corr.n_pairs || 'N/A'}\n*${(corr.interpretation || 'N/A')}*`;
-                                    } else if (corr.status && corr.status.startsWith('skipped_')) {
-                                        influenceFieldValue = `Influence (R²): N/A\nPairs: ${corr.n_pairs || '0'}\n*${(corr.interpretation || 'Insufficient data for calculation.')}*`;
-                                    }
-
-                                    statsEmbed.addFields({
-                                        name: `${(corr.label || inputMetricKey)}\n→ ${(corr.vsOutputLabel || 'Desired Output')}`, // Field name shows which input influences the output
-                                        value: influenceFieldValue,
-                                        inline: true
-                                    });
-                                }
-                            }
-                        } else {
-                            statsEmbed.addFields({ name: '🔗 Influence (R²)', value: 'No influence data (correlations) was found or calculated for this report.', inline: false }); // Updated fallback text
-                        }
-
-              // ============== REPLACED SECTION: PAIRWISE INTERACTION ANALYSIS ==============
-              // This replaces the old "STRATIFIED ANALYSIS (MIXED EFFECTS) - Analysis Prep Data"
-              if (statsReportData.pairwiseInteractionResults && typeof statsReportData.pairwiseInteractionResults === 'object' && Object.keys(statsReportData.pairwiseInteractionResults).length > 0) {
-                  statsEmbed.addFields({ name: '\u200B', value: '**🤝COMBINED EFFECT ANALYSIS**' });
-                  statsEmbed.addFields({
-                    name: '\u200B',
-                    value: "Some actions can have a stronger effect on your outcome when combined with other actions. Check if that's happening here.",
-                    inline: false
-                }); 
-
-                    for (const pairKey in statsReportData.pairwiseInteractionResults) {
-                        if (Object.prototype.hasOwnProperty.call(statsReportData.pairwiseInteractionResults, pairKey)) {
-                            const pairData = statsReportData.pairwiseInteractionResults[pairKey];
-
-                            // Only add a field if there's a meaningful summary to show
-                            // And it's not one of the default "skipped" messages (or filter as you see fit)
-                            if (pairData && pairData.summary && pairData.summary.trim() !== "" && 
-                                !pairData.summary.toLowerCase().includes("skipped") && 
-                                !pairData.summary.toLowerCase().includes("no meaningful conclusion") &&
-                                !pairData.summary.toLowerCase().includes("thresholds for output") &&
-                                !pairData.summary.toLowerCase().includes("not enough days")) {
-
-                                const pairName = `${pairData.input1Label} & ${pairData.input2Label}`;
-                                statsEmbed.addFields({
-                                    name: `\n${pairName} Combined Effects?`, // Added icon and clearer title
-                                    value: pairData.summary, // Just the summary generated by Firebase
-                                    inline: false
-                                });
-                            } else if (pairData && pairData.summary && pairData.summary.toLowerCase().includes("did not show any group with an average")) {
-                                // Optionally, explicitly state no significant interaction if you want to show something for every pair
-                                // that *was* analyzed but had no standout groups.
-                                // Otherwise, the `if` condition above will skip it.
-                                const pairName = `${pairData.input1Label} & ${pairData.input2Label}`;
-                                statsEmbed.addFields({
-                                    name: `\n${pairName} Combined Effects?`,
-                                    value: "No combined effects were found for this pair with current data.", // A generic message from bot
-                                    inline: false
-                                });
-                            }
-                            // If the summary contains "skipped" or other non-result messages, it won't add a field,
-                            // making the DM cleaner. You can adjust the filter conditions as needed.
-                        }
-                    }
-              } else if (statsReportData.hasOwnProperty('pairwiseInteractionResults')) { 
-                  statsEmbed.addFields({
-                      name: '🤝 COMBINED EFFECT ANALYSIS',
-                      value: 'No input pairs were configured or had sufficient data for this analysis.',
-                      inline: false
-                  });
-              }
-              // ============== END: PAIRWISE INTERACTION ANALYSIS SECTION ==============
-                        const actionRow = new ActionRowBuilder()
-                            .addComponents(
-                                new ButtonBuilder()
-                                    .setCustomId(`compare_exp_stats_btn_${statsReportData.experimentId}`) // Ensure experimentId is correctly used
-                                    .setLabel('Compare with Recent Experiments')
-                                    .setStyle(ButtonStyle.Primary),
-                                new ButtonBuilder() // New button for AI Insights
-                                    .setCustomId(`get_ai_insights_btn_${statsReportData.experimentId}`)
-                                    .setLabel('💡 Get AI Insights')
-                                    .setStyle(ButtonStyle.Success) // Or ButtonStyle.Primary as per your preference
-                            );
-                        
-                        // DM Sending Logic (ensure this part is outside the block you are replacing if it was separate,
-                        // or ensure it's correctly placed relative to the new code if it was part of the old block)
-                        if (discordUser) {
-                            await discordUser.send({
-                                embeds: [statsEmbed],
-                                components: [actionRow]
-                            }).then(async () => {
-                                console.log(`[StatsListener] Successfully sent stats DM (with compare button) to user ${userId} for experiment ${statsReportData.experimentId}.`);
-                                await change.doc.ref.update({
-                                    status: 'processed_by_bot',
-                                    processedAt: admin.firestore.FieldValue.serverTimestamp(),
-                                    botProcessingNode: process.env.RENDER_INSTANCE_ID || 'local_dev_stats'
-                                });
-                                console.log(`[StatsListener] Updated notification ${docId} to 'processed_by_bot'.`);
-                            }).catch(async (dmError) => {
-                                console.error(`[StatsListener] Failed to send stats DM to user ${userId} for experiment ${statsReportData.experimentId}:`, dmError);
-                                await change.doc.ref.update({ status: 'error_dm_failed', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: dmError.message });
-                            });
-                        } else {
-                            // This 'else' corresponds to 'if (discordUser)'
-                            // The status update for 'error_user_not_found' should have happened earlier
-                            // if discordUser was null. We just log here that DM wasn't sent.
-                            console.log(`[StatsListener] Discord user ${userId} not found. Cannot send stats DM for experiment ${statsReportData.experimentId}. Notification status should already be 'error_user_not_found'.`);
-                        }
-                    // ================================================================================
-                    // END OF CODE BLOCK TO REPLACE
-                    // ================================================================================
-                    } else {
-                        // This 'else' corresponds to 'if (statsReportSnap.exists)'
-                        console.error(`[StatsListener] Stats report document not found for user ${userId}, experiment ${statsDocumentId || experimentId}. Doc ID: ${docId}`);
-                        await change.doc.ref.update({ status: 'error_report_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: 'Stats report document could not be found in Firestore.' });
-                    }
-
-              } catch (error) {
-                  console.error(`[StatsListener] Error processing notification ${docId} for user ${userId}, experiment ${experimentId}:`, error);
-                  try {
-                      await change.doc.ref.update({
-                          status: 'error_processing_in_bot',
-                          processedAt: admin.firestore.FieldValue.serverTimestamp(),
-                          errorMessage: error.message,
-                          errorStack: error.stack // Optional: for more detailed debugging in Firestore
-                      });
-                  } catch (updateError) {
-                      console.error(`[StatsListener] CRITICAL: Failed to update error status for notification ${docId}:`, updateError);
-                  }
-              }
-          }
-      });
-  }, err => {
-      console.error("Error in 'pendingStatsNotifications' listener:", err);
-      // Consider re-initializing the listener or alerting.
-  });
-
-  console.log("Firestore listener for 'pendingStatsNotifications' is active.");
-}
-
-// In render index testing1.txt
-// Add this function definition, for example, after setupStatsNotificationListener
-
-function setupReminderDMsListener(client) {
-  if (!admin.apps.length || !dbAdmin) {
-    console.warn("Firebase Admin SDK not initialized. Reminder DMs listener will NOT run.");
-    return;
-  }
-
-  console.log("Setting up Firestore listener for 'pendingReminderDMs'...");
-
-  const remindersRef = dbAdmin.collection('pendingReminderDMs');
-  remindersRef.where('status', '==', 'pending').onSnapshot(snapshot => {
-    if (snapshot.empty) {
-      // console.log("[ReminderListener] No pending reminder DMs found."); // Can be noisy
-      return;
-    }
-
-    snapshot.docChanges().forEach(async (change) => {
-      if (change.type === 'added' || (change.type === 'modified' && change.doc.data().status === 'pending')) {
-        const reminderData = change.doc.data();
-        const docId = change.doc.id; // Firestore document ID for this reminder task
-        const { userId, userTag, messageToSend, experimentId } = reminderData;
-
-        console.log(`[ReminderListener] Detected 'pending' reminder for user ${userId} (Tag: ${userTag || 'N/A'}), experiment ${experimentId || 'N/A'}. Doc ID: ${docId}`);
-
-        try {
-          const discordUser = await client.users.fetch(userId).catch(err => {
-            console.error(`[ReminderListener] Failed to fetch Discord user ${userId} for reminder:`, err);
-            return null;
-          });
-
-          if (discordUser) {
-            await discordUser.send(messageToSend)
-              .then(async () => {
-                console.log(`[ReminderListener] Successfully sent reminder DM to user ${userId}.`);
-                await change.doc.ref.update({
-                  status: 'sent',
-                  sentAt: admin.firestore.FieldValue.serverTimestamp(),
-                  botProcessingNode: process.env.RENDER_INSTANCE_ID || 'unknown_render_instance'
-                });
-                console.log(`[ReminderListener] Updated reminder ${docId} to 'sent'.`);
-              })
-              .catch(async (dmError) => {
-                console.error(`[ReminderListener] Failed to send reminder DM to user ${userId}:`, dmError);
-                await change.doc.ref.update({
-                  status: 'error_dm_failed',
-                  processedAt: admin.firestore.FieldValue.serverTimestamp(),
-                  errorMessage: dmError.message
-                });
-              });
-          } else {
-            console.warn(`[ReminderListener] Discord user ${userId} not found. Cannot send reminder DM.`);
-            await change.doc.ref.update({
-              status: 'error_user_not_found',
-              processedAt: admin.firestore.FieldValue.serverTimestamp(),
-              errorMessage: 'Discord user could not be fetched for reminder.'
-            });
-          }
-        } catch (error) {
-          console.error(`[ReminderListener] Error processing reminder notification ${docId} for user ${userId}:`, error);
-          try {
-            await change.doc.ref.update({
-              status: 'error_processing_in_bot',
-              processedAt: admin.firestore.FieldValue.serverTimestamp(),
-              errorMessage: error.message,
-              errorStack: error.stack // Optional for debugging
-            });
-          } catch (updateError) {
-            console.error(`[ReminderListener] CRITICAL: Failed to update error status for reminder ${docId}:`, updateError);
-          }
-        }
-      }
-    });
-  }, err => {
-    console.error("[ReminderListener] Error in 'pendingReminderDMs' listener:", err);
-    // Potentially re-initialize or alert
-  });
-
-  console.log("Firestore listener for 'pendingReminderDMs' is active.");
-}
-
-
 const { performance } = require('node:perf_hooks'); // Add this line
 const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -431,47 +24,35 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const SCRIPT_URL = process.env.SCRIPT_URL;
 
+// Add to your environment variables section
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
 // Add this block after your initial require statements
 
 const { initializeApp } = require("firebase/app");
 const { getFunctions, httpsCallable } = require("firebase/functions"); // Ensure this is imported
 
 const inspirationalMessages = [
-  "Congratulations on recording your metrics! 🎊",
-  "Notice how you feel as if it's the first time you've ever felt this way.",
-  "Amazing work logging your progress! 🌟",
-  "Each moment of awareness builds a bridge to deeper understanding.",
-  "Thank you for sharing your ratings! 🙏",
-  "Every data point tells a story of growth.\nWhat passage did you write today?",
-  "Thank you for your forward steps! 💫",
-  "Like footprints in the sand, each entry marks your path.",
-  "Beautiful reflection! 🌅",
-  "In the quiet space between thoughts,\nwisdom grows like mushrooms.",
-  "You've noted your progress! 🍃",
-  "May your awareness move with grace.",
-  "What a mindful moment! 🕊️",
-  "In measuring our days,\nwe live bigger lives.",
+  "Congratulations on recording your metrics! 🎊\n\nNotice how you feel as if it's the first time you've ever felt this way.",
+  "Amazing work logging your progress! 🌟\n\nEach moment of awareness builds a bridge to deeper understanding.",
+  "Thank you for sharing your ratings! 🙏\n\nEvery data point tells a story of growth.\nWhat passage did you write today?",
+  "Thank you for your forward steps! 💫\n\nLike footprints in the sand, each entry marks your path.",
+  "Beautiful reflection! 🌅\n\nIn the quiet space between thoughts,\nwisdom grows like mushrooms.",
+  "You've noted your progress! 🍃\n\nmay your awareness move with grace.",
+  "What a mindful moment! 🕊️\n\nIn measuring our days,\nwe live bigger lives.",
   "Thanks for dotting this data point! 🌈\n\nEach rating is a window\ninto the landscape of your experience.",
-  "You care courageously!",
-  "Watch how your awareness grows 🌺\nlike garden seeds planted with intention.",
-  "You've planted your daily marker!",
-  "Your efforts are like a constellation ⭐\neach point shining with possibility.",
-  "Reflection reflected! 🌙",
-  "The gentle rhythm of daily practice,\nshows our deepest insights.",
-  "Progress snapshot captured!",
-  "🦋Like a butterfly's flap,\nyour growth can change the weather.",
+  "You care courageously. 🌺\n\nWatch how your awareness grows,\nlike garden seeds planted with intention.",
+  "You've planted your daily marker! ⭐\n\nYour efforts are like a constellation,\neach point shining with possibility.",
+  "Reflection reflected! 🌙\n\nThe gentle rhythm of daily practice,\nshows our deepest insights.",
+  "Progress snapshot captured! 🦋\n\nLike a butterfly's flap,\nyour growth can change the weather.",
   "What mindful metrics! 🎯\n\nYou've earned this moment of reflection.",
   "Like morning dew on grass,\nmay your insights meet the morning sun.",
-  "A moment of truth! 🔮",
-  "Self-reflection is a mirror.\nWhat clarity do you see today?",
+  "A moment of truth! 🔮\n\nSelf-reflection is a mirror.\nWhat clarity do you see today?",
   "Each mindful pause creates space\nfor deeper understanding to emerge.",
   "You've written today's sentence! 📖\n\nWhat themes are surfacing\nin the story of your growth?",
-  "That reflection is rippling!",
-  "Like stones thrown in water 💧\nyour awareness creates waves.",
-  "Illumination! 🌠",
-  "In the darkness of uncertainty,\neach data point is a star to guide us home 🕯️",
-  "Mindful milestone marked!",
-  "Behind the ups and downs 🎭,\nwhat truth is revealing itself to you?",
+  "That reflection is rippling! 💧\n\nLike stones thrown in water,\nyour awareness creates waves.",
+  "Illumination! 🌠\n\nIn the darkness of uncertainty,\neach data point is a star to guide us home.",
+  "Mindful milestone marked! 🎭\n\nBehind the numbers and metrics,\nwhat truth is revealing itself to you?",
   "You're amazing! \n\nYou know that?\nYOU ARE AMAZING!",
   "Nothing great was ever done but in little steps.",
   "Your life is bigger than it seems. \nToday made a difference.",
@@ -504,7 +85,24 @@ const REMINDER_SELECT_TIME_H_ID = 'reminder_select_time_h';
 const REMINDER_SELECT_TIME_M_ID = 'reminder_select_time_m';
 const REMINDER_SELECT_TIME_AP_ID = 'reminder_select_time_ap';
 const CONFIRM_REMINDER_BTN_ID = 'confirm_reminder_btn';
-const REMINDERS_SET_TIME_NEXT_BTN_ID = 'reminders_set_time_next_btn';
+const REMINDERS_NEXT_STEP_BTN_ID = 'reminders_next_step_btn';
+
+// --- Default Reminder Messages (Editable Array) ---
+const defaultReminderMessages = [
+    "⏰ Gentle reminder to count your inputs!",
+    "Hey! How's your experiment going today? Any small steps available now?",
+    "Just checking in - have you counted anything yet today?",
+    "📊 Making data points? Remember to count your metrics!",
+    "You wanted a reminder to hit your inputs. Here you go!",
+    "Today is a new day! Every moment is a choice for tomorrow!",
+    "Friendly nudge to think about your experiment inputs for the day!",
+    "Got any momentum? Keep it going!",
+    "Unlock insights later by getting your inputs in today ✨",
+    "How's your experiment today? Any space to contribute to it?",
+];
+// You can add/edit messages in this array later. The backend function
+// 'setExperimentSchedule' will need to be aware if it should use these
+// or if it has its own internal default logic when customReminderMessage is null.
 
 // ====== FIREBASE CLIENT CONFIGURATION ======
 // Load config from .env file
@@ -668,11 +266,11 @@ async function showPostToGroupPrompt(interaction, setupData, reminderSummary, mo
       .setDescription(`${randomMotivationalMessage}\n\nHere's the final summary of your new experiment. Good luck!`)
       .addFields(
           // Field 1: Deeper Problem (from setupData)
-          { name: '🎯 Deeper Goal / Problem / Theme', value: setupData.deeperProblem || 'Not specified' },
+          { name: '🎯 Deeper Problem', value: setupData.deeperProblem || 'Not specified' },
           // Field 2: Initial Settings Summary (use the message from Firebase stored earlier)
           // We need to extract the *core* settings part from the result message stored previously
           // Or reconstruct it from rawPayload if simpler
-           { name: '📋 Initial Settings', value: `Outcome: "${setupData.outputLabel}"\nAction 1: "${setupData.input1Label}"${setupData.input2Label ? `\nAction 2: "${setupData.input2Label}"`:''}${setupData.input3Label ? `\nAction 3: "${setupData.input3Label}"`:''}` },
+           { name: '📋 Initial Settings', value: `Output: "${setupData.outputLabel}"\nInput 1: "${setupData.input1Label}"${setupData.input2Label ? `\nInput 2: "${setupData.input2Label}"`:''}${setupData.input3Label ? `\nInput 3: "${setupData.input3Label}"`:''}` },
          // { name: '📋 Initial Settings', value: setupData.settingsMessage.split('\n\n')[1] || 'Could not parse settings summary.' }, // Example parsing, adjust as needed based on Firebase message format
           // Field 3: Duration (from setupData)
           { name: '🗓️ Experiment Duration', value: `${setupData.experimentDuration.replace('_', ' ')} (Stats report interval)` },
@@ -749,6 +347,78 @@ process.on('uncaughtException', err => {
   process.exit(1);
 });
 
+// Add near other constants/env vars
+const INSIGHTS_COOLDOWN = 0 //3600000; // 1 hour in milliseconds
+const userInsightsCooldowns = new Map();
+
+// Initialize Gemini with error handling
+let genAI;
+try {
+  genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+} catch (error) {
+  console.error('Failed to initialize Gemini:', error);
+}
+
+// Add Gemini configuration here
+const GEMINI_CONFIG = {
+  temperature: 0.8,
+  topK: 50,
+  topP: 0.95,
+  maxOutputTokens: 1024
+};
+
+// Add this function to test the AI integration
+async function testGeminiAPI() {
+  try {
+    console.log("Starting testGeminiAPI");
+    
+    if (!genAI) {
+      console.error("genAI not initialized. GEMINI_API_KEY:", 
+        GEMINI_API_KEY ? "present" : "missing");
+      throw new Error('Gemini AI not initialized');
+    }
+
+    console.log("Creating model instance");
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    
+    const prompt = "Generate a short test response: What's the best thing about keeping a daily log?";
+    console.log("Sending test prompt:", prompt);
+    
+    const result = await model.generateContent(prompt);
+    console.log("Raw result:", result);
+    
+    const response = await result.response;
+    console.log("Response object:", response);
+    
+    const text = response.text();
+    console.log("Final text:", text);
+    
+    return {
+      success: true,
+      message: text
+    };
+  } catch (error) {
+    console.error('Detailed Gemini API test error:', {
+      error: error.toString(),
+      stack: error.stack,
+      message: error.message
+    });
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/*
+const QUEUE_CONFIG = {
+  BATCH_SIZE: 10,
+  BATCH_DELAY: 1000, // 1 second between batches
+  MAX_RETRIES: 3,
+  RETRY_DELAY: 5000  // 5 seconds between retries
+};
+*/
+
 // ====== REGISTER SLASH COMMANDS ======
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 (async () => {
@@ -757,9 +427,18 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
       Routes.applicationGuildCommands(APPLICATION_ID, GUILD_ID),
       { body: [
         new SlashCommandBuilder()
+          .setName('testlog')
+          .setDescription('Preview how your daily log will look')
+          .toJSON(),
+        new SlashCommandBuilder()
           .setName('streak')
           .setDescription('Check your current streak')
           .toJSON(),        
+        new SlashCommandBuilder()
+        .setName('testai')
+        .setDescription('Test the AI integration')
+        .toJSON(),
+        // Add this to your slash commands array in the registration section
         new SlashCommandBuilder()
           .setName('go')
           .setDescription('Self Science Hub')
@@ -772,20 +451,237 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
   }
 })();
 
+async function generateInsights(structuredData) {
+  console.log("🧠 generateInsights received:", JSON.stringify(structuredData, null, 2));
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const prompt = INSIGHTS_PROMPT_TEMPLATE(structuredData); // Pass the data to the template function
+
+   const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    // Maximum possible length while staying under Discord's 2000 limit
+    const MAX_LENGTH = 1999;
+    const finalText = text.length > MAX_LENGTH 
+      ? text.substring(0, MAX_LENGTH) + "..."
+      : text;
+
+    return {
+      success: true,
+      insights: finalText,
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        dataPoints: structuredData.priorities.length,
+        periodDays: structuredData.userMetrics.periodDays
+      }
+    };
+  } catch (error) {
+    console.error('Error generating insights:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+
+const INSIGHTS_PROMPT_TEMPLATE = (data) => {
+  // Helper to format a single stats summary for the prompt (No changes needed here)
+  const formatSummary = (summary, index) => {
+    // Basic check if summary object is valid
+    if (!summary || typeof summary !== 'object') return `  Summary ${index + 1}: Not Available\n`;
+    const generatedDateObj = summary.summaryGeneratedAt ? new Date(summary.summaryGeneratedAt) : null;
+    const generatedDate = generatedDateObj instanceof Date && !isNaN(generatedDateObj) ? generatedDateObj.toLocaleDateString() : 'Unknown Date';
+    let text = `  Summary ${index + 1} (Generated: ${generatedDate}):\n`;
+    if (summary.priorities && Array.isArray(summary.priorities) && summary.priorities.length > 0) {
+      summary.priorities.forEach(p => {
+        if (p && typeof p === 'object') {
+          const metrics = p.metrics || {};
+          text += `    - ${p.label || 'N/A'} (${p.unit || 'N/A'}): Avg ${metrics.average ?? 'N/A'}, Var ${metrics.variation ?? 'N/A'}%\n`;
+        }
+      });
+    } else { text += `    - No priority stats available for this summary.\n`; }
+    if (summary.correlations && Array.isArray(summary.correlations) && summary.correlations.length > 0) {
+      text += `    - Correlations vs Satisfaction:\n`;
+      summary.correlations.forEach(c => {
+         if (c && typeof c === 'object') { text += `      * ${c.priority || 'N/A'}: ${c.interpretation || 'N/A'}\n`; }
+      });
+    }
+    return text;
+  };
+
+  // Safely access data (No changes needed here)
+  const userMetrics = data?.userMetrics || {};
+  const periodDays = userMetrics.periodDays || 'Unknown';
+  const currentStreak = userMetrics.currentStreak ?? 0;
+  const longestStreak = userMetrics.longestStreak ?? 0;
+  const notes = data?.notes || [];
+  const pastSummaries = data?.pastFourStatsSummaries || [];
+
+  // Construct the prompt with refined instructions
+  return `Analyze the user's habit tracking data (last ${periodDays} logs) with a supportive, growth-focused tone. The goal is to provide insights that inspire the user to continue their journey of consistent small actions and encourage thoughtful experimentation with tweaks to make these actions easier and more impactful. Keep the total response concise (under 1890 characters).
+
+Data Overview:
+- User Metrics: Current Streak ${currentStreak}, Longest ${longestStreak}
+- Period Analyzed: ${periodDays} logs, ending ${new Date().toLocaleDateString()}
+- Last 4 Weekly Stats Summaries (Newest First):
+${(pastSummaries.length > 0)
+  ? pastSummaries.map(formatSummary).join('\n')
+  : '  No past stats summaries available.'
+}
+- Notes from the last ${periodDays} logs:
+${(notes.length > 0)
+  ? notes.map(n => `  • ${n?.date || 'Unknown Date'}: ${n?.content || ''}`).join('\n')
+  : '  No notes available for this period.'
+}
+
+// This replaces the part starting "Provide analysis in three sections:"
+// in the INSIGHTS_PROMPT_TEMPLATE function in index.js
+
+Provide analysis in three sections:
+
+### 🫂 Challenges & Consistency
+Review their journey, focusing on friction points and consistency patterns across the weekly summaries and notes.
+- Pinpoint recurring friction points or areas where consistency fluctuates, using both notes and weekly summary data (e.g., high metric variation).
+- **If possible, connect these friction points directly to specific phrases or feelings the user expressed in their notes around that time.** (e.g., 'The lower consistency for [Metric X] around [Date] might relate to when you mentioned feeling "[Quote from note]"').
+- Notice patterns in their consistency: *When* do they seem most consistent or inconsistent according to the data and notes?
+- Where does their effort seem persistent, even if results vary? Validate this effort clearly.
+- Acknowledge any struggles mentioned with compassion and normalize their struggles as part of the experimentation process.
+
+### 🌱 Growth Highlights
+Highlight evidence of growth, adaptation, and the impact of sustained effort by analyzing patterns across the 4 summaries and notes. Start by celebrating their consistency (mention current streak if known) and the most significant positive trend or achievement observed.
+- Are priorities or their measured outcomes (average, variation) trending positively or negatively across the weeks? How has their focus evolved (e.g., changes in tracked priority labels/units visible in summaries)?
+- Point out any potentially interesting (even if subtle) connections observed between metric trends and themes found in the notes.
+- Look for subtle shifts in language in notes, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress.
+- **Also, select 1-2 particularly insightful or representative short quotes directly from the provided 'Notes' that capture a key moment of learning, challenge, or success during this period, and weave them into your analysis where relevant (citing the date if possible).**
+- How are their consistent small actions leading to evolution, as seen in the weekly data and reflections?
+
+### 🧪 Experiments & Metaphor
+Remember, small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 2-3 small, actionable experiments (tweaks) for the upcoming week, designed to make their current positive actions easier, more consistent, or slightly more impactful, based on the analysis above. Frame these as curious explorations, not fixes. Experiments should aim to:
+1. Build on momentum from positive trends or consistent efforts identified in the 'Growth Highlights' section.
+2. Directly address the friction points or consistency challenges identified in the 'Challenges' section by suggesting small modifications.
+3. **Prioritize suggesting experiments that directly explore questions, ideas, or 'what ifs' explicitly mentioned in the user's recent notes.** (Quote the relevant part of the note briefly if it helps frame the experiment).
+4. Focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits.
+
+**Finally, conclude with a single, concise metaphor *that specifically reflects the key challenge or transformation discussed in this user's analysis*. *If possible, subtly draw inspiration for the metaphor's theme from recurring concepts or tones found in the user's notes.* ** (Examples: "Your journey this month feels like a sculptor refining their work..." or "You've been like a scientist carefully adjusting variables...").
+
+Keep the total response under 1890 characters.`;
+};
+
+// >>>>> End of replacement block <<<<<
+
 
 // ====== DISCORD CLIENT ======
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
+  
+  /*
+  // Process queue immediately on startup
+  processMessageQueue().catch(console.error);
+  
+  // Then set up the interval (every 3 minutes)
+  setInterval(() => {
+    processMessageQueue().catch(console.error);
+  }, 3 * 60 * 1000);
+*/
 
-  if (admin.apps.length && typeof dbAdmin !== 'undefined' && dbAdmin !== null) {
-    setupStatsNotificationListener(client);
-    setupReminderDMsListener(client); // <<< ADD THIS LINE TO CALL THE NEW LISTENER
-  } else {
-    console.warn("Firebase Admin SDK (dbAdmin) is not properly initialized. Listeners for stats and reminders will NOT be started. Please check your Firebase Admin setup at the top of the file.");
-  }
 });
+
+/*
+async function processMessageQueue() {
+  try {
+    console.log('Starting queue check...');
+    console.log('SCRIPT_URL:', SCRIPT_URL);
+    
+    const requestBody = {
+      action: 'getQueuedMessages'
+    };
+    console.log('Request body:', JSON.stringify(requestBody));
+
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+    
+    console.log('Response status:', response.status);
+    const responseText = await response.text();
+    console.log('Raw response:', responseText);
+    
+    const result = JSON.parse(responseText);
+    console.log('Parsed response:', result);
+    
+    if (!result.messages?.length) {
+      console.log('No messages in queue');
+      return;
+    }
+
+    console.log(`Processing ${result.messages.length} messages in queue`);
+
+    // Process messages in batches
+    for (let i = 0; i < result.messages.length; i += QUEUE_CONFIG.BATCH_SIZE) {
+      const batch = result.messages.slice(i, i + QUEUE_CONFIG.BATCH_SIZE);
+      console.log(`Processing batch ${Math.floor(i/QUEUE_CONFIG.BATCH_SIZE) + 1}`);
+      
+      for (const msg of batch) {
+        try {
+          console.log(`Attempting to deliver message ${msg.id} to user ${msg.userTag}`);
+          const user = await client.users.fetch(msg.userId);
+          await user.send(msg.message);
+          console.log('Message sent successfully');
+          
+          // Confirm delivery
+          console.log(`Confirming delivery for message ${msg.id}`);
+          const confirmResponse = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'confirmDelivery',
+              messageId: msg.id
+            })
+          });
+
+          const confirmText = await confirmResponse.text();
+          console.log('Confirmation response:', confirmText);
+          
+          const confirmResult = JSON.parse(confirmText);
+          console.log('Parsed confirmation result:', confirmResult);
+
+          if (!confirmResult.success) {
+            throw new Error('Failed to confirm delivery: ' + (confirmResult.error || 'Unknown error'));
+          }
+          
+          console.log(`Successfully delivered and confirmed message to ${msg.userTag}`);
+
+        } catch (error) {
+          console.error(`Failed to process message ${msg.id}:`, error);
+          
+          try {
+            console.log(`Reporting failure for message ${msg.id}`);
+            await fetch(SCRIPT_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'deliveryFailed',
+                messageId: msg.id,
+                error: error.message
+              })
+            });
+            console.log(`Reported delivery failure for ${msg.userTag}`);
+          } catch (reportError) {
+            console.error('Failed to report message delivery failure:', reportError);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error in message queue processing:', error);
+  }
+}
+*/
 
 // ====== INTERACTION HANDLER ======
 client.on(Events.InteractionCreate, async interaction => {
@@ -836,6 +732,56 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[${interaction.commandName}] Command processing started at: ${commandStartTime.toFixed(2)}ms (Delta from interaction start: ${(commandStartTime - interactionStartTime).toFixed(2)}ms)`);
       switch (interaction.commandName) {
 
+        case 'testlog': {
+          const modal = new ModalBuilder()
+            .setCustomId('testLogPreview')
+            .setTitle('Daily Log Preview');
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('priority1')
+                .setLabel('Priority 1 (Measurement or Effort Rating)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. "Meditation, 15 mins"')
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('priority2')
+                .setLabel('Priority 2 (Measurement or Effort Rating)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. "Focus, 8/10 effort"')
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('priority3')
+                .setLabel('Priority 3 (Measurement or Effort Rating)')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. "Writing, 500 words"')
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('satisfaction')
+                .setLabel('Satisfaction (0-10)')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('notes')
+                .setLabel('Notes / Experiment / Good & Bad')
+                .setStyle(TextInputStyle.Paragraph)
+                .setRequired(true)
+            )
+          );
+
+          return await interaction.showModal(modal);
+        }
+
+
         case 'streak': {
           // Defer reply to acknowledge the command quickly
           await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -875,6 +821,21 @@ client.on(Events.InteractionCreate, async interaction => {
             });
           }
           break; // Make sure to break after the case
+        }
+
+        case 'testai': {
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+          const result = await testGeminiAPI();
+
+          const message = result.success
+            ? `✅ AI Integration Test Successful!\n\nResponse:\n${result.message}`
+            : `❌ AI Integration Test Failed:\n${result.error}`;
+
+          return await interaction.editReply({
+            content: message,
+            flags: MessageFlags.Ephemeral
+          });
         }
 
         case 'leaderboard': {
@@ -933,12 +894,12 @@ client.on(Events.InteractionCreate, async interaction => {
           // --- Create an Embed for the Go Hub message ---
           const goHubEmbed = new EmbedBuilder()
             .setColor('#7F00FF') // A nice vibrant purple, change as you like
-            .setTitle('🚀 Your Go Hub 🚀')
-            .setDescription('Welcome to your experiment control panel')
+            .setTitle('🚀 Experiment Control Panel 🚀')
+            .setDescription('Welcome to your Go Hub! What would you like to do?')
             .addFields(
                 { name: '🔬 Set Experiment', value: 'Define your goals and metrics.', inline: true },
-                { name: '✍️ Log Daily Data', value: 'Record your metrics and notes.', inline: true },
-                { name: '🔥 Streak Stats', value: 'View your streak and the leaderboard.', inline: true },
+                { name: '✍️ Log Daily Data', value: 'Record daily metrics and notes.', inline: true },
+                { name: '📊 Streak Stats', value: 'View your streaks and leaderboard position.', inline: true },
                 { name: '💡 AI Insights', value: 'Get AI-powered analysis of your data.', inline: true }
             )
 
@@ -955,14 +916,15 @@ client.on(Events.InteractionCreate, async interaction => {
 
           const streakCenterButton = new ButtonBuilder()
             .setCustomId('streak_center_btn')
-            .setLabel('🔥 Streak Progress')
+            .setLabel('📊 Streak Progress')
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(true); // Disabled for now
 
           const insightsButton = new ButtonBuilder()
             .setCustomId('ai_insights_btn')
             .setLabel('💡 AI Insights')
-            .setStyle(ButtonStyle.Secondary);
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(true); // Disabled until implemented
 
           const row1 = new ActionRowBuilder().addComponents(setExperimentButton, logProgressButton);
           const row2 = new ActionRowBuilder().addComponents(streakCenterButton, insightsButton);
@@ -990,6 +952,85 @@ client.on(Events.InteractionCreate, async interaction => {
         break;
       }
 
+        case 'insights7':
+        case 'insights30': {
+          console.log("💡 Reached insights command handler");
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+          const periodDays = interaction.commandName === 'insights7' ? 7 : 30;
+
+          const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'getInsights',
+              userId: interaction.user.id,
+              userTag: interaction.user.tag,
+              periodDays: periodDays
+            })
+          });
+
+          const responseText = await response.text();
+          const result = JSON.parse(responseText);
+
+          if (!result?.data?.priorities) {
+            console.error("🧨 Unexpected result structure:", JSON.stringify(result, null, 2));
+            await interaction.editReply({
+              content: "⚠️ No priorities found in response.",
+            });
+            return;
+          }
+
+          if (!response.ok || !result.success) {
+            return await interaction.editReply({
+              content: result.message || `❌ ${result.error || 'Failed to generate insights'}`,
+              flags: MessageFlags.Ephemeral
+            });
+          }
+
+          if (result.cached && result.data.aiText) {
+            return await interaction.editReply({
+              content: `${result.fallback ? '⚠️ Using recent insights while generating new ones.\n\n' : ''}${result.data.aiText}`,
+              flags: MessageFlags.Ephemeral
+            });
+          }
+
+         console.log("📦 Full result from GAS:", JSON.stringify(result));
+         console.log("🎯 generateInsights called with:", JSON.stringify(result.data));
+      
+      const aiResult = await generateInsights(result.data);
+      
+      if (!aiResult.success) {
+        return await interaction.editReply({
+          content: `❌ ${aiResult.error || 'Failed to generate AI insights'}`,
+        });
+      }
+
+
+
+          await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'storeInsights',
+              userId: interaction.user.id,
+              userTag: interaction.user.tag,
+              periodDays: periodDays,
+              insights: {
+                structuredData: result.data,
+                aiText: aiResult.insights,
+                dataPoints: result.data.userMetrics.dataPoints
+              }
+            })
+          });
+
+          await interaction.user.send(aiResult.insights);
+
+          return await interaction.editReply({
+            content: "✨ Check your DMs for insights! 🚀",
+            flags: MessageFlags.Ephemeral
+          });
+        }
         default: {
           console.warn('⚠️ Unrecognized command:', interaction.commandName);
           return await interaction.reply({
@@ -1036,35 +1077,35 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const deeperProblemInput = new TextInputBuilder()
           .setCustomId('deeper_problem')
-          .setLabel("🧭 Deeper Problem / Goal / Theme?")
-          .setPlaceholder("e.g. 'Reduce distractions' OR 'Go to sleep earlier.'")
+          .setLabel("🎯 What deeper problem are you working on?")
+          .setPlaceholder("e.g., Low energy. I want to go to sleep earlier.")
           .setStyle(TextInputStyle.Paragraph) // Paragraph for longer input
           .setRequired(true);
 
         const outputSettingInput = new TextInputBuilder()
           .setCustomId('output_setting')
-          .setLabel("🎯 Daily Target (Amount, Scale, Category)") // Ensure commas are clear
-          .setPlaceholder("e.g. '7.5, hours, Sleep' OR '8, 0-10 scale, Health'") // Comma format example
+          .setLabel("📈 Output (Format: Goal #, Unit, Activity)") // Ensure commas are clear
+          .setPlaceholder("e.g.: 10, pm, Bedtime") // Comma format example
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
         const input1SettingInput = new TextInputBuilder()
           .setCustomId('input1_setting')
-          .setLabel("🛠️ Daily Action 1 (Amount, Scale, Category)") // Comma format example
-          .setPlaceholder("e.g. '15, minutes, Meditation'")
+          .setLabel("🧪 Input 1 (Format: Goal #, Unit, Activity)") // Comma format example
+          .setPlaceholder("e.g.: 15, minutes, Meditation")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
         const input2SettingInput = new TextInputBuilder()
           .setCustomId('input2_setting')
-          .setLabel("🛠️ Daily Action 2 (Same as above - Optional)")
+          .setLabel("🧪 Input 2 (Same format - Optional)")
           .setPlaceholder("e.g.: 5000, steps, Walking")
           .setStyle(TextInputStyle.Short)
           .setRequired(false); // Optional
 
         const input3SettingInput = new TextInputBuilder()
           .setCustomId('input3_setting')
-          .setLabel("🛠️ Daily Action 3 (Same as above - Optional)") // Comma format example
+          .setLabel("🧪 Input 3 (Same format - Optional)") // Comma format example
           .setPlaceholder("e.g., 10, glasses, Water")
           .setStyle(TextInputStyle.Short)
           .setRequired(false); // Optional
@@ -1129,7 +1170,7 @@ client.on(Events.InteractionCreate, async interaction => {
           const input1Configured = settings.input1 && settings.input1.label && settings.input1.label.trim() !== "";
           if (!outputConfigured || !input1Configured) {
             await interaction.update({
-              content: "📝 Your experiment setup is incomplete (Desired Outcome & Action 1 required). Please use 'Set Experiment' from the `/go` hub to set them.",
+              content: "📝 Your experiment setup is incomplete (Output & Input 1 required). Please use 'Set Experiment' from the `/go` hub to set them.",
               embeds: [], // Clear any previous embed
               components: []
             });
@@ -1245,174 +1286,28 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
-        // --- Handler for "AI Insights" Button (from /go hub) ---
-    else if (interaction.isButton() && interaction.customId === 'ai_insights_btn') {
-      const goInsightsButtonStartTime = performance.now();
-      const interactionId = interaction.id; // For logging
-      const userId = interaction.user.id;
-
-      console.log(`[ai_insights_btn /go START ${interactionId}] Clicked by ${userId}. Time: ${goInsightsButtonStartTime.toFixed(2)}ms`);
-
-      if (!dbAdmin) {
-        console.error(`[ai_insights_btn /go ERROR ${interactionId}] dbAdmin (Firebase Admin Firestore) is not initialized. Cannot fetch experiments.`);
+    // --- Placeholder Handler for AI Insights Button ---
+    else if (interaction.customId === 'ai_insights_btn') {
         try {
-          await interaction.reply({ content: "❌ Error: The bot cannot access experiment data at the moment. Please try again later.", flags: MessageFlags.Ephemeral });
-        } catch (replyError) {
-          console.error(`[ai_insights_btn /go ERROR ${interactionId}] Failed to send dbAdmin error reply:`, replyError);
-        }
-        return;
-      }
-
-      try {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const deferTime = performance.now();
-        console.log(`[ai_insights_btn /go DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - goInsightsButtonStartTime).toFixed(2)}ms`);
-
-        // Fetch the most recent experimentId for the user
-        let targetExperimentId = null;
-        try {
-          console.log(`[ai_insights_btn /go FIRESTORE_QUERY ${interactionId}] Querying most recent experiment for user ${userId}.`);
-          const experimentStatsQuery = dbAdmin.collection('users').doc(userId).collection('experimentStats')
-            .orderBy('calculationTimestamp', 'desc') // Assuming calculationTimestamp is a reliable indicator of completion/recency
-            .limit(1);
-          const experimentStatsSnapshot = await experimentStatsQuery.get();
-
-          if (!experimentStatsSnapshot.empty) {
-            targetExperimentId = experimentStatsSnapshot.docs[0].id;
-            console.log(`[ai_insights_btn /go FIRESTORE_SUCCESS ${interactionId}] Found most recent experimentId: ${targetExperimentId} for user ${userId}.`);
-          } else {
-            console.log(`[ai_insights_btn /go FIRESTORE_EMPTY ${interactionId}] No experiment stats found for user ${userId}.`);
-          }
-        } catch (dbError) {
-          console.error(`[ai_insights_btn /go FIRESTORE_ERROR ${interactionId}] Error fetching most recent experiment for user ${userId}:`, dbError);
-          await interaction.editReply({ content: "❌ Error: Could not retrieve your experiment data. Please try again.", components: [] });
-          return;
-        }
-
-        if (!targetExperimentId) {
-          await interaction.editReply({ content: "💡 Complete your first experiment to get deep insights about yourself!", components: [] });
-          console.log(`[ai_insights_btn /go NO_EXPERIMENTS ${interactionId}] Informed user ${userId} to complete an experiment.`);
-          return;
-        }
-
-        // Now call the Firebase function with the found targetExperimentId
-        console.log(`[ai_insights_btn /go FIREBASE_CALL ${interactionId}] Calling 'fetchOrGenerateAiInsights' for experiment ${targetExperimentId}, user ${userId}.`);
-        const result = await callFirebaseFunction(
-            'fetchOrGenerateAiInsights',
-            { targetExperimentId: targetExperimentId },
-            userId
-        );
-        const firebaseCallEndTime = performance.now();
-        console.log(`[ai_insights_btn /go FIREBASE_RETURN ${interactionId}] 'fetchOrGenerateAiInsights' returned for exp ${targetExperimentId}. Took: ${(firebaseCallEndTime - deferTime).toFixed(2)}ms. Result:`, result);
-
-        if (result && result.success) {
-            await interaction.user.send(`💡 **AI Insights for Experiment ${targetExperimentId}** (Source: ${result.source})\n\n${result.insightsText}`);
-            await interaction.editReply({ content: "✅ AI Insights for your latest experiment have been sent to your DMs!", components: [] });
-            console.log(`[ai_insights_btn /go SUCCESS ${interactionId}] AI Insights sent to DMs for experiment ${targetExperimentId}, user ${userId}.`);
-        } else {
-            console.error(`[ai_insights_btn /go FIREBASE_FAIL ${interactionId}] 'fetchOrGenerateAiInsights' failed for exp ${targetExperimentId}. Result:`, result);
-            await interaction.editReply({ content: `❌ Failed to get AI insights for your latest experiment: ${result ? result.message : 'Unknown error.'}`, components: [] });
-        }
-
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[ai_insights_btn /go CATCH_ERROR ${interactionId}] Error processing AI insights for user ${userId} at ${errorTime.toFixed(2)}ms:`, error);
-        if (interaction.deferred && !interaction.replied) {
+            await interaction.update({
+                content: "💡 AI Insights feature coming soon! Stay tuned.",
+                embeds: [],
+                components: [],
+                flags: MessageFlags.Ephemeral
+            });
+        } catch (error) {
+            console.error(`Error replying to disabled button ${interaction.customId}:`, error);
             try {
-                await interaction.editReply({ content: `❌ An error occurred while fetching AI insights: ${error.message || 'Please try again.'}`, components: [] });
-            } catch (editError) {
-                console.error(`[ai_insights_btn /go CATCH_ERROR_EDIT_REPLY_FAIL ${interactionId}] Failed to send error editReply:`, editError);
-            }
-        } else if (!interaction.replied) {
-             try {
-                await interaction.reply({ content: `❌ An error occurred while fetching AI insights: ${error.message || 'Please try again.'}`, flags: MessageFlags.Ephemeral });
-            } catch (replyError) {
-                console.error(`[ai_insights_btn /go CATCH_ERROR_REPLY_FAIL ${interactionId}] Failed to send error reply:`, replyError);
+                await interaction.followUp({ content: "💡 AI Insights feature coming soon!", flags: MessageFlags.Ephemeral });
+            } catch (followUpError) {
+                console.error(`Error sending followup for ${interaction.customId}:`, followUpError);
             }
         }
-      }
-      const processEndTime = performance.now();
-      console.log(`[ai_insights_btn /go END ${interactionId}] Finished processing for user ${userId}. Total time: ${(processEndTime - goInsightsButtonStartTime).toFixed(2)}ms`);
     }
-
 
 // ****** END: Add these NEW Button Handlers inside the 'if (interaction.isButton())' block ******
 
   } // End of "if (interaction.isButton())" block
-
-    // --- Handler for "Get AI Insights" Button (from Stats DM) ---
-    else if (interaction.isButton() && interaction.customId.startsWith('get_ai_insights_btn_')) {
-      const insightsButtonStartTime = performance.now();
-      const interactionId = interaction.id; // For logging
-      const userId = interaction.user.id;
-      const experimentId = interaction.customId.split('get_ai_insights_btn_')[1];
-
-      console.log(`[get_ai_insights_btn_ START ${interactionId}] Clicked by ${userId} for experiment ${experimentId}. Time: ${insightsButtonStartTime.toFixed(2)}ms`);
-
-      if (!experimentId) {
-        console.error(`[get_ai_insights_btn_ ERROR ${interactionId}] Could not parse experimentId from customId: ${interaction.customId}`);
-        try {
-          await interaction.reply({ content: "❌ Error: Could not identify the experiment for AI insights. Please try again.", flags: MessageFlags.Ephemeral });
-        } catch (replyError) {
-          console.error(`[get_ai_insights_btn_ ERROR ${interactionId}] Failed to send error reply for missing experimentId:`, replyError);
-        }
-        return;
-      }
-
-      try {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const deferTime = performance.now();
-        console.log(`[get_ai_insights_btn_ DEFERRED ${interactionId}] Interaction deferred for experiment ${experimentId}. Took: ${(deferTime - insightsButtonStartTime).toFixed(2)}ms`);
-
-        // (MVP Focus): Insights for "This Experiment" (the parsed experimentId).
-        // (Future Enhancement Placeholder: This is where logic for a dropdown would go,
-        // allowing users to select "This Experiment," "Past 2 Experiments," etc. For MVP, proceed directly.)
-
-        console.log(`[get_ai_insights_btn_ FIREBASE_CALL ${interactionId}] Calling 'fetchOrGenerateAiInsights' for experiment ${experimentId}, user ${userId}.`);
-        const result = await callFirebaseFunction(
-            'fetchOrGenerateAiInsights', // New Firebase Function name
-            { targetExperimentId: experimentId }, // Pass targetExperimentId
-            userId // Pass the interacting user's ID for authentication
-        );
-        const firebaseCallEndTime = performance.now();
-        console.log(`[get_ai_insights_btn_ FIREBASE_RETURN ${interactionId}] 'fetchOrGenerateAiInsights' returned for exp ${experimentId}. Took: ${(firebaseCallEndTime - deferTime).toFixed(2)}ms. Result:`, result);
-
-        if (result && result.success) {
-            // Display insight (simple text DM and edit ephemeral reply)
-            // The message includes a placeholder for the source (cached/generated)
-            // Note: Discord does not render <span class="math-inline"> in DMs. Markdown is preferred.
-            // Using a simpler source indication.
-            await interaction.user.send(`💡 **AI Insights for Experiment ${experimentId}** (Source: ${result.source})\n\n${result.insightsText}`);
-            await interaction.editReply({ content: "✅ AI Insights have been sent to your DMs!", components: [] });
-            console.log(`[get_ai_insights_btn_ SUCCESS ${interactionId}] AI Insights sent to DMs for experiment ${experimentId}, user ${userId}.`);
-        } else {
-            console.error(`[get_ai_insights_btn_ FIREBASE_FAIL ${interactionId}] 'fetchOrGenerateAiInsights' failed for exp ${experimentId}. Result:`, result);
-            await interaction.editReply({ content: `❌ Failed to get AI insights: ${result ? result.message : 'Unknown error.'}`, components: [] });
-        }
-
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[get_ai_insights_btn_ CATCH_ERROR ${interactionId}] Error processing AI insights for exp ${experimentId}, user ${userId} at ${errorTime.toFixed(2)}ms:`, error);
-        // Ensure a reply if not already done
-        if (interaction.deferred && !interaction.replied) {
-            try {
-                await interaction.editReply({ content: `❌ An error occurred while fetching AI insights: ${error.message || 'Please try again.'}`, components: [] });
-            } catch (editError) {
-                console.error(`[get_ai_insights_btn_ CATCH_ERROR_EDIT_REPLY_FAIL ${interactionId}] Failed to send error editReply:`, editError);
-            }
-        } else if (!interaction.replied) {
-             try {
-                await interaction.reply({ content: `❌ An error occurred while fetching AI insights: ${error.message || 'Please try again.'}`, flags: MessageFlags.Ephemeral });
-            } catch (replyError) {
-                console.error(`[get_ai_insights_btn_ CATCH_ERROR_REPLY_FAIL ${interactionId}] Failed to send error reply:`, replyError);
-            }
-        }
-      }
-      const processEndTime = performance.now();
-      console.log(`[get_ai_insights_btn_ END ${interactionId}] Finished processing for experiment ${experimentId}. Total time: ${(processEndTime - insightsButtonStartTime).toFixed(2)}ms`);
-    }
-    // Make sure to add this 'else if' block before any final 'else' or default catch-all for unrecognized interactions.
-
 
 
    // Handle modal submission
@@ -1442,12 +1337,12 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
 
     // 3. Basic Validation (Client-side check)
     if (!outputValue || !input1Value || !notes) {
-        await interaction.editReply({ content: "❌ Missing required fields (Outcome, Action 1, or Notes)." });
+        await interaction.editReply({ content: "❌ Missing required fields (Output, Input 1, or Notes)." });
         return;
     }
     // Add specific validation for numeric inputs if desired, though Firebase function also validates
     if (isNaN(parseFloat(outputValue))) {
-        await interaction.editReply({ content: `❌ Value for Outcome must be a number. You entered: "${outputValue}"` });
+        await interaction.editReply({ content: `❌ Value for Output must be a number. You entered: "${outputValue}"` });
         return;
     }
     if (isNaN(parseFloat(input1Value))) {
@@ -1668,10 +1563,10 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
     
     const now = new Date();
     const unixTimestamp = Math.floor(now.getTime() / 1000);
-    let dmContent = `**✅ Your Log Summary** (<t:${unixTimestamp}:F>)\n\n`;
+    let dmContent = `**📝 Your Log Summary** (<t:${unixTimestamp}:F>)\n\n`;
     if (logSummarySettings && typeof logSummarySettings === 'object') {
         if (logSummarySettings.deeperProblem) {
-            dmContent += `🎯 **Deeper Goal / Problem / Theme:** ${logSummarySettings.deeperProblem}\n\n`;
+            dmContent += `🎯 **Deeper Problem:** ${logSummarySettings.deeperProblem}\n\n`;
         }
         const outputLabel = logSummarySettings.output?.label || 'Output';
         const outputUnit = logSummarySettings.output?.unit || '';
@@ -1684,14 +1579,14 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
             if ((currentInputSetting && currentInputSetting.label && currentInputSetting.label.trim() !== "") || (inputValue && inputValue.trim() !== "")) {
                 const label = currentInputSetting?.label || `Input ${i + 1}`;
                 const unit = currentInputSetting?.unit || '';
-                dmContent += `🛠️ **${label}**: ${inputValue || "*Not logged*"} ${unit}`.trimEnd() + '\n';
+                dmContent += `🧪 **${label}**: ${inputValue || "*Not logged*"} ${unit}`.trimEnd() + '\n';
             }
         }
     } else {
-        dmContent += `Outcome: ${payload.outputValue || '*Not logged*'}\n`;
-        dmContent += `Action 1: ${payload.inputValues[0] || '*Not logged*'}\n`;
-        if (payload.inputValues[1]) dmContent += `Action 2: ${payload.inputValues[1]}\n`;
-        if (payload.inputValues[2]) dmContent += `Action 3: ${payload.inputValues[2]}\n`;
+        dmContent += `Output: ${payload.outputValue || '*Not logged*'}\n`;
+        dmContent += `Input 1: ${payload.inputValues[0] || '*Not logged*'}\n`;
+        if (payload.inputValues[1]) dmContent += `Input 2: ${payload.inputValues[1]}\n`;
+        if (payload.inputValues[2]) dmContent += `Input 3: ${payload.inputValues[2]}\n`;
     }
     dmContent += `\n💭 **Notes:**\n${payload.notes || '*No notes*'}`;
     try {
@@ -1733,6 +1628,162 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
   console.log(`[experiment_setup_modal END ${interactionId}] Processing finished for User: ${interaction.user.tag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`);
  }
 // --- END OF COMPLETE DAILY LOG MODAL SUBMISSION HANDLER ---
+
+// Handle test modal submission
+if (interaction.isModalSubmit() && interaction.customId === 'testLogPreview') {
+  try {
+    // Use same priority parsing function
+    function parsePriority(input) {
+      const regex = /^(.*?)[,\.\-_:]+\s*(\d+)\s*(.*)$/;
+      const match = input.trim().match(regex);
+      if (!match) return null;
+      let [_, label, value, unit] = match;
+      label = label.trim().substring(0, 500);
+      value = value.trim();
+      unit = unit.trim();
+      if (!unit) unit = 'effort';
+      return { label, value, unit };
+    }
+
+    // Validate priorities
+    const priorities = [];
+    for (let i = 1; i <= 3; i++) {
+      const input = interaction.fields.getTextInputValue(`priority${i}`);
+      const parsed = parsePriority(input);
+      if (!parsed || !parsed.label || !parsed.value) {
+        return await interaction.reply({
+          content: `❌ Invalid format for Priority ${i}. Use: "Activity, value units" or "Rating, number/10 effort"`,
+          flags: ['Ephemeral']
+        });
+      }
+      priorities.push(parsed);
+    }
+
+    // Validate satisfaction
+    const satisfactionRaw = interaction.fields.getTextInputValue('satisfaction');
+    const satisfaction = parseInt(satisfactionRaw, 10);
+    if (isNaN(satisfaction) || satisfaction < 0 || satisfaction > 10) {
+      return await interaction.reply({
+        content: "❌ Satisfaction must be a number between 0 and 10.",
+        flags: ['Ephemeral']
+      });
+    }
+
+    // Validate notes
+    const notes = interaction.fields.getTextInputValue('notes');
+    if (!notes || !notes.trim()) {
+      return await interaction.reply({
+        content: "❌ Notes field is required.",
+        flags: ['Ephemeral']
+      });
+    }
+    
+    // If all validation passes, show preview
+    await interaction.reply({
+      content: `✅ Your log would look like this:
+
+    Priority 1: ${priorities[0].label}, ${priorities[0].value} ${priorities[0].unit}
+    Priority 2: ${priorities[1].label}, ${priorities[1].value} ${priorities[1].unit}
+    Priority 3: ${priorities[2].label}, ${priorities[2].value} ${priorities[2].unit}
+    Satisfaction: ${satisfaction}/10
+    Notes: ${notes}
+
+    Ready to log for real? Use /log to begin your streak!`,
+      flags: ['Ephemeral']
+    });
+  } catch (error) {
+    console.error('Error in test modal submission:', error);
+    await interaction.reply({
+      content: '❌ There was an error processing your test log. Please try again.',
+      flags: ['Ephemeral']
+    });
+  }
+  return;
+ }
+
+// Modal submission handler
+if (interaction.isModalSubmit() && interaction.customId === 'weeklyPriorities') {
+  try {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    // Get and validate priorities
+    const priorities = [];
+    for (let i = 1; i <= 3; i++) {
+      const input = interaction.fields.getTextInputValue(`priority${i}`).trim();
+      
+      // Check comma format
+      if (!input.includes(',')) {
+        await interaction.editReply({
+          content: `❌ Priority ${i} must include a comma to separate the label and unit.\nExample: "Meditation, minutes"`,
+          flags: MessageFlags.Ephemeral
+        });
+        return;
+      }
+
+      // Split and trim
+      const [label, unit] = input.split(',').map(part => part.trim());
+      
+      if (!label || !unit) {
+        await interaction.editReply({
+          content: `❌ Priority ${i} must have both a label and unit.\nExample: "Meditation, minutes"`,
+          flags: MessageFlags.Ephemeral
+        });
+        return;
+      }
+
+      priorities.push(input);
+    }
+
+    // Send to Google Apps Script
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'updateWeeklyPriorities',
+        userId: interaction.user.id,
+        userTag: interaction.user.tag,
+        priorities: priorities
+      })
+    });
+
+    const result = await response.json();
+    if (!result.success) {
+  console.error("❌ Script returned error:", result.error);
+  await interaction.editReply({
+    content: "❌ Script error: " + (result.error || "Unknown error"),
+    flags: MessageFlags.Ephemeral
+  });
+  return;
+  }
+
+    if (result.success) {
+      // Show confirmation
+      const confirmationMessage = [
+        '✅ Weekly priorities set!',
+        '',
+        'Your priorities:',
+        ...priorities.map((p, i) => `${i + 1}. **${p}**`)
+      ].join('\n');
+
+      await interaction.editReply({
+        content: confirmationMessage,
+        flags: MessageFlags.Ephemeral
+      });
+    } else {
+      await interaction.editReply({
+        content: `❌ ${result.error || 'Failed to set priorities. Please try again.'}`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+  } catch (error) {
+    console.error('Error in weekly priorities submission:', error);
+    await interaction.editReply({
+      content: '❌ An error occurred while saving your priorities. Please try again.',
+      flags: MessageFlags.Ephemeral
+    });
+  }
+ }
 
  // +++ NEW MODAL SUBMISSION HANDLER FOR EXPERIMENT SETUP +++
  // --- START: REPLACE THIS SECTION in render index testing1.txt (The 'experiment_setup_modal' handler) ---
@@ -1780,6 +1831,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
           .setColor('#47d264') // Your Color
           .setTitle('Experiment Duration') // Your Title
           .setDescription('When do you want your stats delivered?') // Your Description
+          .setFooter({ text: 'Your choice determines the stats reporting interval.' })
           .setTimestamp();
 
       // --- Build the Duration Select Menu ---
@@ -1832,240 +1884,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
   console.log(`[experiment_setup_modal END ${interactionId}] Processing finished. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`);
 }
 
-    // --- START: NEW Unified Handler for Reminder Select Menus ---
-    // --- Handler for "Set Reminders" button (Now Step 1: Get Current Time) ---
-  else if (interaction.isButton() && interaction.customId === 'show_reminders_setup_modal_btn') {
-    const buttonClickTime = performance.now();
-    const interactionId = interaction.id;
-    const userId = interaction.user.id;
-    console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing reminder setup (Step 1: Get Current Time). Time: ${buttonClickTime.toFixed(2)}ms`);
-
-    try {
-      await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
-      const deferTime = performance.now();
-      console.log(`[${interaction.customId} DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - buttonClickTime).toFixed(2)}ms`);
-
-      const setupData = userExperimentSetupData.get(userId);
-      if (!setupData || !setupData.experimentDuration) { // Ensure experimentDuration is set from previous step
-        console.error(`[${interaction.customId} CRITICAL ${interactionId}] Missing setupData or experimentDuration for user ${userId}.`);
-        await interaction.editReply({
-          content: "⚠️ Error: Couldn't retrieve your experiment duration. Please select the duration again or start over using `/go`.",
-          embeds: [],
-          components: []
-        });
-        return;
-      }
-
-      // --- Build Embed for Step 1 (Current Time Input) ---
-      const timeEmbed = new EmbedBuilder()
-        .setColor('#72418c') // Purple
-        .setTitle('⏰ Reminder Setup - Step 1 of 2')
-        .setDescription('Please select your **current local time** to get reminders accurately.')
-        .setFooter({ text: 'Make selections for your current time below, then click Next.' });
-
-      // --- Build Step 1 Components (Time Selects + New "Next" Button) ---
-      const timeHourSelect = new StringSelectMenuBuilder()
-        .setCustomId(REMINDER_SELECT_TIME_H_ID)
-        .setPlaceholder('Current time - HOUR (e.g., 2 PM)')
-        .addOptions(
-          Array.from({ length: 12 }, (_, i) => new StringSelectMenuOptionBuilder()
-            .setLabel(String(i + 1))
-            .setValue(String(i + 1)))
-        );
-      const rowTimeH = new ActionRowBuilder().addComponents(timeHourSelect);
-
-      const timeMinuteSelect = new StringSelectMenuBuilder()
-        .setCustomId(REMINDER_SELECT_TIME_M_ID)
-        .setPlaceholder('Current time - MINUTE (e.g., :30)')
-        .addOptions(
-          new StringSelectMenuOptionBuilder().setLabel('00').setValue('00'),
-          new StringSelectMenuOptionBuilder().setLabel('05').setValue('05'),
-          new StringSelectMenuOptionBuilder().setLabel('10').setValue('10'),
-          new StringSelectMenuOptionBuilder().setLabel('15').setValue('15'),
-          new StringSelectMenuOptionBuilder().setLabel('20').setValue('20'),
-          new StringSelectMenuOptionBuilder().setLabel('25').setValue('25'),
-          new StringSelectMenuOptionBuilder().setLabel('30').setValue('30'),
-          new StringSelectMenuOptionBuilder().setLabel('35').setValue('35'),
-          new StringSelectMenuOptionBuilder().setLabel('40').setValue('40'),
-          new StringSelectMenuOptionBuilder().setLabel('45').setValue('45'),
-          new StringSelectMenuOptionBuilder().setLabel('50').setValue('50'),
-          new StringSelectMenuOptionBuilder().setLabel('55').setValue('55')
-        );
-      const rowTimeM = new ActionRowBuilder().addComponents(timeMinuteSelect);
-
-      const timeAmPmSelect = new StringSelectMenuBuilder()
-        .setCustomId(REMINDER_SELECT_TIME_AP_ID)
-        .setPlaceholder('Current time - AM or PM')
-        .addOptions(
-          new StringSelectMenuOptionBuilder().setLabel('AM').setValue('AM'),
-          new StringSelectMenuOptionBuilder().setLabel('PM').setValue('PM')
-        );
-      const rowTimeAP = new ActionRowBuilder().addComponents(timeAmPmSelect);
-
-      // New "Next" button for this step
-      const nextButtonSetTime = new ButtonBuilder()
-        .setCustomId(REMINDERS_SET_TIME_NEXT_BTN_ID)
-        .setLabel('Next: Set Reminder Window & Frequency')
-        .setStyle(ButtonStyle.Primary);
-      const rowNextButton = new ActionRowBuilder().addComponents(nextButtonSetTime);
-
-      console.log(`[${interaction.customId} EDIT_REPLY ${interactionId}] Editing reply to display reminder step 1 (current time selects) for ${userId}.`);
-      await interaction.editReply({
-        content: 'Please select your current local time using the dropdowns below, then click "Next".',
-        embeds: [timeEmbed],
-        components: [rowTimeH, rowTimeM, rowTimeAP, rowNextButton]
-      });
-      const editReplyTime = performance.now();
-      console.log(`[${interaction.customId} EDIT_REPLY_SUCCESS ${interactionId}] Displayed reminder step 1 for ${userId}. Took: ${(editReplyTime - deferTime).toFixed(2)}ms.`);
-
-    } catch (error) {
-      const errorTime = performance.now();
-      console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing button for ${userId} at ${errorTime.toFixed(2)}ms:`, error);
-      try {
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({
-            content: '❌ Error showing the first step of reminder setup (current time). Please try clicking "Set Reminders" again.',
-            embeds: [],
-            components: []
-          });
-        } else {
-          console.warn(`[${interaction.customId} ERROR_NO_EDIT ${interactionId}] Interaction not editable for error message.`);
-        }
-      } catch (editError) {
-        console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback error reply failed:`, editError);
-      }
-    }
-    const processEndTime = performance.now();
-    console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - buttonClickTime).toFixed(2)}ms`);
-  }
-
-  // --- Handler for "Next: Set Reminder Window & Frequency" button (New Step 2) ---
-  else if (interaction.isButton() && interaction.customId === REMINDERS_SET_TIME_NEXT_BTN_ID) {
-      const nextStepClickTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing reminder step 2 (window/frequency). Time: ${nextStepClickTime.toFixed(2)}ms`);
-
-      try {
-        await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
-        const deferTime = performance.now();
-        console.log(`[${interaction.customId} DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - nextStepClickTime).toFixed(2)}ms`);
-
-        const setupData = userExperimentSetupData.get(userId);
-        if (!setupData) {
-          console.error(`[${interaction.customId} CRITICAL ${interactionId}] Missing setup data for user ${userId}.`);
-          await interaction.editReply({
-            content: "⚠️ Error: Couldn't retrieve your experiment setup data. Please start over using `/go`.",
-            embeds: [],
-            components: []
-          });
-          return;
-        }
-
-        // Validate that selections for step 1 (current time) have been made
-        if (!setupData.reminderTimeH || !setupData.reminderTimeM || !setupData.reminderTimeAP) {
-          console.error(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] Missing current time selections for ${userId}. Data:`, setupData);
-          await interaction.editReply({
-            content: "⚠️ Please select your current Hour, Minute, and AM/PM from the dropdowns before proceeding.",
-            embeds: [interaction.message.embeds[0]], // Keep the previous embed (current time embed)
-            components: interaction.message.components // Keep the previous components for correction
-          });
-          return;
-        }
-        const reconstructedTime = `${setupData.reminderTimeH}:${setupData.reminderTimeM} ${setupData.reminderTimeAP}`;
-        console.log(`[${interaction.customId} INFO ${interactionId}] User ${userId} current time set to: "${reconstructedTime}"`);
-
-
-        // --- Build Embed for Step 2 (Reminder Window & Frequency) ---
-        const reminderEmbedStep2 = new EmbedBuilder()
-          .setColor('#47d264') // Greenish
-          .setTitle('⏰ Reminder Setup - Step 2 of 2')
-          .setDescription(`Your current time is noted as approximately **${reconstructedTime}**. Now, set your **daily reminder window** (when reminders are allowed) and their **frequency**.\nThen click "Confirm All".`)
-          .addFields(
-            { name: 'Reminder Window (e.g., 9 AM - 5 PM)', value: 'Reminders will only be sent between these hours in your local time.', inline: false },
-            { name: 'Frequency', value: 'How often you receive reminders within that window.', inline: false }
-          )
-          .setFooter({ text: 'Make selections below, then click Confirm All.' });
-
-        // --- Build Step 2 Components: Window (Start/End) & Frequency Selects + Final Confirm Button ---
-        const startHourSelect = new StringSelectMenuBuilder()
-          .setCustomId(REMINDER_SELECT_START_HOUR_ID)
-          .setPlaceholder('Reminder window START hour')
-          .addOptions(
-            Array.from({ length: 24 }, (_, i) => {
-              const hour12 = i % 12 === 0 ? 12 : i % 12;
-              const period = i < 12 || i === 24 ? 'AM' : 'PM'; // Corrected for 24 = 12 AM next day
-              if (i === 0) return new StringSelectMenuOptionBuilder().setLabel(`12 AM (Midnight Start)`).setValue(String(i).padStart(2, '0'));
-              return new StringSelectMenuOptionBuilder()
-                .setLabel(`${hour12} ${period} (${String(i).padStart(2, '0')}:00)`)
-                .setValue(String(i).padStart(2, '0'));
-            })
-          );
-        const rowStartHour = new ActionRowBuilder().addComponents(startHourSelect);
-
-        const endHourSelect = new StringSelectMenuBuilder()
-          .setCustomId(REMINDER_SELECT_END_HOUR_ID)
-          .setPlaceholder('Reminder window END hour')
-          .addOptions(
-            Array.from({ length: 24 }, (_, i) => {
-              const hour12 = i % 12 === 0 ? 12 : i % 12;
-              const period = i < 12 || i === 24 ? 'AM' : 'PM';
-              if (i === 0) return new StringSelectMenuOptionBuilder().setLabel(`12 AM (Midnight End)`).setValue(String(i).padStart(2, '0'));
-              return new StringSelectMenuOptionBuilder()
-                .setLabel(`${hour12} ${period} (${String(i).padStart(2, '0')}:00)`)
-                .setValue(String(i).padStart(2, '0'));
-            })
-          );
-        const rowEndHour = new ActionRowBuilder().addComponents(endHourSelect);
-
-        const freqSelect = new StringSelectMenuBuilder()
-          .setCustomId(REMINDER_SELECT_FREQUENCY_ID)
-          .setPlaceholder('How often for reminders?')
-          .addOptions(
-            new StringSelectMenuOptionBuilder().setLabel('No Reminders').setValue('none').setDescription("I'll log on my own. Skips next step."),
-            new StringSelectMenuOptionBuilder().setLabel('Once a day').setValue('daily_1').setDescription('One random reminder per day within window.'),
-            new StringSelectMenuOptionBuilder().setLabel('Twice a day').setValue('daily_2').setDescription('Two random reminders per day within window.'),
-            new StringSelectMenuOptionBuilder().setLabel('Every other day').setValue('every_other_day').setDescription('One random reminder, every other day.')
-          );
-        const rowFreq = new ActionRowBuilder().addComponents(freqSelect);
-
-        const confirmAllButton = new ButtonBuilder()
-          .setCustomId(CONFIRM_REMINDER_BTN_ID) // This is the existing final confirm button
-          .setLabel('Confirm All Reminder Settings')
-          .setStyle(ButtonStyle.Success);
-        const rowConfirm = new ActionRowBuilder().addComponents(confirmAllButton);
-
-        console.log(`[${interaction.customId} EDIT_REPLY ${interactionId}] Editing reply to display reminder step 2 (window/frequency) for ${userId}.`);
-        await interaction.editReply({
-          content: 'Great! Now set your preferred reminder window and frequency.',
-          embeds: [reminderEmbedStep2],
-          components: [rowStartHour, rowEndHour, rowFreq, rowConfirm]
-        });
-        const editReplyTime = performance.now();
-        console.log(`[${interaction.customId} EDIT_REPLY_SUCCESS ${interactionId}] Displayed reminder step 2 for ${userId}. Took: ${(editReplyTime - deferTime).toFixed(2)}ms`);
-
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing button for user ${userId} at ${errorTime.toFixed(2)}ms:`, error);
-        try {
-          if (interaction.deferred || interaction.replied) {
-            await interaction.editReply({
-              content: '❌ Error preparing the reminder window setup. Please try clicking "Next" again from the previous step.',
-              embeds: [],
-              components: []
-            });
-          } else {
-            console.warn(`[${interaction.customId} ERROR_NO_EDIT ${interactionId}] Interaction not editable for error message.`);
-          }
-        } catch (editError) {
-          console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback error reply failed:`, editError);
-        }
-      }
-      const processEndTime = performance.now();
-      console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - nextStepClickTime).toFixed(2)}ms`);
-   }
-    // --- END: Handler for "Next: Set Reminder Window & Frequency" button ---
-
+    // --- START: NEW Unified Handler for Reminder Select Menus (Step 1: Window/Frequency) ---
     else if (interaction.isStringSelectMenu() && interaction.customId.startsWith('reminder_select_')) {
       const selectSubmitTime = performance.now();
       const interactionId = interaction.id; // For logging
@@ -2149,6 +1968,159 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
     }
     // --- END: Unified Handler for Reminder Select Menus ---
 
+  else if (interaction.isButton() && interaction.customId === REMINDERS_NEXT_STEP_BTN_ID) {
+    const nextStepClickTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing reminder step 2 (time selects) or finalizing if no reminders. Time: ${nextStepClickTime.toFixed(2)}ms`);
+
+    try {
+        await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
+        const deferTime = performance.now();
+        console.log(`[${interaction.customId} DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - nextStepClickTime).toFixed(2)}ms`);
+
+        const setupData = userExperimentSetupData.get(userId);
+
+        if (!setupData) {
+            console.error(`[${interaction.customId} CRITICAL ${interactionId}] Missing setup data for user ${userId} when clicking 'Next' for reminders.`);
+            await interaction.editReply({
+                content: "⚠️ Error: Couldn't retrieve your experiment setup data. Please start over using `/go`.",
+                embeds: [],
+                components: []
+            });
+            return;
+        }
+
+        // Check if "No Reminders" was selected
+        if (setupData.reminderFrequency === 'none') {
+            console.log(`[${interaction.customId} INFO ${interactionId}] User ${userId} selected 'No Reminders'. Finalizing experiment setup without time prompt.`);
+
+            const payload = {
+                experimentDuration: setupData.experimentDuration,
+                userCurrentTime: null,
+                reminderWindowStartHour: null,
+                reminderWindowEndHour: null,
+                reminderFrequency: 'none',
+                customReminderMessage: null, // Assuming no custom message input for this flow
+                skippedReminders: true // Indicates reminders were intentionally skipped
+            };
+
+            console.log(`[${interaction.customId} FIREBASE_CALL ${interactionId}] Calling setExperimentSchedule for ${userId} (reminders skipped via 'Next'). Payload:`, payload);
+            const scheduleResult = await callFirebaseFunction('setExperimentSchedule', payload, userId);
+
+            if (scheduleResult && scheduleResult.success) {
+                console.log(`[${interaction.customId} FIREBASE_SUCCESS ${interactionId}] setExperimentSchedule successful for ${userId} (reminders skipped).`);
+                // The showPostToGroupPrompt function is expected to clean up userExperimentSetupData.get(userId)
+                await showPostToGroupPrompt(interaction, setupData, "Reminders skipped as per your choice.", experimentSetupMotivationalMessages);
+            } else {
+                console.error(`[${interaction.customId} FIREBASE_FAIL ${interactionId}] setExperimentSchedule failed for ${userId} (reminders skipped). Result:`, scheduleResult);
+                await interaction.editReply({
+                    content: `⚠️ Could not finalize your experiment (reminders skipped): ${scheduleResult?.error || 'Unknown server error.'}. Your experiment settings and duration are saved. Please try `/go` again if you wished to set reminders.`,
+                    embeds: [],
+                    components: []
+                });
+            }
+            return; // End processing for "No Reminders"
+        }
+
+        // Proceed to show time selection if reminders are being set
+        // Validate that selections for step 1 (window and frequency) have been made
+        if (!setupData.reminderStartHour || !setupData.reminderEndHour || !setupData.reminderFrequency) {
+            console.error(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] Missing data from reminder step 1 for ${userId}. Data:`, setupData);
+            await interaction.editReply({
+                content: "⚠️ Please make selections for Reminder Window Start Hour, End Hour, and Frequency from the dropdowns before proceeding to the next step.",
+                embeds: [interaction.message.embeds[0]], // Keep the previous embed
+                components: interaction.message.components // Keep the previous components for correction
+            });
+            return;
+        }
+
+        // --- Build Embed for Step 2 (Current Time Input) ---
+        const timeEmbed = new EmbedBuilder()
+            .setColor('#72418c') // Your secondary color
+            .setTitle('⏰ Reminder Setup - Step 2 of 2')
+            .setDescription(`Now, please select your **current local time**. This is crucial for the bot to understand your timezone and send reminders accurately.\n\nYour reminder window is set for ${setupData.reminderStartHour}:00 - ${setupData.reminderEndHour}:00 daily, with ${setupData.reminderFrequency.replace('_', ' ')} frequency.`)
+            .addFields({ name: 'Current Time Needed:', value: 'So we can sync up times.' }) // Your updated explanation
+            .setFooter({ text: 'Make selections for your current time below and confirm.' });
+
+        // --- Build Step 2 Components (Time Selects + Final Confirm Button) ---
+
+        // Time - Hour (1-12 for AM/PM)
+        const timeHourSelect = new StringSelectMenuBuilder()
+            .setCustomId(REMINDER_SELECT_TIME_H_ID) // Uses constant
+            .setPlaceholder('Current time - HOUR (e.g., 2 PM)')
+            .addOptions(
+                Array.from({ length: 12 }, (_, i) => new StringSelectMenuOptionBuilder()
+                    .setLabel(String(i + 1)) // 1 to 12
+                    .setValue(String(i + 1)))
+            );
+        const rowTimeH = new ActionRowBuilder().addComponents(timeHourSelect);
+
+        // Time - Minute (0-59, typically in increments for usability)
+        const timeMinuteSelect = new StringSelectMenuBuilder()
+            .setCustomId(REMINDER_SELECT_TIME_M_ID) // Uses constant
+            .setPlaceholder('Current time - MINUTE (e.g., :30)')
+            .addOptions(
+                new StringSelectMenuOptionBuilder().setLabel('00').setValue('00'),
+                new StringSelectMenuOptionBuilder().setLabel('15').setValue('15'),
+                new StringSelectMenuOptionBuilder().setLabel('30').setValue('30'),
+                new StringSelectMenuOptionBuilder().setLabel('45').setValue('45')
+            );
+        const rowTimeM = new ActionRowBuilder().addComponents(timeMinuteSelect);
+
+        // Time - AM/PM
+        const timeAmPmSelect = new StringSelectMenuBuilder()
+            .setCustomId(REMINDER_SELECT_TIME_AP_ID) // Uses constant
+            .setPlaceholder('Current time - AM or PM')
+            .addOptions(
+                new StringSelectMenuOptionBuilder().setLabel('AM').setValue('AM'),
+                new StringSelectMenuOptionBuilder().setLabel('PM').setValue('PM')
+            );
+        const rowTimeAP = new ActionRowBuilder().addComponents(timeAmPmSelect);
+
+        // Confirm Button (Final step)
+        const confirmAllButton = new ButtonBuilder()
+            .setCustomId(CONFIRM_REMINDER_BTN_ID) // Uses constant defined earlier
+            .setLabel('Confirm All Reminder Settings')
+            .setStyle(ButtonStyle.Success);
+        const rowConfirm = new ActionRowBuilder().addComponents(confirmAllButton);
+
+        console.log(`[${interaction.customId} EDIT_REPLY ${interactionId}] Editing reply to display reminder step 2 (time selects) for ${userId}.`);
+        await interaction.editReply({
+            content: 'Please select your current local time using the dropdowns below, then click confirm.',
+            embeds: [timeEmbed],
+            components: [rowTimeH, rowTimeM, rowTimeAP, rowConfirm] // Show Time H, M, AP selects + Confirm button
+        });
+        const editReplyTime = performance.now();
+        console.log(`[${interaction.customId} EDIT_REPLY_SUCCESS ${interactionId}] Displayed reminder step 2 (time selects) for ${userId}. Took: ${(editReplyTime - deferTime).toFixed(2)}ms`);
+
+    } catch (error) {
+        const errorTime = performance.now();
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing button for user ${userId} at ${errorTime.toFixed(2)}ms:`, error);
+        try {
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ // Use editReply as it was deferred
+                    content: '❌ Error preparing the current time selection step. Please try clicking "Next" again or restart with /go.',
+                    embeds: [],
+                    components: []
+                });
+            } else {
+                console.warn(`[${interaction.customId} ERROR_NO_EDIT ${interactionId}] Interaction not editable for error message.`);
+            }
+        } catch (editError) { // Fallback if editReply fails
+            console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback error reply failed for ${userId}:`, editError);
+            try {
+                await interaction.followUp({content: '❌ Error preparing the current time selection step. Please try clicking "Next" again.', ephemeral: true });
+            } catch (followUpErrorInner) {
+                console.error(`[${interaction.customId} FALLBACK_ERROR_INNER ${interactionId}] Inner fallback error followup failed for ${userId}:`, followUpErrorInner);
+            }
+        }
+    }
+    const processEndTime = performance.now();
+    console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - nextStepClickTime).toFixed(2)}ms`);
+    }
+    // --- END: NEW Handler for Reminder Step 2 Button ---
+
   // --- START: NEW Handler for Final Confirm Reminder Button (CONFIRM_REMINDER_BTN_ID) ---
   else if (interaction.isButton() && interaction.customId === CONFIRM_REMINDER_BTN_ID) {
     const confirmClickTime = performance.now();
@@ -2207,7 +2179,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
         const endHour24 = parseInt(setupData.reminderEndHour, 10);     // Values are "00" - "23"
 
         // Convert to 12-hour format with AM/PM for user-facing messages
-            const formatHourForDisplay = (hour24) => {
+        const formatHourForDisplay = (hour24) => {
             const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
             const period = hour24 < 12 || hour24 === 24 ? 'AM' : 'PM'; // 24 is midnight AM (next day start)
             if (hour24 === 0) return '12 AM (Midnight)'; // Special case for midnight display
@@ -2240,30 +2212,22 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
         console.log(`[${interaction.customId} FIREBASE_CALL ${interactionId}] Calling setExperimentSchedule for ${userId}. Payload:`, payload);
         const scheduleResult = await callFirebaseFunction('setExperimentSchedule', payload, userId);
 
-        // Proposed replacement for the success/else block for CONFIRM_REMINDER_BTN_ID
-        if (scheduleResult && scheduleResult.success && scheduleResult.experimentId) { // Check for experimentId
-          const experimentId = scheduleResult.experimentId; // Capture experimentId
-          setupData.experimentId = experimentId; // Store it in setupData if needed by showPostToGroupPrompt
-          userExperimentSetupData.set(userId, setupData); // Update map
+        if (scheduleResult && scheduleResult.success) {
+            console.log(`[${interaction.customId} FIREBASE_SUCCESS ${interactionId}] setExperimentSchedule successful for ${userId}.`);
+            // Proceed to "Post to group?" prompt
+            const reminderSummary = setupData.reminderFrequency === 'none' // Should not happen here as 'none' skips to this point.
+                ? "No reminders set (this is unexpected here)." // Fallback
+                : `Reminders set for ${setupData.reminderFrequency.replace(/_/g, ' ')} between ${formatHourForDisplay(startHour24)} - ${formatHourForDisplay(endHour24)} (your local time approx, based on current time provided).`;
 
-          console.log(`[${interaction.customId} FIREBASE_SUCCESS ${interactionId}] setExperimentSchedule successful for ${userId}. Experiment ID: ${experimentId}.`);
-          const reminderSummary = setupData.reminderFrequency === 'none'
-              ? "No reminders set (this is unexpected here)."
-              // Make sure formatHourForDisplay, startHour24, and endHour24 are defined in this scope
-              // or passed appropriately if this specific snippet is taken verbatim.
-              // For context, in my previous full response, formatHourForDisplay was defined
-              // within the CONFIRM_REMINDER_BTN_ID handler before this block.
-              // If they are not, this line will cause an error.
-              : `Reminders set for ${setupData.reminderFrequency.replace(/_/g, ' ')} between ${formatHourForDisplay(startHour24)} - ${formatHourForDisplay(endHour24)} (your local time approx, based on current time provided).`;
-
-          await showPostToGroupPrompt(interaction, setupData, reminderSummary, experimentSetupMotivationalMessages);
+            await showPostToGroupPrompt(interaction, setupData, reminderSummary, experimentSetupMotivationalMessages);
+            // userExperimentSetupData.delete(userId) will be handled by showPostToGroupPrompt or its button handlers
         } else {
-          console.error(`[${interaction.customId} FIREBASE_FAIL ${interactionId}] setExperimentSchedule failed for ${userId} or experimentId missing. Result:`, scheduleResult);
-          await interaction.editReply({
-              content: `⚠️ Could not save your reminder settings: ${scheduleResult?.error || 'Unknown server error or missing experiment ID.'}. Your experiment settings and duration are saved. You may need to try setting reminders again via \`/go\`.`,
-              embeds: [],
-              components: []
-          });
+            console.error(`[${interaction.customId} FIREBASE_FAIL ${interactionId}] setExperimentSchedule failed for ${userId}. Result:`, scheduleResult);
+            await interaction.editReply({
+                content: `⚠️ Could not save your reminder settings: ${scheduleResult?.error || 'Unknown server error.'}. Your experiment settings (problem, inputs, output) and duration are saved. You may need to try setting reminders again via \`/go\`.`,
+                embeds: [],
+                components: []
+            });
         }
 
     } catch (error) {
@@ -2326,35 +2290,6 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
         userExperimentSetupData.set(interaction.user.id, setupData);
         console.log(`[experiment_duration_select DATA_STORED ${interactionId}] Stored duration: ${selectedDuration}`);
 
-        // ****** NEW MINIMAL CHANGE STARTS HERE ******
-        console.log(`[experiment_duration_select PREEMPTIVE_SAVE ${interactionId}] Preemptively saving schedule with 'no reminders' for ${interaction.user.id}`);
-        const preemptivePayload = {
-            experimentDuration: setupData.experimentDuration,
-            userCurrentTime: null, // Not needed for skipped reminders
-            reminderWindowStartHour: null,
-            reminderWindowEndHour: null,
-            reminderFrequency: 'none',
-            skippedReminders: true,
-        };
-        try {
-            // IMPORTANT: Ensure `callFirebaseFunction` is defined and accessible here.
-            const preemptiveResult = await callFirebaseFunction('setExperimentSchedule', preemptivePayload, interaction.user.id);
-            if (preemptiveResult && preemptiveResult.success && preemptiveResult.experimentId) {
-                console.log(`[experiment_duration_select PREEMPTIVE_SAVE_SUCCESS ${interactionId}] Successfully saved default 'no reminder' schedule. Exp ID: ${preemptiveResult.experimentId}`);
-                if (setupData) { // Store experimentId if available, useful for later steps
-                    setupData.experimentId = preemptiveResult.experimentId;
-                    userExperimentSetupData.set(interaction.user.id, setupData);
-                }
-            } else {
-                console.warn(`[experiment_duration_select PREEMPTIVE_SAVE_FAIL ${interactionId}] Failed to save default 'no reminder' schedule. Result:`, preemptiveResult);
-                // Non-critical failure, user can still proceed to set reminders explicitly or skip again.
-                // You might want to log this more formally or alert if it happens often.
-            }
-        } catch (preemptiveError) {
-            console.error(`[experiment_duration_select PREEMPTIVE_SAVE_ERROR ${interactionId}] Error during preemptive save of schedule:`, preemptiveError);
-            // Also non-critical for the flow to continue, but good to log.
-        }
-
         // --- ACTION 5: Show Reminder Buttons (Edit the message again) ---
         // This part confirms your point 5: it leads to the reminder buttons.
         const reminderButtons = new ActionRowBuilder()
@@ -2365,7 +2300,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
 
         console.log(`[experiment_duration_select EDIT_REPLY ${interactionId}] Editing reply to show reminder buttons.`);
         await interaction.editReply({
-            content: `✅ Duration set to **${selectedDuration.replace('_', ' ')}**. Want to set up reminders?`,
+            content: `✅ Duration set to **${selectedDuration.replace('_', ' ')}**. Want to set up reminders for your daily logs?`,
             embeds: [],
             components: [reminderButtons]
         });
@@ -2388,6 +2323,138 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
     console.log(`[experiment_duration_select END ${interactionId}] Processing finished. Total time: ${(selectMenuProcessEndTime - selectMenuSubmitTime).toFixed(2)}ms`);
   }
   // --- END: NEW Handler for Duration Select Menu Interaction ---
+
+  else if (interaction.isButton() && interaction.customId === 'show_reminders_setup_modal_btn') {
+      const buttonClickTime = performance.now();
+      const interactionId = interaction.id;
+      const userId = interaction.user.id;
+      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing reminder selection message (Step 1). Time: ${buttonClickTime.toFixed(2)}ms`);
+
+      try {
+          await interaction.deferUpdate({ flags: MessageFlags.Ephemeral }); // Acknowledge button click and allow editing the message
+          const deferTime = performance.now();
+          console.log(`[${interaction.customId} DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - buttonClickTime).toFixed(2)}ms`);
+
+          const setupData = userExperimentSetupData.get(userId);
+          if (!setupData) {
+              console.error(`[${interaction.customId} CRITICAL ${interactionId}] Missing setup data for user ${userId}.`);
+              await interaction.editReply({
+                  content: "⚠️ Error: Couldn't retrieve your previous experiment setup steps (like duration). Please start over using `/go`.",
+                  embeds: [],
+                  components: []
+              });
+              return;
+          }
+          if (!setupData.experimentDuration) {
+              console.error(`[${interaction.customId} CRITICAL ${interactionId}] Missing experimentDuration in setup data for user ${userId}. Data:`, setupData);
+              await interaction.editReply({
+                  content: "⚠️ Error: Experiment duration is missing from your setup. Please select duration again or start over with `/go`.",
+                  embeds: [],
+                  components: []
+              });
+              return;
+          }
+
+          // --- Build Reminder Setup Embed (Step 1) ---
+          const reminderEmbedStep1 = new EmbedBuilder()
+              .setColor('#72418c') // Your secondary color preference
+              .setTitle('⏰ Reminder Setup - Step 1 of 2')
+              .setDescription('First, set your **daily reminder window** (when reminders are allowed) and their **frequency**.\nThen click "Next" to set your current time for timezone synchronization.')
+              .addFields(
+                  { name: 'Reminder Window (e.g., 9 AM - 5 PM)', value: 'Reminders will only be sent between these hours in your local time.', inline: false },
+                  { name: 'Frequency', value: 'How often you receive reminders within that window.', inline: false }
+              )
+              .setFooter({ text: 'Make selections below, then click Next.' });
+
+          // --- Build Step 1 Components: Window (Start/End) & Frequency Selects + Next Button ---
+
+          // Start Hour Select Menu
+          const startHourSelect = new StringSelectMenuBuilder()
+              .setCustomId(REMINDER_SELECT_START_HOUR_ID) // Uses constant
+              .setPlaceholder('Reminder window START hour')
+              .addOptions(
+                  Array.from({ length: 24 }, (_, i) => {
+                      const hour12 = i % 12 === 0 ? 12 : i % 12;
+                      const period = i < 12 ? 'AM' : 'PM';
+                      return new StringSelectMenuOptionBuilder()
+                          .setLabel(`${hour12} ${period} (${String(i).padStart(2, '0')}:00)`)
+                          .setValue(String(i).padStart(2, '0')); // e.g., "00", "01", ..., "23"
+                  })
+              );
+          const rowStartHour = new ActionRowBuilder().addComponents(startHourSelect);
+
+          // End Hour Select Menu
+          const endHourSelect = new StringSelectMenuBuilder()
+              .setCustomId(REMINDER_SELECT_END_HOUR_ID) // Uses constant
+              .setPlaceholder('Reminder window END hour')
+              .addOptions(
+                  Array.from({ length: 24 }, (_, i) => {
+                      const hour12 = i % 12 === 0 ? 12 : i % 12;
+                      const period = i < 12 ? 'AM' : 'PM';
+                      // Option for "next day" for end hour could be added if desired, e.g. 2 AM next day for a 10 PM start.
+                      // For simplicity, keeping it within the same 24hr cycle for now. "00" means end of day.
+                      return new StringSelectMenuOptionBuilder()
+                          .setLabel(`${hour12} ${period} (${String(i).padStart(2, '0')}:00)`)
+                          .setValue(String(i).padStart(2, '0'));
+                  })
+              );
+          const rowEndHour = new ActionRowBuilder().addComponents(endHourSelect);
+
+          // Frequency Select Menu
+          const freqSelect = new StringSelectMenuBuilder()
+              .setCustomId(REMINDER_SELECT_FREQUENCY_ID) // Uses constant
+              .setPlaceholder('How often for reminders?')
+              .addOptions(
+                  new StringSelectMenuOptionBuilder().setLabel('No Reminders').setValue('none').setDescription("I'll log on my own. Skips next step."), // Clarify skip
+                  new StringSelectMenuOptionBuilder().setLabel('Once a day').setValue('daily_1').setDescription('One random reminder per day within window.'),
+                  new StringSelectMenuOptionBuilder().setLabel('Twice a day').setValue('daily_2').setDescription('Two random reminders per day within window.'),
+                  new StringSelectMenuOptionBuilder().setLabel('Every other day').setValue('every_other_day').setDescription('One random reminder, every other day.')
+              );
+          const rowFreq = new ActionRowBuilder().addComponents(freqSelect);
+
+          // Next Button
+          const nextButton = new ButtonBuilder()
+              .setCustomId(REMINDERS_NEXT_STEP_BTN_ID) // Uses new constant
+              .setLabel('Next: Set Current Time')
+              .setStyle(ButtonStyle.Primary);
+          // We'll add this button to the last row of selects to save space if needed,
+          // but Discord allows up to 5 Action Rows. We have 3 rows of selects and 1 for the button. This is fine.
+          const rowNextButton = new ActionRowBuilder().addComponents(nextButton);
+
+
+          console.log(`[${interaction.customId} EDIT_REPLY ${interactionId}] Editing reply to display reminder step 1 (window/frequency)...`);
+          await interaction.editReply({
+              content: 'Configure your reminder window and frequency below. If you select "No Reminders", these settings will be skipped when you click "Next".',
+              embeds: [reminderEmbedStep1],
+              components: [rowStartHour, rowEndHour, rowFreq, rowNextButton] // Show first 3 selects + Next button
+          });
+          const editReplyTime = performance.now();
+          console.log(`[${interaction.customId} EDIT_REPLY_SUCCESS ${interactionId}] Displayed reminder step 1 (window/freq) for ${userId}. Took: ${(editReplyTime - deferTime).toFixed(2)}ms.`);
+
+      } catch (error) {
+          const errorTime = performance.now();
+          console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing button for ${userId} at ${errorTime.toFixed(2)}ms:`, error);
+          // Try to edit the deferred update with an error message
+          try {
+              // Check if interaction is still editable
+              if (interaction.deferred || interaction.replied) {
+                  await interaction.editReply({
+                      content: '❌ Error showing reminder setup (Step 1). Please try clicking "Set Reminders" again.',
+                      embeds: [],
+                      components: []
+                  });
+              } else {
+                  console.warn(`[${interaction.customId} ERROR_NO_EDIT ${interactionId}] Interaction not editable for error message.`);
+              }
+          } catch (editError) {
+              console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback error reply failed:`, editError);
+              // If editReply fails, a followUp might be possible if the interaction token is still valid,
+              // but it creates a new message which might be confusing. Logging is the main goal here.
+          }
+      }
+      const processEndTime = performance.now();
+      console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - buttonClickTime).toFixed(2)}ms`);
+   }
 
   // Button handler for "Skip Reminders"
   else if (interaction.isButton() && interaction.customId === 'skip_reminders_btn') {
@@ -2442,7 +2509,8 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
           return;
       }
 
-      const experimentsChannelId = '1364283719296483329';
+      const experimentsChannelId = '1371540356935712788'; // Test group #experiments
+      // TODO: Change to production #experiments channel ID: '1364283719296483329'
       const channel = interaction.guild.channels.cache.get(experimentsChannelId);
 
       if (channel && channel.isTextBased()) {
@@ -2451,18 +2519,18 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
               const postEmbed = new EmbedBuilder()
                   .setColor('#7289DA')
                   .setTitle(`🚀 ${interaction.user.username} is starting a new experiment!`)
-                  .setDescription(`**🎯 Deeper Goal / Problem / Theme:**\n${deeperProblem}`)
+                  .setDescription(`**🎯 Deeper Problem:**\n${deeperProblem}`)
                   .addFields(
-                      { name: '📊 Desired Outcome to Track', value: outputSetting || "Not specified" },
-                      { name: '🛠️ Action 1', value: inputSettings[0] || "Not specified" }
+                      { name: '📊 Output to Track', value: outputSetting || "Not specified" },
+                      { name: '🧪 Input 1', value: inputSettings[0] || "Not specified" }
                   )
                   .setFooter({text: `Let's support them! Duration: ${setupData.experimentDuration.replace('_',' ')}`})
                   .setTimestamp();
               if (inputSettings[1]) {
-                  postEmbed.addFields({ name: '🛠️ Action 2', value: inputSettings[1], inline: true });
+                  postEmbed.addFields({ name: '🧪 Input 2', value: inputSettings[1], inline: true });
               }
               if (inputSettings[2]) {
-                  postEmbed.addFields({ name: '🛠️ Action 3', value: inputSettings[2], inline: true });
+                  postEmbed.addFields({ name: '🧪 Input 3', value: inputSettings[2], inline: true });
               }
 
               await channel.send({ embeds: [postEmbed] });
