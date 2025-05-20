@@ -12,7 +12,10 @@ let serviceAccount;
 if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY_JSON) {
     try {
         serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY_JSON);
-    } catch (e) {
+        if (serviceAccount && serviceAccount.private_key) {
+            serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+        }
+          } catch (e) {
         console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY_JSON:', e);
         // Consider how to handle this error: e.g., process.exit(1) or disable features that need admin
     }
