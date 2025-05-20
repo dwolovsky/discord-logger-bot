@@ -1044,14 +1044,14 @@ client.on(Events.InteractionCreate, async interaction => {
         const outputSettingInput = new TextInputBuilder()
           .setCustomId('output_setting')
           .setLabel("🎯 Daily Target (Amount, Scale, Category)") // Ensure commas are clear
-          .setPlaceholder("WITH commas e.g. '7.5, hours, Sleep' OR '8, effort (0-10), Health'") // Comma format example
+          .setPlaceholder("e.g. '7.5, hours, Sleep' OR '8, 0-10 scale, Health'") // Comma format example
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
         const input1SettingInput = new TextInputBuilder()
           .setCustomId('input1_setting')
           .setLabel("🛠️ Daily Action 1 (Amount, Scale, Category)") // Comma format example
-          .setPlaceholder("WITH commas e.g. '15, minutes, Meditation'")
+          .setPlaceholder("e.g. '15, minutes, Meditation'")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
@@ -2365,7 +2365,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
 
         console.log(`[experiment_duration_select EDIT_REPLY ${interactionId}] Editing reply to show reminder buttons.`);
         await interaction.editReply({
-            content: `✅ Duration set to **${selectedDuration.replace('_', ' ')}**. Want to set up reminders for your daily logs?`,
+            content: `✅ Duration set to **${selectedDuration.replace('_', ' ')}**. Want to set up reminders?`,
             embeds: [],
             components: [reminderButtons]
         });
@@ -2442,8 +2442,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
           return;
       }
 
-      const experimentsChannelId = '1371540356935712788'; // Test group #experiments
-      // TODO: Change to production #experiments channel ID: '1364283719296483329'
+      const experimentsChannelId = '1364283719296483329';
       const channel = interaction.guild.channels.cache.get(experimentsChannelId);
 
       if (channel && channel.isTextBased()) {
