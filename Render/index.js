@@ -186,7 +186,7 @@ function setupStatsNotificationListener(client) {
 
                         // Add CORRELATION fields dynamically (now showing Influence as R-squared)
                         if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
-                            statsEmbed.addFields({ name: '\u200B', value: '**Action → Outcome IMPACTS**' });
+                            statsEmbed.addFields({ name: '\u200B', value: '**Daily Action → Result IMPACTS**' });
                             for (const inputMetricKey in statsReportData.correlations) {
                                 if (Object.prototype.hasOwnProperty.call(statsReportData.correlations, inputMetricKey)) {
                                     const corr = statsReportData.correlations[inputMetricKey];
@@ -1043,7 +1043,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const outputSettingInput = new TextInputBuilder()
           .setCustomId('output_setting')
-          .setLabel("🎯 Daily Target (Amount, Scale, Category)") // Ensure commas are clear
+          .setLabel("🎯 Daily Result (Desired #, Scale, Category)") // Ensure commas are clear
           .setPlaceholder("e.g. '7.5, hours, Sleep' OR '8, 0-10 scale, Health'") // Comma format example
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
@@ -1306,7 +1306,7 @@ client.on(Events.InteractionCreate, async interaction => {
         console.log(`[ai_insights_btn /go FIREBASE_RETURN ${interactionId}] 'fetchOrGenerateAiInsights' returned for exp ${targetExperimentId}. Took: ${(firebaseCallEndTime - deferTime).toFixed(2)}ms. Result:`, result);
 
         if (result && result.success) {
-            await interaction.user.send(`💡 **AI Insights for Experiment ${targetExperimentId}** (Source: ${result.source})\n\n${result.insightsText}`);
+            await interaction.user.send(`💡 **AI Insights**\n\n${result.insightsText}`);
             await interaction.editReply({ content: "✅ AI Insights for your latest experiment have been sent to your DMs!", components: [] });
             console.log(`[ai_insights_btn /go SUCCESS ${interactionId}] AI Insights sent to DMs for experiment ${targetExperimentId}, user ${userId}.`);
         } else {
@@ -1382,7 +1382,7 @@ client.on(Events.InteractionCreate, async interaction => {
             // The message includes a placeholder for the source (cached/generated)
             // Note: Discord does not render <span class="math-inline"> in DMs. Markdown is preferred.
             // Using a simpler source indication.
-            await interaction.user.send(`💡 **AI Insights for Experiment ${experimentId}** (Source: ${result.source})\n\n${result.insightsText}`);
+            await interaction.user.send(`💡 **AI Insights**\n\n${result.insightsText}`);
             await interaction.editReply({ content: "✅ AI Insights have been sent to your DMs!", components: [] });
             console.log(`[get_ai_insights_btn_ SUCCESS ${interactionId}] AI Insights sent to DMs for experiment ${experimentId}, user ${userId}.`);
         } else {

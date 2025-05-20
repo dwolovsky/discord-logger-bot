@@ -227,7 +227,7 @@ ${data.skippedMetricsData && data.skippedMetricsData.length > 0
   ? "\n  Metrics Skipped Due to Insufficient Data:\n  " + data.skippedMetricsData.map(m => `${m.label} (had ${m.dataPoints} data points, needed ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS})`).join("\n  ")
   : ""}
 
-**2. Action → Key Result Impacts (Correlations):**
+**2. Daily Action → Daily Result Impacts (Correlations):**
 ${data.correlationsData && Object.keys(data.correlationsData).length > 0
   ? Object.values(data.correlationsData).map(formatCorrelation).join("\n")
   : "  No correlation data was calculated for this experiment."}
@@ -263,20 +263,11 @@ Highlight evidence of growth, adaptation, and the impact of sustained effort by 
 - How are their consistent small actions leading to evolution, as seen in *this experiment's data and reflections*?
 
 ### 🧪 Experiments & Takeaway
-Remember, small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 3 small, actionable experiments (tweaks) for their *next experiment*, designed to make their current positive actions easier, more consistent, or slightly more impactful, based on the analysis of *this experiment's data*. Frame these as curious explorations, not fixes. Experiments should aim to:
+Remember, small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 4 small, actionable experiments (tweaks) for their *next experiment*, designed to make their current positive actions easier, more consistent, or slightly more impactful, based on the analysis of *this experiment's data*. Frame these as curious explorations, not fixes. Experiments should aim to:
 1. Build on momentum from positive trends or consistent efforts identified in the 'Growth Highlights' section for *this experiment*.
 2. Directly address the friction points or consistency challenges identified in the 'Challenges' section from *this experiment's data and notes*.
 3. **Prioritize suggesting experiments that directly explore questions, ideas, or 'what ifs' explicitly mentioned in the user's *notes from this experiment period*.** (Quote the relevant part of the note briefly if it helps frame the experiment).
-4. Make 2 suggestions focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. The last one should explicitly be mentioned as "something a bit different." It should give them an idea that's highly relevant but which they may not have thought of before.
-
-**Finally, craft a 'Thought to Take With You'. This should be a concise (1-2 sentences, max 50 words), aphorism-style reflection. It should:
-    1.  Acknowledge that the path of self-discovery has its ups and downs, normalizing any challenges observed in THIS experiment's data or notes.
-    2.  Subtly embed a small, forward-looking suggestion or a shift in perspective that builds on a key learning from THIS experiment.
-    3.  Aim to leave the user with a feeling of gentle encouragement and the inspiration to continue their journey.
-    If a unique metaphor or a well-known saying can be aptly adapted to fit the user's specific experience in THIS experiment (drawing from their notes or the data), feel free to use it. However, the priority is a genuine, insightful, and encouraging closing thought over a forced or generic statement. This thought should resonate with their 'Deeper Problem/Goal' if possible.**
-(Example that normalizes, suggests, and inspires: 'Every experiment, even with its unexpected turns, lights the path ahead a little more.')
-(Another example: 'The stumbles in our experiments are often the soil for our most profound growth.')
-(Example with a fitting metaphor: 'Like a gardener discovering which soil best suits a particular seed, this experiment has shown that [Condition Y] helps your [Metric Z] flourish. How can you ensure more of that "rich soil" next week?')
+4. Make 3 suggestions focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. The last one should explicitly be mentioned as "something a bit different." It should give them an idea that's highly relevant but which they may not have thought of before.
 
 Again, keep the total response under 1890 characters.
 ---
