@@ -1,9 +1,7 @@
 // ==================================
 //      STREAK CONFIGURATION
 // ==================================
-// ==================================
-//      STREAK CONFIGURATION
-// ==================================
+
 const STREAK_CONFIG = {
     // Using field names from Firestore 'users' collection directly
     FIELDS: {
@@ -62,10 +60,10 @@ const STREAK_CONFIG = {
         DM: {
             FREEZE_AWARD: '❄️ STREAK FREEZE AWARDED for reaching ${streak} days!',
             ROLE_ACHIEVEMENT: '🏆 Congratulations! You\'ve earned the ${roleName} title!',
-            STREAK_RESET: "Look at your grit!!! You've just proven you care more about your personal transformation than the dopamine spike of +1 to your streak."
+            STREAK_RESET: "Look at your grit!!!\nYou've just proven you care more about your personal transformation than the dopamine spike of +1 to your streak.\n\n"
         },
         PUBLIC: { // Bot replaces ${userTag} with the actual user tag for public announcements
-            STREAK_RESET: '${userTag} has Grit beyond streaks! 🙌🏼. Show them some love!'
+            STREAK_RESET: '${userTag} has GRIT beyond streaks! They just broke their streak and restarted 🙌🏼. We\'re not worthy!'
             // Add other public message templates here if needed later
         }
     },
@@ -74,14 +72,216 @@ const STREAK_CONFIG = {
       AUTO_APPLY: true // Assumes freezes are auto-applied if available and needed
     }
 };
-// ==================================
+
+// --- Default Reminder Messages (Editable Array) ---
+const defaultReminderMessages = [
+    "What if this ends up being your favorite part of today?",
+    "There's a tiny reward hiding in this activity 💎. Can you find it?",
+    "Do the thing. Not to be better, but because it might actually feel amazing ⚡.",
+    "One moment of focus could change your whole day 💡.",
+    "You're one step away from a little good luck today 🎲.",
+    "There's something here that your brain loves 🧠💖. Hunt it down.",
+    "Today's mission: enjoy it just enough that you'd do it again tomorrow.",
+    "This isn't self-discipline. It's self-discovery 🐦‍🔥.",
+    "You never know what kind of mood shift one tiny positive action can spark ❤️‍🔥.",
+    "Don't chase progress. Chase the spark ⚡ hiding inside your routine.",
+    "The goal isn't to finish. The goal is to find something good in the middle.",
+    "You're not trying to fix yourself. You're tuning into what works for you today.",
+    "The best part of your day might be waiting inside your experiment. Go look 🔎!",
+    "This isn't about growth. It's about enjoying one smart choice, right now 🕦.",
+    "Forget the big goals. Make this moment just a little more interesting 🪁",
+    "It might surprise you 🎊. Especially if you go in with no expectations 🏄🏼‍♀️.",
+    "Give it a try. Enjoy it or not, either way your life will get bigger.",
+    "Think of this as a treasure hunt, not a to-do list.",
+    "Doing experiments is like pressing a 'reset' button on the day.",
+    "This one small thing may give you exactly what you didn't know you needed.",
+    "What if the highlight of your day is hiding behind the first 30 seconds? ⏳",
+    "There's a spark buried in this moment. Light it up 🔥.",
+    "You don't need motivation. Just curiosity, and one small move 🧭.",
+    "This might not change your life. But it might change your day ☀️.",
+    "Let this be the part of your day that actually feels like yours 👑.",
+    "There's a good feeling somewhere in this activity. Take your shot 🏹.",
+    "One smart move right now could ripple through the next 8 hours 🌊.",
+    "No pressure. Just play with what today could become 🛝.",
+    "What if this isn't a routine, but an experiment in joy 🧪💫?",
+    "Your brain craves novelty. Your experiment's got it right here.",
+    "No need to push. Just dip a toe in and see what shows up 🦶🌈.",
+    "You're not solving life. You're painting an interesting moment 🎨.",
+    "The future's too far. Discover this moment's magic ✨.",
+    "Run a tiny test. See if your mood shifts just a little 🎈.",
+    "This moment is a blank slate. Want to write something good on it?",
+    "Let this be your little act of rebellion against burnout 🛡️.",
+    "You've got time for one tiny bet on yourself today 🎰.",
+    "If your experiment had a soundtrack, what would it sound like?",
+    "This might just reset your whole vibe today 🔄.",
+    "Don't overthink it. Start. Then see what unfolds. Plot twist! 📖",
+        ];
+    // You can add/edit messages in this array later. The backend function
+    // 'setExperimentSchedule' will need to be aware if it should use these
+    // or if it has its own internal default logic when customReminderMessage is null.
+    // ==================================
 
 // Gen 2 Imports
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
-const { logger } = require("firebase-functions"); // Use the shared v2 logger
+const { jStat } = require("jstat");
+const { onSchedule } = require("firebase-functions/v2/scheduler"); 
+const { logger, config } = require("firebase-functions"); // MODIFIED: Added 'config'
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
+
+// ============== AI INSIGHTS SETUP ==================
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+// Ensure GEMINI_API_KEY is set in your Firebase environment variables
+let GEMINI_API_KEY;
+let genAI;
+
+try {
+  GEMINI_API_KEY = config().gemini?.key; // Accessing the key set via functions:config:set gemini.key
+                                        // The ?. is optional chaining in case 'gemini' object itself is missing
+} catch (e) {
+    logger.error("Error accessing functions.config().gemini.key. This might happen during initial cold start or if config is not set.", e);
+    // Attempt to fall back to process.env for local testing with .env file if config() is not populated
+    GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (GEMINI_API_KEY) {
+        logger.info("Falling back to process.env.GEMINI_API_KEY for local testing.");
+    }
+}
+
+if (GEMINI_API_KEY) {
+  try {
+    genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    logger.info("GoogleGenerativeAI initialized successfully.");
+  } catch (error) {
+    logger.error("Failed to initialize GoogleGenerativeAI:", error);
+  }
+} else {
+  logger.warn("GEMINI_API_KEY not found in environment variables (checked functions.config().gemini.key and process.env.GEMINI_API_KEY). AI Insights will not be available.");
+}
+
+const GEMINI_CONFIG = {
+  temperature: 0.8,
+  topK: 50,
+  topP: 0.95,
+  maxOutputTokens: 1500,
+};
+
+const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
+
+// INSIGHTS_PROMPT_TEMPLATE for "This Experiment" MVP
+const INSIGHTS_PROMPT_TEMPLATE = (data) => {
+  // Helper to format metric stats
+  const formatMetricStat = (metric) => {
+    if (!metric) return "N/A";
+    let statString = `${metric.label} (${metric.unit || 'N/A'}): `;
+    if (metric.status === 'skipped_insufficient_data') {
+      statString += `Not enough data (had ${metric.dataPoints}, needed ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS}).`;
+    } else {
+      statString += `Avg: ${metric.average?.toFixed(2) ?? 'N/A'}, Median: ${metric.median?.toFixed(2) ?? 'N/A'}, Variation: ${metric.variationPercentage?.toFixed(2) ?? 'N/A'}% (DP: ${metric.dataPoints ?? 'N/A'})`;
+    }
+    return statString;
+  };
+
+  // Helper to format correlations
+  const formatCorrelation = (corr) => {
+    if (!corr) return "N/A";
+    let corrString = `${corr.label} → ${corr.vsOutputLabel}: `;
+    if (corr.status === 'calculated' && corr.coefficient !== undefined && !isNaN(corr.coefficient)) {
+      const rSquared = corr.coefficient * corr.coefficient;
+      corrString += `Influence (R²): ${(rSquared * 100).toFixed(1)}%, P-Value: ${corr.pValue?.toFixed(3) ?? 'N/A'} (Pairs: ${corr.n_pairs ?? 'N/A'}). Interpretation: ${corr.interpretation || 'N/A'}`;
+    } else {
+      corrString += `Not calculated. Status: ${corr.status || 'Unknown'}, Reason: ${corr.interpretation || 'N/A'} (Pairs: ${corr.n_pairs ?? 'N/A'})`;
+    }
+    return corrString;
+  };
+
+  // Helper to format pairwise interactions
+  const formatPairwiseInteraction = (interaction) => {
+    if (!interaction || !interaction.summary || interaction.summary.toLowerCase().includes("skipped") || interaction.summary.toLowerCase().includes("no meaningful conclusion") || interaction.summary.toLowerCase().includes("not enough days")) return null;
+    return `When combining ${interaction.input1Label} & ${interaction.input2Label}:\n    Summary: ${interaction.summary}`;
+  };
+
+  // Constructing the prompt
+  let prompt = `
+You are an AI assistant providing insights on a user's self-experimentation data. Your tone should be supportive, analytical, and encouraging, focusing on actionable advice and learning. The goal is to provide insights that inspire the user to continue their journey of consistent small actions and encourage thoughtful experimentation with tweaks to make these actions easier and more impactful. Keep the total response concise (under 1890 characters).
+
+**Experiment Context:**
+- User's Deeper Problem/Goal/Theme: ${data.deeperProblem || "Not specified"}
+- Total Logs Processed in this Period: ${data.totalLogsProcessed || 0}
+
+**User's Overall Consistency (Outside this specific experiment):**
+- Current Overall Log Streak: ${data.userOverallStreak || 0} days
+- Longest Overall Log Streak: ${data.userOverallLongestStreak || 0} days
+
+**Data for "This Experiment" (ID: ${data.experimentIdForPrompt}):**
+
+**1. Core Metric Statistics:**
+${data.calculatedMetrics && Object.keys(data.calculatedMetrics).length > 0
+  ? Object.values(data.calculatedMetrics).map(formatMetricStat).join("\n")
+  : "  No core metric statistics were calculated for this experiment."}
+${data.skippedMetricsData && data.skippedMetricsData.length > 0
+  ? "\n  Metrics Skipped Due to Insufficient Data:\n  " + data.skippedMetricsData.map(m => `${m.label} (had ${m.dataPoints} data points, needed ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS})`).join("\n  ")
+  : ""}
+
+**2. Action → Key Result Impacts (Correlations):**
+${data.correlationsData && Object.keys(data.correlationsData).length > 0
+  ? Object.values(data.correlationsData).map(formatCorrelation).join("\n")
+  : "  No correlation data was calculated for this experiment."}
+
+**3. Combined Effects Analysis (Pairwise Interactions):**
+${data.pairwiseInteractions && Object.keys(data.pairwiseInteractions).length > 0
+  ? Object.values(data.pairwiseInteractions).map(formatPairwiseInteraction).filter(Boolean).join("\n\n")
+  : "  No pairwise interaction analysis was performed or yielded results for this experiment."}
+
+**4. User's Notes Summary (from logs during this experiment period):**
+${data.experimentNotesSummary && data.experimentNotesSummary.trim() !== ""
+  ? data.experimentNotesSummary
+  : "  No notes were found or summarized for this experiment period."}
+
+---
+**Analysis Task:**
+Based *only* on the data provided above for This Experiment, provide succinct analysis (total length under 1890 characters) in three sections:
+
+### 🫂 Challenges & Consistency
+Review the user's journey *within this experiment period*, focusing on friction points and consistency patterns evident in *this experiment's data (metric stats, correlations, combined effects)* and the provided *notes summary for this period*.
+- Pinpoint recurring friction points or areas where consistency fluctuates, using *this experiment's data* and *notes for this period*.
+- **If possible, connect these friction points directly to specific phrases or feelings the user expressed in their *notes from this experiment period* around that time.** (e.g., 'The lower consistency for [Metric X] during this experiment might relate to when you mentioned feeling "[Quote from note]"').
+- Notice patterns in their consistency *within this experiment*: *When* do they seem most consistent or inconsistent according to *this period's data and notes*?
+- Where does their effort seem persistent *in this experiment*, even if results vary? Validate this effort clearly.
+- Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human, and reiterate the value of doing the self science experiments they're doing.
+
+### 🌱 Growth Highlights
+Highlight evidence of growth, adaptation, and the impact of sustained effort by analyzing patterns *within this experiment's data and notes*. Start by celebrating their consistency *during this experiment* (mention current overall streak if relevant as context) and the most significant positive trend or achievement observed *in this experiment's data*.
+- Are *this experiment's* metrics (average, variation, correlations) showing particular strengths or weaknesses?
+- Point out any potentially interesting (even if subtle) connections observed between *this experiment's metric trends* and themes found in the *notes from this period*.
+- Look for subtle shifts in language in *this period's notes*, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress *within this experiment*.
+- **Also, select 1-2 particularly insightful or representative short quotes directly from the provided 'Notes Summary' (from *this experiment*) that capture a key moment of learning, challenge, or success, and weave them into your analysis where relevant (citing the date if possible from the notes summary).**
+- How are their consistent small actions leading to evolution, as seen in *this experiment's data and reflections*?
+
+### 🧪 Experiments & Takeaway
+Remember, small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 3 small, actionable experiments (tweaks) for their *next experiment*, designed to make their current positive actions easier, more consistent, or slightly more impactful, based on the analysis of *this experiment's data*. Frame these as curious explorations, not fixes. Experiments should aim to:
+1. Build on momentum from positive trends or consistent efforts identified in the 'Growth Highlights' section for *this experiment*.
+2. Directly address the friction points or consistency challenges identified in the 'Challenges' section from *this experiment's data and notes*.
+3. **Prioritize suggesting experiments that directly explore questions, ideas, or 'what ifs' explicitly mentioned in the user's *notes from this experiment period*.** (Quote the relevant part of the note briefly if it helps frame the experiment).
+4. Make 2 suggestions focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. The last one should explicitly be mentioned as "something a bit different." It should give them an idea that's highly relevant but which they may not have thought of before.
+
+**Finally, craft a 'Thought to Take With You'. This should be a concise (1-2 sentences, max 50 words), aphorism-style reflection. It should:
+    1.  Acknowledge that the path of self-discovery has its ups and downs, normalizing any challenges observed in THIS experiment's data or notes.
+    2.  Subtly embed a small, forward-looking suggestion or a shift in perspective that builds on a key learning from THIS experiment.
+    3.  Aim to leave the user with a feeling of gentle encouragement and the inspiration to continue their journey.
+    If a unique metaphor or a well-known saying can be aptly adapted to fit the user's specific experience in THIS experiment (drawing from their notes or the data), feel free to use it. However, the priority is a genuine, insightful, and encouraging closing thought over a forced or generic statement. This thought should resonate with their 'Deeper Problem/Goal' if possible.**
+(Example that normalizes, suggests, and inspires: 'Every experiment, even with its unexpected turns, lights the path ahead a little more.')
+(Another example: 'The stumbles in our experiments are often the soil for our most profound growth.')
+(Example with a fitting metaphor: 'Like a gardener discovering which soil best suits a particular seed, this experiment has shown that [Condition Y] helps your [Metric Z] flourish. How can you ensure more of that "rich soil" next week?')
+
+Again, keep the total response under 1890 characters.
+---
+`;
+  return prompt;
+};
+// ============== END OF AI INSIGHTS SETUP ==================
+
 
 // Initialize the Firebase Admin SDK
 admin.initializeApp();
@@ -124,137 +324,178 @@ exports.getFirebaseAuthToken = onCall(async (request) => {
   }
 });
 
-exports.submitLog = onCall(async (request) => {
-    // 1. Check Authentication
-    if (!request.auth) {
-      logger.warn("submitLog called without authentication.");
-      throw new HttpsError('unauthenticated', 'You must be logged in to submit a log.');
-    }
-  
-    // 2. Extract User ID and Input Data
-    const userId = request.auth.uid;
-    const userTag = request.auth.token?.name || `User_${userId}`;
-    // inputValues from bot should be an array of 3 strings (some can be empty if not logged)
-    // outputValue is a single string. notes is a string.
-    const { inputValues, outputValue, notes } = request.data; 
-    logger.log(`submitLog called by user: ${userId} (${userTag}) with inputValues:`, inputValues);
-  
-    // 3. Basic Payload Validation
-    // Bot should always send 3 elements in inputValues, even if some are empty for non-logged optional inputs
-    if (!Array.isArray(inputValues) || inputValues.length !== 3 || outputValue == null || notes == null) { 
-      throw new HttpsError('invalid-argument', 'Missing required log data fields (inputValues[3], outputValue, notes).');
-    }
-    if (typeof notes !== 'string' || notes.trim() === '') {
-      throw new HttpsError('invalid-argument', 'Notes cannot be empty.');
-    }
-  
-    const db = admin.firestore();
-  
-    try {
-      // 4. Fetch User's Weekly Settings
-      const userSettingsRef = db.collection('users').doc(userId);
-      const userSettingsSnap = await userSettingsRef.get();
-  
-      if (!userSettingsSnap.exists || !userSettingsSnap.data()?.weeklySettings) {
-        logger.warn(`User ${userId} submitted log but weeklySettings not found.`);
-        throw new HttpsError('failed-precondition', 'Please set your weekly goals using /setweek before logging.');
-      }
-      const settings = userSettingsSnap.data().weeklySettings;
-  
-      // Helper to check if a setting is configured (i.e., not an EMPTY_SETTING)
-      const isConfigured = (setting) => setting && setting.label !== "" && setting.unit !== "" && setting.goal !== null;
-      
-      // Validate overall settings structure (especially required ones)
-      if (!isConfigured(settings.input1) || !isConfigured(settings.output)) {
-          logger.error(`User ${userId} has invalid required weeklySettings (Input 1 or Output missing/corrupted):`, settings);
-          throw new HttpsError('internal', 'Your core weekly settings (Input 1 or Output) appear corrupted. Please run /setweek again.');
+exports.submitLog = onRequest( // Renaming back to submitLog for simplicity, ensure URL is updated later
+    { cors: true }, // Allows requests from any origin. Required for web clients, good for bot too.
+    async (request, response) => {
+      // 1. Check Method
+      if (request.method !== 'POST') {
+        logger.warn(`submitLog (HTTP): Method ${request.method} not allowed.`);
+        response.status(405).json({ success: false, error: 'Method Not Allowed', code: 'method-not-allowed' });
+        return;
       }
   
-      // 5. Validate and Parse Logged Values
-      const parsedAndLoggedInputs = [];
+      // 2. Check Authorization Header and Verify Firebase ID Token
+      const authorizationHeader = request.headers.authorization;
+      if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
+        logger.warn("submitLog (HTTP): Called without or with malformed Bearer token.");
+        response.status(401).json({ success: false, error: 'Unauthorized - No token provided or malformed.', code: 'no-bearer-token' });
+        return;
+      }
   
-      // Process Input 1 (Required)
-      if (isConfigured(settings.input1)) {
-        if (inputValues[0] === null || inputValues[0].trim() === '') {
-          throw new HttpsError('invalid-argument', `Value for Input 1 (${settings.input1.label}) is required and cannot be empty.`);
+      const idToken = authorizationHeader.split('Bearer ')[1];
+      let decodedToken;
+      try {
+        decodedToken = await admin.auth().verifyIdToken(idToken);
+        // logger.info("submitLog (HTTP): Successfully verified ID token for UID:", decodedToken.uid); // Optional: log on success
+      } catch (error) {
+        logger.error("submitLog (HTTP): Error verifying Firebase ID token:", {
+          errorMessage: error.message,
+          errorCode: error.code,
+          tokenPresent: !!idToken,
+        });
+        // Provide a generic error message but log specifics
+        response.status(401).json({ success: false, error: 'Unauthorized - Invalid or expired token.', code: 'invalid-token' });
+        return;
+      }
+  
+      // 3. Extract User Info and Payload
+      const userId = decodedToken.uid;
+      const userTag = decodedToken.name || `User_${userId}`; // Use 'name' claim if available in token
+      const { inputValues, outputValue, notes } = request.body; // Data from request.body
+  
+      logger.info(`submitLog (HTTP): Processing request for user: ${userId} (${userTag})`);
+      logger.debug("submitLog (HTTP): Received payload:", request.body);
+  
+      // 4. Your Adapted Core Logic (from original onCall function)
+      const db = admin.firestore();
+      try {
+        // --- Basic Payload Validation ---
+        if (!Array.isArray(inputValues) || inputValues.length !== 3 || outputValue == null || notes == null) {
+          logger.warn("submitLog (HTTP): Invalid payload structure.", { userId });
+          // Send 400 Bad Request
+          response.status(400).json({ success: false, error: 'Missing required log data fields (inputValues[3], outputValue, notes).', code: 'invalid-payload-structure'});
+          return;
+        }
+        if (typeof notes !== 'string' || notes.trim() === '') {
+          logger.warn("submitLog (HTTP): Notes cannot be empty.", { userId });
+          // Send 400 Bad Request
+          response.status(400).json({ success: false, error: 'Notes cannot be empty.', code: 'empty-notes' });
+          return;
+        }
+  
+        // --- Fetch User's Weekly Settings ---
+        const userSettingsRef = db.collection('users').doc(userId);
+        const userSettingsSnap = await userSettingsRef.get();
+  
+        if (!userSettingsSnap.exists || !userSettingsSnap.data()?.weeklySettings) {
+          logger.warn(`submitLog (HTTP): User ${userId} submitted log, but weeklySettings not found.`);
+          // Send 412 Precondition Failed (or 400 Bad Request)
+          response.status(412).json({ success: false, error: 'Please set your weekly goals using /exp before logging.', code: 'no-weekly-settings' });
+          return;
+        }
+        const settings = userSettingsSnap.data().weeklySettings;
+  
+        // Helper to check if a setting object is validly configured
+        const isConfigured = (setting) => setting && typeof setting.label === 'string' && setting.label.trim() !== "" && typeof setting.unit === 'string' && setting.goal !== null && !isNaN(parseFloat(setting.goal));
+  
+        // --- Validate Overall Settings Structure ---
+        if (!isConfigured(settings.input1) || !isConfigured(settings.output)) {
+          logger.error(`submitLog (HTTP): User ${userId} has invalid/incomplete required weeklySettings (Input 1 or Output):`, settings);
+          // Send 500 Internal Server Error (as settings seem corrupted server-side)
+          response.status(500).json({ success: false, error: 'Your core weekly settings (Input 1 or Output) appear corrupted or incomplete. Please run /exp again.', code: 'corrupted-settings' });
+          return;
+        }
+  
+        // --- Validate and Parse Logged Values ---
+        const parsedAndLoggedInputs = [];
+  
+        // Process Input 1 (Required)
+        if (inputValues[0] === null || String(inputValues[0]).trim() === '') {
+          response.status(400).json({ success: false, error: `Value for Input 1 (${settings.input1.label}) is required.`, code: 'missing-input1'}); return;
         }
         const parsedVal1 = parseFloat(inputValues[0]);
         if (isNaN(parsedVal1)) {
-          throw new HttpsError('invalid-argument', `Value for Input 1 (${settings.input1.label}) must be a number. You entered: "${inputValues[0]}"`);
+          response.status(400).json({ success: false, error: `Value for Input 1 (${settings.input1.label}) must be a number. You entered: "${inputValues[0]}"`, code: 'nan-input1'}); return;
         }
-        parsedAndLoggedInputs.push({ label: settings.input1.label, unit: settings.input1.unit, value: parsedVal1 });
-      } // This should always be true due to check above, but good practice
+        // Include goal for potential analysis later
+        parsedAndLoggedInputs.push({ label: settings.input1.label, unit: settings.input1.unit, value: parsedVal1, goal: settings.input1.goal });
   
-      // Process Input 2 (Optional)
-      if (isConfigured(settings.input2)) {
-        if (inputValues[1] !== null && inputValues[1].trim() !== '') { // If a value was provided
-          const parsedVal2 = parseFloat(inputValues[1]);
-          if (isNaN(parsedVal2)) {
-            throw new HttpsError('invalid-argument', `Value for Input 2 (${settings.input2.label}) must be a number if provided. You entered: "${inputValues[1]}"`);
-          }
-          parsedAndLoggedInputs.push({ label: settings.input2.label, unit: settings.input2.unit, value: parsedVal2 });
+        // Process Input 2 (Required if configured)
+        if (isConfigured(settings.input2)) { // Check if setting exists
+            if (inputValues[1] === null || String(inputValues[1]).trim() === '') {
+            // This error should ideally be caught by Discord's modal validation due to the frontend change.
+            // However, having a server-side check is good practice.
+            response.status(400).json({ success: false, error: `Value for Input 2 (${settings.input2.label}) is required because it was configured in /exp. You cannot leave it blank.`, code: 'missing-configured-input2'}); return;
+            }
+            const parsedVal2 = parseFloat(inputValues[1]);
+            if (isNaN(parsedVal2)) {
+            response.status(400).json({ success: false, error: `Value for Input 2 (${settings.input2.label}) must be a number. You entered: "${inputValues[1]}"`, code: 'nan-input2'}); return;
+            }
+            parsedAndLoggedInputs.push({ label: settings.input2.label, unit: settings.input2.unit, value: parsedVal2, goal: settings.input2.goal });
         }
-        // If inputValues[1] is empty/null and setting is configured, it means user skipped logging it - which is fine.
-      }
-      
-      // Process Input 3 (Optional)
-      if (isConfigured(settings.input3)) {
-        if (inputValues[2] !== null && inputValues[2].trim() !== '') { // If a value was provided
-          const parsedVal3 = parseFloat(inputValues[2]);
-          if (isNaN(parsedVal3)) {
-            throw new HttpsError('invalid-argument', `Value for Input 3 (${settings.input3.label}) must be a number if provided. You entered: "${inputValues[2]}"`);
-          }
-          parsedAndLoggedInputs.push({ label: settings.input3.label, unit: settings.input3.unit, value: parsedVal3 });
+
+  
+        // Process Input 3 (Required if configured)
+        if (isConfigured(settings.input3)) { // Check if setting exists
+            if (inputValues[2] === null || String(inputValues[2]).trim() === '') {
+            // This error should ideally be caught by Discord's modal validation.
+            response.status(400).json({ success: false, error: `Value for Input 3 (${settings.input3.label}) is required because it was configured in /exp. You cannot leave it blank.`, code: 'missing-configured-input3'}); return;
+            }
+            const parsedVal3 = parseFloat(inputValues[2]);
+            if (isNaN(parsedVal3)) {
+            response.status(400).json({ success: false, error: `Value for Input 3 (${settings.input3.label}) must be a number. You entered: "${inputValues[2]}"`, code: 'nan-input3'}); return;
+            }
+            parsedAndLoggedInputs.push({ label: settings.input3.label, unit: settings.input3.unit, value: parsedVal3, goal: settings.input3.goal });
+        }
+        // If not configured, this block is skipped.
+  
+        // Validate and Parse Outcome Value (Required)
+        if (outputValue === null || String(outputValue).trim() === '') {
+            response.status(400).json({ success: false, error: `Value for Outcome (${settings.output.label}) is required and cannot be empty.`, code: 'missing-output'}); return;
+        }
+        const parsedOutputValue = parseFloat(outputValue);
+        if (isNaN(parsedOutputValue)) {
+          response.status(400).json({ success: false, error: `Value for Outcome (${settings.output.label}) must be a number. You entered: "${outputValue}"`, code: 'nan-output'}); return;
+        }
+        // Add specific outcome validation if needed (e.g., must be >= 0)
+        // Example: if (parsedOutputValue < 0 && settings.output.label.toLowerCase() === 'satisfaction') {
+        //   response.status(400).json({ success: false, error: `Value for Satisfaction must be 0 or greater.`, code: 'invalid-satisfaction'}); return;
+        // }
+  
+  
+        // --- Prepare Firestore Log Document Data ---
+        const logEntry = {
+          userId: userId,
+          userTag: userTag, // Use tag derived from token
+          timestamp: FieldValue.serverTimestamp(), // Ensure FieldValue is imported
+          logDate: new Date().toISOString().split('T')[0],
+          inputs: parsedAndLoggedInputs, // Contains successfully parsed AND logged inputs including goals
+          output: {
+            label: settings.output.label,
+            unit: settings.output.unit,
+            value: parsedOutputValue,
+            goal: settings.output.goal // Include goal
+          },
+          notes: notes.trim(),
+          deeperProblem: settings.deeperProblem || "Not set at time of logging" // Include context
+        };
+  
+        // --- Write Log Entry to Firestore ---
+        const writeResult = await db.collection('logs').add(logEntry);
+        logger.info(`submitLog (HTTP): Successfully submitted log ${writeResult.id} for user ${userId}.`);
+  
+        // --- Send Success Response ---
+        response.status(200).json({ success: true, logId: writeResult.id });
+  
+      } catch (error) {
+        logger.error("submitLog (HTTP): Error during internal logic/Firestore operation for user:", userId, error);
+        // Ensure a response is sent for internal errors during logic processing
+        if (!response.headersSent) {
+          response.status(500).json({ success: false, error: 'Failed to save log entry due to an internal server error.', code: 'internal-server-error-logic' });
         }
       }
-  
-      // Validate and Parse Output Value (Required)
-      if (outputValue === null || outputValue.trim() === '') {
-          throw new HttpsError('invalid-argument', `Value for Output (${settings.output.label}) is required and cannot be empty.`);
-      }
-      const parsedOutputValue = parseFloat(outputValue);
-      if (isNaN(parsedOutputValue)) {
-        throw new HttpsError('invalid-argument', `Value for Output (${settings.output.label}) must be a number. You entered: "${outputValue}"`);
-      }
-      // Example: Allowing 0 for satisfaction, but not negative. Adjust if your output can be negative.
-      if (parsedOutputValue < 0 && settings.output.label.toLowerCase() === 'satisfaction') { 
-        throw new HttpsError('invalid-argument', `Value for Satisfaction must be 0 or greater. You entered: "${parsedOutputValue}"`);
-      }
-  
-  
-      // 6. Prepare Firestore Log Document Data
-      const logEntry = {
-        userId: userId,
-        userTag: userTag,
-        timestamp: FieldValue.serverTimestamp(),
-        logDate: new Date().toISOString().split('T')[0],
-        inputs: parsedAndLoggedInputs, // This now only contains successfully parsed AND logged inputs
-        output: {
-          label: settings.output.label,
-          unit: settings.output.unit,
-          value: parsedOutputValue
-        },
-        notes: notes.trim(),
-      };
-  
-      // 7. Write Log Entry to Firestore
-      const writeResult = await db.collection('logs').add(logEntry);
-      logger.log(`Successfully submitted log ${writeResult.id} for user ${userId}. Logged inputs count: ${parsedAndLoggedInputs.length}`);
-  
-      // 8. Return simple Success Response
-      return {
-        success: true,
-        logId: writeResult.id
-      };
-  
-    } catch (error) {
-      logger.error("Error processing submitLog for user:", userId, error);
-      if (error instanceof HttpsError) {
-        throw error;
-      }
-      throw new HttpsError('internal', 'Failed to save log entry due to a server error.', error.message);
     }
-});
+  );
 
 /**
  * Calculates and updates the user's streak data.
@@ -289,6 +530,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     try {
         await admin.firestore().runTransaction(async (transaction) => {
             const userDoc = await transaction.get(userRef);
+            const isNewUser = !userDoc.exists;
             let currentData = { streak: 0, longest: 0, freezes: 0, lastLog: null, userTag: userTagForMessage };
             let previousStreak = 0;
 
@@ -363,96 +605,163 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
             };
 
             // --- Milestone, DM, Public Message, and Role Cleanup Logic ---
-            let roleInfo = null;
-            let dmMessageText = null;
-            let publicMessageText = null;
-            let needsRoleCleanup = false;
+        let roleInfo = null;
+        let dmMessageText = null;
+        let tempPublicMessage = null;
+        let needsRoleCleanupForPublicMessage = false;
 
-            if (newState.streakBroken) {
-                // Specific actions for streak reset
-                dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
-                publicMessageText = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', userTagForMessage);
-                needsRoleCleanup = true; // Flag to remove other streak roles
+        // ***** START OF MODIFIED LOGIC FOR DAY 1 WELCOME *****
+        const isTrueFirstDay = (isNewUser || previousStreak === 0) && newState.newStreak === 1 && !newState.streakBroken;
 
-                const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
-                if (firstRole) {
-                    roleInfo = { name: firstRole.name, color: firstRole.color, days: firstRole.days };
-                    logger.log(`Streak reset: Assigning default role ${firstRole.name} and flagging role cleanup.`);
-                }
-            } else if (newState.streakContinued) { // Streak continued or advanced (but not broken)
-                // Check for Role Milestones (only if streak advanced to a new day number)
-                if (newState.newStreak > previousStreak || (previousStreak === 0 && newState.newStreak === 1)) {
-                    const milestoneRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === newState.newStreak);
-                    if (milestoneRole) {
-                        roleInfo = { name: milestoneRole.name, color: milestoneRole.color, days: milestoneRole.days };
-                        dmMessageText = STREAK_CONFIG.MESSAGES.DM.ROLE_ACHIEVEMENT.replace('${roleName}', roleInfo.name);
-                        logger.log(`User ${userId} hit role milestone: ${roleInfo.name} at ${newState.newStreak} days.`);
-                    } else if (newState.newStreak === 1 && !roleInfo) { // Handles first log if not explicitly broken
-                        const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
-                        if (firstRole) {
-                           roleInfo = { name: firstRole.name, color: firstRole.color, days: firstRole.days };
-                           logger.log(`Assigning default role ${firstRole.name} on first log.`);
-                           // Optionally, add a welcome DM here if not already covered by role achievement
-                           // if (!dmMessageText) dmMessageText = "Welcome to your streak journey!";
-                        }
+        if (isTrueFirstDay) {
+            logger.log(`[onLogCreatedUpdateStreak] User ${userId} is on their TRUE Day 1. Preparing welcome messages.`);
+            dmMessageText = `🎉 Welcome to your habit tracking journey, ${userTagForMessage}! ` +
+                            `You've just logged Day 1 of your streak for the first time (or first time in a while). That's awesome! ` +
+                            `Keep it up! You've also earned the 'Originator' role. 🔥`;
+
+            tempPublicMessage = `🎉 Please welcome @${userTagForMessage} to their habit tracking journey! ` +
+                                `They've just logged Day 1! Show some support! 🚀`;
+
+            // Assign 'Originator' role
+            const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
+            if (firstRole) {
+                roleInfo = { name: firstRole.name, color: firstRole.color, days: firstRole.days };
+            }
+            // No role cleanup needed for a true first day, as they have no prior streak roles.
+            needsRoleCleanupForPublicMessage = false;
+
+        } else if (newState.streakBroken && newState.newStreak === 1) {
+            // This is the existing streak reset logic
+            dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
+            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', userTagForMessage);
+            needsRoleCleanupForPublicMessage = true;
+            const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
+            if (firstRole) {
+                roleInfo = { name: firstRole.name, color: firstRole.color, days: firstRole.days };
+                logger.log(`Streak reset: Assigning default role ${firstRole.name} and flagging role cleanup.`);
+            }
+        } else {
+            // Existing logic for continued streaks, milestone roles, and streak extensions
+            if ((newState.newStreak > previousStreak) || (previousStreak === 0 && newState.newStreak === 1)) { // Catches regular first day if not caught by isTrueFirstDay
+                const milestoneRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === newState.newStreak);
+                if (milestoneRole) {
+                    roleInfo = { name: milestoneRole.name, color: milestoneRole.color, days: milestoneRole.days };
+                    if (!dmMessageText) { // Avoid overwriting Day 1 welcome or reset DM
+                       dmMessageText = STREAK_CONFIG.MESSAGES.DM.ROLE_ACHIEVEMENT.replace('${roleName}', roleInfo.name);
+                    }
+                    logger.log(`User ${userId} hit role milestone: ${roleInfo.name} at ${newState.newStreak} days.`);
+                    // Public message for role achievement (if not a streak break and not Day 1 welcome)
+                    if (roleInfo.days > 1 && !newState.streakBroken && !isTrueFirstDay) {
+                         tempPublicMessage = `🎉 Big congrats to ${userTagForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
                     }
                 }
-
-                // Check for Freeze Awards (only if streak increased and freeze wasn't just used for continuation)
-                if ((newState.newStreak > previousStreak || (previousStreak === 0 && newState.newStreak > 0)) &&
-                    STREAK_CONFIG.MILESTONES.FREEZE_AWARD_DAYS.includes(newState.newStreak) &&
-                    !newState.usedFreeze) {
-                    const maxFreezes = STREAK_CONFIG.FREEZES.MAX || 5;
-                    if (updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING] < maxFreezes) {
-                        updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]++; // Award freeze
-                        // Update the PENDING_FREEZE_ROLE_UPDATE again with the new count
-                        updateData[STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE] = `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]}`;
-                        logger.log(`Awarded freeze to ${userId} at streak ${newState.newStreak}. New total: ${updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]}`);
-
-                        const freezeAwardMsg = STREAK_CONFIG.MESSAGES.DM.FREEZE_AWARD.replace('${streak}', newState.newStreak);
-                        dmMessageText = dmMessageText ? `${dmMessageText}\n\n${freezeAwardMsg}` : freezeAwardMsg;
-                    } else {
-                        logger.log(`User ${userId} hit freeze award day ${newState.newStreak}, but already has max freezes (${maxFreezes}).`);
-                    }
-                }
-            } // else (if streak did not advance, e.g. same day log), no new milestones or messages are generated here.
-
-            // --- Assign pending actions to updateData ---
-            if (roleInfo) {
-                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = roleInfo;
-            } else {
-                // If no specific role is being set now (e.g. same day log and not a reset)
-                // ensure PENDING_ROLE_UPDATE is cleared if it's not a reset where Originator would be set.
-                // This handles cases where a user might have had a pending update that wasn't cleared.
-                // However, if needsRoleCleanup is true, Originator will be set above.
-                if (!needsRoleCleanup) { // Only delete if not part of a reset
-                    updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = FieldValue.delete();
-                }
             }
-
-            if (dmMessageText) {
-                updateData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] = dmMessageText;
-            } else {
-                updateData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] = FieldValue.delete();
+            // Streak extension public message (if no specific role milestone and not Day 1 welcome)
+            if (!tempPublicMessage && newState.streakContinued && newState.newStreak > previousStreak && !newState.streakBroken && !roleInfo && !isTrueFirstDay) {
+                tempPublicMessage = `🥳 ${userTagForMessage} just extended their streak to ${newState.newStreak} days! Keep it up!`;
             }
+        }
+        // ***** END OF MODIFIED LOGIC FOR DAY 1 WELCOME *****
 
-            if (publicMessageText) {
-                updateData[STREAK_CONFIG.FIELDS.PENDING_PUBLIC_MESSAGE] = publicMessageText;
+        // --- Freeze Award Logic ---
+        // This should trigger if the streak has increased or just started, and it's a freeze award day,
+        // and a freeze wasn't just used to save the streak.
+        if ((newState.newStreak > previousStreak || (previousStreak === 0 && newState.newStreak > 0)) &&
+            STREAK_CONFIG.MILESTONES.FREEZE_AWARD_DAYS.includes(newState.newStreak) &&
+            !newState.usedFreeze) {
+            const maxFreezes = STREAK_CONFIG.FREEZES.MAX || 5;
+            // Check current freezes BEFORE awarding a new one.
+            // newState.freezesRemaining at this point reflects freezes *after* any potential use to save the streak.
+            // We need to compare based on the count *before* awarding this new one.
+            // The updateData for FREEZES_REMAINING will directly use the final newState.freezesRemaining.
+
+            if (updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING] < maxFreezes) { // Check against the already prepared updateData
+                updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]++; // Award freeze directly in updateData
+                
+                // Update the PENDING_FREEZE_ROLE_UPDATE again with the new count
+                updateData[STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE] = `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]}`;
+                logger.log(`Awarded freeze to ${userId} at streak ${newState.newStreak}. New total: ${updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]}`);
+
+                const freezeAwardMsg = STREAK_CONFIG.MESSAGES.DM.FREEZE_AWARD.replace('${streak}', newState.newStreak);
+                dmMessageText = dmMessageText ? `${dmMessageText}\n\n${freezeAwardMsg}` : freezeAwardMsg;
             } else {
-                updateData[STREAK_CONFIG.FIELDS.PENDING_PUBLIC_MESSAGE] = FieldValue.delete();
+                logger.log(`User ${userId} hit freeze award day ${newState.newStreak}, but already has max freezes (${maxFreezes}). Current in updateData: ${updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]}`);
             }
+        }
 
-            if (needsRoleCleanup) {
-                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true;
+        // --- Your DEBUG LOGS (keep them here) ---
+        logger.log(`[onLogCreatedUpdateStreak DEBUG] For User: ${userId} - previousStreak: ${previousStreak}, newState.newStreak: ${newState.newStreak}, streakContinued (calc'd in func): ${newState.streakContinued}, streakBroken: ${newState.streakBroken}`);
+        const debugMilestoneRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === newState.newStreak);
+        logger.log("[onLogCreatedUpdateStreak DEBUG] debugMilestoneRole found (based on newState.newStreak):", debugMilestoneRole);
+        logger.log("[onLogCreatedUpdateStreak DEBUG] roleInfo before final assignment logic:", roleInfo);
+        // --- End DEBUG LOGS ---
+
+        // --- Determine PENDING_PUBLIC_MESSAGE ---
+        if (newState.streakBroken && newState.newStreak === 1) {
+            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', userTagForMessage);
+            needsRoleCleanupForPublicMessage = true; // A streak reset to 1 always implies role cleanup for public view
+            logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Streak Reset. Message: "${tempPublicMessage}"`);
+        } else if (roleInfo && roleInfo.days > 0 && !newState.streakBroken) {
+            // This is a role milestone achievement (and not part of a streak break scenario)
+            tempPublicMessage = `🎉 Big congrats to ${userTagForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
+            logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Role Milestone. Message: "${tempPublicMessage}"`);
+        } else if (newState.streakContinued && newState.newStreak > previousStreak && !newState.streakBroken && !roleInfo) {
+            tempPublicMessage = `🥳 ${userTagForMessage} just extended their streak to ${newState.newStreak} days! Keep it up!`;
+            logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Streak Extension. Message: "${tempPublicMessage}"`);
+        } else {
+            logger.log(`[onLogCreatedUpdateStreak] No specific public message condition met. Streak: ${newState.newStreak}, Broken: ${newState.streakBroken}, Continued: ${newState.streakContinued}, RoleInfo: ${roleInfo ? roleInfo.name : 'None'}`);
+        }
+
+        // --- Prepare data for Firestore update (add/modify these in your existing updateData object) ---
+
+        // PENDING_DM_MESSAGE (Your existing logic for this should be fine, typically set based on dmMessageText)
+        if (dmMessageText) { // dmMessageText is from your earlier logic for DMs
+            updateData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] = dmMessageText;
+        } else {
+            updateData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] = FieldValue.delete();
+        }
+
+        // PENDING_ROLE_UPDATE (This needs to carefully consider streak breaks vs. regular milestones)
+        if (newState.streakBroken && newState.newStreak === 1) {
+            const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
+            if (firstRole) {
+                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = { name: firstRole.name, color: firstRole.color, days: firstRole.days };
+                logger.log(`[onLogCreatedUpdateStreak] Streak broken to 1 day. Ensuring PENDING_ROLE_UPDATE is set for ${firstRole.name}.`);
             } else {
-                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = FieldValue.delete();
+                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = FieldValue.delete(); // Should not happen if Originator exists
             }
+        } else if (roleInfo) { // A non-break role milestone was hit
+            updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = roleInfo;
+        } else { // No specific role change for this event (e.g., simple streak extension without milestone)
+            updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = FieldValue.delete();
+        }
 
-            // Filter out undefined values (FieldValue.delete() handles actual removal)
-            Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+        // PENDING_PUBLIC_MESSAGE (Using the tempPublicMessage determined above)
+        if (tempPublicMessage) {
+            updateData[STREAK_CONFIG.FIELDS.PENDING_PUBLIC_MESSAGE] = tempPublicMessage;
+        } else {
+            updateData[STREAK_CONFIG.FIELDS.PENDING_PUBLIC_MESSAGE] = FieldValue.delete();
+        }
 
-            logger.log(`Updating user ${userId} Firestore doc with:`, JSON.parse(JSON.stringify(updateData))); // Log a clean version
-            transaction.set(userRef, updateData, { merge: true });
+        // PENDING_ROLE_CLEANUP (Using needsRoleCleanupForPublicMessage determined above)
+        if (needsRoleCleanupForPublicMessage) {
+            updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true;
+        } else {
+            updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = FieldValue.delete();
+        }
+
+        // PENDING_FREEZE_ROLE_UPDATE (This should already be in your updateData from earlier logic, based on final newState.freezesRemaining)
+        // Example: updateData[STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE] = `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${newState.freezesRemaining}`;
+        // Ensure this line exists and is correct based on the final freeze count.
+
+        // <<<< END OF THE NEW LOGIC BLOCK >>>>
+        
+
+        // Filter out undefined values (FieldValue.delete() handles actual removal)
+        // Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]); // Not strictly needed if using FieldValue.delete()
+
+        logger.log(`Updating user ${userId} Firestore doc with:`, JSON.parse(JSON.stringify(updateData)));
+        transaction.set(userRef, updateData, { merge: true });
         }); // Transaction complete
 
         logger.log(`Successfully processed streak & milestone update for user ${userId}.`);
@@ -500,7 +809,7 @@ function parseAndValidatePriority(priorityStr, fieldName, isOptional = false) {
     if (!match) {
       throw new HttpsError(
         'invalid-argument',
-        `${fieldName} ("${trimmedStr}") must be in "Goal,Unit,Label" format. Use a comma as separator (e.g., "15.5,minutes,meditation" or "10,pages,Reading"). Note: Decimals in goals are fine.`
+        `${fieldName} ("${trimmedStr}") must be in "Goal #, Unit, Label" format. Use a comma as separator (e.g., "15.5, minutes, meditation" or "10, pages, Reading"). Note: Decimals in goals are fine.`
       );
     }
 
@@ -512,7 +821,7 @@ function parseAndValidatePriority(priorityStr, fieldName, isOptional = false) {
       // This case should ideally be caught by the main regex, but as a fallback:
       throw new HttpsError(
         'invalid-argument',
-        `${fieldName} ("${trimmedStr}") must be in "Goal,Unit,Label" format. Use a comma as separator (e.g., "15.5,minutes,meditation" or "10,pages,Reading").`
+        `${fieldName} ("${trimmedStr}") must be in "Goal #, Unit, Label" format. Use a comma as separator (e.g., "15.5, minutes, meditation" or "10, pages, Reading").`
       );
     }
 
@@ -524,10 +833,10 @@ function parseAndValidatePriority(priorityStr, fieldName, isOptional = false) {
         `Goal for ${fieldName} ("${goalStr}") must be a number (e.g., 15 or 8.5).`
       );
     }
-    if (goal <= 0) {
+    if (goal < 0) {
       throw new HttpsError(
         'invalid-argument',
-        `Goal for ${fieldName} ("${goalStr}") must be a positive number.`
+        `Goal for ${fieldName} ("${goalStr}") must be 0 or a positive number.`
       );
     }
 
@@ -564,12 +873,12 @@ exports.updateWeeklySettings = onCall(async (request) => {
   
     // Validate 'deeperProblem'
     if (typeof deeperProblem !== 'string' || deeperProblem.trim() === '') {
-      throw new HttpsError('invalid-argument', 'The "Deeper Problem" statement cannot be empty.');
+      throw new HttpsError('invalid-argument', 'The "Deeper Goal / Problem / Theme" statement cannot be empty.');
     }
     // Optional: Add length check for deeperProblem
     const MAX_PROBLEM_LENGTH = 500; // Example
     if (deeperProblem.trim().length > MAX_PROBLEM_LENGTH) {
-      throw new HttpsError('invalid-argument', `The "Deeper Problem" statement is too long (max ${MAX_PROBLEM_LENGTH} chars).`);
+      throw new HttpsError('invalid-argument', `The "Deeper Goal" statement is too long (max ${MAX_PROBLEM_LENGTH} chars).`);
     }
   
     if (!Array.isArray(inputSettings) || inputSettings.length !== 3) {
@@ -601,7 +910,6 @@ exports.updateWeeklySettings = onCall(async (request) => {
       input2: parsedInput2,
       input3: parsedInput3,
       lastUpdated: FieldValue.serverTimestamp()
-      // No experimentStartDate/EndDate yet in this phase
     };
   
     try {
@@ -617,7 +925,7 @@ exports.updateWeeklySettings = onCall(async (request) => {
         return `${name}: Not set`;
       };
       
-      const message = `✅ Experiment settings saved!\n\n🎯 Deeper Problem: "${weeklySettingsData.deeperProblem}"\n📊 Output: "${parsedOutput.label}" (Goal: ${parsedOutput.goal} ${parsedOutput.unit})\n\n${formatSettingForMessage(parsedInput1, "Input 1")}\n${formatSettingForMessage(parsedInput2, "Input 2")}\n${formatSettingForMessage(parsedInput3, "Input 3")}\n\nThese will now appear in your /log form.`;
+      const message = `✅ Experiment settings saved!\n\n🎯 Deeper Goal / Problem / Theme: "${weeklySettingsData.deeperProblem}"\n📊 Key Result: "${parsedOutput.label}" (Goal: ${parsedOutput.goal} ${parsedOutput.unit})\n\n${formatSettingForMessage(parsedInput1, "Action 1")}\n${formatSettingForMessage(parsedInput2, "Action 2")}\n${formatSettingForMessage(parsedInput3, "Action 3")}.`;
       
       return { success: true, message: message };
   
@@ -628,64 +936,72 @@ exports.updateWeeklySettings = onCall(async (request) => {
   });
 
   // Add this below the updateWeeklySettings function in functions/index.js
-
-/**
- * Retrieves the weekly experiment settings (3 inputs, 1 output) for the
- * authenticated user from Firestore.
- * Called by the Discord bot frontend (e.g., by the /log command handler).
- * Expects no specific data payload, uses authentication context.
- * Returns: { settings: { input1: { label, unit }, ..., output: { label, unit } } | null } on success.
+/*
+ * Retrieves the weekly experiment settings for the authenticated user from Firestore.
+ * Includes detailed logging for performance analysis.
  */
-exports.getWeeklySettings = onCall(async (request) => { // Renamed function
-    // 1. Check Authentication
-    if (!request.auth) {
-      logger.warn("getWeeklySettings called without authentication."); // Updated name
-      throw new HttpsError(
-        'unauthenticated',
-        'You must be logged in to get your weekly settings.' // Updated message
-      );
-    }
-  
-    // 2. Get User ID
-    const userId = request.auth.uid;
-    logger.log(`getWeeklySettings called by authenticated user: ${userId}`);
-  
-    // 3. Access Firestore
-    try {
-      const db = admin.firestore();
-      const userDocRef = db.collection('users').doc(userId);
-  
-      // 4. Read the User Document
-      const userDocSnap = await userDocRef.get();
-  
-      // 5. Check if User Document Exists and Has Settings
-      if (!userDocSnap.exists) {
-        logger.log(`User document ${userId} not found.`);
-        // Return null for settings if user doc doesn't exist
-        return { settings: null };
+exports.getWeeklySettings = onCall({ minInstances: 1 }, async (request) => {
+  const functionStartTime = Date.now();
+  // Use request.auth.uid if available, otherwise provide a placeholder for logging if auth is not present
+  const loggingUserId = request.auth ? request.auth.uid : "UNKNOWN_USER_NO_AUTH";
+  logger.log(`[getWeeklySettings] Invoked by User: ${loggingUserId}. Start Time: ${functionStartTime}`);
+
+  if (!request.auth) {
+    logger.warn(`[getWeeklySettings] User: ${loggingUserId} - Called without authentication.`);
+    throw new HttpsError(
+      'unauthenticated',
+      'You must be logged in to get your weekly settings.'
+    );
+  }
+
+  const userId = request.auth.uid; // Now we know request.auth exists
+  logger.log(`[getWeeklySettings] User: ${userId} - Authenticated. Proceeding to fetch settings.`);
+
+  try {
+    const db = admin.firestore();
+    const userDocRef = db.collection('users').doc(userId);
+
+    const firestoreReadStartTime = Date.now();
+    logger.log(`[getWeeklySettings] User: ${userId} - Attempting Firestore read for 'users/${userId}'. Read Start Time: ${firestoreReadStartTime} (Delta from function start: ${firestoreReadStartTime - functionStartTime}ms)`);
+
+    const userDocSnap = await userDocRef.get();
+
+    const firestoreReadEndTime = Date.now();
+    logger.log(`[getWeeklySettings] User: ${userId} - Firestore read for 'users/${userId}' completed. Exists: ${userDocSnap.exists}. Duration: ${firestoreReadEndTime - firestoreReadStartTime}ms. Read End Time: ${firestoreReadEndTime} (Delta from function start: ${firestoreReadEndTime - functionStartTime}ms)`);
+
+    let settingsToReturn = null;
+    if (!userDocSnap.exists) {
+      logger.log(`[getWeeklySettings] User: ${userId} - User document 'users/${userId}' not found.`);
+    } else {
+      const userData = userDocSnap.data();
+      if (userData && userData.weeklySettings && typeof userData.weeklySettings === 'object') {
+        logger.log(`[getWeeklySettings] User: ${userId} - Found weeklySettings in document.`);
+        settingsToReturn = userData.weeklySettings;
       } else {
-        const userData = userDocSnap.data();
-        // Check specifically for the 'weeklySettings' field.
-        if (userData && userData.weeklySettings && typeof userData.weeklySettings === 'object') {
-          logger.log(`Found weekly settings for user ${userId}.`);
-          // Return the settings map.
-          return { settings: userData.weeklySettings };
-        } else {
-          logger.log(`User document ${userId} exists but has no 'weeklySettings' field.`);
-          // Return null for settings if the field is missing.
-          return { settings: null };
-        }
+        logger.log(`[getWeeklySettings] User: ${userId} - User document 'users/${userId}' exists but has no 'weeklySettings' field or it's not an object.`);
       }
-    } catch (error) {
-      // Log any unexpected errors during Firestore access.
-      logger.error("Error reading user document or weekly settings for user:", userId, error);
-      throw new HttpsError(
-        'internal',
-        'Could not retrieve weekly settings due to a server error.', // Updated message
-        error.message
-      );
     }
-  });
+
+    const functionEndTime = Date.now();
+    logger.log(`[getWeeklySettings] User: ${userId} - Successfully completed. Total Duration: ${functionEndTime - functionStartTime}ms. End Time: ${functionEndTime}`);
+    return { settings: settingsToReturn };
+
+  } catch (error) {
+    const errorTime = Date.now();
+    // Log the error with more details including the stack trace
+    logger.error(`[getWeeklySettings] User: ${userId} - Error: ${error.message}. Error Occurred At: ${errorTime} (Delta from function start: ${errorTime - functionStartTime}ms)`, {
+        errorMessage: error.message,
+        errorStack: error.stack, // Important for debugging
+        userId: userId
+    });
+    // Re-throw as HttpsError for the client
+    throw new HttpsError(
+      'internal', // Or a more specific error code if applicable
+      'Could not retrieve weekly settings due to a server error.',
+      error.message // Pass the original error message for context if needed by client
+    );
+  }
+});
 
  /**
  * Clears pending action flags from a user's Firestore document.
@@ -880,124 +1196,2108 @@ exports.getLeaderboard = onCall(async (request) => {
       );
     }
   });
+
+  // In functions/index.js
+
+/**
+ * Retrieves necessary user data fields for the bot after a log submission.
+ * Used to check for pending actions (DMs, roles) set by triggers.
+ * Expects no data payload, uses authentication context.
+ */
+exports.getUserDataForBot = onCall(async (request) => {
+    // 1. Check Authentication
+    if (!request.auth) {
+      logger.warn("getUserDataForBot called without authentication.");
+      throw new HttpsError('unauthenticated', 'Authentication required.');
+    }
+    const userId = request.auth.uid;
+    logger.log(`getUserDataForBot called by authenticated user: ${userId}`);
   
-// ======================================================================
-// REMINDERS FOR DISCORD BOT CODE (Render - bot code index js file.txt)
-//
-// This section outlines the necessary changes and logic for your
-// Discord bot to integrate with the updated Firebase Cloud Functions.
-// Review this carefully when implementing bot-side changes.
-//
-// Current Date: May 7, 2025 // Adjust as needed
-// Firebase Functions Updated: Yes (Includes experiment settings, logging,
-// streaks, pending actions, leaderboard w/ tie-breaking)
-// ======================================================================
+    // 2. Access Firestore
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(userId);
+  
+    try {
+      const userDoc = await userRef.get();
+  
+      if (!userDoc.exists) {
+        logger.log(`[getUserDataForBot] User document ${userId} not found. Returning default data.`);
+        // Return default structure if user doc doesn't exist (shouldn't happen if log was just submitted)
+        return { success: true, userData: { userId: userId, currentStreak: 0, longestStreak: 0, freezesRemaining: 0 } };
+      }
+  
+      const firestoreData = userDoc.data();
+      // 3. Selectively return only the fields the bot needs
+      // This prevents sending unnecessary sensitive data if the user doc grows.
+      const userDataForBot = {
+        userId: userId,
+        userTag: firestoreData[STREAK_CONFIG.FIELDS.USER_TAG] || null,
+        currentStreak: firestoreData[STREAK_CONFIG.FIELDS.CURRENT_STREAK] || 0,
+        longestStreak: firestoreData[STREAK_CONFIG.FIELDS.LONGEST_STREAK] || 0,
+        freezesRemaining: firestoreData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING] || 0,
+        // Include all potential pending fields
+        pendingDmMessage: firestoreData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] || null,
+        pendingRoleUpdate: firestoreData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] || null, // This holds { name, color, days } or null
+        pendingFreezeRoleUpdate: firestoreData[STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE] || null, // This holds role name e.g., "❄️ Freezes: 2" or null
+        pendingRoleCleanup: firestoreData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] || false, // Boolean
+        pendingPublicMessage: firestoreData[STREAK_CONFIG.FIELDS.PENDING_PUBLIC_MESSAGE] || null,
+      };
+  
+      logger.log(`[getUserDataForBot] Returning data for ${userId}:`, userDataForBot);
+      return { success: true, userData: userDataForBot };
+  
+    } catch (error) {
+      logger.error(`[getUserDataForBot] Error fetching data for user ${userId}:`, error);
+      throw new HttpsError('internal', 'Could not retrieve user data.', error.message);
+    }
+  });
 
-// --- Core Setup & Firebase Integration ---
-// 1. Firebase Admin SDK (Optional but Recommended for Post-Log Checks):
-//    - To reliably fetch `pending...` fields after a log, the bot should ideally use the
-//      Firebase Admin SDK (requires service account key securely stored on Render).
-//    - ALTERNATIVE: Create a simple Firebase callable function `getUserData()` that fetches
-//      and returns the necessary fields from the user's document (`currentStreak`, `longestStreak`,
-//      `freezesRemaining`, and all `pending...` fields). The bot calls this after `submitLog` succeeds.
-//
-// 2. Firebase Callable Function Invocation:
-//    - Implement robust calling logic (including error handling) for:
-//      - `getFirebaseAuthToken({ userId })`
-//      - `updateWeeklySettings({ deeperProblem, outputSetting, inputSettings })`
-//      - `getWeeklySettings()`
-//      - `submitLog({ inputValues, outputValue, notes })`
-//      - `clearPendingUserActions()` // <<< Call this LAST, after processing ALL pending actions.
-//      - `getLeaderboard()` // <<< New function for the /leaderboard command.
-//    - Manage Firebase authentication state within the bot.
+  // Add this new function in functions/index.js
 
-// --- Command Changes & Implementation ---
-// 3. Rename /setweek to /experiment:
-//    - Update SlashCommandBuilder name and description. Re-register commands.
-//
-// 4. Implement /experiment Button Hub:
-//    - On /experiment command: Send ephemeral message with buttons:
-//      - [Review Latest Experiment] (ID: `review_latest_experiment_btn`)
-//      - [Set/Update Experiment] (ID: `set_update_experiment_btn`)
-//      - [Set Reminders & Duration] (ID: `set_experiment_reminders_btn`)
-//
-// 5. Implement `set_update_experiment_btn` Handler:
-//    - Show Modal (`experiment_setup_modal`).
-//    - Fields: `deeper_problem`, `output_setting`, `input1_setting`, `input2_setting`, `input3_setting`.
-//    - **Emphasize COMMA as the separator** in field labels/placeholders (e.g., "Output Metric (Goal,Unit,Label):").
-//    - On submit, call `updateWeeklySettings` Firebase function. Display result ephemerally.
-//
-// 6. Implement `review_latest_experiment_btn` Handler (Initial):
-//    - Call `getWeeklySettings`. Display results ephemerally. Add "Stats coming soon" text.
-//
-// 7. Implement `set_experiment_reminders_btn` Handler (Initial):
-//    - Reply ephemerally: "Coming soon!".
-//
-// 8. Update /log Command:
-//    - On command run: Call `getWeeklySettings`.
-//    - Dynamically build Modal based on *configured* settings (check `settings.inputX.label !== ""`).
-//      - Use setting labels/placeholders (`Goal: X Unit`). Mark optional TextInputs as `setRequired(false)`.
-//    - If no settings, prompt user to run `/experiment`.
-//    - On submit: Call `submitLog` Firebase function with `{ inputValues: [val1, val2_or_"", val3_or_""], outputValue, notes }`.
-//
-// 9. Implement /leaderboard Command:
-//    - On command run: Call `getLeaderboard` Firebase function.
-//    - Display the `message` string from the function's response ephemerally.
+/**
+ * Retrieves the current and longest streak for the authenticated user.
+ */
+// In functions/index.js, modify getStreakData
 
-// --- Post-Log Action Processing (CRITICAL BOT LOGIC) ---
-// 10. After `submitLog` Success:
-//     - The bot MUST fetch the user's latest data from Firestore (via Admin SDK or a `getUserData` function).
-//     - Let the fetched data be `userData`. Check for the existence of the following fields:
-//
-// 11. Process `pendingDmMessage`:
-//     - If `userData.pendingDmMessage` exists: Send it as a DM to the user. Handle DM errors.
-//
-// 12. Process `pendingFreezeRoleUpdate`:
-//     - If `userData.pendingFreezeRoleUpdate` exists (e.g., "❄️ Freezes: 3"):
-//       - Get the target role name (e.g., "❄️ Freezes: 3").
-//       - Find/Create the target role on the Discord server (`ensureRole`).
-//       - Get the user's member object (`interaction.member` or fetch if needed).
-//       - Remove any OTHER role on the user starting with "❄️ Freezes:".
-//       - Add the target role to the user.
-//
-// 13. Process `pendingRoleCleanup` and `pendingRoleUpdate`:
-//     - Get the user's member object.
-//     - If `userData.pendingRoleCleanup === true`:
-//       - Get a list of all streak milestone role names (from Originator to Transcendent).
-//       - Iterate through the user's current roles. Remove any role whose name matches one in the milestone list *EXCEPT* 'Originator'.
-//     - If `userData.pendingRoleUpdate` exists:
-//       - Let `newRoleInfo = userData.pendingRoleUpdate`.
-//       - Find/Create the role (`ensureRole(guild, newRoleInfo.name, newRoleInfo.color)`).
-//       - Add this role to the user.
-//       - **Public Message (New Role):** If `userData.pendingRoleCleanup` is NOT true AND `newRoleInfo` is for a milestone beyond day 1, post to channel: `🎊 @user has achieved the ${newRoleInfo.name} title! Show some love!`
-//
-// 14. Process `pendingPublicMessage`:
-//     - If `userData.pendingPublicMessage` exists (this is for the streak reset):
-//       - Post this message content to the interaction channel.
-//
-// 15. *** Call `clearPendingUserActions()` ***:
-//     - AFTER attempting all actions in steps 11-14, the bot MUST call the `clearPendingUserActions()` Firebase function to prevent reprocessing.
-//
-// --- Bot-Side Message Construction ---
-// 16. `/log` Confirmation Message:
-//     - Define an array `INSPIRATIONAL_MESSAGES` in the bot code.
-//     - After `submitLog` success AND fetching `userData` (step 10):
-//       - Construct the ephemeral reply/DM including:
-//         - Basic confirmation text (e.g., "✅ Log saved!").
-//         - A random message from `INSPIRATIONAL_MESSAGES`.
-//         - Current Streak: `userData.currentStreak`.
-//         - Longest Streak: `userData.longestStreak`.
-//         - Freezes Remaining: `userData.freezesRemaining`.
-//
-// --- Utility Functions Needed in Bot ---
-// 17. `ensureRole(guild, roleName, color)`: Handles finding or creating Discord roles.
-// 18. List/Mechanism for Streak Milestone Roles: Needed for the role cleanup logic.
-//
-// --- Dependencies ---
-// 19. `discord.js`, `dotenv`, `node-fetch` (already installed).
-// 20. `firebase-admin` (if using Admin SDK in bot).
-// 21. `date-fns` (optional, for advanced date formatting).
-//
-// ======================================================================
+exports.getStreakData = onCall(async (request) => {
+    // 1. Check Authentication
+    if (!request.auth) {
+      logger.warn("getStreakData called without authentication.");
+      throw new HttpsError(
+        'unauthenticated',
+        'You must be logged in to view your streak.'
+      );
+    }
+    const userId = request.auth.uid;
+    logger.log(`getStreakData called by authenticated user: ${userId}`);
+  
+    // 2. Access Firestore
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(userId);
+  
+    try {
+      const userDoc = await userRef.get();
+  
+      if (!userDoc.exists) {
+        logger.log(`[getStreakData] User document ${userId} not found. Returning 0 streaks/freezes.`);
+        return {
+          success: true,
+          currentStreak: 0,
+          longestStreak: 0,
+          freezesRemaining: 0, // Add this
+          message: "You haven't started your streak yet. Use the /log command to begin!"
+        };
+      }
+  
+      const userData = userDoc.data();
+      const currentStreak = userData[STREAK_CONFIG.FIELDS.CURRENT_STREAK] || 0;
+      const longestStreak = userData[STREAK_CONFIG.FIELDS.LONGEST_STREAK] || 0;
+      const freezesRemaining = userData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING] || 0; // Get freezes
+  
+      let message = `🔥Your current streak: ${currentStreak} days\n🧨Your longest streak: ${longestStreak} days\n🧊Streak Freezes: ${freezesRemaining} available`; // Add freezes to message
+  
+      if (currentStreak === 0 && longestStreak === 0) {
+          message = `You haven't started your streak yet. Use the /log command to begin!\nStreak Freezes: ${freezesRemaining} available`;
+      } else if (currentStreak === 0 && longestStreak > 0) {
+          message = `You currently don't have an active streak. Your longest streak was ${longestStreak} days.\nUse the /log command to start a new one!\nStreak Freezes: ${freezesRemaining} available`;
+      }
+  
+  
+      logger.log(`[getStreakData] Returning streak data for ${userId}: Current: ${currentStreak}, Longest: ${longestStreak}, Freezes: ${freezesRemaining}`);
+      return {
+        success: true,
+        currentStreak: currentStreak,
+        longestStreak: longestStreak,
+        freezesRemaining: freezesRemaining, // Add this to the return object
+        message: message
+      };
+  
+    } catch (error) {
+      logger.error(`[getStreakData] Error fetching streak data for user ${userId}:`, error);
+      throw new HttpsError('internal', 'Could not retrieve streak data.', error.message);
+    }
+  });
+
+
+    /**
+     * Saves the experiment duration, reminder schedule, generates an experimentId,
+     * calculates the end timestamp, and snapshots active settings.
+     * Expects data payload: {
+     * experimentDuration: string (e.g., "1_week", "4_weeks"),
+     * userCurrentTime: string | null (e.g., "2:30 PM" or "14:30", or null if skipped),
+     * reminderWindowStartHour: string | null (e.g., "09" for 9 AM, "17" for 5 PM, or null),
+     * reminderWindowEndHour: string | null (e.g., "17" for 5 PM, "00" for midnight, or null),
+     * reminderFrequency: string (e.g., "daily_1", "none"),
+     * customReminderMessage: string | null (currently expected to be null from bot),
+     * skippedReminders: boolean (true if user explicitly skipped reminder setup)
+     * }
+     * Returns: { success: true, message: string, experimentId: string }
+     */
+exports.setExperimentSchedule = onCall(async (request) => {
+    if (!request.auth) {
+        logger.warn("setExperimentSchedule called without authentication.");
+        throw new HttpsError('unauthenticated', 'You must be logged in to set an experiment schedule.');
+    }
+
+    const userId = request.auth.uid;
+    const data = request.data;
+    const db = admin.firestore(); // Ensure db is initialized
+
+    logger.log(`setExperimentSchedule called by user: ${userId} with data:`, data);
+
+    // --- Validate Input Data ---
+    if (!data.experimentDuration || typeof data.experimentDuration !== 'string') {
+        throw new HttpsError('invalid-argument', 'Experiment duration is required and must be a string.');
+    }
+    const validDurations = ["1_week", "2_weeks", "3_weeks", "4_weeks"];
+    if (!validDurations.includes(data.experimentDuration)) {
+        throw new HttpsError('invalid-argument', `Invalid experiment duration: ${data.experimentDuration}.`);
+    }
+    if (typeof data.skippedReminders !== 'boolean') {
+        throw new HttpsError('invalid-argument', 'skippedReminders flag is required and must be a boolean.');
+    }
+
+    if (data.skippedReminders === false) {
+        if (data.reminderFrequency === 'none') {
+            if (data.userCurrentTime !== null || data.reminderWindowStartHour !== null || data.reminderWindowEndHour !== null) {
+                logger.warn(`[setExperimentSchedule] User ${userId} has reminderFrequency 'none' but also provided some time details. Frequency 'none' will take precedence.`, data);
+            }
+        } else {
+            if (typeof data.userCurrentTime !== 'string' || data.userCurrentTime.trim() === '') {
+                throw new HttpsError('invalid-argument', 'User current time is required when setting active reminders.');
+            }
+            if (typeof data.reminderWindowStartHour !== 'string' || data.reminderWindowStartHour.trim() === '') {
+                throw new HttpsError('invalid-argument', 'Reminder window start hour is required when setting active reminders.');
+            }
+            if (typeof data.reminderWindowEndHour !== 'string' || data.reminderWindowEndHour.trim() === '') {
+                throw new HttpsError('invalid-argument', 'Reminder window end hour is required when setting active reminders.');
+            }
+        }
+    }
+
+    // --- Generate unique experimentId ---
+    // Using Firestore's auto-ID for a new document in a temporary path to get an ID,
+    // then we'll use this ID. This is a robust way to get a unique ID.
+    const tempExperimentDocRef = db.collection('users').doc(userId).collection('_tempExperimentIds').doc();
+    const experimentId = tempExperimentDocRef.id; // This is the unique ID
+
+    // --- Fetch current weeklySettings to snapshot ---
+    const userDocRef = db.collection('users').doc(userId);
+    let scheduledExperimentSettings = null;
+    try {
+        const userDocSnap = await userDocRef.get();
+        if (userDocSnap.exists && userDocSnap.data().weeklySettings) {
+            scheduledExperimentSettings = userDocSnap.data().weeklySettings;
+            logger.log(`[setExperimentSchedule] User ${userId}: Found weeklySettings to snapshot.`);
+        } else {
+            logger.warn(`[setExperimentSchedule] User ${userId}: weeklySettings not found. Cannot snapshot settings for the experiment.`);
+            // Depending on strictness, you might throw an error or allow proceeding without settings snapshot
+            // For now, we'll allow it, but stats calculation might need to handle missing settings.
+            // throw new HttpsError('not-found', 'Weekly settings not found. Please set up your experiment metrics first using /go -> Set Experiment.');
+        }
+    } catch (error) {
+        logger.error(`[setExperimentSchedule] User ${userId}: Error fetching weeklySettings:`, error);
+        throw new HttpsError('internal', 'Failed to retrieve existing experiment settings.');
+    }
+
+
+    // --- Calculate experimentEndTimestamp ---
+    const now = new Date(); // Current server time
+    const experimentSetAtTimestamp = admin.firestore.Timestamp.fromDate(now); // Convert to Firestore Timestamp
+
+    let daysToAdd = 0;
+    switch (data.experimentDuration) {
+        case "1_week": daysToAdd = 7; break;
+        case "2_weeks": daysToAdd = 14; break;
+        case "3_weeks": daysToAdd = 21; break;
+        case "4_weeks": daysToAdd = 28; break;
+        default: throw new HttpsError('invalid-argument', `Invalid experiment duration: ${data.experimentDuration}`); // Should be caught by validation above
+    }
+
+    const experimentEndDate = new Date(now.getTime());
+    experimentEndDate.setDate(now.getDate() + daysToAdd);
+    // To ensure the report happens *after* the full last day, set time to end of that day or start of next.
+    // For simplicity in query later, let's aim for the same time of day, `daysToAdd` later.
+    // Or, to be more precise for "end of experiment", consider setting it to the end of the chosen day.
+    // For now, same time of day `daysToAdd` later is fine.
+    const experimentEndTimestamp = admin.firestore.Timestamp.fromDate(experimentEndDate);
+
+    // --- Calculate UTC reminder window if reminders are active ---
+    let reminderWindowStartUTC = null;
+    let reminderWindowEndUTC = null;
+    let initialUTCOffsetHours = null; // For potential future reference or debugging
+
+    if (!data.skippedReminders && data.reminderFrequency !== 'none' && data.userCurrentTime) {
+        try {
+            const nowUtcDate = new Date(); // Server's current UTC time
+            const serverCurrentUTCHour = nowUtcDate.getUTCHours();
+
+            const [timePart, ampmPart] = data.userCurrentTime.split(' '); // e.g., "2:30", "PM"
+            let [userReportedLocalHour, userReportedLocalMinute] = timePart.split(':').map(Number);
+
+            if (ampmPart.toUpperCase() === 'PM' && userReportedLocalHour !== 12) {
+                userReportedLocalHour += 12;
+            } else if (ampmPart.toUpperCase() === 'AM' && userReportedLocalHour === 12) { // 12 AM is hour 0
+                userReportedLocalHour = 0;
+            }
+            // userReportedLocalHour is now 0-23
+
+            // Offset = UTC_Hour - Local_Hour_Normalized_To_Same_Day_As_UTC_For_Calc
+            // This offset, when added to a local hour, gives the UTC hour.
+            initialUTCOffsetHours = serverCurrentUTCHour - userReportedLocalHour;
+            // Note: This offset can be > +12 or < -12 if there's a date boundary,
+            // but for converting window hours, we primarily care about the hour shift.
+            // The (hour + offset + 24) % 24 handles this correctly for hours.
+
+            const localStartHourInt = parseInt(data.reminderWindowStartHour, 10); // "00" - "23"
+            const localEndHourInt = parseInt(data.reminderWindowEndHour, 10);   // "00" - "23"
+
+            reminderWindowStartUTC = (localStartHourInt + initialUTCOffsetHours + 24) % 24;
+            reminderWindowEndUTC = (localEndHourInt + initialUTCOffsetHours + 24) % 24;
+
+            logger.log(`[setExperimentSchedule] User: ${userId}. Local time provided: ${data.userCurrentTime} (parsed as hour ${userReportedLocalHour}). Server UTC hour: ${serverCurrentUTCHour}. Calculated initial offset to get UTC: ${initialUTCOffsetHours} hours. Local window ${data.reminderWindowStartHour}-${data.reminderWindowEndHour} maps to UTC window: ${reminderWindowStartUTC}-${reminderWindowEndUTC}.`);
+
+        } catch (e) {
+            logger.error(`[setExperimentSchedule] User ${userId}: Error calculating UTC reminder window details. Reminders might not work correctly. Error:`, e);
+            // Keep UTC fields null if calculation fails
+            reminderWindowStartUTC = null;
+            reminderWindowEndUTC = null;
+            initialUTCOffsetHours = null;
+        }
+    }
+
+    const experimentScheduleData = {
+        experimentId: experimentId,
+        experimentDuration: data.experimentDuration,
+        experimentSetAt: experimentSetAtTimestamp,
+        experimentEndTimestamp: experimentEndTimestamp,
+        statsProcessed: false,
+        scheduledExperimentSettings: scheduledExperimentSettings,
+
+        // Original reminder fields (can be kept for reference or if bot UX uses them)
+        userCurrentTimeAtSetup: data.skippedReminders ? null : data.userCurrentTime,
+        reminderWindowStartLocal: data.skippedReminders || data.reminderFrequency === 'none' ? null : data.reminderWindowStartHour,
+        reminderWindowEndLocal: data.skippedReminders || data.reminderFrequency === 'none' ? null : data.reminderWindowEndHour,
+        reminderFrequency: data.reminderFrequency,
+        remindersSkipped: data.skippedReminders,
+
+        // NEW/MODIFIED fields for reminder processing
+        reminderWindowStartUTC: reminderWindowStartUTC,       // Integer hour (0-23) in UTC
+        reminderWindowEndUTC: reminderWindowEndUTC,         // Integer hour (0-23) in UTC
+        initialUTCOffsetHours: initialUTCOffsetHours,       // The calculated offset at setup (for debugging/info)
+        lastReminderSentDayOfYearUTC: null,                 // e.g., 135 (for the 135th day of the year in UTC)
+        remindersSentOnLastDay: 0                         // Counter for how many sent on that UTC day
+    };
+
+    try {
+        await userDocRef.set({
+            experimentCurrentSchedule: experimentScheduleData
+        }, { merge: true });
+        logger.log(`Successfully saved experiment schedule for user ${userId}:`, experimentScheduleData);
+
+        let message = `✅ Experiment (ID: ${experimentId}) duration set to ${data.experimentDuration.replace('_', ' ')}.`;
+        if (data.skippedReminders) {
+            message += " Reminders were skipped.";
+        } else if (data.reminderFrequency === 'none') {
+            message += " No reminders will be sent.";
+        } else {
+            message += ` Reminders scheduled (frequency: ${data.reminderFrequency.replace('_', ' ')}, window: ${data.reminderWindowStartHour}:00-${data.reminderWindowEndHour}:00 based on your local time).`;
+        }
+
+        return { success: true, message: message, experimentId: experimentId }; // MODIFIED: Return experimentId
+
+    } catch (error) {
+        logger.error("Error writing experiment schedule to Firestore for user:", userId, error);
+        throw new HttpsError('internal', 'Could not save experiment schedule due to a server error.', error.message);
+    }
+});
+
+// ============== STATS HELPER FUNCTIONS ==============
+function calculateMean(arr) {
+    if (!arr || arr.length === 0) return 0;
+    return arr.reduce((acc, val) => acc + val, 0) / arr.length;
+}
+
+function calculateMedian(arr) {
+    if (!arr || arr.length === 0) return 0;
+    const sortedArr = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sortedArr.length / 2);
+    return sortedArr.length % 2 !== 0 ? sortedArr[mid] : (sortedArr[mid - 1] + sortedArr[mid]) / 2;
+}
+
+function calculateStdDev(arr, mean) {
+    if (!arr || arr.length === 0) return 0;
+    const n = arr.length;
+    return Math.sqrt(arr.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b) / n);
+}
+
+function calculateVariationPercentage(stdDev, mean) {
+    if (mean === 0) return 0; // Avoid division by zero; or could return Infinity or a specific marker
+    return (stdDev / mean) * 100;
+}
+
+function calculateQuartiles(arr) {
+    if (!arr || arr.length < 4) return { q1: null, q3: null, iqr: null }; // Need at least 4 points for meaningful quartiles this way
+    const sortedArr = [...arr].sort((a, b) => a - b);
+    const n = sortedArr.length;
+
+    // Calculate Q1 (25th percentile)
+    const q1Index = (n + 1) / 4;
+    let q1;
+    if (Number.isInteger(q1Index)) {
+        q1 = sortedArr[q1Index - 1];
+    } else {
+        const lower = sortedArr[Math.floor(q1Index) - 1];
+        const upper = sortedArr[Math.ceil(q1Index) - 1];
+        q1 = lower + (upper - lower) * (q1Index - Math.floor(q1Index));
+    }
+
+    // Calculate Q3 (75th percentile)
+    const q3Index = (3 * (n + 1)) / 4;
+    let q3;
+    if (Number.isInteger(q3Index)) {
+        q3 = sortedArr[q3Index - 1];
+    } else {
+        const lower = sortedArr[Math.floor(q3Index) - 1];
+        const upper = sortedArr[Math.ceil(q3Index) - 1];
+        q3 = lower + (upper - lower) * (q3Index - Math.floor(q3Index));
+    }
+
+    const iqr = (q1 !== null && q3 !== null) ? q3 - q1 : null;
+
+    return { 
+        q1: q1 !== null ? parseFloat(q1.toFixed(2)) : null, 
+        q3: q3 !== null ? parseFloat(q3.toFixed(2)) : null, 
+        iqr: iqr !== null ? parseFloat(iqr.toFixed(2)) : null
+    };
+}
+
+function getHighLowGroup(value, median) {
+    if (value === null || median === null) return 'N/A';
+    if (value > median) return 'High';
+    if (value < median) return 'Low';
+    return 'Median'; // Value is equal to median
+}
+
+function normalizeLabel(str) {
+    if (typeof str !== 'string') {
+      return ""; // Handle non-string inputs gracefully
+    }
+    return str
+      .toLowerCase()
+      .replace(/[^a-z0-9\s_/-]+/g, '') // Allow alphanumeric, space, underscore, slash, hyphen
+      .replace(/\s+/g, ' ') // Consolidate multiple spaces
+      .trim();
+  }
+
+// Helper function to interpret group keys for summary messages
+function interpretFirebaseGroupKey(groupKeyString, input1Label, input2Label) {
+  // groupKeyString is like 'input1High_input2Low', 'input1Low_input2High', etc.
+  // These keys are hardcoded in the groupsData structure in _calculateAndStorePeriodStatsLogic
+  let condition1 = '';
+  let condition2 = '';
+
+  if (groupKeyString.startsWith('input1High')) {
+    condition1 = `${input1Label} was High`;
+  } else if (groupKeyString.startsWith('input1Low')) {
+    condition1 = `${input1Label} was Low`;
+  }
+
+  if (groupKeyString.endsWith('input2High')) {
+    condition2 = `${input2Label} was High`;
+  } else if (groupKeyString.endsWith('input2Low')) {
+    condition2 = `${input2Label} was Low`;
+  }
+
+  if (condition1 && condition2) {
+    return `${condition1} & ${condition2}`;
+  } else if (condition1) {
+    return condition1; // Should not happen with current keys
+  } else if (condition2) {
+    return condition2; // Should not happen with current keys
+  }
+  return "unknown condition";
+}
+
+// ============== END OF STATS HELPER FUNCTIONS ==============
+
+// ============== INTERNAL HELPER FUNCTION for Stats Calculation ==============
+/**
+ * Core logic for calculating and storing period statistics.
+ * This function is NOT directly callable via HTTPS, it's an internal helper.
+ *
+ * @param {string} userId - The user whose stats are being calculated.
+ * @param {string} userTag - The user's tag.
+ * @param {string} experimentId - The ID of the experiment.
+ * @param {admin.firestore.Timestamp | object} experimentSettingsTimestampInput - Firestore Timestamp or object with _seconds, _nanoseconds, or .toDate() representing when settings were snapshotted.
+ * @param {string} experimentEndDateISOInput - ISO string for the experiment end date.
+ * @param {object} activeExperimentSettings - The snapshot of experiment settings.
+ * @param {string} callingFunction - Identifier for the calling function (e.g., 'onCall', 'scheduledTask') for logging.
+ * @returns {Promise<object>} A promise that resolves to an object with success status, message, etc.
+ */
+async function _calculateAndStorePeriodStatsLogic(
+    userId,
+    userTag,
+    experimentId,
+    experimentSettingsTimestampInput,
+    experimentEndDateISOInput,
+    activeExperimentSettings,
+    callingFunction = "unknown"
+) {
+    const db = admin.firestore(); // Ensure db is initialized from admin
+    logger.log(`[${callingFunction}] _calculateAndStorePeriodStatsLogic started for user: ${userId}, experiment ID: ${experimentId}`);
+
+    // Step 1: Basic Input Validation (already somewhat done by callers, but good to have sanity checks)
+    if (!userId || !userTag || !experimentId || !experimentSettingsTimestampInput || !experimentEndDateISOInput || !activeExperimentSettings) {
+      logger.error(`[${callingFunction}] _calculateAndStorePeriodStatsLogic: Missing required parameters.`, {
+          userIdProvided: !!userId,
+          userTagProvided: !!userTag,
+          experimentIdProvided: !!experimentId,
+          experimentSettingsTimestampInputProvided: !!experimentSettingsTimestampInput,
+          experimentEndDateISOInputProvided: !!experimentEndDateISOInput,
+          activeExperimentSettingsProvided: !!activeExperimentSettings,
+      });
+      // For an internal function, we might throw an error or return a specific failure object.
+      // Since the original onCall threw HttpsError, we'll return a similar structure.
+      return {
+        success: false,
+        status: 'error_internal_missing_params',
+        message: 'Internal Error: Missing required parameters for stats calculation logic.',
+        experimentId: experimentId,
+      };
+    }
+
+    if (typeof activeExperimentSettings !== 'object' ||
+        !activeExperimentSettings.output || typeof activeExperimentSettings.output.label !== 'string' ||
+        !activeExperimentSettings.input1 || typeof activeExperimentSettings.input1.label !== 'string'
+       ) {
+      logger.error(`[${callingFunction}] _calculateAndStorePeriodStatsLogic: Invalid activeExperimentSettings structure. Minimum output and input1 must be defined with labels.`, { activeExperimentSettings });
+      return {
+        success: false,
+        status: 'error_internal_invalid_settings_structure',
+        message: 'Internal Error: Invalid activeExperimentSettings structure for stats calculation logic.',
+        experimentId: experimentId,
+      };
+    }
+    // Minor validation for input2/input3 structure can remain if desired, but less critical for internal calls if callers ensure valid settings.
+
+    let settingsTimestampDate;
+    let endDate;
+    try {
+      if (typeof experimentSettingsTimestampInput === 'string') {
+        settingsTimestampDate = new Date(experimentSettingsTimestampInput);
+      } else if (experimentSettingsTimestampInput && typeof experimentSettingsTimestampInput.toDate === 'function') {
+        settingsTimestampDate = experimentSettingsTimestampInput.toDate();
+      } else if (experimentSettingsTimestampInput && typeof experimentSettingsTimestampInput === 'object' && '_seconds' in experimentSettingsTimestampInput && '_nanoseconds' in experimentSettingsTimestampInput) {
+        settingsTimestampDate = new Date(experimentSettingsTimestampInput._seconds * 1000 + (experimentSettingsTimestampInput._nanoseconds / 1000000));
+      } else {
+          throw new Error('Invalid experimentSettingsTimestampInput format. Expected ISO string or Firestore Timestamp-like object.');
+      }
+
+      endDate = new Date(experimentEndDateISOInput);
+      if (isNaN(settingsTimestampDate.getTime())) {
+          logger.error(`[${callingFunction}] Invalid date generated for experimentSettingsTimestampInput.`, { input: JSON.stringify(experimentSettingsTimestampInput) });
+          throw new Error(`Invalid date for experimentSettingsTimestampInput.`);
+      }
+      if (isNaN(endDate.getTime())) {
+          logger.error(`[${callingFunction}] Invalid date generated for experimentEndDateISOInput.`, { input: experimentEndDateISOInput });
+          throw new Error(`Invalid date for experimentEndDateISOInput.`);
+      }
+      logger.log(`[${callingFunction}] Converted Timestamps for user ${userId}, experiment ${experimentId}: Start - ${settingsTimestampDate.toISOString()}, End - ${endDate.toISOString()}`);
+    } catch (error) {
+      logger.error(`[${callingFunction}] _calculateAndStorePeriodStatsLogic: Error converting timestamp strings/objects to Date objects.`, {
+          userId: userId, experimentId: experimentId, error: error.message
+      });
+      return {
+        success: false,
+        status: 'error_internal_timestamp_conversion',
+        message: `Internal Error: Invalid timestamp format: ${error.message}`,
+        experimentId: experimentId,
+      };
+    }
+
+    logger.info(`[${callingFunction}] [calculateAndStorePeriodStats] Initial validation and setup complete for user ${userId}, experiment ${experimentId}. Fetching logs...`);
+    // Step 2: Fetching Raw Logs (Code from original function, lines 384-390)
+    let fetchedLogs = [];
+    try {
+      const logsQuery = db.collection('logs')
+        .where('userId', '==', userId)
+        .where('timestamp', '>=', settingsTimestampDate)
+        .where('timestamp', '<=', endDate)
+        .orderBy('timestamp', 'asc');
+      const snapshot = await logsQuery.get();
+      if (snapshot.empty) {
+        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] No logs found for user ${userId} in the period for experiment ${experimentId}.`);
+      } else {
+        snapshot.forEach(doc => {
+          const logData = doc.data();
+          if (logData.timestamp && typeof logData.timestamp.toDate === 'function') {
+              logData.timestamp = logData.timestamp.toDate();
+          }
+          fetchedLogs.push({ id: doc.id, ...logData });
+        });
+        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Fetched ${fetchedLogs.length} logs for user ${userId}, experiment ${experimentId}.`);
+      }
+    } catch (error) {
+      logger.error(`[${callingFunction}] [calculateAndStorePeriodStats] Error fetching logs for user ${userId}, experiment ${experimentId}:`, error);
+      return { // Consistent error return
+        success: false,
+        status: 'error_internal_log_fetch_failed',
+        message: `Internal Error: Failed to fetch logs: ${error.message}`,
+        experimentId: experimentId,
+        errorDetails: error.toString()
+      };
+    }
+
+    // Step 3: Initial Log Count Check (Code from original function, lines 391-400)
+    const MINIMUM_OVERALL_LOGS = 5;
+    const totalLogsInPeriodProcessed = fetchedLogs.length;
+
+    if (totalLogsInPeriodProcessed < MINIMUM_OVERALL_LOGS) {
+      const message = `We don't have enough data to give you meaningful stats yet (found ${totalLogsInPeriodProcessed} logs, minimum ${MINIMUM_OVERALL_LOGS} required). Keep logging to fuel your experiment!`;
+      logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Insufficient overall data for user ${userId}, experiment ${experimentId}. ${message}`);
+      const finalStatsObject = {
+          experimentId: experimentId,
+          userId: userId,
+          userTag: userTag,
+          experimentSettingsTimestamp: settingsTimestampDate.toISOString(),
+          experimentEndDateISO: endDate.toISOString(),
+          activeExperimentSettings: activeExperimentSettings,
+          calculationTimestamp: FieldValue.serverTimestamp(),
+          totalLogsInPeriodProcessed: totalLogsInPeriodProcessed,
+          status: 'insufficient_overall_data',
+          message: message,
+          calculatedMetricStats: {},
+          correlations: {},
+          stratifiedAnalysisPrep: {}
+      };
+      try {
+          await db.collection('users').doc(userId).collection('experimentStats').doc(experimentId).set(finalStatsObject);
+          logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Stored 'insufficient_overall_data' record for user ${userId}, experiment ${experimentId}.`);
+      } catch (storeError) {
+          logger.error(`[${callingFunction}] [calculateAndStorePeriodStats] Failed to store 'insufficient_overall_data' record for user ${userId}, experiment ${experimentId}:`, storeError);
+          // Don't throw an error that would overwrite the primary reason, but the outer call might catch this if it's a throw
+      }
+      return {
+        success: true, // The function itself completed its intended path for this case
+        status: 'insufficient_overall_data',
+        message: message,
+        experimentId: experimentId,
+        totalLogsInPeriodProcessed: totalLogsInPeriodProcessed
+      };
+    }
+
+    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Logs fetched (${totalLogsInPeriodProcessed}) and count is sufficient for user ${userId}, experiment ${experimentId}. Starting data extraction...`);
+    // Step 3 (Continued): Data Extraction (Code from original function, lines 403-426)
+    const metricValues = {};
+    const metricLabels = {};
+    const pMetrics = [
+        activeExperimentSettings.output,
+        activeExperimentSettings.input1,
+        activeExperimentSettings.input2,
+        activeExperimentSettings.input3
+    ];
+    for (const metricSetting of pMetrics) {
+        if (metricSetting && typeof metricSetting.label === 'string' && metricSetting.label.trim() !== "") {
+            metricValues[metricSetting.label] = [];
+            metricLabels[metricSetting.label] = { label: metricSetting.label, unit: metricSetting.unit || "" };
+        }
+    }
+    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Initialized metricValues for labels: ${Object.keys(metricValues).join(', ')} for user ${userId}, experiment ${experimentId}`);
+    let nonNumericEntriesCount = 0;
+    let missingMetricInLogCount = 0;
+
+    fetchedLogs.forEach(log => {
+                // ================= Replacement Block Starts Here =================
+        // Ensure normalizeLabel and normalizeUnit are defined in the same file or imported.
+        // At the top of your functions index with stats.txt, or near normalizeLabel, add:
+        // const normalizeUnit = normalizeLabel; // If you're reusing for simplicity
+
+        // --- Output Metric Matching ---
+        if (log.output && typeof log.output.label === 'string' && typeof log.output.unit === 'string' &&
+            activeExperimentSettings.output && typeof activeExperimentSettings.output.label === 'string' && typeof activeExperimentSettings.output.unit === 'string') {
+
+            const normalizedLogOutputLabel = normalizeLabel(log.output.label);
+            const normalizedLogOutputUnit = normalizeUnit(log.output.unit); // Make sure normalizeUnit is defined
+            const normalizedSettingsOutputLabel = normalizeLabel(activeExperimentSettings.output.label);
+            const normalizedSettingsOutputUnit = normalizeUnit(activeExperimentSettings.output.unit); // Make sure normalizeUnit is defined
+
+            if (normalizedLogOutputLabel === normalizedSettingsOutputLabel &&
+                normalizedLogOutputUnit === normalizedSettingsOutputUnit) {
+                const value = parseFloat(log.output.value);
+                if (!isNaN(value)) {
+                    const settingsOutputOriginalLabel = activeExperimentSettings.output.label;
+                    if (metricValues[settingsOutputOriginalLabel]) {
+                        metricValues[settingsOutputOriginalLabel].push(value);
+                    } else {
+                        logger.warn(`[${callingFunction}] metricValues key '${settingsOutputOriginalLabel}' for output not pre-initialized. Log ID: ${log.id}`);
+                    }
+                } else {
+                    nonNumericEntriesCount++;
+                    logger.warn(`[${callingFunction}] Non-numeric output value found in log ${log.id} for metric ${activeExperimentSettings.output.label}. Value: ${log.output.value}`);
+                }
+            } else if (normalizedLogOutputLabel === normalizedSettingsOutputLabel && normalizedLogOutputUnit !== normalizedSettingsOutputUnit) {
+                logger.info(`[${callingFunction}] Output label "${normalizedLogOutputLabel}" matched settings, but units differ. Log: "${log.output.unit}", Settings: "${activeExperimentSettings.output.unit}". Log ID: ${log.id}`);
+            }
+        } else {
+            // This 'else' means the log.output structure was incomplete or activeExperimentSettings.output was incomplete
+            missingMetricInLogCount++; // Count as missing if structure is invalid for robust matching
+            logger.warn(`[${callingFunction}] [calculateAndStorePeriodStats] Output metric in log ${log.id} or in settings was missing label/unit fields, or expected activeExperimentSettings.output was not found. Log output: ${JSON.stringify(log.output)}`);
+        }
+
+
+        // --- Input Metrics Matching ---
+        const inputSettingsToCheck = [
+            activeExperimentSettings.input1,
+            activeExperimentSettings.input2,
+            activeExperimentSettings.input3
+        ];
+        inputSettingsToCheck.forEach(inputSetting => {
+            if (inputSetting && typeof inputSetting.label === 'string' && inputSetting.label.trim() !== "" && typeof inputSetting.unit === 'string') {
+                const settingsOriginalLabel = inputSetting.label;
+                const normalizedSettingsLabel = normalizeLabel(settingsOriginalLabel);
+                const normalizedSettingsUnit = normalizeUnit(inputSetting.unit); // Make sure normalizeUnit is defined
+
+                const foundInput = log.inputs && Array.isArray(log.inputs) ?
+                    log.inputs.find(inp =>
+                        inp && typeof inp.label === 'string' && typeof inp.unit === 'string' &&
+                        normalizeLabel(inp.label) === normalizedSettingsLabel &&
+                        normalizeUnit(inp.unit) === normalizedSettingsUnit // Make sure normalizeUnit is defined
+                    )
+                    : undefined;
+
+                if (foundInput) {
+                    const value = parseFloat(foundInput.value);
+                    if (!isNaN(value)) {
+                        if (metricValues[settingsOriginalLabel]) {
+                            metricValues[settingsOriginalLabel].push(value);
+                        } else {
+                            logger.warn(`[${callingFunction}] metricValues key '${settingsOriginalLabel}' for input not pre-initialized. Log ID: ${log.id}`);
+                        }
+                    } else {
+                        nonNumericEntriesCount++;
+                        logger.warn(`[${callingFunction}] Non-numeric input value found in log ${log.id} for metric ${settingsOriginalLabel}. Value: ${foundInput.value}`);
+                    }
+                } else {
+                    // Logic to check for label match with different unit and update missingMetricInLogCount
+                    let labelMatchedWithDifferentUnit = false;
+                    if (log.inputs && Array.isArray(log.inputs)) {
+                        const labelMatchDifferentUnitCheck = log.inputs.find(inp =>
+                            inp && typeof inp.label === 'string' && typeof inp.unit === 'string' &&
+                            normalizeLabel(inp.label) === normalizedSettingsLabel &&
+                            normalizeUnit(inp.unit) !== normalizedSettingsUnit // Make sure normalizeUnit is defined
+                        );
+                        if (labelMatchDifferentUnitCheck) {
+                            logger.info(`[${callingFunction}] Input label "${normalizedSettingsLabel}" matched settings, but units differ. Log: "${labelMatchDifferentUnitCheck.unit}", Settings: "${inputSetting.unit}". Log ID: ${log.id}`);
+                            labelMatchedWithDifferentUnit = true;
+                        }
+                    }
+                    // Only increment missingMetricInLogCount if no label match was found at all
+                    if (!labelMatchedWithDifferentUnit) {
+                        missingMetricInLogCount++;
+                        // You can keep or remove the more verbose log about the specific metric not being found
+                        // logger.info(`[${callingFunction}] Configured input metric ${settingsOriginalLabel} (normalized: ${normalizedSettingsLabel}/${normalizedSettingsUnit}) not found with matching unit in log ${log.id}.`);
+                    }
+                }
+            }
+        });
+        // =================  Replacement Block Ends Here  =================
+    });
+    if (nonNumericEntriesCount > 0) {
+        logger.warn(`[${callingFunction}] [calculateAndStorePeriodStats] Found ${nonNumericEntriesCount} non-numeric entries across all logs for user ${userId}, experiment ${experimentId}. These were skipped.`);
+    }
+    if (missingMetricInLogCount > 0) {
+        logger.info(`[${callingFunction}] [calculateAndStorePeriodStats] A total of ${missingMetricInLogCount} instances of configured metrics were not found in individual logs for user ${userId}, experiment ${experimentId}.`);
+    }
+    Object.keys(metricValues).forEach(key => {
+        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Extracted ${metricValues[key].length} values for metric "${key}" for user ${userId}, experiment ${experimentId}`);
+    });
+
+    // Step 4: Calculate Core Statistics (Code from original function, lines 427-441)
+    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Starting core statistics calculation for user ${userId}, experiment ${experimentId}.`);
+    const calculatedMetricStats = {};
+    const skippedMetrics = [];
+    const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
+    for (const labelKey in metricValues) {
+        if (Object.prototype.hasOwnProperty.call(metricValues, labelKey)) {
+            const values = metricValues[labelKey];
+            const dataPoints = values.length;
+            const metricDetail = metricLabels[labelKey] || { label: labelKey, unit: "" };
+            if (dataPoints < MINIMUM_DATAPOINTS_FOR_METRIC_STATS) {
+                logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Skipping stats for metric "${labelKey}" due to insufficient data points (${dataPoints} < ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS}). User: ${userId}, Exp: ${experimentId}`);
+                skippedMetrics.push({
+                    label: metricDetail.label,
+                    unit: metricDetail.unit,
+                    dataPoints: dataPoints,
+                    reason: `Insufficient data points (minimum ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS} required).`
+                });
+                calculatedMetricStats[labelKey] = {
+                    label: metricDetail.label,
+                    unit: metricDetail.unit,
+                    dataPoints: dataPoints,
+                    average: null,
+                    median: null,
+                    variationPercentage: null,
+                    status: 'skipped_insufficient_data'
+                };
+            } else {
+                const mean = calculateMean(values);
+                const median = calculateMedian(values);
+                const stdDev = calculateStdDev(values, mean);
+                const variation = calculateVariationPercentage(stdDev, mean);
+                calculatedMetricStats[labelKey] = {
+                    label: metricDetail.label,
+                    unit: metricDetail.unit,
+                    dataPoints: dataPoints,
+                    average: parseFloat(mean.toFixed(2)),
+                    median: parseFloat(median.toFixed(2)),
+                    variationPercentage: parseFloat(variation.toFixed(2))
+                };
+                logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Calculated stats for metric "${labelKey}": Avg=${mean.toFixed(2)}, Med=${median.toFixed(2)}, Var%=${variation.toFixed(2)}, DP=${dataPoints}. User: ${userId}, Exp: ${experimentId}`);
+            }
+        }
+    }
+    if (skippedMetrics.length > 0) {
+        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Total skipped metrics due to insufficient data: ${skippedMetrics.length} for user ${userId}, experiment ${experimentId}. Details:`, skippedMetrics);
+    }
+
+    // Step 5: Calculate Correlations (Code from original function, lines 442-478)
+    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Starting correlation calculations for user ${userId}, experiment ${experimentId}.`);
+    const correlations = {};
+    const MINIMUM_PAIRS_FOR_CORRELATION = 5;
+    const outputMetricLabel = activeExperimentSettings.output.label;
+    const outputValues = metricValues[outputMetricLabel];
+    const outputStats = calculatedMetricStats[outputMetricLabel];
+
+    if (!outputStats || outputStats.dataPoints < MINIMUM_PAIRS_FOR_CORRELATION) {
+        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Output metric "${outputMetricLabel}" has insufficient data (${outputStats ? outputStats.dataPoints : 0} points) for correlation. Skipping all correlations. User: ${userId}, Exp: ${experimentId}`);
+    } else {
+        const inputMetricSettings = [
+            activeExperimentSettings.input1,
+            activeExperimentSettings.input2,
+            activeExperimentSettings.input3
+        ];
+        for (const inputSetting of inputMetricSettings) {
+            if (inputSetting && typeof inputSetting.label === 'string' && inputSetting.label.trim() !== "") {
+                const inputLabel = inputSetting.label;
+                const inputStats = calculatedMetricStats[inputLabel];
+                const inputValues = metricValues[inputLabel];
+
+                if (!inputStats || inputStats.dataPoints < MINIMUM_PAIRS_FOR_CORRELATION) {
+                    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Input metric "${inputLabel}" has insufficient data (${inputStats ? inputStats.dataPoints : 0} points) for correlation with output. User: ${userId}, Exp: ${experimentId}`);
+                    correlations[inputLabel] = {
+                        label: inputLabel,
+                        vsOutputLabel: outputMetricLabel,
+                        coefficient: null,
+                        pValue: null,
+                        interpretation: "Insufficient data for this input metric.",
+                        n_pairs: inputStats ? inputStats.dataPoints : 0,
+                        status: "skipped_insufficient_input_data"
+                    };
+                    continue;
+                }
+                let pairedInputValues = [];
+                let pairedOutputValues = [];
+                const n_pairs = Math.min(inputValues.length, outputValues.length);
+                if (n_pairs < MINIMUM_PAIRS_FOR_CORRELATION) {
+                    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Insufficient PAIRS (${n_pairs}) for correlation between "${inputLabel}" and "${outputMetricLabel}" after aligning. User: ${userId}, Exp: ${experimentId}`);
+                    correlations[inputLabel] = {
+                        label: inputLabel,
+                        vsOutputLabel: outputMetricLabel,
+                        coefficient: null,
+                        pValue: null,
+                        interpretation: `Insufficient aligned data pairs (${n_pairs}) for correlation.`,
+                        n_pairs: n_pairs,
+                        status: "skipped_insufficient_aligned_pairs"
+                    };
+                    continue;
+                }
+                pairedInputValues = inputValues.slice(0, n_pairs);
+                pairedOutputValues = outputValues.slice(0, n_pairs);
+                // NEW try...catch block for correlation (with p-value)
+                try {
+                    const coefficient = jStat.corrcoeff(pairedInputValues, pairedOutputValues);
+                    let pValue = null; // Initialize pValue
+
+                    if (n_pairs > 2 && Math.abs(coefficient) < 1 && Math.abs(coefficient) > 1e-9) { // Added > 1e-9 to avoid issues with coeff near 0 for tStat
+                        const tStat = coefficient * Math.sqrt((n_pairs - 2) / (1 - (coefficient * coefficient)));
+                        // pValue for two-tailed test
+                        if (isFinite(tStat)) { // Check if tStat is a finite number
+                            pValue = 2 * (1 - jStat.studentt.cdf(Math.abs(tStat), n_pairs - 2));
+                        } else {
+                            pValue = 1.0; // If tStat is not finite (e.g. coeff is exactly 1 or -1, or near 0 leading to issues)
+                            logger.warn(`[<span class="math-inline">\{callingFunction\}\] \[Correlation\] tStat was not finite for "</span>{inputLabel}" vs "${outputMetricLabel}". Coeff: ${coefficient}, N: ${n_pairs}. Setting pValue to 1.0.`);
+                        }
+                    } else if (Math.abs(coefficient) >= 1) {
+                        pValue = 0.0; // Perfect correlation, typically p-value is considered 0
+                    } else {
+                        pValue = 1.0; // Not enough pairs or coefficient is trivial, assume not significant
+                    }
+
+
+                    let interpretation = "";
+                    const absCoeff = Math.abs(coefficient);
+                    let strength = "";
+
+                    if (absCoeff >= 0.7) strength = "🟥very strong";
+                    else if (absCoeff >= 0.45) strength = "🟧strong";
+                    else if (absCoeff >= 0.3) strength = "🟨moderate";
+                    else if (absCoeff >= 0.15) strength = "🟩weak";
+                    else strength = "🟦no detectable";
+
+                    const direction = coefficient >= 0 ? "positive" : "negative";
+
+                    const isSignificant = pValue !== null && pValue < 0.05;
+
+                    if (strength === "🟦no detectable") { 
+                        interpretation = `There appears to be ${strength} correlation between ${inputLabel} and ${outputMetricLabel}.`;
+                    } else if (isSignificant) {
+                        interpretation = `You can be 95% confident that there is a ${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.`;
+                    } else {
+                        interpretation = `It appears there may be a ${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}. Worth getting more data?`;
+                    }
+
+                    correlations[inputLabel] = {
+                        label: inputLabel,
+                        vsOutputLabel: outputMetricLabel,
+                        coefficient: parseFloat(coefficient.toFixed(3)),
+                        pValue: pValue !== null && isFinite(pValue) ? parseFloat(pValue.toFixed(3)) : null, // Store p-value, ensure finite
+                        interpretation: interpretation,
+                        n_pairs: n_pairs,
+                        status: "calculated"
+                    };
+                    // Corrected logger string for HTML display in Firebase logs
+                    logger.log(`[<span class="math-inline">\{callingFunction\}\] \[Correlation\] For "</span>{inputLabel}" vs "<span class="math-inline">\{outputMetricLabel\}"\: Coeff\=</span>{coefficient.toFixed(3)}, PVal=<span class="math-inline">\{pValue \!\=\= null && isFinite\(pValue\) ? pValue\.toFixed\(3\) \: 'N/A'\}, N\=</span>{n_pairs}. User: ${userId}, Exp: ${experimentId}`);
+
+                } catch (corrError) {
+                    logger.error(`[<span class="math-inline">\{callingFunction\}\] \[calculateAndStorePeriodStats\] Error calculating correlation for "</span>{inputLabel}" vs "${outputMetricLabel}". User: ${userId}, Exp: ${experimentId}`, corrError);
+                    correlations[inputLabel] = { // Ensure this matches the structure above if an error occurs
+                        label: inputLabel,
+                        vsOutputLabel: outputMetricLabel,
+                        coefficient: null,
+                        pValue: null,
+                        interpretation: "Error during calculation.",
+                        n_pairs: n_pairs, // n_pairs should be available here from before the try
+                        status: "error_during_calculation",
+                        error_message: corrError.message
+                    };
+                }
+            }
+        }
+    }
+
+    // Step 6: Prepare Data Structures for Stratified Analysis (Code from original function, lines 479-493)
+    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Preparing data for stratified analysis. User: ${userId}, Exp: ${experimentId}`);
+    const stratifiedAnalysisPrep = {
+        outputMetricLabel: activeExperimentSettings.output.label,
+        outputValues: metricValues[activeExperimentSettings.output.label] || [],
+        outputStats: {},
+        inputMedians: {}
+    };
+    const outputMetricValuesForStrat = metricValues[activeExperimentSettings.output.label];
+    if (outputMetricValuesForStrat && outputMetricValuesForStrat.length >= MINIMUM_DATAPOINTS_FOR_METRIC_STATS) {
+        const outputQuartiles = calculateQuartiles(outputMetricValuesForStrat);
+        stratifiedAnalysisPrep.outputStats = {
+            q1: outputQuartiles.q1,
+            median: calculatedMetricStats[activeExperimentSettings.output.label]?.median,
+            q3: outputQuartiles.q3,
+            iqr: outputQuartiles.iqr
+            };
+        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Output quartiles for "${activeExperimentSettings.output.label}": Q1=${outputQuartiles.q1}, Q3=${outputQuartiles.q3}, IQR=${outputQuartiles.iqr}. User: ${userId}, Exp: ${experimentId}`);
+    } else {
+        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Insufficient data for output metric "${activeExperimentSettings.output.label}" to calculate quartiles. User: ${userId}, Exp: ${experimentId}`);
+        stratifiedAnalysisPrep.outputStats = { q1: null, median: null, q3: null, iqr: null, status: "insufficient_data_for_quartiles" };
+    }
+    const inputSettingsForStrat = [
+        activeExperimentSettings.input1,
+        activeExperimentSettings.input2,
+        activeExperimentSettings.input3
+    ];
+    for (const inputSetting of inputSettingsForStrat) {
+        if (inputSetting && typeof inputSetting.label === 'string' && inputSetting.label.trim() !== "") {
+            const inputLabel = inputSetting.label;
+            if (calculatedMetricStats[inputLabel] && calculatedMetricStats[inputLabel].median !== null) {
+                stratifiedAnalysisPrep.inputMedians[inputLabel] = calculatedMetricStats[inputLabel].median;
+            } else {
+                stratifiedAnalysisPrep.inputMedians[inputLabel] = null;
+            }
+        }
+    }
+            logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Input medians for stratified prep: ${JSON.stringify(stratifiedAnalysisPrep.inputMedians)}. User: ${userId}, Exp: ${experimentId}`);
+
+            // ============== START: Pairwise Interaction Analysis Logic ==============
+            const MIN_DATAPOINTS_FOR_GROUP_ANALYSIS = 3; // Minimum data points needed in a group to report an average.
+            const IQR_MULTIPLIER = 1.5;
+            const pairwiseInteractionResults = {};
+
+            // Get Overall Output Statistics for significance thresholds
+            const overallOutputLabel = stratifiedAnalysisPrep.outputMetricLabel;
+            const overallOutputStats = stratifiedAnalysisPrep.outputStats;
+            let upperThreshold = null;
+            let lowerThreshold = null;
+            let thresholdsCalculated = false;
+
+            if (overallOutputStats && typeof overallOutputStats.median === 'number' && typeof overallOutputStats.iqr === 'number' && overallOutputStats.iqr > 0) { // Added iqr > 0 check
+                upperThreshold = overallOutputStats.median + (IQR_MULTIPLIER * overallOutputStats.iqr);
+                lowerThreshold = overallOutputStats.median - (IQR_MULTIPLIER * overallOutputStats.iqr);
+                thresholdsCalculated = true;
+                logger.log(`[${callingFunction}] [PairwiseInteraction] Overall output ("${overallOutputLabel}") thresholds calculated: Upper=${upperThreshold.toFixed(2)}, Lower=${lowerThreshold.toFixed(2)} (Median=${overallOutputStats.median.toFixed(2)}, IQR=${overallOutputStats.iqr.toFixed(2)})`);
+            } else {
+                logger.warn(`[${callingFunction}] [PairwiseInteraction] Could not calculate significance thresholds for output "${overallOutputLabel}" due to missing/invalid median or IQR. Median: ${overallOutputStats?.median}, IQR: ${overallOutputStats?.iqr}`);
+            }
+
+            // Identify configured input metrics
+            const configuredInputSettings = [];
+            if (activeExperimentSettings.input1 && activeExperimentSettings.input1.label && activeExperimentSettings.input1.label.trim() !== "") {
+                configuredInputSettings.push(activeExperimentSettings.input1);
+            }
+            if (activeExperimentSettings.input2 && activeExperimentSettings.input2.label && activeExperimentSettings.input2.label.trim() !== "") {
+                configuredInputSettings.push(activeExperimentSettings.input2);
+            }
+            if (activeExperimentSettings.input3 && activeExperimentSettings.input3.label && activeExperimentSettings.input3.label.trim() !== "") {
+                configuredInputSettings.push(activeExperimentSettings.input3);
+            }
+
+            logger.log(`[${callingFunction}] [PairwiseInteraction] Found ${configuredInputSettings.length} configured input metrics for analysis.`);
+            if (configuredInputSettings.length >= 2) {
+                for (let i = 0; i < configuredInputSettings.length; i++) {
+                    for (let j = i + 1; j < configuredInputSettings.length; j++) {
+                        const inputASetting = configuredInputSettings[i];
+                        const inputBSetting = configuredInputSettings[j];
+
+                        const labelA = inputASetting.label;
+                        const labelB = inputBSetting.label;
+                        
+                        const pairKey = `${labelA.replace(/\s+/g, '_')}_vs_${labelB.replace(/\s+/g, '_')}`;
+                        logger.log(`[${callingFunction}] [PairwiseInteraction] Starting analysis for pair: "${labelA}" vs "${labelB}" against output "${overallOutputLabel}". PairKey: ${pairKey}`);
+                        
+                        const medianA = stratifiedAnalysisPrep.inputMedians[labelA];
+                        const medianB = stratifiedAnalysisPrep.inputMedians[labelB];
+
+                        pairwiseInteractionResults[pairKey] = {
+                            input1Label: labelA,
+                            input2Label: labelB,
+                            outputMetricLabel: overallOutputLabel,
+                            groups: {
+                                'input1High_input2High': { outputAverage: null, count: 0 },
+                                'input1High_input2Low':  { outputAverage: null, count: 0 },
+                                'input1Low_input2High':  { outputAverage: null, count: 0 },
+                                'input1Low_input2Low':   { outputAverage: null, count: 0 }
+                            },
+                            summary: "Combined analysis skipped. Insufficient data or configuration for this pair." // Default summary
+                        };
+
+                        if (typeof medianA !== 'number' || typeof medianB !== 'number') {
+                            logger.warn(`[${callingFunction}] [PairwiseInteraction] Skipping pair "${labelA}" vs "${labelB}" due to missing median(s). Median A: ${medianA}, Median B: ${medianB}`);
+                            pairwiseInteractionResults[pairKey].summary = `Combined analysis for ${labelA} & ${labelB} skipped: One or both input metrics lacked enough data to determine a median.`;
+                            continue; 
+                        }
+
+                        const valuesA = metricValues[labelA] || [];
+                        const valuesB = metricValues[labelB] || [];
+                        const outputValuesArray = metricValues[overallOutputLabel] || [];
+                        
+                        const numCommonDataPoints = Math.min(valuesA.length, valuesB.length, outputValuesArray.length);
+                        logger.log(`[${callingFunction}] [PairwiseInteraction] Pair "${labelA}" vs "${labelB}": MedianA=${medianA}, MedianB=${medianB}. Common data points for A, B, Output: ${numCommonDataPoints}.`);
+                        
+                        if (numCommonDataPoints < MIN_DATAPOINTS_FOR_GROUP_ANALYSIS) {
+                            logger.warn(`[${callingFunction}] [PairwiseInteraction] Skipping pair "${labelA}" vs "${labelB}" due to insufficient common data points (${numCommonDataPoints}).`);
+                            pairwiseInteractionResults[pairKey].summary = `Combined analysis for ${labelA} & ${labelB} skipped: Not enough days where ${labelA}, ${labelB}, and ${overallOutputLabel} were all logged (found ${numCommonDataPoints}, need ${MIN_DATAPOINTS_FOR_GROUP_ANALYSIS}).`;
+                            continue;
+                        }
+
+                        const groupsData = { // Temporary structure to hold output values before averaging
+                            'input1High_input2High': { outputs: [], outputAverage: null, count: 0 },
+                            'input1High_input2Low':  { outputs: [], outputAverage: null, count: 0 },
+                            'input1Low_input2High':  { outputs: [], outputAverage: null, count: 0 },
+                            'input1Low_input2Low':   { outputs: [], outputAverage: null, count: 0 }
+                        };
+
+                        for (let k_idx = 0; k_idx < numCommonDataPoints; k_idx++) {
+                            const valA = valuesA[k_idx];
+                            const valB = valuesB[k_idx];
+                            const outVal = outputValuesArray[k_idx];
+
+                            if (typeof valA !== 'number' || typeof valB !== 'number' || typeof outVal !== 'number') {
+                                logger.warn(`[${callingFunction}] [PairwiseInteraction] Encountered non-numeric value at index ${k_idx} for pair "${labelA}" vs "${labelB}". Skipping data point.`);
+                                continue;
+                            }
+
+                            const groupKeyA = valA > medianA ? 'High' : 'Low';
+                            const groupKeyB = valB > medianB ? 'High' : 'Low';
+                            
+                            const finalGroupKey = `input1${groupKeyA}_input2${groupKeyB}`;
+                            groupsData[finalGroupKey].outputs.push(outVal);
+                        }
+
+                        let bestSignificantGroup = null;
+                        let worstSignificantGroup = null;
+                        let maxSigAvg = -Infinity;
+                        let minSigAvg = Infinity;
+
+                        for (const groupKey in groupsData) {
+                            if (Object.prototype.hasOwnProperty.call(groupsData, groupKey)) {
+                                const group = groupsData[groupKey];
+                                group.count = group.outputs.length;
+                                if (group.count >= MIN_DATAPOINTS_FOR_GROUP_ANALYSIS) {
+                                    const meanResult = calculateMean(group.outputs);
+                                    group.outputAverage = parseFloat(meanResult.toFixed(1));
+
+                                    pairwiseInteractionResults[pairKey].groups[groupKey] = { 
+                                        outputAverage: group.outputAverage, 
+                                        count: group.count 
+                                    };
+
+                                    if (thresholdsCalculated) { // Only check significance if thresholds are valid
+                                        if (group.outputAverage > upperThreshold && group.outputAverage > maxSigAvg) {
+                                            maxSigAvg = group.outputAverage;
+                                            bestSignificantGroup = { key: groupKey, avg: group.outputAverage, count: group.count };
+                                        }
+                                        if (group.outputAverage < lowerThreshold && group.outputAverage < minSigAvg) {
+                                            minSigAvg = group.outputAverage;
+                                            worstSignificantGroup = { key: groupKey, avg: group.outputAverage, count: group.count };
+                                        }
+                                    }
+                                } else {
+                                     pairwiseInteractionResults[pairKey].groups[groupKey] = { 
+                                        outputAverage: null, 
+                                        count: group.count 
+                                    };
+                                }
+                                // delete group.outputs; // No longer needed as groupsData is temporary for outputs array
+                            }
+                        }
+                        
+                        let summaryMsg = "";
+                        if (!thresholdsCalculated) {
+                            summaryMsg = `Combined analysis for ${labelA} & ${labelB}: Significance thresholds for Output (${overallOutputLabel}) could not be determined (e.g. output metric had too little variation or data). Basic group averages shown if data allows.`;
+                        } else {
+                            const foundSignificantInteractions = [];
+                            if (bestSignificantGroup) {
+                                // Use the actual labels from inputASetting and inputBSetting for interpretFirebaseGroupKey
+                                const condition = interpretFirebaseGroupKey(bestSignificantGroup.key, inputASetting.label, inputBSetting.label);
+                                foundSignificantInteractions.push(`Avg ${overallOutputLabel} was significantly higher (${bestSignificantGroup.avg}) when ${condition} (n=${bestSignificantGroup.count}).`);
+                            }
+                            if (worstSignificantGroup) {
+                                const condition = interpretFirebaseGroupKey(worstSignificantGroup.key, inputASetting.label, inputBSetting.label);
+                                foundSignificantInteractions.push(`Avg ${overallOutputLabel} was significantly lower (${worstSignificantGroup.avg}) when ${condition} (n=${worstSignificantGroup.count}).`);
+                            }
+
+                            if (foundSignificantInteractions.length > 0) {
+                                summaryMsg = foundSignificantInteractions.join(" \n");
+                            } else {
+                                summaryMsg = `Combined analysis for ${labelA} & ${labelB} did not show any group with an average ${overallOutputLabel} significantly different from the overall typical range. More data might reveal clearer patterns.`;
+                            }
+                        }
+                        pairwiseInteractionResults[pairKey].summary = summaryMsg;
+                        logger.log(`[${callingFunction}] [PairwiseInteraction] Processed pair "${labelA}" vs "${labelB}". Summary: "${summaryMsg}"`);
+                    }
+                }
+            } else {
+                logger.log(`[${callingFunction}] [PairwiseInteraction] Not enough configured input metrics (found ${configuredInputSettings.length}) to perform pairwise analysis. Minimum 2 required.`);
+                // No explicit summary needed here as no pairs will be added to pairwiseInteractionResults if this condition is met.
+            }
+            // ============== END: Pairwise Interaction Analysis Logic ==============
+
+    // Step 7: Assemble, Store, and Return Results (Code from original function, lines 494-504)
+    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Assembling final stats object for user ${userId}, experiment ${experimentId}.`);
+    const finalStatsObject = {
+        experimentId: experimentId,
+        userId: userId,
+        userTag: userTag,
+        experimentSettingsTimestamp: settingsTimestampDate.toISOString(), // Use the Date object we derived
+        experimentEndDateISO: endDate.toISOString(), // Use the Date object we derived
+        activeExperimentSettings: activeExperimentSettings,
+        calculationTimestamp: FieldValue.serverTimestamp(),
+        totalLogsInPeriodProcessed: totalLogsInPeriodProcessed,
+        calculatedMetricStats: calculatedMetricStats,
+        skippedMetrics: skippedMetrics,
+        correlations: correlations,
+        stratifiedAnalysisPrep: stratifiedAnalysisPrep,
+        pairwiseInteractionResults: pairwiseInteractionResults,
+        status: 'stats_calculated_and_stored'
+    };
+    try {
+        const statsDocRef = db.collection('users').doc(userId).collection('experimentStats').doc(experimentId);
+        await statsDocRef.set(finalStatsObject);
+        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Successfully stored calculated stats for user ${userId}, experiment ${experimentId} to Firestore.`);
+        return {
+            success: true,
+            status: 'stats_calculated_and_stored',
+            message: "Experiment statistics calculated and stored successfully.",
+            experimentId: experimentId, // This is the document ID
+            totalLogsProcessed: totalLogsInPeriodProcessed
+        };
+    } catch (error) {
+        logger.error(`[${callingFunction}] [calculateAndStorePeriodStats] CRITICAL: Failed to store calculated stats to Firestore for user ${userId}, experiment ${experimentId}. Data: ${JSON.stringify(finalStatsObject)}`, error);
+        return { // Consistent error return
+            success: false,
+            status: 'error_internal_firestore_store_failed',
+            message: `Internal Error: Failed to store calculated statistics: ${error.message}`,
+            experimentId: experimentId,
+            errorDetails: error.toString()
+        };
+    }
+}
+// ============== END OF INTERNAL HELPER FUNCTION ==============
+
+// ============== NEW onCall WRAPPER for calculateAndStorePeriodStats ==============
+exports.calculateAndStorePeriodStats = onCall(async (request) => {
+    // Step 1: Authentication
+    if (!request.auth) {
+      logger.warn("calculateAndStorePeriodStats (onCall) called without authentication.");
+      throw new HttpsError('unauthenticated', 'You must be logged in to calculate stats.');
+    }
+    const callingUserId = request.auth.uid; // User who initiated the call (for logging or if needed)
+    const data = request.data;
+
+    logger.log(`calculateAndStorePeriodStats (onCall) invoked by user: ${callingUserId} for target user: ${data.userId}, experiment ID: ${data.experimentId}`);
+
+    // Step 2: Extract and Validate Parameters from request.data
+    const {
+      userId, // The user whose stats are being calculated
+      userTag,
+      experimentId,
+      experimentSettingsTimestamp, // Expecting ISO string or Firestore Timestamp like object from client
+      experimentEndDateISO,        // Expecting ISO string from client
+      activeExperimentSettings
+    } = data;
+
+    if (!userId || !userTag || !experimentId || !experimentSettingsTimestamp || !experimentEndDateISO || !activeExperimentSettings) {
+      logger.error("calculateAndStorePeriodStats (onCall): Missing required parameters from client.", {
+          userIdProvided: !!userId,
+          userTagProvided: !!userTag,
+          experimentIdProvided: !!experimentId,
+          experimentSettingsTimestampProvided: !!experimentSettingsTimestamp,
+          experimentEndDateISOProvided: !!experimentEndDateISO,
+          activeExperimentSettingsProvided: !!activeExperimentSettings,
+      });
+      throw new HttpsError('invalid-argument', 'Missing required parameters. Ensure userId, userTag, experimentId, experimentSettingsTimestamp, experimentEndDateISO, and activeExperimentSettings are all provided.');
+    }
+
+    // Step 3: Call the Internal Logic Function
+    try {
+        const result = await _calculateAndStorePeriodStatsLogic(
+            userId,
+            userTag,
+            experimentId,
+            experimentSettingsTimestamp, // Pass directly as received
+            experimentEndDateISO,        // Pass directly as received
+            activeExperimentSettings,
+            "onCall" // Indicate the calling context
+        );
+
+        // Step 4: Process Result and Return to Client
+        if (result.success) {
+            // For 'insufficient_overall_data', it's still a "successful" execution of the intended path
+            if (result.status === 'insufficient_overall_data') {
+                 logger.log(`calculateAndStorePeriodStats (onCall) completed with status: ${result.status} for experiment ${experimentId}`);
+                 return { // This structure is what the original onCall would have effectively returned in this case
+                     success: true,
+                     status: result.status,
+                     message: result.message,
+                     experimentId: result.experimentId,
+                     totalLogsInPeriodProcessed: result.totalLogsInPeriodProcessed
+                 };
+            }
+            // For 'stats_calculated_and_stored'
+            logger.log(`calculateAndStorePeriodStats (onCall) successfully calculated and stored stats for experiment ${experimentId}.`);
+            return {
+                success: true,
+                status: result.status || 'stats_calculated_and_stored',
+                message: result.message || "Experiment statistics calculated and stored successfully.",
+                experimentId: result.experimentId,
+                totalLogsProcessed: result.totalLogsProcessed // ensure consistency if client uses this
+            };
+        } else {
+            // Handle failures from _calculateAndStorePeriodStatsLogic
+            logger.error(`calculateAndStorePeriodStats (onCall): _calculateAndStorePeriodStatsLogic returned failure for experiment ${experimentId}. Status: ${result.status}, Message: ${result.message}`);
+            // Convert internal error status/message to an HttpsError for the client
+            // Common statuses that might come from the internal helper if it fails early:
+            // 'error_internal_missing_params', 'error_internal_invalid_settings_structure',
+            // 'error_internal_timestamp_conversion', 'error_internal_log_fetch_failed', 'error_internal_firestore_store_failed'
+            let errorCode = 'internal'; // default
+            if (result.status && result.status.includes('param') || result.status.includes('settings_structure') || result.status.includes('timestamp_conversion')) {
+                errorCode = 'invalid-argument';
+            }
+            throw new HttpsError(errorCode, result.message || 'Failed to process statistics due to an internal error.');
+        }
+    } catch (error) {
+        // Catch any unexpected errors during the call to the internal logic or if HttpsError was re-thrown
+        logger.error(`calculateAndStorePeriodStats (onCall): Critical error for experiment ${experimentId}. User ${callingUserId}. Error:`, error);
+        if (error instanceof HttpsError) {
+            throw error; // Re-throw HttpsError instances
+        }
+        throw new HttpsError('internal', `An unexpected server error occurred while calculating statistics for experiment ${experimentId}. Details: ${error.message}`, {
+            errorDetails: error.toString(),
+            userId: userId,
+            experimentId: experimentId
+        });
+    }
+});
+// ============== END OF onCall WRAPPER ==============
+
+/**
+ * Scheduled function to check for ended experiments and trigger statistics calculation.
+ * Runs periodically (e.g., every hour).
+ */
+exports.checkForEndedExperimentsAndTriggerStats = onSchedule("every 1 hours", async (event) => {
+    logger.log("checkForEndedExperimentsAndTriggerStats: Scheduled function triggered.", event.scheduleTime);
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now(); // Current Firestore Timestamp
+
+    try {
+        // Query for user documents that have an experimentCurrentSchedule
+        const usersSnapshot = await db.collection('users').get();
+        if (usersSnapshot.empty) {
+            logger.log("checkForEndedExperimentsAndTriggerStats: No users found.");
+            return null;
+        }
+
+        let processedCount = 0;
+        const promises = [];
+
+        usersSnapshot.forEach(userDoc => {
+            const userId = userDoc.id;
+            const userData = userDoc.data();
+
+            if (userData.experimentCurrentSchedule &&
+                userData.experimentCurrentSchedule.experimentEndTimestamp &&
+                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() <= now.toDate() &&
+                (userData.experimentCurrentSchedule.statsProcessed === undefined ||
+                 userData.experimentCurrentSchedule.statsProcessed === false)) {
+
+                logger.log(`checkForEndedExperimentsAndTriggerStats: Found ended experiment for user ${userId}, experimentId: ${userData.experimentCurrentSchedule.experimentId}`);
+                const schedule = userData.experimentCurrentSchedule;
+                const userTag = userData.userTag || `User_${userId}`;
+
+                const experimentId = schedule.experimentId;
+                const activeExperimentSettings = schedule.scheduledExperimentSettings;
+                const experimentSettingsTimestampInput = schedule.experimentSetAt; // This is a Firestore Timestamp object or compatible
+                const experimentEndDateISOInput = schedule.experimentEndTimestamp.toDate().toISOString();
+
+                if (!experimentId) {
+                    logger.error(`checkForEndedExperimentsAndTriggerStats: Missing experimentId for user ${userId}. Skipping.`);
+                    return; // continue to next user
+                }
+                if (!activeExperimentSettings) {
+                    logger.warn(`checkForEndedExperimentsAndTriggerStats: Missing scheduledExperimentSettings for user ${userId}, experiment ${experimentId}. Stats might be incomplete or fail if called without settings.`);
+                    // If settings are absolutely crucial and _calculateAndStorePeriodStatsLogic can't handle their absence,
+                    // you might choose to skip here or ensure the logic function has robust defaults/error handling.
+                    // For now, we proceed, relying on _calculateAndStorePeriodStatsLogic's validation.
+                }
+                if (!experimentSettingsTimestampInput) {
+                    logger.error(`checkForEndedExperimentsAndTriggerStats: Missing experimentSetAt (as experimentSettingsTimestampInput) for user ${userId}, experiment ${experimentId}. Skipping.`);
+                    return; // continue to next user
+                }
+
+                // Call the internal helper function directly
+                const processingPromise = _calculateAndStorePeriodStatsLogic(
+                    userId,
+                    userTag,
+                    experimentId,
+                    experimentSettingsTimestampInput, // Pass the Firestore Timestamp object (or compatible)
+                    experimentEndDateISOInput,        // Pass the ISO string
+                    activeExperimentSettings,
+                    "checkForEndedExperimentsAndTriggerStats" // Indicate calling context
+                )
+                .then(async (statsResult) => {
+                    if (statsResult && statsResult.success) {
+                        logger.log(`checkForEndedExperimentsAndTriggerStats: Successfully processed stats (status: ${statsResult.status}) for user ${userId}, experiment ${experimentId}. Stored Doc ID: ${statsResult.experimentId}`);
+                        // Update experimentCurrentSchedule to mark as processed
+                        await userDoc.ref.update({
+                            'experimentCurrentSchedule.statsProcessed': true,
+                            'experimentCurrentSchedule.statsDocumentId': statsResult.experimentId, // experimentId is the doc ID
+                            'experimentCurrentSchedule.statsCalculationTimestamp': FieldValue.serverTimestamp()
+                        });
+
+                        // Notify the bot by writing to pendingStatsNotifications
+                        // Only create notification if stats were actually calculated (not just insufficient_data)
+                        // or if you want to notify for insufficient_data as well (current logic will notify).
+                        const notificationRef = db.collection('pendingStatsNotifications').doc(`${userId}_${experimentId}`);
+                        await notificationRef.set({
+                            userId: userId,
+                            userTag: userTag,
+                            experimentId: statsResult.experimentId,
+                            statsDocumentId: statsResult.experimentId, // Redundant but consistent with bot listener
+                            status: 'ready', // This triggers the bot
+                            generatedAt: FieldValue.serverTimestamp(),
+                            message: statsResult.message || `Stats report for experiment ${experimentId} is ready (status: ${statsResult.status}).`
+                        });
+                        logger.log(`checkForEndedExperimentsAndTriggerStats: Notification created for user ${userId}, experiment ${experimentId}.`);
+                        processedCount++;
+                    } else {
+                        // This block handles failures returned by _calculateAndStorePeriodStatsLogic
+                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to calculate stats for user ${userId}, experiment ${experimentId}. Result:`, statsResult);
+                        await userDoc.ref.update({
+                            'experimentCurrentSchedule.statsProcessed': 'failed',
+                            'experimentCurrentSchedule.statsProcessingError': statsResult?.message || 'Unknown error during stats calculation logic.'
+                        });
+                    }
+                })
+                .catch(async (error) => {
+                    // This catch block is for unexpected errors thrown by _calculateAndStorePeriodStatsLogic
+                    // or during the .then() block's async operations (like Firestore updates).
+                    logger.error(`checkForEndedExperimentsAndTriggerStats: Critical error during processing for user ${userId}, experiment ${experimentId}:`, error);
+                    try {
+                        await userDoc.ref.update({
+                            'experimentCurrentSchedule.statsProcessed': 'critical_error',
+                            'experimentCurrentSchedule.statsProcessingError': error.message || 'Critical unhandled error during stats calculation/notification.'
+                        });
+                    } catch (updateError) {
+                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to update statsProcessed status to critical_error for ${userId}, experiment ${experimentId}`, updateError);
+                    }
+                });
+                promises.push(processingPromise);
+            }
+        });
+
+        await Promise.all(promises);
+        logger.log(`checkForEndedExperimentsAndTriggerStats: Processing complete. ${processedCount} experiments processed.`);
+        return null;
+
+    } catch (error) {
+        logger.error("checkForEndedExperimentsAndTriggerStats: Overall error in scheduled function:", error);
+        return null;
+    }
+});
+
+exports.getComparativeExperimentStats = onCall(async (request) => {
+    // 1. Authentication Check
+    if (!request.auth) {
+        logger.warn("getComparativeExperimentStats called without authentication.");
+        throw new HttpsError('unauthenticated', 'You must be logged in to compare experiment stats.');
+    }
+    const callingUserId = request.auth.uid; // The user who is authenticated and making the call
+
+    // 2. Input Extraction and Validation
+    const { userId, currentExperimentId, numPastExperimentsToCompare } = request.data;
+    const numToCompare = numPastExperimentsToCompare || 3; // Default to 3 past experiments
+
+    logger.log(`getComparativeExperimentStats called by authenticated user: ${callingUserId} for target user: ${userId}, currentExperimentId: ${currentExperimentId}, numPastExperimentsToCompare: ${numToCompare}`);
+
+    // Ensure the authenticated user is requesting their own data
+    if (callingUserId !== userId) {
+        logger.error(`[getComparativeExperimentStats] Security Alert: Authenticated user ${callingUserId} attempted to fetch data for user ${userId}.`);
+        throw new HttpsError('permission-denied', 'You are not authorized to request this data.');
+    }
+
+    if (!userId || !currentExperimentId) {
+        logger.error("getComparativeExperimentStats: Missing required parameters userId or currentExperimentId.", request.data);
+        throw new HttpsError('invalid-argument', 'Missing required parameters: userId and currentExperimentId must be provided.');
+    }
+
+    // Inside exports.getComparativeExperimentStats = onCall(async (request) => { ... });
+    // After input validation:
+
+    const db = admin.firestore(); // Ensure db is initialized
+
+    try {
+        // Step 2: Fetch Past Experiment Statistics Documents
+        logger.log(`[getComparativeExperimentStats] Fetching past experiment stats for user ${userId}, excluding ${currentExperimentId}, limit to ${numToCompare} past experiments.`);
+
+        const experimentStatsRef = db.collection('users').doc(userId).collection('experimentStats');
+        
+        // Fetch one more than needed to handle potential inclusion of the current experiment
+        // and to ensure we have enough *other* experiments.
+        const querySnapshot = await experimentStatsRef
+            .orderBy('calculationTimestamp', 'desc') // Assuming 'calculationTimestamp' is a server timestamp
+            .limit(numToCompare + 1) // Fetch one extra to help exclude currentExperimentId
+            .get();
+
+        if (querySnapshot.empty) {
+            logger.log(`[getComparativeExperimentStats] No experiment stats found for user ${userId}.`);
+            return { success: true, message: "No past experiment statistics found to compare against.", comparativeData: {} };
+        }
+
+        const pastExperimentStats = [];
+        querySnapshot.forEach(doc => {
+            const data = doc.data();
+            // IMPORTANT: Ensure that the document ID (experimentId) is part of the data we process.
+            // The `experimentId` is stored as a field in the document by `calculateAndStorePeriodStats`.
+            if (data.experimentId !== currentExperimentId) { // Exclude the current experiment
+                pastExperimentStats.push({ id: doc.id, ...data }); // doc.id is the Firestore document ID
+                                                                  // data.experimentId is the field stored within the document
+            }
+        });
+
+        // Ensure we only take up to numToCompare of the *past* experiments
+        const finalPastExperiments = pastExperimentStats.slice(0, numToCompare);
+
+        if (finalPastExperiments.length === 0) {
+            logger.log(`[getComparativeExperimentStats] No *past* experiment stats found for user ${userId} after excluding the current one or if none exist.`);
+            return { success: true, message: "No past experiment statistics found to compare against (excluding the current one).", comparativeData: {} };
+        }
+        
+        logger.log(`[getComparativeExperimentStats] Successfully fetched ${finalPastExperiments.length} past experiment stat(s) for user ${userId}.`);
+
+
+        // Step 3.1: Fetch the current experiment's data
+        const currentExperimentDocRef = db.collection('users').doc(userId).collection('experimentStats').doc(currentExperimentId);
+        const currentExperimentSnapshot = await currentExperimentDocRef.get();
+
+        if (!currentExperimentSnapshot.exists) {
+            logger.error(`[getComparativeExperimentStats] Current experiment document ${currentExperimentId} not found for user ${userId}.`);
+            throw new HttpsError('not-found', `Current experiment data for ${currentExperimentId} not found.`);
+        }
+        const currentExperimentData = currentExperimentSnapshot.data();
+        logger.log(`[getComparativeExperimentStats] Successfully fetched current experiment data (${currentExperimentId}) for user ${userId}.`);
+
+        // Step 3.2: Identify metrics from the current experiment's active settings
+        const currentTrackedMetrics = [];
+        if (currentExperimentData.activeExperimentSettings) {
+            const settings = currentExperimentData.activeExperimentSettings;
+            if (settings.output && settings.output.label) {
+                currentTrackedMetrics.push({
+                    originalLabel: settings.output.label,
+                    normalizedLabel: normalizeLabel(settings.output.label),
+                    unit: settings.output.unit || "",
+                    type: 'output'
+                });
+            }
+            for (let i = 1; i <= 3; i++) {
+                const inputSetting = settings[`input${i}`];
+                if (inputSetting && inputSetting.label) {
+                    currentTrackedMetrics.push({
+                        originalLabel: inputSetting.label,
+                        normalizedLabel: normalizeLabel(inputSetting.label),
+                        unit: inputSetting.unit || "",
+                        type: 'input'
+                    });
+                }
+            }
+        }
+
+        if (currentTrackedMetrics.length === 0) {
+            logger.log(`[getComparativeExperimentStats] No active metrics configured in the current experiment ${currentExperimentId} for user ${userId}.`);
+            return { success: true, message: "No metrics configured in the current experiment to compare.", comparativeData: {}, currentExperimentStats: currentExperimentData.calculatedMetricStats || {} };
+        }
+        logger.log(`[getComparativeExperimentStats] Current tracked metrics for normalization for user ${userId}:`, currentTrackedMetrics.map(m => m.originalLabel));
+        
+        // Step 3.3: Prepare to collect historical data for matched metrics
+        // The keys will be the *original labels* of the current experiment's metrics
+        const matchedHistoricalData = {};
+        currentTrackedMetrics.forEach(metric => {
+            matchedHistoricalData[metric.originalLabel] = {
+                label: metric.originalLabel,
+                unit: metric.unit,
+                type: metric.type,
+                pastStats: [], // To store { average, median, variationPercentage, dataPoints, experimentId, experimentEndDateISO }
+                pastCorrelations: [] // For input metrics: { coefficient, n_pairs, experimentId, experimentEndDateISO }
+            };
+        });
+
+        // Step 3.4: Iterate through past experiments and match metrics
+        finalPastExperiments.forEach(pastExp => {
+            // Match calculatedMetricStats
+            if (pastExp.calculatedMetricStats) {
+                for (const pastMetricOriginalLabel in pastExp.calculatedMetricStats) {
+                    const normalizedPastLabel = normalizeLabel(pastMetricOriginalLabel);
+                    const pastMetricData = pastExp.calculatedMetricStats[pastMetricOriginalLabel];
+
+                    const matchedCurrentMetric = currentTrackedMetrics.find(
+                        currentMetric => currentMetric.normalizedLabel === normalizedPastLabel && currentMetric.unit === pastMetricData.unit
+                    );
+
+                    if (matchedCurrentMetric) {
+                        if (pastMetricData.status !== 'skipped_insufficient_data' && pastMetricData.average !== null) {
+                            matchedHistoricalData[matchedCurrentMetric.originalLabel].pastStats.push({
+                                average: pastMetricData.average,
+                                median: pastMetricData.median,
+                                variationPercentage: pastMetricData.variationPercentage,
+                                dataPoints: pastMetricData.dataPoints,
+                                experimentId: pastExp.experimentId, // or pastExp.id if doc ID is experiment ID
+                                experimentEndDateISO: pastExp.experimentEndDateISO 
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Match correlations (only for input metrics)
+            if (pastExp.correlations) {
+                for (const pastCorrelationInputLabel in pastExp.correlations) {
+                    const normalizedPastCorrelationLabel = normalizeLabel(pastCorrelationInputLabel);
+                    const pastCorrelationData = pastExp.correlations[pastCorrelationInputLabel];
+
+                    //const matchedCurrentInputMetric = currentTrackedMetrics.find(
+                    //    currentMetric => currentMetric.type === 'input' && 
+                    //                    currentMetric.normalizedLabel === normalizedPastCorrelationLabel &&
+                    //                     currentMetric.unit === (pastExp.activeExperimentSettings?.[`input${Object.keys(pastExp.activeExperimentSettings).find(k => pastExp.activeExperimentSettings[k]?.label === pastCorrelationInputLabel)}`]?.unit) // Attempt to get unit from past experiment's settings for better matching
+                    //);
+                    
+                    //A simpler match if unit for input correlation isn't easily available or critical for matching correlations:
+                    const matchedCurrentInputMetric = currentTrackedMetrics.find(
+                         currentMetric => currentMetric.type === 'input' && 
+                                          currentMetric.normalizedLabel === normalizedPastCorrelationLabel
+                     );
+
+
+                    if (matchedCurrentInputMetric) {
+                         if (pastCorrelationData.status === 'calculated' && pastCorrelationData.coefficient !== null) {
+                            if (!matchedHistoricalData[matchedCurrentInputMetric.originalLabel].pastCorrelations) {
+                                matchedHistoricalData[matchedCurrentInputMetric.originalLabel].pastCorrelations = [];
+                            }
+                            matchedHistoricalData[matchedCurrentInputMetric.originalLabel].pastCorrelations.push({
+                                coefficient: pastCorrelationData.coefficient,
+                                n_pairs: pastCorrelationData.n_pairs,
+                                experimentId: pastExp.experimentId,
+                                experimentEndDateISO: pastExp.experimentEndDateISO
+                            });
+                        }
+                    }
+                }
+            }
+        });
+        
+        logger.log(`[getComparativeExperimentStats] Finished matching historical data for user ${userId}.`);
+
+       // Inside the try block of getComparativeExperimentStats, after populating matchedHistoricalData
+
+        // Step 5: Calculate Aggregate Statistics for Past Periods
+        logger.log(`[getComparativeExperimentStats] Starting aggregation for user ${userId}.`);
+
+        const aggregatedResults = {};
+
+        for (const originalLabel in matchedHistoricalData) {
+            if (Object.prototype.hasOwnProperty.call(matchedHistoricalData, originalLabel)) {
+                const metricHistory = matchedHistoricalData[originalLabel];
+                const aggregatedMetric = {
+                    label: metricHistory.label,
+                    unit: metricHistory.unit,
+                    type: metricHistory.type,
+                    numPastPeriodsWithData: 0,
+                    weightedAverageOfPastAverages: null,
+                    averageOfPastMedians: null, // Medians are tricky to average; simple average for now
+                    weightedAverageOfPastVariationPercentages: null,
+                    averagePastCorrelationCoefficient: null, // For input metrics
+                    totalPastDataPoints: 0,
+                    totalPastCorrelationPairs: 0
+                };
+
+                // Aggregate pastStats (average, median, variationPercentage)
+                if (metricHistory.pastStats && metricHistory.pastStats.length > 0) {
+                    aggregatedMetric.numPastPeriodsWithData = metricHistory.pastStats.length;
+                    let totalWeightedSumOfAverages = 0;
+                    let totalWeightForAverages = 0;
+                    let sumOfMedians = 0;
+                    let totalWeightedSumOfVariationPercentages = 0;
+                    let totalWeightForVariationPercentages = 0;
+
+                    metricHistory.pastStats.forEach(stat => {
+                        if (typeof stat.average === 'number' && typeof stat.dataPoints === 'number' && stat.dataPoints > 0) {
+                            totalWeightedSumOfAverages += stat.average * stat.dataPoints;
+                            totalWeightForAverages += stat.dataPoints;
+                        }
+                        if (typeof stat.median === 'number') {
+                            sumOfMedians += stat.median;
+                        }
+                        if (typeof stat.variationPercentage === 'number' && typeof stat.dataPoints === 'number' && stat.dataPoints > 0) {
+                            totalWeightedSumOfVariationPercentages += stat.variationPercentage * stat.dataPoints;
+                            totalWeightForVariationPercentages += stat.dataPoints;
+                        }
+                        aggregatedMetric.totalPastDataPoints += (stat.dataPoints || 0);
+                    });
+
+                    if (totalWeightForAverages > 0) {
+                        aggregatedMetric.weightedAverageOfPastAverages = parseFloat((totalWeightedSumOfAverages / totalWeightForAverages).toFixed(2));
+                    }
+                    if (metricHistory.pastStats.length > 0 && sumOfMedians > 0) { // check if any medians were summed
+                        aggregatedMetric.averageOfPastMedians = parseFloat((sumOfMedians / metricHistory.pastStats.length).toFixed(2));
+                    }
+                    if (totalWeightForVariationPercentages > 0) {
+                        aggregatedMetric.weightedAverageOfPastVariationPercentages = parseFloat((totalWeightedSumOfVariationPercentages / totalWeightForVariationPercentages).toFixed(2));
+                    }
+                }
+
+                // Aggregate pastCorrelations (coefficient)
+                if (metricHistory.type === 'input' && metricHistory.pastCorrelations && metricHistory.pastCorrelations.length > 0) {
+                    let sumOfCoefficients = 0;
+                    metricHistory.pastCorrelations.forEach(corr => {
+                        if (typeof corr.coefficient === 'number') {
+                            sumOfCoefficients += corr.coefficient;
+                        }
+                        aggregatedMetric.totalPastCorrelationPairs += (corr.n_pairs || 0);
+                    });
+                    if (metricHistory.pastCorrelations.length > 0) {
+                       aggregatedMetric.averagePastCorrelationCoefficient = parseFloat((sumOfCoefficients / metricHistory.pastCorrelations.length).toFixed(3));
+                    }
+                }
+                aggregatedResults[originalLabel] = aggregatedMetric;
+            }
+        }
+        
+        logger.log(`[getComparativeExperimentStats] Finished aggregation for user ${userId}.`);
+
+        // Inside the try block of getComparativeExperimentStats, after calculating aggregatedResults
+
+        // Step 6: Structure and Return the Comparison Data
+        logger.log(`[getComparativeExperimentStats] Structuring final response for user ${userId}.`);
+
+        const comparisonResponse = {};
+        const currentStatsOfCurrentExperiment = currentExperimentData.calculatedMetricStats || {};
+
+        // currentTrackedMetrics was defined in Step 3 and contains { originalLabel, unit, type, normalizedLabel }
+        // for all metrics active in the current experiment.
+        currentTrackedMetrics.forEach(metricConfig => {
+            const originalLabel = metricConfig.originalLabel;
+            const currentMetricStat = currentStatsOfCurrentExperiment[originalLabel];
+            const historicalAggregates = aggregatedResults[originalLabel];
+
+            comparisonResponse[originalLabel] = {
+                label: originalLabel,
+                unit: metricConfig.unit,
+                type: metricConfig.type,
+                currentStats: { // Stats from the current experiment period
+                    average: currentMetricStat?.average ?? null,
+                    median: currentMetricStat?.median ?? null,
+                    variationPercentage: currentMetricStat?.variationPercentage ?? null,
+                    dataPoints: currentMetricStat?.dataPoints ?? 0,
+                    status: currentMetricStat && currentMetricStat.average !== null ? 'data_available' : 'not_available_in_current'
+                },
+                historicalComparison: { // Aggregated stats from past experiment periods
+                    status: 'no_comparable_data', // Default status
+                    weightedAverageOfPastAverages: null,
+                    averageOfPastMedians: null,
+                    weightedAverageOfPastVariationPercentages: null,
+                    averagePastCorrelationCoefficient: null, // Only for input types
+                    numPastPeriodsWithData: 0,
+                    totalPastDataPoints: 0,
+                    totalPastCorrelationPairs: 0      // Only for input types
+                }
+            };
+
+            if (historicalAggregates && historicalAggregates.numPastPeriodsWithData > 0) {
+                comparisonResponse[originalLabel].historicalComparison = {
+                    status: 'data_available',
+                    weightedAverageOfPastAverages: historicalAggregates.weightedAverageOfPastAverages,
+                    averageOfPastMedians: historicalAggregates.averageOfPastMedians,
+                    weightedAverageOfPastVariationPercentages: historicalAggregates.weightedAverageOfPastVariationPercentages,
+                    averagePastCorrelationCoefficient: metricConfig.type === 'input' ? historicalAggregates.averagePastCorrelationCoefficient : null,
+                    numPastPeriodsWithData: historicalAggregates.numPastPeriodsWithData,
+                    totalPastDataPoints: historicalAggregates.totalPastDataPoints,
+                    totalPastCorrelationPairs: metricConfig.type === 'input' ? historicalAggregates.totalPastCorrelationPairs : 0
+                };
+            }
+        });
+
+        logger.log(`[getComparativeExperimentStats] Successfully structured comparison response for user ${userId}.`);
+        
+        // Final return from the function
+        return { 
+            success: true, 
+            message: "Comparative statistics generated successfully.",
+            currentExperimentId: currentExperimentId,
+            comparisonResults: comparisonResponse, // This is the main data for the bot
+            numPastExperimentsConsidered: numToCompare // From input or default
+        };
+
+    } catch (error) {
+        logger.error(`[getComparativeExperimentStats] Error fetching past experiment stats for user ${userId}:`, error);
+        throw new HttpsError('internal', 'Failed to fetch past experiment statistics.', error.message);
+    }
+
+});
+
+/**
+ * Scheduled function to check for and trigger user reminders.
+ * Runs periodically (e.g., every 30 minutes).
+ */
+exports.sendScheduledReminders = onSchedule("every 30 minutes", async (event) => {
+    logger.log("sendScheduledReminders: Scheduled function triggered.", event.scheduleTime);
+    const db = admin.firestore();
+    const now = new Date(); // Current server time in UTC
+    const currentUTCHour = now.getUTCHours();
+    const currentUTCDayOfYear = getDayOfYear(now); // Helper function needed
+
+    // Helper function to get day of the year (1-366)
+    function getDayOfYear(date) {
+        const start = new Date(date.getUTCFullYear(), 0, 0);
+        const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+        const oneDay = 1000 * 60 * 60 * 24;
+        return Math.floor(diff / oneDay);
+    }
+
+    const SEND_PROBABILITY = 0.70; // 70% chance to send an eligible reminder per check
+
+    try {
+        const usersSnapshot = await db.collection('users').get();
+        if (usersSnapshot.empty) {
+            logger.log("sendScheduledReminders: No users found.");
+            return null;
+        }
+
+        const reminderPromises = [];
+        usersSnapshot.forEach(userDoc => {
+            const userId = userDoc.id;
+            const userData = userDoc.data();
+
+            if (userData.experimentCurrentSchedule &&
+                userData.experimentCurrentSchedule.remindersSkipped === false &&
+                userData.experimentCurrentSchedule.reminderFrequency &&
+                userData.experimentCurrentSchedule.reminderFrequency !== 'none' &&
+                userData.experimentCurrentSchedule.experimentEndTimestamp &&
+                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() > now) { // Experiment is still active
+
+                const schedule = userData.experimentCurrentSchedule;
+                const {
+                    reminderWindowStartUTC,
+                    reminderWindowEndUTC,
+                    reminderFrequency,
+                    lastReminderSentDayOfYearUTC,
+                    remindersSentOnLastDay
+                } = schedule;
+
+                if (typeof reminderWindowStartUTC !== 'number' || typeof reminderWindowEndUTC !== 'number') {
+                    logger.warn(`sendScheduledReminders: User ${userId} has incomplete UTC reminder window settings. Skipping.`);
+                    return; 
+                }
+
+                let windowDurationHours;
+                let isInWindow = false;
+
+                if (reminderWindowStartUTC <= reminderWindowEndUTC) { 
+                    windowDurationHours = reminderWindowEndUTC - reminderWindowStartUTC;
+                    if (currentUTCHour >= reminderWindowStartUTC && currentUTCHour < reminderWindowEndUTC) {
+                        isInWindow = true;
+                    }
+                } else { 
+                    windowDurationHours = (24 - reminderWindowStartUTC) + reminderWindowEndUTC;
+                    if (currentUTCHour >= reminderWindowStartUTC || currentUTCHour < reminderWindowEndUTC) {
+                        isInWindow = true;
+                    }
+                }
+                
+                const isFullDayWindow = reminderWindowStartUTC === 0 && reminderWindowEndUTC === 0 && reminderFrequency !== 'none';
+                if (windowDurationHours <= 0 && !isFullDayWindow) {
+                    logger.info(`sendScheduledReminders: User ${userId} has a zero or negative duration reminder window (${reminderWindowStartUTC}-${reminderWindowEndUTC} UTC) and it's not a full day window. No reminders will be sent.`);
+                    return; 
+                }
+                
+                if (!isInWindow) {
+                    return; 
+                }
+
+                let shouldAttemptSendThisCheck = false; 
+                const newRemindersSentThisUTCDay = (lastReminderSentDayOfYearUTC === currentUTCDayOfYear) ? (remindersSentOnLastDay || 0) : 0;
+                
+                if (reminderFrequency === 'daily_1') {
+                    if (newRemindersSentThisUTCDay < 1) {
+                        if (Math.random() < SEND_PROBABILITY) {
+                            shouldAttemptSendThisCheck = true;
+                        } else {
+                            logger.log(`sendScheduledReminders: User ${userId} (daily_1) - Eligible, but probabilistically skipped this run (${((1-SEND_PROBABILITY)*100).toFixed(0)}% chance).`);
+                        }
+                    }
+                } else if (reminderFrequency === 'daily_2') {
+                    if (newRemindersSentThisUTCDay < 2) {
+                        if (Math.random() < SEND_PROBABILITY) {
+                            shouldAttemptSendThisCheck = true;
+                        } else {
+                            logger.log(`sendScheduledReminders: User ${userId} (daily_2, attempt for reminder #${newRemindersSentThisUTCDay + 1}) - Eligible, but probabilistically skipped this run (${((1-SEND_PROBABILITY)*100).toFixed(0)}% chance).`);
+                        }
+                    }
+                } else if (reminderFrequency === 'every_other_day') {
+                    if (newRemindersSentThisUTCDay < 1) {
+                        if (lastReminderSentDayOfYearUTC === null || (currentUTCDayOfYear % 2 !== lastReminderSentDayOfYearUTC % 2)) {
+                            shouldAttemptSendThisCheck = true;
+                        }
+                    }
+                }
+
+                if (shouldAttemptSendThisCheck) {
+                    logger.log(`sendScheduledReminders: User ${userId} is IN window (${reminderWindowStartUTC}-${reminderWindowEndUTC} UTC, current: ${currentUTCHour}) and Attempting Send (Freq: ${reminderFrequency}, Prior Sent Today: ${newRemindersSentThisUTCDay}).`);
+                    
+                    const randomDefaultMessage = defaultReminderMessages[Math.floor(Math.random() * defaultReminderMessages.length)];
+                    let finalReminderMessage = randomDefaultMessage;
+
+                    if (schedule.scheduledExperimentSettings) {
+                        const settings = schedule.scheduledExperimentSettings;
+                        const activeInputLabels = []; // Changed from activeInputs to activeInputLabels
+
+                        if (settings.input1 && settings.input1.label && settings.input1.label.trim() !== "") {
+                            activeInputLabels.push(settings.input1.label); // Store only the label
+                        }
+                        if (settings.input2 && settings.input2.label && settings.input2.label.trim() !== "") {
+                            activeInputLabels.push(settings.input2.label); // Store only the label
+                        }
+                        if (settings.input3 && settings.input3.label && settings.input3.label.trim() !== "") {
+                            activeInputLabels.push(settings.input3.label); // Store only the label
+                        }
+
+                        if (activeInputLabels.length > 0) {
+                            const randomInputLabel = activeInputLabels[Math.floor(Math.random() * activeInputLabels.length)]; // Select a label string
+                            // Construct message without the unit
+                            finalReminderMessage = `${randomInputLabel}: ${randomDefaultMessage}`; 
+                            logger.log(`sendScheduledReminders: User ${userId} - Selected input for reminder: "${randomInputLabel}". Full message: "${finalReminderMessage}"`);
+                        } else {
+                            logger.warn(`sendScheduledReminders: User ${userId} - No active input labels found in scheduledExperimentSettings. Using default format: "${finalReminderMessage}"`);
+                        }
+                    } else {
+                        logger.warn(`sendScheduledReminders: User ${userId} - scheduledExperimentSettings not found. Using default reminder format: "${finalReminderMessage}"`);
+                    }
+                    
+                    const reminderDocId = db.collection('pendingReminderDMs').doc().id;
+                    const reminderPromise = db.collection('pendingReminderDMs').doc(reminderDocId).set({
+                        userId: userId,
+                        userTag: userData.userTag || `User_${userId}`,
+                        messageToSend: finalReminderMessage,
+                        experimentId: schedule.experimentId || null,
+                        status: 'pending',
+                        createdAt: FieldValue.serverTimestamp(),
+                    }).then(() => {
+                        logger.log(`sendScheduledReminders: Created pendingReminderDM ${reminderDocId} for user ${userId}.`);
+                        return userDoc.ref.update({
+                            'experimentCurrentSchedule.lastReminderSentDayOfYearUTC': currentUTCDayOfYear,
+                            'experimentCurrentSchedule.remindersSentOnLastDay': newRemindersSentThisUTCDay + 1
+                        });
+                    }).catch(err => {
+                        logger.error(`sendScheduledReminders: Failed to write pendingReminderDM or update user doc for ${userId}`, err);
+                    });
+                    reminderPromises.push(reminderPromise);
+                } else if (isInWindow) {
+                     logger.log(`sendScheduledReminders: User ${userId} is IN window but NOT attempting send this check. Freq: ${reminderFrequency}, Prior Sent Today: ${newRemindersSentThisUTCDay}, Current UTC Day: ${currentUTCDayOfYear}.`);
+                }
+            } else {
+                 // logger.log(`sendScheduledReminders: User ${userId} has no active reminder schedule or experiment ended.`);
+            }
+        });
+
+        await Promise.all(reminderPromises);
+        logger.log(`sendScheduledReminders: Processing complete. Dispatched ${reminderPromises.length} potential reminders.`);
+        return null;
+
+    } catch (error) {
+        logger.error("sendScheduledReminders: Overall error in scheduled function:", error);
+        return null;
+    }
+});
+  
+// Add this new Firebase Callable Function to your functions index with stats.txt
+
+/**
+ * Fetches a cached AI insight or generates a new one for a specific experiment.
+ * Triggered by the "Get AI Insights" button in the Discord bot.
+ *
+ * Expected request.data: { targetExperimentId: string }
+ * Expects request.auth.uid to be present for authenticated user.
+ */
+exports.fetchOrGenerateAiInsights = onCall(async (request) => {
+  logger.log("[fetchOrGenerateAiInsights] Function called. Request data:", request.data);
+
+  // 1. Authentication & Validation
+  if (!request.auth) {
+    logger.warn("[fetchOrGenerateAiInsights] Unauthenticated access attempt.");
+    throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
+  }
+  const userId = request.auth.uid;
+  const userTagForLog = request.auth.token?.name || `User_${userId}`; // For logging
+
+  if (!request.data || !request.data.targetExperimentId) {
+    logger.warn(`[fetchOrGenerateAiInsights] Invalid argument: targetExperimentId missing for user ${userId}.`);
+    throw new HttpsError('invalid-argument', 'The function must be called with a "targetExperimentId".');
+  }
+  const targetExperimentId = request.data.targetExperimentId;
+  logger.info(`[fetchOrGenerateAiInsights] Processing request for user: ${userId} (${userTagForLog}), targetExperimentId: ${targetExperimentId}`);
+
+  const db = admin.firestore();
+
+  try {
+    // 2. Data Fetching
+    const targetExperimentStatsDocRef = db.collection('users').doc(userId).collection('experimentStats').doc(targetExperimentId);
+    const targetExperimentStatsSnap = await targetExperimentStatsDocRef.get();
+
+    if (!targetExperimentStatsSnap.exists) {
+      logger.warn(`[fetchOrGenerateAiInsights] Target experiment stats document not found for user ${userId}, experiment ${targetExperimentId}.`);
+      throw new HttpsError('not-found', 'Target experiment statistics not found. Please ensure the experiment has been processed.');
+    }
+    const targetExperimentStatsData = targetExperimentStatsSnap.data();
+    logger.log(`[fetchOrGenerateAiInsights] Successfully fetched targetExperimentStatsData for ${targetExperimentId}.`);
+
+    const userDocRef = db.collection('users').doc(userId);
+    const userDocSnap = await userDocRef.get();
+
+    if (!userDocSnap.exists || !userDocSnap.data()?.experimentCurrentSchedule) {
+      logger.warn(`[fetchOrGenerateAiInsights] User document or experimentCurrentSchedule not found for user ${userId}.`);
+      // This could mean the user hasn't set up any experiments or there's a data consistency issue.
+      // For caching logic, this is important. If it's missing, we might always regenerate, or handle as an error.
+      // For now, let's assume if this is missing, we cannot reliably check cache freshness against global stats, so we might lean towards generation.
+      // However, the primary caching key is aiInsightGeneratedAt on the experiment itself.
+      // The global stats timestamp is more for invalidating if *other* things have changed globally for the user.
+      // Let's proceed but log a warning. The core caching logic below will primarily rely on fields within targetExperimentStatsData.
+      logger.warn(`[fetchOrGenerateAiInsights] User document or experimentCurrentSchedule not found for user ${userId}. Proceeding, but global stats timestamp for cache invalidation might be unavailable.`);
+    }
+    const experimentCurrentSchedule = userDocSnap.data()?.experimentCurrentSchedule;
+    const latestGlobalStatsTimestamp = experimentCurrentSchedule?.statsCalculationTimestamp; // This is a Firestore Timestamp
+
+    // 3. Caching Logic Implementation
+    const cachedInsightText = targetExperimentStatsData.aiInsightText;
+    const cachedInsightGeneratedAt = targetExperimentStatsData.aiInsightGeneratedAt; // This is a Firestore Timestamp
+
+    // Condition to Serve Cache:
+    // Serve cache if it exists AND (either no global stats timestamp is available OR the cache is newer than or same as global stats)
+    // The primary check is simply if cachedInsightText and cachedInsightGeneratedAt exist.
+    // The comparison to latestGlobalStatsTimestamp is a secondary check for invalidation if global stats processing has occurred.
+    // If latestGlobalStatsTimestamp is undefined (e.g. experimentCurrentSchedule missing), we can't use it for invalidation.
+    // In such a case, if cachedInsightText exists, we might serve it, or decide to always regenerate if global context is critical.
+    // For MVP, let's simplify: if cache exists and was generated, and if global stats timestamp exists, compare them.
+    // If global stats timestamp doesn't exist, but cache does, we can serve it.
+    // If no cache exists, we generate.
+
+    if (cachedInsightText && cachedInsightGeneratedAt) {
+        let serveCache = true; // Assume we serve cache if it exists
+        if (latestGlobalStatsTimestamp) { // Only if global timestamp exists, compare
+            if (cachedInsightGeneratedAt.toMillis() < latestGlobalStatsTimestamp.toMillis()) {
+                serveCache = false; // Cache is stale relative to global stats update
+                logger.log(`[fetchOrGenerateAiInsights] Cache for experiment ${targetExperimentId} is stale (Generated: ${cachedInsightGeneratedAt.toDate().toISOString()}, Global Stats: ${latestGlobalStatsTimestamp.toDate().toISOString()}). Will regenerate.`);
+            }
+        }
+
+        if (serveCache) {
+            logger.log(`[fetchOrGenerateAiInsights] Serving cached insight for experiment ${targetExperimentId} for user ${userId}.`);
+            return { success: true, insightsText: cachedInsightText, source: "cached" };
+        }
+    }
+
+    // 4. If Generating New Insights (Cache Miss or Stale)
+    logger.log(`[fetchOrGenerateAiInsights] Generating new insight for experiment ${targetExperimentId} for user ${userId}.`);
+
+    if (!genAI) {
+        logger.error("[fetchOrGenerateAiInsights] Gemini AI client (genAI) is not initialized. Cannot generate insights.");
+        throw new HttpsError('internal', "The AI insights service is currently unavailable. Please try again later. (AI client not ready)");
+    }
+
+    // 4a. Data Preparation for Prompt
+    const activeSettings = targetExperimentStatsData.activeExperimentSettings;
+    const deeperProblem = activeSettings?.deeperProblem || "Not specified";
+    const experimentEndDateISO = targetExperimentStatsData.experimentEndDateISO || "Unknown"; // ISO String
+    const totalLogsProcessed = targetExperimentStatsData.totalLogsInPeriodProcessed || 0;
+    // const experimentIdForPrompt = targetExperimentStatsData.experimentId || targetExperimentId; // Removed as per user request
+    const expSettingsTimestamp = targetExperimentStatsData.experimentSettingsTimestamp || "Unknown"; // ISO String
+
+    const calculatedMetrics = targetExperimentStatsData.calculatedMetricStats || {};
+    const correlationsData = targetExperimentStatsData.correlations || {};
+    const pairwiseInteractions = targetExperimentStatsData.pairwiseInteractionResults || {};
+    const skippedMetricsData = targetExperimentStatsData.skippedMetrics || [];
+
+    // Fetch User's Overall Streak Data
+    const userMainDocSnap = await db.collection('users').doc(userId).get(); // Re-fetch user doc if needed, or use userDocSnap if fresh enough
+    const userMainData = userMainDocSnap.data();
+    const userOverallStreak = userMainData?.currentStreak || 0;
+    const userOverallLongestStreak = userMainData?.longestStreak || 0;
+
+    // Fetch Logs for Notes Summary
+    let experimentNotesSummary = "No notes were found for this experiment period.";
+    const experimentStartDateForNotes = targetExperimentStatsData.experimentSettingsTimestamp ? new Date(targetExperimentStatsData.experimentSettingsTimestamp) : null;
+    const experimentEndDateForNotes = targetExperimentStatsData.experimentEndDateISO ? new Date(targetExperimentStatsData.experimentEndDateISO) : null;
+
+    if (experimentStartDateForNotes && experimentEndDateForNotes && experimentStartDateForNotes < experimentEndDateForNotes) {
+        try {
+            const logsQuery = db.collection('logs')
+                .where('userId', '==', userId)
+                .where('timestamp', '>=', experimentStartDateForNotes)
+                .where('timestamp', '<=', experimentEndDateForNotes) // Inclusive of end date for logs
+                .orderBy('timestamp', 'asc');
+            const logsSnapshot = await logsQuery.get();
+            if (!logsSnapshot.empty) {
+                const notesEntries = [];
+                logsSnapshot.forEach(doc => {
+                    const log = doc.data();
+                    const logDate = log.timestamp?.toDate ? log.timestamp.toDate().toLocaleDateString() : (log.logDate || 'Unknown Date');
+                    if (log.notes && typeof log.notes === 'string' && log.notes.trim() !== "") {
+                        notesEntries.push(`- On ${logDate}: ${log.notes.trim()}`);
+                    }
+                });
+                if (notesEntries.length > 0) {
+                    experimentNotesSummary = "Key notes from this period:\n" + notesEntries.join("\n");
+                }
+                logger.log(`[fetchOrGenerateAiInsights] Fetched ${notesEntries.length} notes for experiment ${targetExperimentId}.`);
+            } else {
+                logger.log(`[fetchOrGenerateAiInsights] No logs with notes found for experiment ${targetExperimentId} in period ${experimentStartDateForNotes.toISOString()} to ${experimentEndDateForNotes.toISOString()}.`);
+            }
+        } catch (notesError) {
+            logger.error(`[fetchOrGenerateAiInsights] Error fetching notes for experiment ${targetExperimentId}:`, notesError);
+            experimentNotesSummary = "Could not retrieve notes for this period due to an error.";
+        }
+    } else {
+        logger.warn(`[fetchOrGenerateAiInsights] Invalid or missing start/end dates for notes fetching for experiment ${targetExperimentId}. Start: ${experimentStartDateForNotes}, End: ${experimentEndDateForNotes}`);
+    }
+
+
+    const promptData = {
+      deeperProblem,
+      // experimentIdForPrompt, // Removed
+      experimentEndDateISO,
+      totalLogsProcessed,
+      expSettingsTimestamp,
+      calculatedMetrics,
+      correlationsData,
+      pairwiseInteractions,
+      skippedMetricsData,
+      userOverallStreak,
+      userOverallLongestStreak,
+      experimentNotesSummary,
+      // MINIMUM_DATAPOINTS_FOR_METRIC_STATS is a global constant, INSIGHTS_PROMPT_TEMPLATE can access it directly or have it passed if preferred.
+      // For simplicity, the template can reference the global one defined in this file.
+    };
+    logger.log(`[fetchOrGenerateAiInsights] Prepared promptData for experiment ${targetExperimentId}. Notes summary length: ${experimentNotesSummary.length}`);
+
+    // 4b. Populate and Call Gemini
+    const finalPrompt = INSIGHTS_PROMPT_TEMPLATE(promptData);
+    // logger.debug(`[fetchOrGenerateAiInsights] Final prompt for Gemini for experiment ${targetExperimentId}:\n${finalPrompt}`); // Can be very verbose
+
+    let newInsightsText = "";
+    try {
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" }); // Or your preferred model
+      const generationResult = await model.generateContent({
+          contents: [{ role: "user", parts: [{text: finalPrompt}] }],
+          generationConfig: GEMINI_CONFIG, // Defined at top of file
+      });
+      const response = await generationResult.response;
+      newInsightsText = response.text();
+      logger.log(`[fetchOrGenerateAiInsights] Successfully generated insights from Gemini for experiment ${targetExperimentId}. Text length: ${newInsightsText.length}`);
+    } catch (geminiError) {
+    // Enhanced logging:
+    logger.error(`[fetchOrGenerateAiInsights] Gemini API call failed for experiment ${targetExperimentId}. Full Error Object:`, JSON.stringify(geminiError, Object.getOwnPropertyNames(geminiError)));
+    logger.error(`[fetchOrGenerateAiInsights] Gemini API call failed. Error Message: ${geminiError.message}, Status: ${geminiError.status}, Details: ${JSON.stringify(geminiError.details)}`);
+
+    if (geminiError.message && geminiError.message.includes('SAFETY')) {
+        logger.warn(`[fetchOrGenerateAiInsights] Gemini content generation blocked due to safety settings for exp ${targetExperimentId}.`);
+        return { success: false, message: "The AI couldn't generate insights for this data due to content restrictions. Please review your notes if they contain sensitive topics.", source: "generation_failed_safety" };
+    }
+    return { success: false, message: "I'm having trouble connecting to the AI to generate your insights at the moment. Please try again later.", source: "generation_failed" };
+    }
+
+    if (!newInsightsText || newInsightsText.trim() === "") {
+        logger.warn(`[fetchOrGenerateAiInsights] Gemini generated empty insights text for experiment ${targetExperimentId}.`);
+        return { success: false, message: "The AI generated an empty response. Please try again later.", source: "generation_empty" };
+    }
+
+    // 4c. Store New Insight in Firestore
+    await targetExperimentStatsDocRef.update({
+      aiInsightText: newInsightsText,
+      aiInsightGeneratedAt: FieldValue.serverTimestamp()
+    });
+    logger.log(`[fetchOrGenerateAiInsights] Successfully stored new insight for experiment ${targetExperimentId} for user ${userId}.`);
+
+    // 4d. Return New Insight
+    return { success: true, insightsText: newInsightsText, source: "generated" };
+
+  } catch (error) {
+    // Outer Try-Catch for the entire function logic
+    logger.error(`[fetchOrGenerateAiInsights] Critical error for user ${userId}, experiment ${targetExperimentId}:`, error);
+    if (error instanceof HttpsError) {
+      throw error; // Re-throw HttpsError instances directly
+    }
+    // For other errors, wrap in a generic HttpsError
+    throw new HttpsError('internal', `An unexpected error occurred while processing AI insights for experiment ${targetExperimentId}. Details: ${error.message}`, {
+        errorDetails: error.toString(), // Include more details for server logs
+        userId: userId,
+        experimentId: targetExperimentId
+    });
+  }
+});
+
+
 
 // Final blank line below this comment
