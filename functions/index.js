@@ -881,7 +881,7 @@ exports.updateWeeklySettings = onCall(async (request) => {
     }
   
     const userId = request.auth.uid;
-    const { deeperProblem, inputSettings, outputSetting } = request.data; // Expect 'deeperProblem'
+    const { deeperProblem, inputSettings, outputSetting, userTag: receivedUserTag } = request.data; // Expect 'deeperProblem'
     logger.log(`updateWeeklySettings called by user: ${userId} for problem: "${deeperProblem}"`);
   
     // Validate 'deeperProblem'
@@ -928,7 +928,7 @@ exports.updateWeeklySettings = onCall(async (request) => {
     try {
       const db = admin.firestore();
       const userDocRef = db.collection('users').doc(userId);
-      await userDocRef.set({ weeklySettings: weeklySettingsData }, { merge: true });
+      await userDocRef.set({ weeklySettings: weeklySettingsData, userTag: receivedUserTag }, { merge: true });
       logger.log(`Successfully updated weekly settings for user ${userId}:`, weeklySettingsData);
   
       const formatSettingForMessage = (setting, name) => {
