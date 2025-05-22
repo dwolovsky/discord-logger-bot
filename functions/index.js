@@ -355,7 +355,7 @@ exports.submitLog = onRequest( // Renaming back to submitLog for simplicity, ens
       // 3. Extract User Info and Payload
       const userId = decodedToken.uid;
       const userTag = decodedToken.name || `User_${userId}`; // Use 'name' claim if available in token
-      const { inputValues, outputValue, notes } = request.body; // Data from request.body
+      const { inputValues, outputValue, notes, userTag: receivedUserTag } = request.body; // Data from request.body
   
       logger.info(`submitLog (HTTP): Processing request for user: ${userId} (${userTag})`);
       logger.debug("submitLog (HTTP): Received payload:", request.body);
@@ -460,7 +460,7 @@ exports.submitLog = onRequest( // Renaming back to submitLog for simplicity, ens
         // --- Prepare Firestore Log Document Data ---
         const logEntry = {
           userId: userId,
-          userTag: userTag, // Use tag derived from token
+          userTag: receivedUserTag || userTag, // Use tag derived from token
           timestamp: FieldValue.serverTimestamp(), // Ensure FieldValue is imported
           logDate: new Date().toISOString().split('T')[0],
           inputs: parsedAndLoggedInputs, // Contains successfully parsed AND logged inputs including goals
@@ -503,7 +503,26 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     const logData = snap.data();
     const logId = event.params.logId;
     const userId = logData.userId;
-    const userTagForMessage = logData.userTag || `User_${userId}`; // For public message
+    //const userTagForMessage = logData.userTag || `User_${userId}`; // For public message
+    // NEW LOGIC for displayNameForMessage:
+    let displayNameForMessage;
+    const storedUserTag = logData.userTag; // This should be "username#discriminator" or similar
+
+    if (storedUserTag && storedUserTag.includes('#')) {
+        const usernamePart = storedUserTag.substring(0, storedUserTag.lastIndexOf('#'));
+        if (usernamePart && usernamePart.trim() !== "") { // Ensure username part is not empty or just whitespace
+            displayNameForMessage = usernamePart; // Primary: username
+        } else {
+            displayNameForMessage = storedUserTag; // Fallback: full tag if username part is empty (e.g., tag was just "#1234")
+        }
+    } else if (storedUserTag && storedUserTag.trim() !== "") {
+        // If no '#', it might be a new unique username or just a name stored previously. Use it as is.
+        displayNameForMessage = storedUserTag;
+    } else {
+        displayNameForMessage = `User_${userId}`; // Deepest fallback: User_USERID
+    }
+    // END NEW LOGIC
+
 
     const logTimestamp = (logData.timestamp && typeof logData.timestamp.toDate === 'function')
                          ? logData.timestamp.toDate() : null;
@@ -518,14 +537,14 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
         return;
     }
 
-    logger.log(`Streak trigger started for user ${userId} (tag: ${userTagForMessage}) due to log ${logId}`);
+    logger.log(`Streak trigger started for user ${userId} (tag: ${displayNameForMessage}) due to log ${logId}`);
     const userRef = admin.firestore().collection('users').doc(userId);
 
     try {
         await admin.firestore().runTransaction(async (transaction) => {
             const userDoc = await transaction.get(userRef);
             const isNewUser = !userDoc.exists;
-            let currentData = { streak: 0, longest: 0, freezes: 0, lastLog: null, userTag: userTagForMessage };
+            let currentData = { streak: 0, longest: 0, freezes: 0, lastLog: null, userTag: displayNameForMessage };
             let previousStreak = 0;
 
             if (userDoc.exists) {
@@ -537,7 +556,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                     freezes: Math.min(userData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING] || 0, STREAK_CONFIG.FREEZES.MAX || 5),
                     lastLog: (userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP] && typeof userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP].toDate === 'function')
                              ? userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP].toDate() : null,
-                    userTag: userData[STREAK_CONFIG.FIELDS.USER_TAG] || userTagForMessage
+                    userTag: userData[STREAK_CONFIG.FIELDS.USER_TAG] || displayNameForMessage
                 };
                 logger.log(`User ${userId} found. Current streak data:`, currentData);
             } else {
@@ -609,11 +628,11 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
 
         if (isTrueFirstDay) {
             logger.log(`[onLogCreatedUpdateStreak] User ${userId} is on their TRUE Day 1. Preparing welcome messages.`);
-            dmMessageText = `🎉 Welcome to your habit tracking journey, ${userTagForMessage}! ` +
+            dmMessageText = `🎉 Welcome to your habit tracking journey, ${displayNameForMessage}! ` +
                             `You've just logged Day 1 of your streak for the first time (or first time in a while). That's awesome! ` +
                             `Keep it up! You've also earned the 'Originator' role. 🔥`;
 
-            tempPublicMessage = `🎉 Please welcome @${userTagForMessage} to their habit tracking journey! ` +
+            tempPublicMessage = `🎉 Please welcome @${displayNameForMessage} to their habit tracking journey! ` +
                                 `They've just logged Day 1! Show some support! 🚀`;
 
             // Assign 'Originator' role
@@ -627,7 +646,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
         } else if (newState.streakBroken && newState.newStreak === 1) {
             // This is the existing streak reset logic
             dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
-            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', userTagForMessage);
+            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', displayNameForMessage);
             needsRoleCleanupForPublicMessage = true;
             const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
             if (firstRole) {
@@ -646,13 +665,13 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                     logger.log(`User ${userId} hit role milestone: ${roleInfo.name} at ${newState.newStreak} days.`);
                     // Public message for role achievement (if not a streak break and not Day 1 welcome)
                     if (roleInfo.days > 1 && !newState.streakBroken && !isTrueFirstDay) {
-                         tempPublicMessage = `🎉 Big congrats to ${userTagForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
+                         tempPublicMessage = `🎉 Big congrats to ${displayNameForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
                     }
                 }
             }
             // Streak extension public message (if no specific role milestone and not Day 1 welcome)
             if (!tempPublicMessage && newState.streakContinued && newState.newStreak > previousStreak && !newState.streakBroken && !roleInfo && !isTrueFirstDay) {
-                tempPublicMessage = `🥳 ${userTagForMessage} just extended their streak to ${newState.newStreak} days! Keep it up!`;
+                tempPublicMessage = `🥳 ${displayNameForMessage} just extended their streak to ${newState.newStreak} days! Keep it up!`;
             }
         }
         // ***** END OF MODIFIED LOGIC FOR DAY 1 WELCOME *****
@@ -692,15 +711,15 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
 
         // --- Determine PENDING_PUBLIC_MESSAGE ---
         if (newState.streakBroken && newState.newStreak === 1) {
-            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', userTagForMessage);
+            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', displayNameForMessage);
             needsRoleCleanupForPublicMessage = true; // A streak reset to 1 always implies role cleanup for public view
             logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Streak Reset. Message: "${tempPublicMessage}"`);
         } else if (roleInfo && roleInfo.days > 0 && !newState.streakBroken) {
             // This is a role milestone achievement (and not part of a streak break scenario)
-            tempPublicMessage = `🎉 Big congrats to ${userTagForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
+            tempPublicMessage = `🎉 Big congrats to ${displayNameForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
             logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Role Milestone. Message: "${tempPublicMessage}"`);
         } else if (newState.streakContinued && newState.newStreak > previousStreak && !newState.streakBroken && !roleInfo) {
-            tempPublicMessage = `🥳 ${userTagForMessage} just extended their streak to ${newState.newStreak} days! Keep it up!`;
+            tempPublicMessage = `🥳 ${displayNameForMessage} just extended their streak to ${newState.newStreak} days! Keep it up!`;
             logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Streak Extension. Message: "${tempPublicMessage}"`);
         } else {
             logger.log(`[onLogCreatedUpdateStreak] No specific public message condition met. Streak: ${newState.newStreak}, Broken: ${newState.streakBroken}, Continued: ${newState.streakContinued}, RoleInfo: ${roleInfo ? roleInfo.name : 'None'}`);

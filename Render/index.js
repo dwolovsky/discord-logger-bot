@@ -1058,7 +1058,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const input2SettingInput = new TextInputBuilder()
           .setCustomId('input2_setting')
           .setLabel("🛠️ Daily Action 2 (Same as above - Optional)")
-          .setPlaceholder("e.g.: 5000, steps, Walking")
+          .setPlaceholder("e.g.: 8, effort (0-10 scale), Relationships")
           .setStyle(TextInputStyle.Short)
           .setRequired(false); // Optional
 
@@ -1147,7 +1147,7 @@ client.on(Events.InteractionCreate, async interaction => {
               new TextInputBuilder()
                 .setCustomId('log_output_value')
                 .setLabel(`${settings.output.label} ${settings.output.unit}`)
-                .setPlaceholder(`e.g., ${settings.output.goal}`)
+                .setPlaceholder(`Ideal: ${settings.output.goal}`)
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
             )
@@ -1157,7 +1157,7 @@ client.on(Events.InteractionCreate, async interaction => {
               new TextInputBuilder()
                 .setCustomId('log_input1_value')
                 .setLabel(`${settings.input1.label} ${settings.input1.unit}`)
-                .setPlaceholder(`e.g. ${settings.input1.goal}`)
+                .setPlaceholder(`Ideal: ${settings.input1.goal}`)
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
             )
@@ -1168,7 +1168,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 new TextInputBuilder()
                   .setCustomId('log_input2_value')
                   .setLabel(`${settings.input2.label} ${settings.input2.unit}`)
-                  .setPlaceholder(`e.g. ${settings.input2.goal}`)
+                  .setPlaceholder(`Ideal: ${settings.input2.goal}`)
                   .setStyle(TextInputStyle.Short)
                   .setRequired(true)
               )
@@ -1180,7 +1180,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 new TextInputBuilder()
                   .setCustomId('log_input3_value')
                   .setLabel(`${settings.input3.label} ${settings.input3.unit}`)
-                  .setPlaceholder(`e.g., ${settings.input3.goal}`)
+                  .setPlaceholder(`Ideal: ${settings.input3.goal}`)
                   .setStyle(TextInputStyle.Short)
                   .setRequired(true)
                )
@@ -1190,7 +1190,7 @@ client.on(Events.InteractionCreate, async interaction => {
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('log_notes')
-                .setLabel('💭 Experiment (and life) Notes')
+                .setLabel('💭 Experiment / Life) Notes')
                 .setPlaceholder(
                   settings.deeperProblem
                     ? `Focus: ${settings.deeperProblem.substring(0, 85)}${settings.deeperProblem.length > 85 ? '...' : ''}`
@@ -1465,7 +1465,14 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
 
 
     // 4. Structure Payload for Firebase 'submitLog' (HTTP) Function
-    const payload = { outputValue, inputValues: [input1Value, input2Value || "", input3Value || ""], notes };
+    const payload = {
+    outputValue,
+    inputValues: [input1Value, input2Value || "", input3Value || ""],
+    notes,
+    userTag: interaction.user.tag // <<< Add this line
+    };
+    console.log('[dailyLogModal_firebase] Payload for submitLog (HTTP):', payload); // This log will now show the userTag
+    
     console.log('[dailyLogModal_firebase] Payload for submitLog (HTTP):', payload);
 
     const fbCallStartTime = performance.now();
@@ -1755,7 +1762,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
       const getLabel = (settingStr, defaultLabel) => { if (!settingStr) return defaultLabel; const parts = settingStr.split(','); return parts.length > 2 ? parts[2].trim() : defaultLabel; };
       console.log(`[experiment_setup_modal DATA ${interactionId}] Extracted values:`, { deeperProblem, outputSettingStr, input1SettingStr, input2SettingStr, input3SettingStr });
 
-      const payload = { deeperProblem, outputSetting: outputSettingStr, inputSettings: [input1SettingStr, input2SettingStr || "", input3SettingStr || ""] };
+      const payload = { deeperProblem, outputSetting: outputSettingStr, inputSettings: [input1SettingStr, input2SettingStr || "", input3SettingStr || ""], userTag: interaction.user.tag };
 
       const fbCallStartTime = performance.now();
       console.log(`[experiment_setup_modal FIREBASE_CALL ${interactionId}] Calling updateWeeklySettings...`);
