@@ -135,32 +135,33 @@ const { FieldValue } = require("firebase-admin/firestore");
 
 // ============== AI INSIGHTS SETUP ==================
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { logger } = require("firebase-functions"); // Ensure logger is imported
 
-// Ensure GEMINI_API_KEY is set in your Firebase environment variables
-let GEMINI_API_KEY;
 let genAI;
+// If you set it using `firebase functions:config:set gemini.key="YOUR_KEY"`
+// it becomes process.env.GEMINI_KEY
+// If you set it using `firebase functions:config:set gemini_api_key="YOUR_KEY"` (with underscore)
+// it becomes process.env.GEMINI_API_KEY
+// Let's check for the common variations or the one you explicitly used.
+// Assuming you might have set it as `gemini.key` based on `config().gemini.key`
+// or directly as GEMINI_API_KEY in process.env via other means.
 
-try {
-  GEMINI_API_KEY = config().gemini?.key; // Accessing the key set via functions:config:set gemini.key
-                                        // The ?. is optional chaining in case 'gemini' object itself is missing
-} catch (e) {
-    logger.error("Error accessing functions.config().gemini.key. This might happen during initial cold start or if config is not set.", e);
-    // Attempt to fall back to process.env for local testing with .env file if config() is not populated
-    GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (GEMINI_API_KEY) {
-        logger.info("Falling back to process.env.GEMINI_API_KEY for local testing.");
-    }
+let apiKey = process.env.GEMINI_KEY; // From firebase functions:config:set gemini.key
+if (!apiKey) {
+  apiKey = process.env.GEMINI_API_KEY; // From firebase functions:config:set gemini_api_key OR direct env var
 }
 
-if (GEMINI_API_KEY) {
+if (apiKey) {
   try {
-    genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    logger.info("GoogleGenerativeAI initialized successfully.");
+    genAI = new GoogleGenerativeAI(apiKey);
+    logger.info(`GoogleGenerativeAI initialized successfully using API key from environment variables.`);
   } catch (error) {
     logger.error("Failed to initialize GoogleGenerativeAI:", error);
+    genAI = null;
   }
 } else {
-  logger.warn("GEMINI_API_KEY not found in environment variables (checked functions.config().gemini.key and process.env.GEMINI_API_KEY). AI Insights will not be available.");
+  logger.warn("GEMINI_API_KEY (or GEMINI_KEY) not found in environment variables. AI-dependent features will not be available.");
+  genAI = null;
 }
 
 const GEMINI_CONFIG = {

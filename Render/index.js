@@ -975,7 +975,9 @@ client.on(Events.MessageCreate, async message => {
 // ====== INTERACTION HANDLER ======
 client.on(Events.InteractionCreate, async interaction => {
 
-          // --- START: ADD THIS NEW SECTION ---
+  console.log(`[InteractionListener ENTRY ${interaction.id}] Received. Type: ${interactionTypeForLog}, Name/ID: '${commandNameForLog}', User: ${userTagForLog}. WallTime: ${new Date(interactionEntryTimestamp).toISOString()}. PerfTime: ${interactionEntryPerfNow.toFixed(2)}ms.`);
+
+  // --- START: ADD THIS NEW SECTION ---
     const interactionId = interaction.id; // Get the unique ID for this specific interaction event
     console.log(`\n--- InteractionCreate START [${interactionId}] ---`);
     console.log(`[${interactionId}] Timestamp: ${new Date().toISOString()}`);
@@ -1210,51 +1212,64 @@ client.on(Events.InteractionCreate, async interaction => {
     // const buttonStartTime = performance.now();
     // console.log(`⚡ Received button interaction: ${interaction.customId} from ${interaction.user.tag} at ${buttonStartTime.toFixed(2)}ms`);
 
+       // --- Handler for Set Experiment Button (from /go hub - NOW A CHOICE) ---
     if (interaction.customId === 'set_update_experiment_btn') {
-      const setExpChoiceStartTime = performance.now();
-      const userIdForChoice = interaction.user.id; // For pre-fetching
+      const handlerEntryPerfNow = performance.now(); // For delta calculation if needed from main listener entry
+      const userIdForChoice = interaction.user.id;
       const userTagForChoice = interaction.user.tag;
-      const interactionIdForChoice = interaction.id; // For logging
-      console.log(`[${interaction.customId} START ${interactionIdForChoice}] Clicked by ${userTagForChoice}. Presenting setup choices. Time: ${setExpChoiceStartTime.toFixed(2)}ms`);
+      const interactionIdForChoice = interaction.id; // Use this for consistency in logs
+
+      // NEW LOGGING: Handler Entry
+      console.log(`[${interaction.customId} HANDLER_ENTRY ${interactionIdForChoice}] User: ${userTagForChoice}. PerfTime: ${handlerEntryPerfNow.toFixed(2)}ms.`);
 
       try {
-        // Defer update to acknowledge the button click immediately
+        // NEW LOGGING: Before Defer
+        const beforeDeferPerfNow = performance.now();
+        console.log(`[${interaction.customId} PRE_DEFER ${interactionIdForChoice}] About to call deferUpdate. PerfTime: ${beforeDeferPerfNow.toFixed(2)}ms. DeltaFromHandlerEntry: ${(beforeDeferPerfNow - handlerEntryPerfNow).toFixed(2)}ms.`);
+
         await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
-        const deferTime = performance.now();
-        console.log(`[${interaction.customId} DEFERRED ${interactionIdForChoice}] Interaction deferred. Took: ${(deferTime - setExpChoiceStartTime).toFixed(2)}ms`);
+
+        // NEW LOGGING: After Defer Success
+        const afterDeferPerfNow = performance.now();
+        console.log(`[${interaction.customId} POST_DEfer_SUCCESS ${interactionIdForChoice}] deferUpdate successful. PerfTime: ${afterDeferPerfNow.toFixed(2)}ms. DeferCallDuration: ${(afterDeferPerfNow - beforeDeferPerfNow).toFixed(2)}ms.`);
 
         const choiceEmbed = new EmbedBuilder()
-            .setColor('#7F00FF') // Vibrant Purple
+            .setColor('#7F00FF')
             .setTitle('🔬 How would you like to set up your experiment?')
             .setDescription("Choose your preferred method:\n\n✨ **AI Assisted (Beginner):** I'll guide you step-by-step, starting with a wish and helping you define your experiment with AI examples.\n\n✍️ **Manual Setup (Advanced):** You'll fill out a form with all your experiment details directly.");
 
         const aiButton = new ButtonBuilder()
-            .setCustomId(AI_ASSISTED_SETUP_BTN_ID)
+            .setCustomId(AI_ASSISTED_SETUP_BTN_ID) // Ensure this const is defined globally
             .setLabel('✨ AI Assisted (Beginner)')
             .setStyle(ButtonStyle.Primary);
 
         const manualButton = new ButtonBuilder()
-            .setCustomId(MANUAL_SETUP_BTN_ID)
+            .setCustomId(MANUAL_SETUP_BTN_ID) // Ensure this const is defined globally
             .setLabel('✍️ Manual Setup (Advanced)')
             .setStyle(ButtonStyle.Secondary);
 
         const choiceRow = new ActionRowBuilder().addComponents(aiButton, manualButton);
 
-        // Edit the original message (from /go hub) to show these choices
+        // NEW LOGGING: Before EditReply
+        const beforeEditReplyPerfNow = performance.now();
+        console.log(`[${interaction.customId} PRE_EDIT_REPLY ${interactionIdForChoice}] About to call editReply. PerfTime: ${beforeEditReplyPerfNow.toFixed(2)}ms. DeltaFromDeferSuccess: ${(beforeEditReplyPerfNow - afterDeferPerfNow).toFixed(2)}ms.`);
+
         await interaction.editReply({
-            content: '', // Clear any previous content from the hub message part
+            content: '',
             embeds: [choiceEmbed],
             components: [choiceRow]
         });
-        const editReplyTime = performance.now();
-        console.log(`[${interaction.customId} EDIT_REPLY_SUCCESS ${interactionIdForChoice}] Displayed setup choices for ${userTagForChoice}. Took: ${(editReplyTime - deferTime).toFixed(2)}ms`);
 
-        // --- Asynchronously pre-fetch weekly settings AFTER showing choices ---
-        // We don't await this promise chain directly here so it doesn't block the main interaction flow.
+        // NEW LOGGING: After EditReply Success
+        const afterEditReplyPerfNow = performance.now();
+        console.log(`[${interaction.customId} POST_EDIT_REPLY_SUCCESS ${interactionIdForChoice}] editReply successful. PerfTime: ${afterEditReplyPerfNow.toFixed(2)}ms. EditReplyCallDuration: ${(afterEditReplyPerfNow - beforeEditReplyPerfNow).toFixed(2)}ms.`);
+
+        // Async pre-fetch logic (keep your existing logging within this async block)
         (async () => {
-          const prefetchStartTime = performance.now();
+          const prefetchAsyncStartTime = performance.now(); // Use a distinct variable for async block start
           try {
-            console.log(`[${interaction.customId} ASYNC_PREFETCH_START ${interactionIdForChoice}] Asynchronously pre-fetching weekly settings for ${userTagForChoice}.`);
+            // Your existing console.log for ASYNC_PREFETCH_START
+            console.log(`[${interaction.customId} ASYNC_PREFETCH_START ${interactionIdForChoice}] Asynchronously pre-fetching weekly settings for ${userTagForChoice}. PerfTime: ${prefetchAsyncStartTime.toFixed(2)}ms.`);
             const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userIdForChoice);
             if (settingsResult && settingsResult.settings) {
               const existingData = userExperimentSetupData.get(userIdForChoice) || {};
@@ -1262,40 +1277,48 @@ client.on(Events.InteractionCreate, async interaction => {
               console.log(`[${interaction.customId} ASYNC_PREFETCH_SUCCESS ${interactionIdForChoice}] Successfully pre-fetched and cached weekly settings for ${userTagForChoice}.`);
             } else {
               console.log(`[${interaction.customId} ASYNC_PREFETCH_NO_DATA ${interactionIdForChoice}] No weekly settings found or returned for ${userTagForChoice} during async pre-fetch.`);
-              // Ensure weeklySettings is cleared or not present if fetch returns no settings
               const existingData = userExperimentSetupData.get(userIdForChoice) || {};
-              delete existingData.weeklySettings; // Or set to null
+              delete existingData.weeklySettings;
               userExperimentSetupData.set(userIdForChoice, existingData);
             }
           } catch (fetchError) {
             console.error(`[${interaction.customId} ASYNC_PREFETCH_ERROR ${interactionIdForChoice}] Error pre-fetching weekly settings asynchronously for ${userTagForChoice}:`, fetchError.message);
-            // Clear any potentially stale cached settings on error
             const existingData = userExperimentSetupData.get(userIdForChoice) || {};
             delete existingData.weeklySettings;
             userExperimentSetupData.set(userIdForChoice, existingData);
           } finally {
-            const prefetchEndTime = performance.now();
-            console.log(`[${interaction.customId} ASYNC_PREFETCH_DURATION ${interactionIdForChoice}] Async pre-fetching settings took: ${(prefetchEndTime - prefetchStartTime).toFixed(2)}ms for ${userTagForChoice}.`);
+            const prefetchAsyncEndTime = performance.now();
+            console.log(`[${interaction.customId} ASYNC_PREFETCH_DURATION ${interactionIdForChoice}] Async pre-fetching settings took: ${(prefetchAsyncEndTime - prefetchAsyncStartTime).toFixed(2)}ms for ${userTagForChoice}.`);
           }
-        })(); // Self-invoking async function for non-blocking execution
+        })();
 
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[${interaction.customId} ERROR ${interactionIdForChoice}] Error presenting setup choices or initiating async pre-fetch for ${userTagForChoice} at ${errorTime.toFixed(2)}ms:`, error);
+      } catch (error) { // This catches errors from deferUpdate or the first editReply
+        const handlerErrorPerfNow = performance.now();
+        // MODIFIED/ENHANCED ERROR LOG
+        console.error(`[${interaction.customId} HANDLER_ERROR ${interactionIdForChoice}] Error in main try block for ${userTagForChoice}. PerfTime: ${handlerErrorPerfNow.toFixed(2)}ms. DeltaFromHandlerEntry: ${(handlerErrorPerfNow - handlerEntryPerfNow).toFixed(2)}ms. Error:`, error);
         try {
-            if (interaction.deferred || interaction.replied) {
+            // Check if we can still attempt to edit the reply (e.g. if defer succeeded but initial edit failed)
+            // or if we need to use followup (if defer failed, we generally can't recover the original interaction response)
+            if (interaction.deferred && !interaction.replied) { // deferred should be true if deferUpdate succeeded
                  await interaction.editReply({
-                    content: '❌ Oops! Something went wrong when trying to show setup options. Please try clicking "🔬 Set/Update Experiment" again.',
+                    content: `❌ Oops! Something went wrong when trying to show setup options. (Error Code: ${error.code || 'N/A'}) Please try clicking "🔬 Set/Update Experiment" again.`,
                     embeds: [],
                     components: []
                 });
+            } else if (!interaction.replied && !interaction.deferred) { // Fallback if not even deferred
+                 await interaction.reply({ // This will likely fail too if the token is truly gone for 3s+
+                    content: `❌ Oops! A problem occurred very early processing this action. Please try again. (Code: ${error.code || 'N/A'})`,
+                    flags: MessageFlags.Ephemeral
+                 });
             }
-        } catch (editError) {
-            console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionIdForChoice}] Fallback error reply failed:`, editError);
+            // If interaction.replied is true, we can't do much more here.
+        } catch (fallbackError) {
+            console.error(`[${interaction.customId} FALLBACK_REPLY_ERROR ${interactionIdForChoice}] Fallback error reply failed for ${userTagForChoice}:`, fallbackError);
         }
       }
-      const processEndTime = performance.now();
-      console.log(`[${interaction.customId} END ${interactionIdForChoice}] Finished processing. Total time: ${(processEndTime - setExpChoiceStartTime).toFixed(2)}ms`);
+      const handlerEndPerfNow = performance.now();
+      // NEW LOGGING: Handler End
+      console.log(`[${interaction.customId} HANDLER_END ${interactionIdForChoice}] User: ${userTagForChoice}. PerfTime: ${handlerEndPerfNow.toFixed(2)}ms. TotalInHandler: ${(handlerEndPerfNow - handlerEntryPerfNow).toFixed(2)}ms.`);
     }
 
     // ****** START: Add these NEW Button Handlers inside the 'if (interaction.isButton())' block ******
@@ -2701,6 +2724,8 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
 // ****** END: Add these NEW Modal and Button Handlers (Step 2 Flow) ******
 
 console.log(`--- InteractionCreate END [${interactionId}] ---\n`);
+const interactionListenerEndPerfNow = performance.now();
+console.log(`[InteractionListener END ${interaction.id}] Processing finished. TotalInListener: ${(interactionListenerEndPerfNow - interactionEntryPerfNow).toFixed(2)}ms.`);
 
 }); // end of client.on(Events.InteractionCreate)
 
