@@ -974,6 +974,12 @@ client.on(Events.MessageCreate, async message => {
 
 // ====== INTERACTION HANDLER ======
 client.on(Events.InteractionCreate, async interaction => {
+const interactionEntryTimestamp = Date.now();
+const interactionEntryPerfNow = performance.now();
+const interactionTypeForLog = interaction.type; // <--- Correct: declare and assign here
+const userTagForLog = interaction.user?.tag || 'UnknownUser';
+const commandNameForLog = interaction.isChatInputCommand() ? interaction.commandName : (interaction.isButton() ? interaction.customId : 'N/A');
+
 
   console.log(`[InteractionListener ENTRY ${interaction.id}] Received. Type: ${interactionTypeForLog}, Name/ID: '${commandNameForLog}', User: ${userTagForLog}. WallTime: ${new Date(interactionEntryTimestamp).toISOString()}. PerfTime: ${interactionEntryPerfNow.toFixed(2)}ms.`);
 
