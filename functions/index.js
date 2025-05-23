@@ -137,19 +137,21 @@ const { FieldValue } = require("firebase-admin/firestore");
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 let genAI;
-const apiKeyToUse = process.env.GEMINI_KEY; // Directly target the correct environment variable
+// Check for the environment variable that your deployment logs show is being set.
+const apiKeyToUse = process.env.GEMINI_API_KEY; // Using GEMINI_API_KEY with underscore
 
 if (apiKeyToUse) {
   try {
-    genAI = new GoogleGenerativeAI(apiKeyToUse); // GoogleGenerativeAI should be defined from a global require
-    logger.info(`GoogleGenerativeAI initialized successfully using API key from process.env.GEMINI_KEY.`); // logger should be defined from a global require
+    genAI = new GoogleGenerativeAI(apiKeyToUse);
+    logger.info(`GoogleGenerativeAI initialized successfully using API key from process.env.GEMINI_API_KEY.`);
   } catch (error) {
-    logger.error("Failed to initialize GoogleGenerativeAI with process.env.GEMINI_KEY:", error);
-    genAI = null;
+    logger.error("Failed to initialize GoogleGenerativeAI with process.env.GEMINI_API_KEY:", error);
+    genAI = null; 
   }
 } else {
-  logger.warn("process.env.GEMINI_KEY was not found. AI-dependent features will not be available.");
-  genAI = null;
+  // This warning means the specific variable process.env.GEMINI_API_KEY was not found.
+  logger.warn("process.env.GEMINI_API_KEY was NOT found. AI-dependent features will be unavailable.");
+  genAI = null; 
 }
 
 const GEMINI_CONFIG = {

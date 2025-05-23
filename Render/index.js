@@ -1329,6 +1329,184 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
 
     // ****** START: Add these NEW Button Handlers inside the 'if (interaction.isButton())' block ******
 
+// --- (render/index.js) ---
+// Inside the 'if (interaction.isButton())' block, after the 'set_update_experiment_btn' handler:
+
+    else if (interaction.customId === MANUAL_SETUP_BTN_ID) {
+      const manualSetupStartTime = performance.now();
+      const userIdForManual = interaction.user.id;
+      const userTagForManual = interaction.user.tag;
+      console.log(`[${interaction.customId} START ${interaction.id}] Clicked by ${userTagForManual}. Attempting to show manual experiment setup modal. Time: ${manualSetupStartTime.toFixed(2)}ms`);
+
+      const setupData = userExperimentSetupData.get(userIdForManual);
+      const cachedSettings = setupData?.weeklySettings;
+      let deeperProblemValue = "";
+      let outputValue = "";
+      let input1Value = "";
+      let input2Value = "";
+      let input3Value = "";
+
+      if (cachedSettings) {
+        console.log(`[${interaction.customId} CACHE_HIT ${interaction.id}] Found cached settings for ${userTagForManual}.`);
+        deeperProblemValue = cachedSettings.deeperProblem || "";
+
+        const formatSettingToString = (setting) => {
+          if (setting && typeof setting.label === 'string' && setting.label.trim() !== "" && setting.goal !== null && setting.unit !== undefined) {
+            return `${setting.goal}, ${setting.unit}, ${setting.label}`;
+          }
+          return "";
+        };
+
+        outputValue = formatSettingToString(cachedSettings.output);
+        input1Value = formatSettingToString(cachedSettings.input1);
+        input2Value = formatSettingToString(cachedSettings.input2);
+        input3Value = formatSettingToString(cachedSettings.input3);
+      } else {
+        console.log(`[${interaction.customId} CACHE_MISS ${interaction.id}] No cached settings found for ${userTagForManual}. Modal will use placeholders.`);
+      }
+
+      try {
+        const modal = new ModalBuilder()
+          .setCustomId('experiment_setup_modal')
+          .setTitle('🧪 Set Weekly Experiment (Manual)');
+
+        const deeperProblemInput = new TextInputBuilder()
+          .setCustomId('deeper_problem')
+          .setLabel("🧭 Deeper Problem / Goal / Theme?")
+          .setPlaceholder("e.g. 'Reduce distractions' OR 'Go to sleep earlier.'")
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true);
+        if (deeperProblemValue) deeperProblemInput.setValue(deeperProblemValue);
+
+        const outputSettingInput = new TextInputBuilder()
+          .setCustomId('output_setting')
+          .setLabel("🎯 Daily Result (Goal #, Unit, Label)")
+          .setPlaceholder("e.g. '7.5, hours, Sleep Quality'")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        if (outputValue) outputSettingInput.setValue(outputValue);
+
+        const input1SettingInput = new TextInputBuilder()
+          .setCustomId('input1_setting')
+          .setLabel("🛠️ Daily Action 1 (Goal #, Unit, Label)")
+          .setPlaceholder("e.g. '15, minutes, Meditation'")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        if (input1Value) input1SettingInput.setValue(input1Value);
+
+        const input2SettingInput = new TextInputBuilder()
+          .setCustomId('input2_setting')
+          .setLabel("🛠️ Daily Action 2 (Optional - Goal #, Unit, Label)")
+          .setPlaceholder("e.g. '8, 0-10 effort, Relationships'")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+        if (input2Value) input2SettingInput.setValue(input2Value);
+
+        const input3SettingInput = new TextInputBuilder()
+          .setCustomId('input3_setting')
+          .setLabel("🛠️ Daily Action 3 (Optional - Goal #, Unit, Label)")
+          .setPlaceholder("e.g. '10, glasses, Water'")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+        if (input3Value) input3SettingInput.setValue(input3Value);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(deeperProblemInput),
+          new ActionRowBuilder().addComponents(outputSettingInput),
+          new ActionRowBuilder().addComponents(input1SettingInput),
+          new ActionRowBuilder().addComponents(input2SettingInput),
+          new ActionRowBuilder().addComponents(input3SettingInput)
+        );
+
+        await interaction.showModal(modal);
+        const showModalTime = performance.now();
+        console.log(`[${interaction.customId} MODAL_SHOWN ${interaction.id}] Manual setup modal shown to ${userTagForManual}. Pre-population attempt complete. Took: ${(showModalTime - manualSetupStartTime).toFixed(2)}ms`);
+
+      } catch (error) {
+        const errorTime = performance.now();
+        console.error(`[${interaction.customId} ERROR ${interaction.id}] Error showing manual setup modal for ${userTagForManual} at ${errorTime.toFixed(2)}ms:`, error);
+        // Log and attempt an ephemeral reply if possible, though showModal failures are often hard to recover from
+        if (interaction.replied || interaction.deferred) {
+            // If already replied/deferred (e.g. by deferUpdate from set_update_experiment_btn), edit that.
+            // However, for MANUAL_SETUP_BTN_ID, we usually don't deferUpdate before showModal.
+        } else {
+            try {
+                await interaction.reply({content: "Sorry, I couldn't open the manual setup form. Please try again.", flags: MessageFlags.Ephemeral});
+            } catch (replyError) {
+                 console.error(`[${interaction.customId} FALLBACK_REPLY_ERROR ${interaction.id}] Fallback error reply failed:`, replyError);
+            }
+        }
+      }
+    } // End of MANUAL_SETUP_BTN_ID handler
+
+    // --- (render/index.js) ---
+    // Inside the 'if (interaction.isButton())' block, after the MANUAL_SETUP_BTN_ID handler:
+
+    else if (interaction.customId === AI_ASSISTED_SETUP_BTN_ID) {
+      // DIAGNOSTIC LOG - VERY FIRST LINE in this handler
+      console.log(`[${AI_ASSISTED_SETUP_BTN_ID} ENTERED_HANDLER ${interaction.id}] Handler entered for user ${interaction.user.tag}.`);
+
+      const aiSetupStartTime = performance.now();
+      const userId = interaction.user.id;
+      const userTag = interaction.user.tag;
+      console.log(`[${interaction.customId} START ${interaction.id}] Clicked by ${userTag}. Initiating AI Assisted setup. Time: ${aiSetupStartTime.toFixed(2)}ms`);
+
+      try {
+        await interaction.update({
+            content: "🤖 Roger that! I'll slide into your DMs to start the AI Wish-to-Experiment Guide. Check your messages!",
+            embeds: [],
+            components: []
+        });
+        const updateTime = performance.now();
+        console.log(`[${interaction.customId} UPDATED_REPLY ${interaction.id}] Acknowledged button for ${userTag}. Took: ${(updateTime - aiSetupStartTime).toFixed(2)}ms`);
+
+        userExperimentSetupData.set(userId, {
+            dmFlowState: 'awaiting_wish',
+            wish: null,
+            aiGeneratedExamples: null,
+            deeperProblem: null,
+            outcomeLabel: null,
+            outcomeUnit: null,
+            outcomeGoal: null,
+            currentActionIndex: 0,
+            actions: [],
+            interactionId: interaction.id
+        });
+        console.log(`[${interaction.customId} STATE_INIT ${interaction.id}] Initialized DM flow state for ${userTag}: awaiting_wish.`);
+
+        const dmChannel = await interaction.user.createDM();
+        await dmChannel.send({
+            content: "Welcome to the AI Wish-to-Experiment Guide! ✨ Sometimes the biggest changes start with a simple wish.\n\nWhat's **one thing** you wish was different or better in your daily life right now?\n\n(e.g., 'I wish I had more energy,' 'I wish I was less stressed,' 'I wish I could focus better').\n\nType your wish below! (You can type 'cancel' at any time to stop this setup)."
+        });
+        const dmSentTime = performance.now();
+        console.log(`[${interaction.customId} DM_SENT ${interaction.id}] Sent 'awaiting_wish' DM to ${userTag}. Took: ${(dmSentTime - updateTime).toFixed(2)}ms`);
+
+      } catch (error) {
+        const errorTime = performance.now();
+        console.error(`[${interaction.customId} ERROR ${interaction.id}] Error initiating AI assisted setup for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
+        if (error.code === 50007) {
+             console.error(`[${interaction.customId} DM_FAIL ${interaction.id}] Cannot send DMs to ${userTag}. They may have DMs disabled.`);
+             try {
+                await interaction.followUp({ // followUp as update() might have succeeded but DM failed
+                    content: "⚠️ I couldn't send you a DM. Please ensure your DMs are enabled for this server if you'd like to use the AI Assisted setup.",
+                    flags: MessageFlags.Ephemeral
+                });
+             } catch (followUpError) {
+                console.error(`[${interaction.customId} FOLLOWUP_FAIL ${interaction.id}] Failed to send DM failure followup:`, followUpError);
+             }
+        } else if (interaction.replied || interaction.deferred) { // If update failed
+            try {
+                await interaction.editReply({
+                    content: "❌ An error occurred trying to start the AI assisted setup. Please try again.",
+                    embeds: [], components: []
+                });
+            } catch (editErr) { console.error(`[${interaction.customId} EDIT_REPLY_ERROR_FALLBACK ${interaction.id}]`, editErr); }
+        }
+        userExperimentSetupData.delete(userId);
+      }
+      // No processEndTime log here as main interaction ends with DM, further steps are new interactions/messages.
+    } // End of AI_ASSISTED_SETUP_BTN_ID handler
+
     // --- Handler for Log Daily Data Button ---
     else if (interaction.customId === 'log_daily_progress_btn') {
       const logButtonStartTime = performance.now();
