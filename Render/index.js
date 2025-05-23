@@ -505,6 +505,7 @@ const REMINDER_SELECT_TIME_M_ID = 'reminder_select_time_m';
 const REMINDER_SELECT_TIME_AP_ID = 'reminder_select_time_ap';
 const CONFIRM_REMINDER_BTN_ID = 'confirm_reminder_btn';
 const REMINDERS_SET_TIME_NEXT_BTN_ID = 'reminders_set_time_next_btn';
+const AI_DEFINE_DEEPER_PROBLEM_BTN_ID = 'ai_define_deeper_problem_btn';
 
 // ====== FIREBASE CLIENT CONFIGURATION ======
 // Load config from .env file
@@ -773,8 +774,14 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 })();
 
 
-// ====== DISCORD CLIENT ======
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// ====== DISCORD CLIENT =====
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.DirectMessages, // Add this
+    GatewayIntentBits.MessageContent  // Add this (needed to read message content in DMs)
+  ]
+});
 
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -785,6 +792,180 @@ client.once(Events.ClientReady, () => {
   } else {
     console.warn("Firebase Admin SDK (dbAdmin) is not properly initialized. Listeners for stats and reminders will NOT be started. Please check your Firebase Admin setup at the top of the file.");
   }
+});
+
+client.on(Events.MessageCreate, async message => {
+  // Ignore messages from bots and messages not in DMs
+  if (message.author.bot || message.guild) return;
+
+  const userId = message.author.id;
+  const userTag = message.author.tag;
+  const messageContent = message.content.trim();
+
+  // Retrieve user's current DM flow state
+  const setupData = userExperimentSetupData.get(userId);
+
+  if (!setupData || !setupData.dmFlowState) {
+    // User is not in an active DM flow with this bot, or state is missing
+    // You might want to send a generic "I'm not sure what you mean, use /go to start" if they DM out of context.
+    // For now, we'll just ignore.
+    return;
+  }
+
+  const interactionIdForLog = setupData.interactionId || 'DM_FLOW'; // Use stored interaction ID or a generic one
+
+  console.log(`[MessageCreate DM_HANDLER START ${interactionIdForLog}] Received DM from ${userTag} (ID: ${userId}). State: ${setupData.dmFlowState}. Content: "${messageContent}"`);
+
+  // Handle 'cancel' command universally within this DM flow
+  if (messageContent.toLowerCase() === 'cancel') {
+    console.log(`[MessageCreate DM_CANCEL ${interactionIdForLog}] User ${userTag} cancelled DM flow from state: ${setupData.dmFlowState}.`);
+    userExperimentSetupData.delete(userId);
+    await message.author.send("Okay, I've cancelled the current experiment setup. You can always start over using the `/go` command! 👍");
+    console.log(`[MessageCreate DM_CANCEL_CONFIRMED ${interactionIdForLog}] Cancellation confirmed to ${userTag}.`);
+    return;
+  }
+
+  // --- Stage 1: Handle "awaiting_wish" ---
+  if (setupData.dmFlowState === 'awaiting_wish') {
+    if (!messageContent) {
+      await message.author.send("It looks like your wish was empty. Please tell me, what's one thing you wish was different or better in your daily life right now?");
+      console.log(`[MessageCreate AWAITING_WISH_EMPTY ${interactionIdForLog}] User ${userTag} sent empty wish.`);
+      return;
+    }
+
+    // Store the wish
+    setupData.wish = messageContent;
+    setupData.dmFlowState = 'processing_wish'; // Transition state
+    userExperimentSetupData.set(userId, setupData);
+    console.log(`[MessageCreate AWAITING_WISH_RECEIVED ${interactionIdForLog}] User ${userTag} submitted wish: "${messageContent}". State changed to 'processing_wish'.`);
+
+    await message.author.send(`Thanks for sharing your wish: "${setupData.wish}"\n\n🧠 Now, I'll use this to brainstorm a couple of illustrative experiment examples for you. This might take a moment...`);
+
+    // --- Prepare to call Firebase Function for LLM Task 1 ---
+    try {
+      console.log(`[MessageCreate LLM_CALL_START ${interactionIdForLog}] Calling 'generateIllustrativeExperiments' Firebase function for ${userTag} with wish: "${setupData.wish}"`);
+      // Ensure firebaseFunctions is initialized (from your existing Firebase setup)
+      if (!firebaseFunctions) {
+          throw new Error("Firebase Functions client not initialized.");
+      }
+      
+      // We'll use callFirebaseFunction but need to create the actual Firebase function in the next step.
+      // For now, let's assume it will return { success: true, examples: [example1, example2] }
+      // or { success: false, error: "message" }
+
+      const llmResult = await callFirebaseFunction(
+        'generateIllustrativeExperiments', // NEW Firebase Function name
+        { userWish: setupData.wish },
+        userId
+      );
+
+      const llmCallEndTime = Date.now(); // Using Date.now() for simplicity here
+      console.log(`[MessageCreate LLM_CALL_END ${interactionIdForLog}] Firebase function 'generateIllustrativeExperiments' returned for ${userTag}.`);
+
+      if (llmResult && llmResult.success && llmResult.examples && llmResult.examples.length === 2) {
+        setupData.aiGeneratedExamples = llmResult.examples;
+        setupData.dmFlowState = 'awaiting_confirmation_after_examples'; // Next state
+        userExperimentSetupData.set(userId, setupData);
+        console.log(`[MessageCreate LLM_SUCCESS ${interactionIdForLog}] Successfully received ${llmResult.examples.length} examples from LLM for ${userTag}.`);
+
+        // --- Stage 2: Display AI-Generated Illustrative Experiments (Ephemeral DM) ---
+        // Format the examples clearly
+        const example1Text = `**Example 1: ${llmResult.examples[0].title || "The Energizer Bunny Approach"}**\n` +
+                             `  Deeper Goal: "${llmResult.examples[0].deeperGoal}"\n` +
+                             `  Outcome to Track: "${llmResult.examples[0].outcomeMetric.label}" (as ${llmResult.examples[0].outcomeMetric.unit || 'a daily rating'}), aiming for "${llmResult.examples[0].outcomeMetric.goal}" daily.\n` +
+                             `  Daily Actions to Try:\n` +
+                             llmResult.examples[0].actions.map(a => `    - "${a.label}" (for "${a.unit || 'measurement'}"), aiming for "${a.goal}" daily.`).join('\n');
+
+        const example2Text = `**Example 2: ${llmResult.examples[1].title || "The Calmness Cultivator Kit"}**\n` +
+                             `  Deeper Goal: "${llmResult.examples[1].deeperGoal}"\n` +
+                             `  Outcome to Track: "${llmResult.examples[1].outcomeMetric.label}" (as ${llmResult.examples[1].outcomeMetric.unit || 'a daily rating'}), aiming for "${llmResult.examples[1].outcomeMetric.goal}" daily.\n` +
+                             `  Daily Actions to Try:\n` +
+                             llmResult.examples[1].actions.map(a => `    - "${a.label}" (for "${a.unit || 'measurement'}"), aiming for "${a.goal}" daily.`).join('\n');
+
+        await message.author.send(
+            `That's a great wish: **"${setupData.wish}"**!\n\n` +
+            `To give you an idea of how you could explore this with a small experiment, here are a couple of examples of what others might try:\n\n` +
+            `${example1Text}\n\n${example2Text}\n\n` +
+            `These are just examples to get you thinking! You can create something totally different or inspired by these.`
+        );
+
+        // --- Stage 3: Explaining Experiment Components (Ephemeral DM) ---
+        const explainEmbed = new EmbedBuilder()
+            .setColor('#57F287') // Green
+            .setTitle('🔬 Ready to Design Your Own Experiment?')
+            .setDescription(
+                "A self-science experiment usually has a few key parts:\n\n" +
+                "1️⃣ **Your Deeper Problem/Goal/Theme:** The core thing you want to explore (like in the examples).\n\n" +
+                "2️⃣ **Your Key Outcome Metric:** How you'll measure if you're making progress with your Deeper Problem (e.g., mood rating, hours slept, tasks completed). This needs a *Label*, how you'll *Measure it (unit/scale)*, and a daily *Target #*.\n\n" +
+                "3️⃣ **Your Daily Actions (1-3 Inputs):** Specific things you'll do each day that you think might influence your Outcome. Each action also needs a *Label*, how you'll *Measure it*, and a daily *Target #*."
+            )
+            .setFooter({ text: "Let's define these one by one for your experiment. You can always type 'cancel' if you want to stop."});
+
+        const defineProblemButton = new ButtonBuilder()
+            .setCustomId('ai_define_deeper_problem_btn') // New Custom ID
+            .setLabel("🎯 Let's Define My Deeper Problem!")
+            .setStyle(ButtonStyle.Success);
+
+        const rowDefineProblem = new ActionRowBuilder().addComponents(defineProblemButton);
+
+        await message.author.send({
+            embeds: [explainEmbed],
+            components: [rowDefineProblem]
+        });
+        setupData.dmFlowState = 'awaiting_deeper_problem_via_btn'; // User needs to click the button
+        userExperimentSetupData.set(userId, setupData);
+        console.log(`[MessageCreate EXAMPLES_SHOWN ${interactionIdForLog}] Displayed AI examples and 'Define Deeper Problem' prompt to ${userTag}. State: ${setupData.dmFlowState}.`);
+
+      } else {
+        // LLM call failed or returned unexpected data
+        console.error(`[MessageCreate LLM_ERROR ${interactionIdForLog}] LLM call failed or returned invalid data for ${userTag}. Result:`, llmResult);
+        await message.author.send("I had a bit of trouble brainstorming examples right now. 😕 Let's try moving straight to defining your experiment. If you're stuck, you can always type 'cancel' and try the AI guide again later.");
+        // Fallback: Directly jump to explaining components and asking for deeper problem (Stage 3 but without examples)
+        // This part would be similar to the success block above, just without displaying examples.
+        // For now, we'll simplify and just let them know, then they can type 'cancel' or we can add a button to proceed.
+        // Let's try to resend the "Explain Experiment Components" part as a recovery.
+        const explainEmbedFallback = new EmbedBuilder()
+            .setColor('#57F287')
+            .setTitle('🔬 Let\'s Design Your Experiment')
+            .setDescription(
+                "Even though I couldn't generate examples right now, we can still set up your experiment!\n\nA self-science experiment usually has a few key parts:\n\n" +
+                "1️⃣ **Your Deeper Problem/Goal/Theme:** The core thing you want to explore.\n\n" +
+                "2️⃣ **Your Key Outcome Metric:** How you'll measure progress (Label, Unit/Scale, Target #).\n\n" +
+                "3️⃣ **Your Daily Actions (1-3 Inputs):** Things you'll do that might influence your Outcome (Label, Unit/Scale, Target #)."
+            )
+            .setFooter({ text: "Let's define these one by one. You can always type 'cancel' if you want to stop."});
+
+        const defineProblemButtonFallback = new ButtonBuilder()
+            .setCustomId('ai_define_deeper_problem_btn') // Same Custom ID
+            .setLabel("🎯 Let's Define My Deeper Problem!")
+            .setStyle(ButtonStyle.Success);
+        const rowDefineProblemFallback = new ActionRowBuilder().addComponents(defineProblemButtonFallback);
+
+        await message.author.send({
+            embeds: [explainEmbedFallback],
+            components: [rowDefineProblemFallback]
+        });
+        setupData.dmFlowState = 'awaiting_deeper_problem_via_btn'; // User needs to click the button
+        userExperimentSetupData.set(userId, setupData);
+        console.log(`[MessageCreate LLM_FAIL_RECOVERY ${interactionIdForLog}] LLM failed, sent fallback 'Define Deeper Problem' prompt to ${userTag}. State: ${setupData.dmFlowState}.`);
+      }
+    } catch (error) {
+      console.error(`[MessageCreate FIREBASE_FUNC_ERROR ${interactionIdForLog}] Error calling Firebase function or processing its result for ${userTag}:`, error);
+      await message.author.send("I encountered an issue trying to connect with my AI brain. Please try again in a bit, or you can 'cancel' and use the manual setup for now.");
+      setupData.dmFlowState = 'awaiting_wish'; // Revert state so they can try sending wish again or cancel
+      userExperimentSetupData.set(userId, setupData);
+    }
+  }
+  // ... other dmFlowState handlers will go here as 'else if' ...
+  else if (setupData.dmFlowState === 'processing_wish') {
+    // User sent another message while wish was being processed.
+    // Tell them to wait or handle appropriately.
+    await message.author.send("I'm still thinking about your wish! I'll send the examples as soon as they're ready. 😊");
+    console.log(`[MessageCreate PROCESSING_WISH_INTERRUPT ${interactionIdForLog}] User ${userTag} sent message while wish was processing.`);
+  }
+  // ...
+
+  console.log(`[MessageCreate DM_HANDLER END ${interactionIdForLog}] Finished DM processing for ${userTag}.`);
 });
 
 // ====== INTERACTION HANDLER ======
@@ -1025,70 +1206,92 @@ client.on(Events.InteractionCreate, async interaction => {
     // const buttonStartTime = performance.now();
     // console.log(`⚡ Received button interaction: ${interaction.customId} from ${interaction.user.tag} at ${buttonStartTime.toFixed(2)}ms`);
 
-    // --- Handler for Set Experiment Button ---
     if (interaction.customId === 'set_update_experiment_btn') {
+      const setExpChoiceStartTime = performance.now();
+      const userIdForChoice = interaction.user.id; // For pre-fetching
+      const userTagForChoice = interaction.user.tag;
+      const interactionIdForChoice = interaction.id; // For logging
+      console.log(`[${interaction.customId} START ${interactionIdForChoice}] Clicked by ${userTagForChoice}. Presenting setup choices. Time: ${setExpChoiceStartTime.toFixed(2)}ms`);
+
       try {
-        const modal = new ModalBuilder()
-          .setCustomId('experiment_setup_modal') // Unique ID for this modal submission
-          .setTitle('🧪 Set Weekly Experiment');
+        // Defer update to acknowledge the button click immediately
+        await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
+        const deferTime = performance.now();
+        console.log(`[${interaction.customId} DEFERRED ${interactionIdForChoice}] Interaction deferred. Took: ${(deferTime - setExpChoiceStartTime).toFixed(2)}ms`);
 
-        // Define Modal Components (Text Inputs)
+        const choiceEmbed = new EmbedBuilder()
+            .setColor('#7F00FF') // Vibrant Purple
+            .setTitle('🔬 How would you like to set up your experiment?')
+            .setDescription("Choose your preferred method:\n\n✨ **AI Assisted (Beginner):** I'll guide you step-by-step, starting with a wish and helping you define your experiment with AI examples.\n\n✍️ **Manual Setup (Advanced):** You'll fill out a form with all your experiment details directly.");
 
-        const deeperProblemInput = new TextInputBuilder()
-          .setCustomId('deeper_problem')
-          .setLabel("🧭 Deeper Problem / Goal / Theme?")
-          .setPlaceholder("e.g. 'Reduce distractions' OR 'Go to sleep earlier.'")
-          .setStyle(TextInputStyle.Paragraph) // Paragraph for longer input
-          .setRequired(true);
+        const aiButton = new ButtonBuilder()
+            .setCustomId(AI_ASSISTED_SETUP_BTN_ID)
+            .setLabel('✨ AI Assisted (Beginner)')
+            .setStyle(ButtonStyle.Primary);
 
-        const outputSettingInput = new TextInputBuilder()
-          .setCustomId('output_setting')
-          .setLabel("🎯 Daily Result (Desired #, Scale, Category)") // Ensure commas are clear
-          .setPlaceholder("e.g. '7.5, hours, Sleep' OR '8, 0-10 scale, Health'") // Comma format example
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
+        const manualButton = new ButtonBuilder()
+            .setCustomId(MANUAL_SETUP_BTN_ID)
+            .setLabel('✍️ Manual Setup (Advanced)')
+            .setStyle(ButtonStyle.Secondary);
 
-        const input1SettingInput = new TextInputBuilder()
-          .setCustomId('input1_setting')
-          .setLabel("🛠️ Daily Action 1 (Amount, Scale, Category)") // Comma format example
-          .setPlaceholder("e.g. '15, minutes, Meditation'")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
+        const choiceRow = new ActionRowBuilder().addComponents(aiButton, manualButton);
 
-        const input2SettingInput = new TextInputBuilder()
-          .setCustomId('input2_setting')
-          .setLabel("🛠️ Daily Action 2 (Same as above - Optional)")
-          .setPlaceholder("e.g.: 8, effort (0-10 scale), Relationships")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false); // Optional
+        // Edit the original message (from /go hub) to show these choices
+        await interaction.editReply({
+            content: '', // Clear any previous content from the hub message part
+            embeds: [choiceEmbed],
+            components: [choiceRow]
+        });
+        const editReplyTime = performance.now();
+        console.log(`[${interaction.customId} EDIT_REPLY_SUCCESS ${interactionIdForChoice}] Displayed setup choices for ${userTagForChoice}. Took: ${(editReplyTime - deferTime).toFixed(2)}ms`);
 
-        const input3SettingInput = new TextInputBuilder()
-          .setCustomId('input3_setting')
-          .setLabel("🛠️ Daily Action 3 (Same as above - Optional)") // Comma format example
-          .setPlaceholder("e.g., 10, glasses, Water")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false); // Optional
-
-        // Add components to modal using ActionRows (one per component for modals)
-        const firstRow = new ActionRowBuilder().addComponents(deeperProblemInput);
-        const secondRow = new ActionRowBuilder().addComponents(outputSettingInput);
-        const thirdRow = new ActionRowBuilder().addComponents(input1SettingInput);
-        const fourthRow = new ActionRowBuilder().addComponents(input2SettingInput);
-        const fifthRow = new ActionRowBuilder().addComponents(input3SettingInput);
-
-        modal.addComponents(firstRow, secondRow, thirdRow, fourthRow, fifthRow);
-
-        // Show the modal to the user
-        await interaction.showModal(modal);
-        // Optional: Log success
-        // console.log(`[${interaction.customId}] Modal shown successfully.`);
+        // --- Asynchronously pre-fetch weekly settings AFTER showing choices ---
+        // We don't await this promise chain directly here so it doesn't block the main interaction flow.
+        (async () => {
+          const prefetchStartTime = performance.now();
+          try {
+            console.log(`[${interaction.customId} ASYNC_PREFETCH_START ${interactionIdForChoice}] Asynchronously pre-fetching weekly settings for ${userTagForChoice}.`);
+            const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userIdForChoice);
+            if (settingsResult && settingsResult.settings) {
+              const existingData = userExperimentSetupData.get(userIdForChoice) || {};
+              userExperimentSetupData.set(userIdForChoice, { ...existingData, weeklySettings: settingsResult.settings });
+              console.log(`[${interaction.customId} ASYNC_PREFETCH_SUCCESS ${interactionIdForChoice}] Successfully pre-fetched and cached weekly settings for ${userTagForChoice}.`);
+            } else {
+              console.log(`[${interaction.customId} ASYNC_PREFETCH_NO_DATA ${interactionIdForChoice}] No weekly settings found or returned for ${userTagForChoice} during async pre-fetch.`);
+              // Ensure weeklySettings is cleared or not present if fetch returns no settings
+              const existingData = userExperimentSetupData.get(userIdForChoice) || {};
+              delete existingData.weeklySettings; // Or set to null
+              userExperimentSetupData.set(userIdForChoice, existingData);
+            }
+          } catch (fetchError) {
+            console.error(`[${interaction.customId} ASYNC_PREFETCH_ERROR ${interactionIdForChoice}] Error pre-fetching weekly settings asynchronously for ${userTagForChoice}:`, fetchError.message);
+            // Clear any potentially stale cached settings on error
+            const existingData = userExperimentSetupData.get(userIdForChoice) || {};
+            delete existingData.weeklySettings;
+            userExperimentSetupData.set(userIdForChoice, existingData);
+          } finally {
+            const prefetchEndTime = performance.now();
+            console.log(`[${interaction.customId} ASYNC_PREFETCH_DURATION ${interactionIdForChoice}] Async pre-fetching settings took: ${(prefetchEndTime - prefetchStartTime).toFixed(2)}ms for ${userTagForChoice}.`);
+          }
+        })(); // Self-invoking async function for non-blocking execution
 
       } catch (error) {
-        console.error(`[${interaction.customId}] Error showing modal:`, error);
-        // We generally cannot reply to the button interaction if showModal fails,
-        // especially if it's an "Unknown Interaction" type error.
-        // Logging is the primary action here.
+        const errorTime = performance.now();
+        console.error(`[${interaction.customId} ERROR ${interactionIdForChoice}] Error presenting setup choices or initiating async pre-fetch for ${userTagForChoice} at ${errorTime.toFixed(2)}ms:`, error);
+        try {
+            if (interaction.deferred || interaction.replied) {
+                 await interaction.editReply({
+                    content: '❌ Oops! Something went wrong when trying to show setup options. Please try clicking "🔬 Set/Update Experiment" again.',
+                    embeds: [],
+                    components: []
+                });
+            }
+        } catch (editError) {
+            console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionIdForChoice}] Fallback error reply failed:`, editError);
+        }
       }
+      const processEndTime = performance.now();
+      console.log(`[${interaction.customId} END ${interactionIdForChoice}] Finished processing. Total time: ${(processEndTime - setExpChoiceStartTime).toFixed(2)}ms`);
     }
 
     // ****** START: Add these NEW Button Handlers inside the 'if (interaction.isButton())' block ******
