@@ -967,7 +967,110 @@ client.on(Events.MessageCreate, async message => {
     await message.author.send("I'm still thinking about your wish! I'll send the examples as soon as they're ready. 😊");
     console.log(`[MessageCreate PROCESSING_WISH_INTERRUPT ${interactionIdForLog}] User ${userTag} sent message while wish was processing.`);
   }
-  // ...
+ 
+  // --- Stage 4: Handle DM reply for "Deeper Problem" text ---
+  else if (setupData.dmFlowState === 'awaiting_deeper_problem_text') {
+    const deeperProblemText = messageContent; // messageContent is from the top of MessageCreate
+
+    if (!deeperProblemText) {
+      await message.author.send("It seems your response was empty. What 'Deeper Problem, Goal, or Theme' would you like to focus on for this experiment?");
+      console.log(`[MessageCreate AWAITING_DEEPER_PROBLEM_EMPTY ${interactionIdForLog}] User ${userTag} sent empty deeper problem.`);
+      return;
+    }
+
+    // Optional: Add length validation for deeperProblemText if desired here.
+    // For example:
+    // const MAX_PROBLEM_LENGTH = 500;
+    // if (deeperProblemText.length > MAX_PROBLEM_LENGTH) {
+    //   await message.author.send(`That's a detailed goal! Can we try to shorten the main theme to under ${MAX_PROBLEM_LENGTH} characters for the summary? You can elaborate more in your daily notes later.\n\nPlease try rephrasing your 'Deeper Problem, Goal, or Theme':`);
+    //   console.log(`[MessageCreate DEEPER_PROBLEM_TOO_LONG ${interactionIdForLog}] User ${userTag} sent lengthy deeper problem: ${deeperProblemText.length} chars.`);
+    //   return;
+    // }
+
+    setupData.deeperProblem = deeperProblemText;
+    setupData.dmFlowState = 'awaiting_outcome_label'; // Transition to the next part of Stage 4
+    userExperimentSetupData.set(userId, setupData);
+    console.log(`[MessageCreate DEEPER_PROBLEM_RECEIVED ${interactionIdForLog}] User ${userTag} submitted deeper problem: "${deeperProblemText}". State changed to '${setupData.dmFlowState}'.`);
+
+    // Now ask for the Outcome Metric Label
+    await message.author.send(
+      `Okay, focus set on: **"${setupData.deeperProblem}"**.\n\n` +
+      `Now for your **Key Outcome Metric**: This is the main thing you'll track *daily* to see if you're making progress on your deeper problem.\n\n` +
+      `What **Label** would you give this outcome metric? (e.g., 'Energy Level', 'Sleep Quality', 'Tasks Completed', 'Stress Score')\n\nType just the label below.`
+    );
+    const dmSentTime = performance.now(); // Not strictly necessary to log performance of every DM send here unless debugging.
+    console.log(`[MessageCreate ASK_OUTCOME_LABEL ${interactionIdForLog}] DM sent to ${userTag} asking for Outcome Label. PerfTime: ${dmSentTime.toFixed(2)}ms`);
+  }
+
+   else if (setupData.dmFlowState === 'awaiting_outcome_label') {
+    const outcomeLabel = messageContent; // messageContent is from the top of MessageCreate
+
+    if (!outcomeLabel) {
+      await message.author.send("It looks like your response was empty. What **Label** would you give your Key Outcome Metric? (e.g., 'Energy Level', 'Sleep Quality')");
+      console.log(`[MessageCreate AWAITING_OUTCOME_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty outcome label.`);
+      return;
+    }
+
+    // Optional: Add length validation for outcomeLabel if desired here.
+    const MAX_LABEL_LENGTH_SHORT = 45; // Example
+     if (outcomeLabel.length > MAX_LABEL_LENGTH) {
+      await message.author.send(
+        `That label is a bit long! Please keep it under **${MAX_LABEL_LENGTH} characters**.\n\n` +
+        `Your label for the Outcome Metric was: "${outcomeLabel}" (${outcomeLabel.length} chars).\n\n` +
+        `Could you provide a shorter one?`
+      );
+      console.log(`[MessageCreate OUTCOME_LABEL_TOO_LONG ${interactionIdForLog}] User ${userTag} sent outcome label over ${MAX_LABEL_LENGTH} chars: "${outcomeLabel}" (${outcomeLabel.length} chars).`);
+      return; // Keep user in 'awaiting_outcome_label' state to try again
+    }
+
+    setupData.outcomeLabel = outcomeLabel;
+    setupData.dmFlowState = 'awaiting_outcome_unit'; // Transition to the next part
+    userExperimentSetupData.set(userId, setupData);
+    console.log(`[MessageCreate OUTCOME_LABEL_RECEIVED ${interactionIdForLog}] User ${userTag} submitted outcome label: "${outcomeLabel}". State changed to '${setupData.dmFlowState}'.`);
+
+    // Now ask for the Outcome Metric Unit
+    await message.author.send(
+      `Got it. Your outcome metric is labeled: **"${setupData.outcomeLabel}"**.\n\n` +
+      `Now, how will you **Measure** this outcome daily? This is its **Unit**.\n` +
+      `Examples: '1-10 scale', 'hours slept', 'minutes focused', 'yes/no', 'tasks completed', 'pages read'.\n\nType the unit of measurement below.`
+    );
+    console.log(`[MessageCreate ASK_OUTCOME_UNIT ${interactionIdForLog}] DM sent to ${userTag} asking for Outcome Unit.`);
+  }
+
+  else if (setupData.dmFlowState === 'awaiting_outcome_unit') {
+    const outcomeUnit = messageContent.trim(); // messageContent from the top of MessageCreate
+
+    if (!outcomeUnit) {
+      await message.author.send(
+        `It looks like your response was empty. How will you **Measure** your outcome metric **"${setupData.outcomeLabel}"** daily? This is its **Unit**.\n` +
+        `(e.g., '1-10 scale', 'hours slept', 'tasks completed')`
+      );
+      console.log(`[MessageCreate AWAITING_OUTCOME_UNIT_EMPTY ${interactionIdForLog}] User ${userTag} sent empty outcome unit for label: ${setupData.outcomeLabel}.`);
+      return;
+    }
+
+    // Optional: Add length validation for outcomeUnit if desired here.
+    // const MAX_UNIT_LENGTH = 30;
+    // if (outcomeUnit.length > MAX_UNIT_LENGTH) {
+    //   await message.author.send(`That unit is a bit long (max ${MAX_UNIT_LENGTH} chars). Can you provide a shorter one for measuring **"${setupData.outcomeLabel}"**?`);
+    //   console.log(`[MessageCreate OUTCOME_UNIT_TOO_LONG ${interactionIdForLog}] User ${userTag} sent outcome unit over ${MAX_UNIT_LENGTH} chars: "${outcomeUnit}"`);
+    //   return; // Keep user in 'awaiting_outcome_unit' state
+    // }
+
+    setupData.outcomeUnit = outcomeUnit;
+    setupData.dmFlowState = 'awaiting_outcome_goal'; // Transition to the next part
+    userExperimentSetupData.set(userId, setupData);
+    console.log(`[MessageCreate OUTCOME_UNIT_RECEIVED ${interactionIdForLog}] User ${userTag} submitted outcome unit: "${outcomeUnit}" for label "${setupData.outcomeLabel}". State changed to '${setupData.dmFlowState}'.`);
+
+    // Now ask for the Outcome Metric Goal (Target #)
+    await message.author.send(
+      `Unit for **"${setupData.outcomeLabel}"** set to: **"${setupData.outcomeUnit}"**.\n\n` +
+      `What's your daily **Target #** for **"${setupData.outcomeLabel}"** (measured in ${setupData.outcomeUnit})?\n` +
+      `For example, if it's a 1-10 scale, your target might be '7'. If it's hours slept, maybe '7.5'. If it's tasks, maybe '3'.\n\nType just the number below.`
+    );
+    console.log(`[MessageCreate ASK_OUTCOME_GOAL ${interactionIdForLog}] DM sent to ${userTag} asking for Outcome Goal.`);
+  }
+
 
   console.log(`[MessageCreate DM_HANDLER END ${interactionIdForLog}] Finished DM processing for ${userTag}.`);
 });
@@ -1506,6 +1609,68 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
       }
       // No processEndTime log here as main interaction ends with DM, further steps are new interactions/messages.
     } // End of AI_ASSISTED_SETUP_BTN_ID handler
+
+   else if (interaction.customId === AI_DEFINE_DEEPER_PROBLEM_BTN_ID) {
+      const buttonClickTime = performance.now();
+      const userId = interaction.user.id;
+      const userTag = interaction.user.tag;
+      const interactionIdForLog = interaction.id; 
+
+      console.log(`[${AI_DEFINE_DEEPER_PROBLEM_BTN_ID} ENTERED_HANDLER ${interactionIdForLog}] Clicked by ${userTag}. PerfTime: ${buttonClickTime.toFixed(2)}ms.`);
+
+      const setupData = userExperimentSetupData.get(userId);
+
+      if (!setupData || setupData.dmFlowState !== 'awaiting_deeper_problem_via_btn') { // Make sure this state was set correctly after showing examples
+        console.warn(`[${AI_DEFINE_DEEPER_PROBLEM_BTN_ID} WRONG_STATE ${interactionIdForLog}] User ${userTag} in unexpected state: ${setupData?.dmFlowState || 'no setupData'}. Aborting.`);
+        try {
+          await interaction.update({
+            content: "It seems we're not at the right step for that button, or your session data was lost. If you're in the AI setup, please respond to my last DM. Otherwise, you might need to start over with `/go`.",
+            embeds: [],
+            components: []
+          });
+        } catch (e) {
+          console.error(`[${AI_DEFINE_DEEPER_PROBLEM_BTN_ID} UPDATE_ERROR_WRONG_STATE ${interactionIdForLog}] Error sending wrong state message:`, e);
+        }
+        return;
+      }
+
+      try {
+        // Acknowledge the button click by updating the previous message (removing the button)
+        await interaction.update({
+          // content: interaction.message.content, // If there was text content you want to preserve
+          embeds: interaction.message.embeds,   // Keep previous embeds (the explanation embed)
+          components: [] // Remove the button row
+        });
+        const updateAckTime = performance.now();
+        console.log(`[${AI_DEFINE_DEEPER_PROBLEM_BTN_ID} ACKNOWLEDGED ${interactionIdForLog}] Button acknowledged for ${userTag}. Took: ${(updateAckTime - buttonClickTime).toFixed(2)}ms.`);
+
+        // Update state
+        setupData.dmFlowState = 'awaiting_deeper_problem_text'; // NEW STATE
+        userExperimentSetupData.set(userId, setupData);
+        console.log(`[${AI_DEFINE_DEEPER_PROBLEM_BTN_ID} STATE_UPDATE ${interactionIdForLog}] State for ${userTag} updated to: ${setupData.dmFlowState}. Wish: "${setupData.wish}"`);
+
+        // Send DM asking for deeper problem
+        await interaction.user.send(
+          `Great! Based on your wish **"${setupData.wish}"**, what would you say is the **'Deeper Problem, Goal, or Theme'** you want to focus on for this specific experiment?\n\n(e.g., 'Boost my morning energy,' 'Reduce evening anxiety,' 'Improve focus during work hours').\n\nType your response below. (Or type 'cancel' to stop)`
+        );
+        const dmSentTime = performance.now();
+        console.log(`[${AI_DEFINE_DEEPER_PROBLEM_BTN_ID} DM_SENT ${interactionIdForLog}] DM sent to ${userTag} asking for deeper problem. Took: ${(dmSentTime - updateAckTime).toFixed(2)}ms.`);
+
+      } catch (error) {
+        const errorHandleTime = performance.now();
+        console.error(`[${AI_DEFINE_DEEPER_PROBLEM_BTN_ID} ERROR ${interactionIdForLog}] Error processing button for ${userTag} at ${errorHandleTime.toFixed(2)}ms:`, error);
+        // Usually, if interaction.update() fails, follow-up ephemeral messages are hard.
+        // If interaction.update() succeeded but DM failed, we can't edit the original interaction further.
+        // The primary action is logging. A message to the user in DM if possible, otherwise, they might be stuck.
+         if (error.code === 50007) { // Cannot send messages to this user
+             console.error(`[${AI_DEFINE_DEEPER_PROBLEM_BTN_ID} DM_FAIL_FINAL_CATCH ${interactionIdForLog}] Cannot send DMs to ${userTag}.`);
+             // Attempt a followup on the original interaction - this may or may not work if update() already happened.
+             try {
+                 await interaction.followUp({content: "I couldn't DM you to ask for your deeper problem. Please check your DM settings.", flags: MessageFlags.Ephemeral});
+             } catch (e) { /* best effort */ }
+         }
+      }
+    } // --- End of AI_DEFINE_DEEPER_PROBLEM_BTN_ID handler ---
 
     // --- Handler for Log Daily Data Button ---
     else if (interaction.customId === 'log_daily_progress_btn') {
