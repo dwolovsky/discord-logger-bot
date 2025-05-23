@@ -507,6 +507,10 @@ const CONFIRM_REMINDER_BTN_ID = 'confirm_reminder_btn';
 const REMINDERS_SET_TIME_NEXT_BTN_ID = 'reminders_set_time_next_btn';
 const AI_DEFINE_DEEPER_PROBLEM_BTN_ID = 'ai_define_deeper_problem_btn';
 
+// --- New Custom IDs for Experiment Setup Choice ---
+const AI_ASSISTED_SETUP_BTN_ID = 'ai_assisted_setup_btn';
+const MANUAL_SETUP_BTN_ID = 'manual_setup_btn';
+
 // ====== FIREBASE CLIENT CONFIGURATION ======
 // Load config from .env file
 const firebaseConfig = {
