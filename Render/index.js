@@ -1436,13 +1436,111 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
 // Inside the 'if (interaction.isButton())' block, after the 'set_update_experiment_btn' handler:
 
     else if (interaction.customId === MANUAL_SETUP_BTN_ID) {
-      const manualSetupStartTime = performance.now();
-      const userIdForManual = interaction.user.id;
-      const userTagForManual = interaction.user.tag;
-      console.log(`[${interaction.customId} START ${interaction.id}] Clicked by ${userTagForManual}. Attempting to show manual experiment setup modal. Time: ${manualSetupStartTime.toFixed(2)}ms`);
+          const manualSetupStartTime = performance.now();
+          const userIdForManual = interaction.user.id;
+          const userTagForManual = interaction.user.tag;
+          const interactionId = interaction.id; // Use interaction.id for logging consistency
+          console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTagForManual}. Attempting to show comma format info. Time: ${manualSetupStartTime.toFixed(2)}ms`);
 
-      const setupData = userExperimentSetupData.get(userIdForManual);
+          try {
+            // Defer the update to acknowledge the button click quickly
+            await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
+            const deferTime = performance.now();
+            console.log(`[${interaction.customId} DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - manualSetupStartTime).toFixed(2)}ms`);
+
+            // --- Build the Informational Embed ---
+            const commaFormatEmbed = new EmbedBuilder()
+                .setColor('#FFD700') // Gold color for information
+                .setTitle('Reminder: Use Commas ( , )')
+                .setDescription(
+                    "**🎯 Daily Outcome Format:**\n" +
+                    "`Goal #, Unit, Label`\n" +
+                    "Write all 3, separated by **commas.**\n\n" +
+                    "**🛠️ Daily Habits Format:**\n" +
+                    "`Goal #, Unit, Label`\n" +
+                    "Write all 3, separated by **commas.**\n\n" +
+                    "**Goal #** must be a number (decimals are okay, e.g., 7.5).\n" +
+                    "**Label** is your descriptive name for the metric/habit.\n" +
+                    "**Unit** is the thing you're counting or measuring."
+                );
+
+            // --- Create a "Continue to Form" button ---
+            const continueToManualFormButton = new ButtonBuilder()
+                .setCustomId('continue_to_manual_form_btn') // NEW Custom ID for the next step
+                .setLabel('✍️ Continue to Setup Form')
+                .setStyle(ButtonStyle.Success);
+
+            const rowForContinue = new ActionRowBuilder().addComponents(continueToManualFormButton);
+
+            // --- Edit the reply to show the embed and the new button ---
+            await interaction.editReply({
+                content: "Please review these formatting guidelines for the setup form.",
+                embeds: [commaFormatEmbed],
+                components: [rowForContinue]
+            });
+            const editReplyTime = performance.now();
+            console.log(`[${interaction.customId} INFO_EMBED_SHOWN ${interactionId}] Comma format info embed shown to ${userTagForManual}. Took: ${(editReplyTime - deferTime).toFixed(2)}ms`);
+
+            // --- Asynchronously Pre-fetch Weekly Settings --- [cite: 1478]
+            (async () => {
+              const prefetchAsyncStartTime = performance.now();
+              try {
+                console.log(`[${interaction.customId} ASYNC_PREFETCH_START ${interactionId}] Asynchronously pre-fetching weekly settings for ${userTagForManual}. PerfTime: ${prefetchAsyncStartTime.toFixed(2)}ms.`);
+                // Ensure callFirebaseFunction is accessible here
+                const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userIdForManual); // [cite: 1479]
+                const existingData = userExperimentSetupData.get(userIdForManual) || {}; // Get existing data or initialize if not present
+
+                if (settingsResult && settingsResult.settings) { // [cite: 1479]
+                  userExperimentSetupData.set(userIdForManual, { ...existingData, weeklySettings: settingsResult.settings, interactionId: interactionId }); // Store settings and interactionId
+                  console.log(`[${interaction.customId} ASYNC_PREFETCH_SUCCESS ${interactionId}] Successfully pre-fetched and cached weekly settings for ${userTagForManual}.`);
+                } else {
+                  console.log(`[${interaction.customId} ASYNC_PREFETCH_NO_DATA ${interactionId}] No weekly settings found or returned for ${userTagForManual} during async pre-fetch.`);
+                  // If no settings, ensure weeklySettings is not present or is null in the map for this user
+                  delete existingData.weeklySettings;
+                  userExperimentSetupData.set(userIdForManual, { ...existingData, interactionId: interactionId }); // Still store interactionId
+                }
+              } catch (fetchError) {
+                console.error(`[${interaction.customId} ASYNC_PREFETCH_ERROR ${interactionId}] Error pre-fetching weekly settings asynchronously for ${userTagForManual}:`, fetchError.message);
+                const existingData = userExperimentSetupData.get(userIdForManual) || {};
+                delete existingData.weeklySettings; // Remove potentially stale/incomplete data on error
+                userExperimentSetupData.set(userIdForManual, { ...existingData, interactionId: interactionId }); // Store interactionId even on error
+              } finally {
+                const prefetchAsyncEndTime = performance.now();
+                console.log(`[${interaction.customId} ASYNC_PREFETCH_DURATION ${interactionId}] Async pre-fetching settings took: ${(prefetchAsyncEndTime - prefetchAsyncStartTime).toFixed(2)}ms for ${userTagForManual}.`);
+              }
+            })();
+            // --- End Asynchronous Pre-fetch ---
+
+          } catch (error) {
+            const errorTime = performance.now();
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing comma format info for ${userTagForManual} at ${errorTime.toFixed(2)}ms:`, error);
+            if (interaction.deferred || interaction.replied) {
+                try {
+                    await interaction.editReply({ content: "Sorry, I couldn't display the formatting guide. Please try clicking 'Manual Setup' again.", embeds: [], components: [] });
+                } catch (replyError) {
+                    console.error(`[${interaction.customId} FALLBACK_REPLY_ERROR ${interactionId}] Fallback error reply failed:`, replyError);
+                }
+            }
+          }
+          const handlerEndPerfNow = performance.now();
+          console.log(`[${interaction.customId} END ${interactionId}] User: ${userTagForManual}. TotalInHandler: ${(handlerEndPerfNow - manualSetupStartTime).toFixed(2)}ms.`);
+        } // End of MANUAL_SETUP_BTN_ID handler
+
+        // --- Handler for "Continue to Setup Form" Button ---
+    else if (interaction.customId === 'continue_to_manual_form_btn') {
+      const continueButtonStartTime = performance.now();
+      const userId = interaction.user.id;
+      const userTag = interaction.user.tag;
+      const interactionId = interaction.id;
+      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}. Attempting to show manual experiment setup modal. Time: ${continueButtonStartTime.toFixed(2)}ms`);
+
+      // Retrieve pre-fetched data
+      const setupData = userExperimentSetupData.get(userId);
       const cachedSettings = setupData?.weeklySettings;
+      const originalInteractionId = setupData?.interactionId; // Get the ID of the interaction that initiated this flow
+
+      console.log(`[${interaction.customId} CACHE_CHECK ${interactionId}] Checking for cached settings for ${userTag}. Original Interaction ID for this flow: ${originalInteractionId}`);
+
       let deeperProblemValue = "";
       let outputValue = "";
       let input1Value = "";
@@ -1450,7 +1548,7 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
       let input3Value = "";
 
       if (cachedSettings) {
-        console.log(`[${interaction.customId} CACHE_HIT ${interaction.id}] Found cached settings for ${userTagForManual}.`);
+        console.log(`[${interaction.customId} CACHE_HIT ${interactionId}] Found cached settings for ${userTag}. Populating modal fields.`);
         deeperProblemValue = cachedSettings.deeperProblem || "";
 
         const formatSettingToString = (setting) => {
@@ -1465,12 +1563,12 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
         input2Value = formatSettingToString(cachedSettings.input2);
         input3Value = formatSettingToString(cachedSettings.input3);
       } else {
-        console.log(`[${interaction.customId} CACHE_MISS ${interaction.id}] No cached settings found for ${userTagForManual}. Modal will use placeholders.`);
+        console.log(`[${interaction.customId} CACHE_MISS ${interactionId}] No cached settings found for ${userTag}. Modal will use placeholders.`);
       }
 
       try {
         const modal = new ModalBuilder()
-          .setCustomId('experiment_setup_modal')
+          .setCustomId('experiment_setup_modal') // This is your EXISTING modal ID
           .setTitle('🧪 Set Weekly Experiment (Manual)');
 
         const deeperProblemInput = new TextInputBuilder()
@@ -1523,33 +1621,38 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
 
         await interaction.showModal(modal);
         const showModalTime = performance.now();
-        console.log(`[${interaction.customId} MODAL_SHOWN ${interaction.id}] Manual setup modal shown to ${userTagForManual}. Pre-population attempt complete. Took: ${(showModalTime - manualSetupStartTime).toFixed(2)}ms`);
+        console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Manual setup modal shown to ${userTag}. Pre-population with cached data (if any) complete. Took: ${(showModalTime - continueButtonStartTime).toFixed(2)}ms`);
 
       } catch (error) {
         const errorTime = performance.now();
-        console.error(`[${interaction.customId} ERROR ${interaction.id}] Error showing manual setup modal for ${userTagForManual} at ${errorTime.toFixed(2)}ms:`, error);
-        console.error(`[${interaction.customId} ERROR ${interaction.id}] Attempt to show modal FAILED for ${userTagForManual}.`);
-        console.error(`[${interaction.customId} ERROR_DETAILS ${interaction.id}] Error Name: ${error.name}`);
-        console.error(`[${interaction.customId} ERROR_DETAILS ${interaction.id}] Error Message: ${error.message}`);
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing manual setup modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
+        // Log detailed error information as you did in the original MANUAL_SETUP_BTN_ID handler's error block
+        console.error(`[${interaction.customId} ERROR_DETAILS ${interactionId}] Error Name: ${error.name}, Message: ${error.message}, Code: ${error.code}`);
         if (error.stack) {
-          console.error(`[${interaction.customId} ERROR_STACK ${interaction.id}] Error Stack: ${error.stack}`);
+          console.error(`[${interaction.customId} ERROR_STACK ${interactionId}] Error Stack: ${error.stack}`);
         }
-        if (error.code) {
-          console.error(`[${interaction.customId} ERROR_CODE ${interaction.id}] Discord Error Code: ${error.code}`);
-        }
-        // Log and attempt an ephemeral reply if possible, though showModal failures are often hard to recover from
-        if (interaction.replied || interaction.deferred) {
-            // If already replied/deferred (e.g. by deferUpdate from set_update_experiment_btn), edit that.
-            // However, for MANUAL_SETUP_BTN_ID, we usually don't deferUpdate before showModal.
-        } else {
+        // Attempt an ephemeral reply if possible.
+        // Since `showModal` is the first reply attempt in this handler, if it fails,
+        // we can try a direct `reply` (though it might also fail if the interaction token is too old).
+        // `deferUpdate` is not typically used before `showModal` in a button handler that directly shows a modal.
+        if (!interaction.replied && !interaction.deferred) { // Check if we haven't replied or deferred
             try {
-                await interaction.reply({content: "Sorry, I couldn't open the manual setup form. Please try again.", flags: MessageFlags.Ephemeral});
+                await interaction.reply({content: "Sorry, I couldn't open the manual setup form at this moment. Please try clicking 'Continue to Setup Form' again.", flags: MessageFlags.Ephemeral});
             } catch (replyError) {
-                 console.error(`[${interaction.customId} FALLBACK_REPLY_ERROR ${interaction.id}] Fallback error reply failed:`, replyError);
+                 console.error(`[${interaction.customId} FALLBACK_REPLY_ERROR ${interactionId}] Fallback error reply failed:`, replyError);
+            }
+        } else {
+             // If somehow already replied/deferred (less likely for a direct modal display from button)
+             try {
+                await interaction.followUp({content: "Sorry, I couldn't open the manual setup form. Please try clicking 'Continue to Setup Form' again.", flags: MessageFlags.Ephemeral});
+            } catch (followUpError) {
+                 console.error(`[${interaction.customId} FALLBACK_FOLLOWUP_ERROR ${interactionId}] Fallback error followup failed:`, followUpError);
             }
         }
       }
-    } // End of MANUAL_SETUP_BTN_ID handler
+      const handlerEndPerfNow = performance.now();
+      console.log(`[${interaction.customId} END ${interactionId}] User: ${userTag}. TotalInHandler: ${(handlerEndPerfNow - continueButtonStartTime).toFixed(2)}ms.`);
+    } // End of 'continue_to_manual_form_btn' handler
 
     // --- (render/index.js) ---
     // Inside the 'if (interaction.isButton())' block, after the MANUAL_SETUP_BTN_ID handler:
