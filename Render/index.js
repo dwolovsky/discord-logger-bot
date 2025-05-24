@@ -996,7 +996,7 @@ client.on(Events.MessageCreate, async message => {
     await message.author.send(
       `Okay, focus set on: **"${setupData.deeperProblem}"**.\n\n` +
       `Now for your **Key Outcome Metric**: This is the main thing you'll track *daily* to see if you're making progress on your deeper problem.\n\n` +
-      `What **Label** would you give this outcome metric? (e.g., 'Energy Level', 'Sleep Quality', 'Tasks Completed', 'Stress Score')\n\nType just the label below.`
+      `What **Label** would you give this outcome metric? (e.g., 'Energy Level', 'Sleep Quality', 'Tasks Completed', 'Stress Score')\n\nType just the label below (45 characters or less).`
     );
     const dmSentTime = performance.now(); // Not strictly necessary to log performance of every DM send here unless debugging.
     console.log(`[MessageCreate ASK_OUTCOME_LABEL ${interactionIdForLog}] DM sent to ${userTag} asking for Outcome Label. PerfTime: ${dmSentTime.toFixed(2)}ms`);
@@ -1012,7 +1012,7 @@ client.on(Events.MessageCreate, async message => {
     }
 
     // Optional: Add length validation for outcomeLabel if desired here.
-    const MAX_LABEL_LENGTH_SHORT = 45; // Example
+    const MAX_LABEL_LENGTH = 45; // Example
      if (outcomeLabel.length > MAX_LABEL_LENGTH) {
       await message.author.send(
         `That label is a bit long! Please keep it under **${MAX_LABEL_LENGTH} characters**.\n\n` +
