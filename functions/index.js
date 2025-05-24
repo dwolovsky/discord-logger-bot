@@ -218,7 +218,7 @@ ${data.skippedMetricsData && data.skippedMetricsData.length > 0
   ? "\n  Metrics Skipped Due to Insufficient Data:\n  " + data.skippedMetricsData.map(m => `${m.label} (had ${m.dataPoints} data points, needed ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS})`).join("\n  ")
   : ""}
 
-**2. Daily Action → Daily Result Impacts (Correlations):**
+**2. Daily Habit → Daily Outcome Impacts (Correlations):**
 ${data.correlationsData && Object.keys(data.correlationsData).length > 0
   ? Object.values(data.correlationsData).map(formatCorrelation).join("\n")
   : "  No correlation data was calculated for this experiment."}
@@ -3266,14 +3266,14 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     }
 
                     const exampleActionsForPrompt = inputsForAI.map(inp => `- '${inp.label}'${inp.unit ? ` (unit: ${inp.unit})` : ''}`).join('\n');
-                    let actionReferenceInstruction = "one of their daily actions below.";
+                    let actionReferenceInstruction = "one of their daily habits below.";
                     if (inputsForAI.length === 1) {
-                        actionReferenceInstruction = `their daily action: '${inputsForAI[0].label}'.`;
+                        actionReferenceInstruction = `their daily habit: '${inputsForAI[0].label}'.`;
                     } else if (inputsForAI.length === 2) {
-                        actionReferenceInstruction = `their daily actions: '${inputsForAI[0].label}' or '${inputsForAI[1].label}'.`;
+                        actionReferenceInstruction = `their daily habits: '${inputsForAI[0].label}' or '${inputsForAI[1].label}'.`;
                     } else if (inputsForAI.length >= 3) {
                         const allLabels = inputsForAI.map(inp => `'${inp.label}'`).slice(0, 3).join(', ');
-                        actionReferenceInstruction = `some of their daily actions, like ${allLabels}.`;
+                        actionReferenceInstruction = `some of their daily habits, like ${allLabels}.`;
                     }
 
                     // Using your edited prompt structure and adding time context and instructions
@@ -3284,7 +3284,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
 
                     CONTEXT: ${timeContextForPrompt}
 
-                    The user's current daily actions (inputs) include:
+                    The user's current daily Habits (inputs) include:
                     ${exampleActionsForPrompt}
 
                     Your main goal is to encourage the user to find intrinsic joy, curiosity, or immediate, small rewards while performing ${actionReferenceInstruction}.
@@ -3698,7 +3698,7 @@ exports.generateIllustrativeExperiments = onCall(async (request) => {
         * "label": A clear name for the outcome they will track daily (e.g., 'Afternoon Energy Level', 'Stress Score Before Bed', 'Pages Read').
         * "unit": A common unit of measurement or scale (e.g., '1-10 scale', 'hours', 'minutes', 'yes/no', 'count', 'pages').
         * "goal": A sample daily target number or value for that metric (e.g., '7', '8', '15', '1', '3', '10').
-    4.  An array named "actions": This array MUST contain exactly three distinct "Daily Action" objects. Each action object MUST have three string properties:
+    4.  An array named "actions": This array MUST contain exactly three distinct "Daily Habit" objects. Each action object MUST have three string properties:
         * "label": A specific, actionable task the user will do daily (e.g., 'Morning Sunlight Exposure', 'Mindful Breathing Practice', 'Write Down 3 Priorities').
         * "unit": A common unit of measurement for that action (e.g., 'minutes', 'yes/no', 'count', 'pages', 'sessions').
         * "goal": A sample daily target for that action (e.g., '10', '1', '3', '5').
@@ -3717,9 +3717,9 @@ exports.generateIllustrativeExperiments = onCall(async (request) => {
         "goal": "8"
       },
       "actions": [
-        { "label": "Action 1 Label", "unit": "minutes", "goal": "15" },
-        { "label": "Action 2 Label", "unit": "count", "goal": "3" },
-        { "label": "Action 3 Label", "unit": "yes/no", "goal": "1" }
+        { "label": "Habit 1 Label", "unit": "minutes", "goal": "15" },
+        { "label": "Habit 2 Label", "unit": "count", "goal": "3" },
+        { "label": "Habit 3 Label", "unit": "yes/no", "goal": "1" }
       ]
     }
     Your entire response should be a JSON array: [experimentExample1, experimentExample2]

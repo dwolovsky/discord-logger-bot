@@ -186,7 +186,7 @@ function setupStatsNotificationListener(client) {
 
                         // Add CORRELATION fields dynamically (now showing Influence as R-squared)
                         if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
-                            statsEmbed.addFields({ name: '\u200B', value: '**Daily Action → Result IMPACTS**' });
+                            statsEmbed.addFields({ name: '\u200B', value: '**Daily Habit → Outcome IMPACTS**' });
                             for (const inputMetricKey in statsReportData.correlations) {
                                 if (Object.prototype.hasOwnProperty.call(statsReportData.correlations, inputMetricKey)) {
                                     const corr = statsReportData.correlations[inputMetricKey];
@@ -677,7 +677,7 @@ async function showPostToGroupPrompt(interaction, setupData, reminderSummary, mo
           // Field 2: Initial Settings Summary (use the message from Firebase stored earlier)
           // We need to extract the *core* settings part from the result message stored previously
           // Or reconstruct it from rawPayload if simpler
-           { name: '📋 Initial Settings', value: `Outcome: "${setupData.outputLabel}"\nAction 1: "${setupData.input1Label}"${setupData.input2Label ? `\nAction 2: "${setupData.input2Label}"`:''}${setupData.input3Label ? `\nAction 3: "${setupData.input3Label}"`:''}` },
+           { name: '📋 Initial Settings', value: `Outcome: "${setupData.outputLabel}"\nHabit 1: "${setupData.input1Label}"${setupData.input2Label ? `\nHabit 2: "${setupData.input2Label}"`:''}${setupData.input3Label ? `\nHabit 3: "${setupData.input3Label}"`:''}` },
          // { name: '📋 Initial Settings', value: setupData.settingsMessage.split('\n\n')[1] || 'Could not parse settings summary.' }, // Example parsing, adjust as needed based on Firebase message format
           // Field 3: Duration (from setupData)
           { name: '🗓️ Experiment Duration', value: `${setupData.experimentDuration.replace('_', ' ')} (Stats report interval)` },
@@ -877,13 +877,13 @@ client.on(Events.MessageCreate, async message => {
         const example1Text = `**Example 1: ${llmResult.examples[0].title || "The Energizer Bunny Approach"}**\n` +
                              `  Deeper Goal: "${llmResult.examples[0].deeperGoal}"\n` +
                              `  Outcome to Track: "${llmResult.examples[0].outcomeMetric.label}" (as ${llmResult.examples[0].outcomeMetric.unit || 'a daily rating'}), aiming for "${llmResult.examples[0].outcomeMetric.goal}" daily.\n` +
-                             `  Daily Actions to Try:\n` +
+                             `  Daily Habits to Try:\n` +
                              llmResult.examples[0].actions.map(a => `    - "${a.label}" (for "${a.unit || 'measurement'}"), aiming for "${a.goal}" daily.`).join('\n');
 
         const example2Text = `**Example 2: ${llmResult.examples[1].title || "The Calmness Cultivator Kit"}**\n` +
                              `  Deeper Goal: "${llmResult.examples[1].deeperGoal}"\n` +
                              `  Outcome to Track: "${llmResult.examples[1].outcomeMetric.label}" (as ${llmResult.examples[1].outcomeMetric.unit || 'a daily rating'}), aiming for "${llmResult.examples[1].outcomeMetric.goal}" daily.\n` +
-                             `  Daily Actions to Try:\n` +
+                             `  Daily Habits to Try:\n` +
                              llmResult.examples[1].actions.map(a => `    - "${a.label}" (for "${a.unit || 'measurement'}"), aiming for "${a.goal}" daily.`).join('\n');
 
         await message.author.send(
@@ -901,7 +901,7 @@ client.on(Events.MessageCreate, async message => {
                 "A self-science experiment usually has a few key parts:\n\n" +
                 "1️⃣ **Your Deeper Problem/Goal/Theme:** The core thing you want to explore (like in the examples).\n\n" +
                 "2️⃣ **Your Key Outcome Metric:** How you'll measure if you're making progress with your Deeper Problem (e.g., mood rating, hours slept, tasks completed). This needs a *Label*, how you'll *Measure it (unit/scale)*, and a daily *Target #*.\n\n" +
-                "3️⃣ **Your Daily Actions (1-3 Inputs):** Specific things you'll do each day that you think might influence your Outcome. Each action also needs a *Label*, how you'll *Measure it*, and a daily *Target #*."
+                "3️⃣ **Your Daily Habits (1-3 Inputs):** Specific things you'll do each day that you think might influence your Outcome. Each action also needs a *Label*, how you'll *Measure it*, and a daily *Target #*."
             )
             .setFooter({ text: "Let's define these one by one for your experiment. You can always type 'cancel' if you want to stop."});
 
@@ -935,7 +935,7 @@ client.on(Events.MessageCreate, async message => {
                 "Even though I couldn't generate examples right now, we can still set up your experiment!\n\nA self-science experiment usually has a few key parts:\n\n" +
                 "1️⃣ **Your Deeper Problem/Goal/Theme:** The core thing you want to explore.\n\n" +
                 "2️⃣ **Your Key Outcome Metric:** How you'll measure progress (Label, Unit/Scale, Target #).\n\n" +
-                "3️⃣ **Your Daily Actions (1-3 Inputs):** Things you'll do that might influence your Outcome (Label, Unit/Scale, Target #)."
+                "3️⃣ **Your Daily Habits (1-3 Inputs):** Things you'll do that might influence your Outcome (Label, Unit/Scale, Target #)."
             )
             .setFooter({ text: "Let's define these one by one. You can always type 'cancel' if you want to stop."});
 
@@ -1483,7 +1483,7 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
 
         const outputSettingInput = new TextInputBuilder()
           .setCustomId('output_setting')
-          .setLabel("🎯 Daily Result (Goal #, Unit, Label)")
+          .setLabel("🎯 Daily Outcome (Goal #, Unit, Label)")
           .setPlaceholder("e.g. '7.5, hours, Sleep Quality'")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
@@ -1491,7 +1491,7 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
 
         const input1SettingInput = new TextInputBuilder()
           .setCustomId('input1_setting')
-          .setLabel("🛠️ Daily Action 1 (Goal #, Unit, Label)")
+          .setLabel("🛠️ Daily Habit 1 (Goal #, Unit, Label)")
           .setPlaceholder("e.g. '15, minutes, Meditation'")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
@@ -1499,7 +1499,7 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
 
         const input2SettingInput = new TextInputBuilder()
           .setCustomId('input2_setting')
-          .setLabel("🛠️ Daily Action 2 (Optional - Goal #, Unit, Label)")
+          .setLabel("🛠️ Daily Habit 2 (Optional - #, Unit, Label)")
           .setPlaceholder("e.g. '8, 0-10 effort, Relationships'")
           .setStyle(TextInputStyle.Short)
           .setRequired(false);
@@ -1507,7 +1507,7 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
 
         const input3SettingInput = new TextInputBuilder()
           .setCustomId('input3_setting')
-          .setLabel("🛠️ Daily Action 3 (Optional - Goal #, Unit, Label)")
+          .setLabel("🛠️ Daily Habit 3 (Optional - #, Unit, Label)")
           .setPlaceholder("e.g. '10, glasses, Water'")
           .setStyle(TextInputStyle.Short)
           .setRequired(false);
@@ -1717,7 +1717,7 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
           const input1Configured = settings.input1 && settings.input1.label && settings.input1.label.trim() !== "";
           if (!outputConfigured || !input1Configured) {
             await interaction.update({
-              content: "📝 Your experiment setup is incomplete (Desired Outcome & Action 1 required). Please use 'Set Experiment' from the `/go` hub to set them.",
+              content: "📝 Your experiment setup is incomplete (Daily Outcome & Habit 1 required). Please use 'Set Experiment' from the `/go` hub to set them.",
               embeds: [], // Clear any previous embed
               components: []
             });
@@ -2030,7 +2030,7 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
 
     // 3. Basic Validation (Client-side check)
     if (!outputValue || !input1Value || !notes) {
-        await interaction.editReply({ content: "❌ Missing required fields (Outcome, Action 1, or Notes)." });
+        await interaction.editReply({ content: "❌ Missing required fields (Outcome, Habit 1, or Notes)." });
         return;
     }
     // Add specific validation for numeric inputs if desired, though Firebase function also validates
@@ -2284,9 +2284,9 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
         }
     } else {
         dmContent += `Outcome: ${payload.outputValue || '*Not logged*'}\n`;
-        dmContent += `Action 1: ${payload.inputValues[0] || '*Not logged*'}\n`;
-        if (payload.inputValues[1]) dmContent += `Action 2: ${payload.inputValues[1]}\n`;
-        if (payload.inputValues[2]) dmContent += `Action 3: ${payload.inputValues[2]}\n`;
+        dmContent += `Habit 1: ${payload.inputValues[0] || '*Not logged*'}\n`;
+        if (payload.inputValues[1]) dmContent += `Habit 2: ${payload.inputValues[1]}\n`;
+        if (payload.inputValues[2]) dmContent += `Habit 3: ${payload.inputValues[2]}\n`;
     }
     dmContent += `\n💭 **Notes:**\n${payload.notes || '*No notes*'}`;
     try {
@@ -2336,11 +2336,11 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
   const interactionId = interaction.id; // Keep using interactionId for logs
   console.log(`[experiment_setup_modal START ${interactionId}] Received by User: ${interaction.user.tag}`);
   try {
-      // --- ACTION 1: Add deferReply ---
+      // --- Habit 1: Add deferReply ---
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const deferTime = performance.now();
       console.log(`[experiment_setup_modal DEFERRED ${interactionId}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
-      // --- End Action 1 ---
+      // --- End Habit 1 ---
 
       const deeperProblem = interaction.fields.getTextInputValue('deeper_problem')?.trim();
       const outputSettingStr = interaction.fields.getTextInputValue('output_setting')?.trim();
@@ -2411,9 +2411,9 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
       try {
            // Check if interaction is deferred/replied before editing
            if (interaction.deferred || interaction.replied) {
-               // --- ACTION 1: Change to editReply ---
+               // --- Habit 1: Change to editReply ---
                await interaction.editReply({ content: userErrorMessage, components: [] });
-               // --- End Action 1 ---
+               // --- End Habit 1 ---
                console.log(`[experiment_setup_modal CRITICAL_ERROR_EDIT_REPLY_SUCCESS ${interactionId}] Sent critical error editReply.`); // Log change
            } else {
                // Should not happen if defer succeeds, but log if it does
@@ -2895,12 +2895,12 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
     console.log(`[experiment_duration_select START ${interactionId}] Received selection from ${interaction.user.tag}.`);
 
     try {
-        // --- ACTION 1: Defer Update ---
+        // --- Habit 1: Defer Update ---
         await interaction.deferUpdate({ flags: MessageFlags.Ephemeral }); // Keep it ephemeral
         const deferTime = performance.now();
         console.log(`[experiment_duration_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - selectMenuSubmitTime).toFixed(2)}ms`);
 
-        // --- ACTION 2: Get Selected Value ---
+        // --- Habit 2: Get Selected Value ---
         const selectedDuration = interaction.values[0];
         console.log(`[experiment_duration_select DATA ${interactionId}] Selected duration value: "${selectedDuration}"`);
 
@@ -3048,16 +3048,16 @@ if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_fireb
                   .setTitle(`🚀 ${interaction.user.username} is starting a new experiment!`)
                   .setDescription(`**🎯 Deeper Goal / Problem / Theme:**\n${deeperProblem}`)
                   .addFields(
-                      { name: '📊 Desired Outcome to Track', value: outputSetting || "Not specified" },
-                      { name: '🛠️ Action 1', value: inputSettings[0] || "Not specified" }
+                      { name: '📊 Daily Outcome to Track', value: outputSetting || "Not specified" },
+                      { name: '🛠️ Habit 1', value: inputSettings[0] || "Not specified" }
                   )
                   .setFooter({text: `Let's support them! Duration: ${setupData.experimentDuration.replace('_',' ')}`})
                   .setTimestamp();
               if (inputSettings[1]) {
-                  postEmbed.addFields({ name: '🛠️ Action 2', value: inputSettings[1], inline: true });
+                  postEmbed.addFields({ name: '🛠️ Habit 2', value: inputSettings[1], inline: true });
               }
               if (inputSettings[2]) {
-                  postEmbed.addFields({ name: '🛠️ Action 3', value: inputSettings[2], inline: true });
+                  postEmbed.addFields({ name: '🛠️ Habit 3', value: inputSettings[2], inline: true });
               }
 
               await channel.send({ embeds: [postEmbed] });
