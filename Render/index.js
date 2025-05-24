@@ -1528,6 +1528,15 @@ const commandNameForLog = interaction.isChatInputCommand() ? interaction.command
       } catch (error) {
         const errorTime = performance.now();
         console.error(`[${interaction.customId} ERROR ${interaction.id}] Error showing manual setup modal for ${userTagForManual} at ${errorTime.toFixed(2)}ms:`, error);
+        console.error(`[${interaction.customId} ERROR ${interaction.id}] Attempt to show modal FAILED for ${userTagForManual}.`);
+        console.error(`[${interaction.customId} ERROR_DETAILS ${interaction.id}] Error Name: ${error.name}`);
+        console.error(`[${interaction.customId} ERROR_DETAILS ${interaction.id}] Error Message: ${error.message}`);
+        if (error.stack) {
+          console.error(`[${interaction.customId} ERROR_STACK ${interaction.id}] Error Stack: ${error.stack}`);
+        }
+        if (error.code) {
+          console.error(`[${interaction.customId} ERROR_CODE ${interaction.id}] Discord Error Code: ${error.code}`);
+        }
         // Log and attempt an ephemeral reply if possible, though showModal failures are often hard to recover from
         if (interaction.replied || interaction.deferred) {
             // If already replied/deferred (e.g. by deferUpdate from set_update_experiment_btn), edit that.
