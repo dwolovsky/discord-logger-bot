@@ -3808,7 +3808,7 @@ exports.generateOutcomeUnitSuggestions = onCall(async (request) => {
   const promptText = `
     The user has a "Deeper Wish": "<span class="math-inline">\{userWish\}"\. They have chosen to track the "Outcome Metric Label": "{chosenOutcomeLabel}". Your task is to generate 3 to 5 distinct, specific, and practical "Unit/Scale" suggestions for how the user could measure their chosen Outcome Metric Label ("{chosenOutcomeLabel}") daily.
     For each of the unit suggestions, you MUST provide:
-    1.  A "unit": A specific, clear string describing the unit or scale (e.g., "1-10 satisfaction scale", "Hours slept", "Completed tasks", "Yes (1) / No (0)", "Energy level (0-10 or Low/Medium/High)"). Max 20 characters.
+    1.  A "unit": A specific, clear string describing the unit or scale (e.g., "1-10 satisfaction scale", "Hours slept", "Completed tasks", "Yes (1) / No (0)", "Energy level (0-10 or Low/Medium/High)"). Max 20 characters, a way to measure the outcome metric label.
     2.  A "unitCategory": A very brief (1-3 words) classification of the unit type (e.g., "Scale", "Duration", "Count", "Binary", "Qualitative", "Categorical").
 
     The unit suggestions should be diverse and appropriate for the given Outcome Label. They should be actionable for daily tracking.
@@ -3818,7 +3818,7 @@ exports.generateOutcomeUnitSuggestions = onCall(async (request) => {
     { "unit": "Example Unit/Scale", "unitCategory": "Example Category" }
 
     Your entire response should be a JSON array. Do not include any other text or explanation outside of this JSON array.
-    Ensure the 'unit' strings are 70 characters or less.
+    Ensure the 'unit' strings are 20 characters or less each.
   `;
 
   try {
