@@ -2464,7 +2464,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const beforeDeferPerfNow = performance.now();
         console.log(`[${interaction.customId} PRE_DEFER ${interactionIdForChoice}] About to call deferUpdate. PerfTime: ${beforeDeferPerfNow.toFixed(2)}ms. DeltaFromHandlerEntry: ${(beforeDeferPerfNow - handlerEntryPerfNow).toFixed(2)}ms.`);
 
-        await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
+        await interaction.deferUpdate();
 
         // NEW LOGGING: After Defer Success
         const afterDeferPerfNow = performance.now();
