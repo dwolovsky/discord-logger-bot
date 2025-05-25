@@ -3654,89 +3654,64 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
   }
 });
 
-// --- (functions/index.js) ---
-// Add this new function alongside your other exports like getFirebaseAuthToken, submitLog, etc.
-
 /**
- * Takes a user's wish and generates two illustrative self-science experiment setups using Gemini.
+ * Takes a user's "Deeper Wish" and generates five potential outcome metric labels
+ * with suggested unit types and brief explanations using Gemini.
  *
  * Expected request.data: { userWish: string }
- * Returns: { success: true, examples: [example1, example2] }
+ * Returns: { success: true, suggestions: [{label: string, suggestedUnitType: string, briefExplanation: string}, ...] }
  * or { success: false, error: string, details?: any }
  */
-exports.generateIllustrativeExperiments = onCall(async (request) => {
-  logger.log("[generateIllustrativeExperiments] Function called. Request data:", request.data);
+exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
+  logger.log("[generateOutcomeLabelSuggestions] Function called. Request data:", request.data);
 
   // 1. Authentication & Validation
   if (!request.auth) {
-    logger.warn("[generateIllustrativeExperiments] Unauthenticated access attempt.");
+    logger.warn("[generateOutcomeLabelSuggestions] Unauthenticated access attempt.");
     throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
   }
   const userId = request.auth.uid;
 
   if (!request.data || !request.data.userWish || typeof request.data.userWish !== 'string' || request.data.userWish.trim() === '') {
-    logger.warn(`[generateIllustrativeExperiments] Invalid argument: userWish missing or empty for user ${userId}.`);
+    logger.warn(`[generateOutcomeLabelSuggestions] Invalid argument: userWish missing or empty for user ${userId}.`);
     throw new HttpsError('invalid-argument', 'The function must be called with a non-empty "userWish".');
   }
   const userWish = request.data.userWish.trim();
-  logger.info(`[generateIllustrativeExperiments] Processing request for user: ${userId}, wish: "${userWish}"`);
+  logger.info(`[generateOutcomeLabelSuggestions] Processing request for user: <span class="math-inline">\{userId\}, wish\: "</span>{userWish}"`);
 
   // 2. Check if Gemini Client is available
-  if (!genAI) { // genAI is from your AI INSIGHTS SETUP block [cite: 758, 763, 765]
-    logger.error("[generateIllustrativeExperiments] Gemini AI client (genAI) is not initialized. Cannot generate examples.");
-    throw new HttpsError('internal', "The AI examples service is currently unavailable. (AI client not ready)");
+  if (!genAI) {
+    logger.error("[generateOutcomeLabelSuggestions] Gemini AI client (genAI) is not initialized. Cannot generate suggestions.");
+    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
   }
 
-  // 3. Construct Prompt for LLM Task 1
+  // 3. Construct Prompt for LLM
   const promptText = `
-    Based on the user's wish: "${userWish}", your task is to generate two distinct, complete, and plausible example self-science experiment setups that someone might try to address a similar wish.
+    Based on the user's "Deeper Wish": "${userWish}", your task is to generate five distinct and relevant potential "Outcome Metric Labels" that someone might track daily to see if they are making progress related to their wish.
 
-    For each of the two examples, you MUST provide:
-    1.  A short, catchy "title" for the example experiment (e.g., "The Morning Energizer Routine", "The Focus Flow Finder").
-    2.  A "deeperGoal": A concise 'Deeper Problem/Goal/Theme' derived from and related to the user's wish.
-    3.  An "outcomeMetric": This MUST be an object with three string properties:
-        * "label": A clear name for the outcome they will track daily (e.g., 'Afternoon Energy Level', 'Stress Score Before Bed', 'Pages Read').
-        * "unit": A common unit of measurement or scale (e.g., '1-10 scale', 'hours', 'minutes', 'yes/no', 'count', 'pages').
-        * "goal": A sample daily target number or value for that metric (e.g., '7', '8', '15', '1', '3', '10').
-    4.  An array named "actions": This array MUST contain exactly three distinct "Daily Habit" objects. Each action object MUST have three string properties:
-        * "label": A specific, actionable task the user will do daily (e.g., 'Morning Sunlight Exposure', 'Mindful Breathing Practice', 'Write Down 3 Priorities').
-        * "unit": A common unit of measurement for that action (e.g., 'minutes', 'yes/no', 'count', 'pages', 'sessions').
-        * "goal": A sample daily target for that action (e.g., '10', '1', '3', '5').
+    For each of the five suggestions, you MUST provide:
+    1.  A "label": A clear, concise name for the outcome metric they will track daily (e.g., 'Overall Mood', 'Productive Hours', 'Sleep Quality', 'Feeling of Connection', 'Stress Level'). Max 25 characters.
+    2.  A "suggestedUnitType": A very brief (1-3 words) suggested category for how this label might be measured (e.g., 'Rating Scale', 'Hours/Minutes', 'Yes/No', 'Count', 'Qualitative Note'). This type will guide further unit suggestions.
+    3.  A "briefExplanation": A short (10-15 words) explanation of why this outcome metric could be relevant to the user's wish.
 
-    Keep the examples concise, easy to understand, and illustrative. The goal is to inspire the user.
-    The actions within each example should be thematically related to its deeperGoal. The two examples should offer different approaches or focus areas if possible, even if addressing the same core wish.
+    The suggestions should be diverse if possible.
+    Return ONLY a valid JSON array containing five objects, where each object represents an outcome metric suggestion and strictly follows the structure:
+    { "label": "Example Label", "suggestedUnitType": "Example Unit Type", "briefExplanation": "Example explanation." }
 
-    Return ONLY a valid JSON array containing two objects, where each object represents an experiment example and strictly follows the structure described above (title, deeperGoal, outcomeMetric object, actions array of objects).
-    Example of the exact JSON structure for ONE experiment:
-    {
-      "title": "Example Title",
-      "deeperGoal": "Example Deeper Goal",
-      "outcomeMetric": {
-        "label": "Outcome Label",
-        "unit": "1-10 scale",
-        "goal": "8"
-      },
-      "actions": [
-        { "label": "Habit 1 Label", "unit": "minutes", "goal": "15" },
-        { "label": "Habit 2 Label", "unit": "count", "goal": "3" },
-        { "label": "Habit 3 Label", "unit": "yes/no", "goal": "1" }
-      ]
-    }
-    Your entire response should be a JSON array: [experimentExample1, experimentExample2]
-    Do not include any other text or explanation outside of this JSON array.
+    Your entire response should be a JSON array: [suggestion1, suggestion2, suggestion3, suggestion4, suggestion5]
+    Do not include any other text or explanation outside of this JSON array. Ensure labels are 45 characters or less.
   `;
 
-  logger.info(`[generateIllustrativeExperiments] Sending prompt to Gemini for user ${userId}.`);
-  // logger.debug(`[generateIllustrativeExperiments] Prompt for user ${userId}: ${promptText}`); // Can be very verbose
+  logger.info(`[generateOutcomeLabelSuggestions] Sending prompt to Gemini for user ${userId}.`);
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Or your preferred model, e.g., gemini-1.5-pro
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{text: promptText}] }],
         generationConfig: {
-            ...GEMINI_CONFIG, // Your global Gemini config [cite: 765, 1674]
-            temperature: 0.7, // Adjust as needed for creativity vs. predictability
-            responseMimeType: "application/json", // Request JSON output
+            ...GEMINI_CONFIG, // Your global Gemini config [cite: 967]
+            temperature: 0.75, 
+            responseMimeType: "application/json",
         },
     });
 
@@ -3744,54 +3719,166 @@ exports.generateIllustrativeExperiments = onCall(async (request) => {
     const responseText = response.text()?.trim();
 
     if (!responseText) {
-        logger.warn(`[generateIllustrativeExperiments] Gemini returned an empty response for user ${userId}, wish: "${userWish}".`);
-        throw new HttpsError('internal', 'AI failed to generate examples (empty response).');
+        logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user <span class="math-inline">\{userId\}, wish\: "</span>{userWish}".`);
+        throw new HttpsError('internal', 'AI failed to generate suggestions (empty response).');
     }
 
-    logger.info(`[generateIllustrativeExperiments] Received raw response from Gemini for user ${userId}. Length: ${responseText.length}. Attempting to parse JSON.`);
-    // logger.debug(`[generateIllustrativeExperiments] Raw Gemini response for user ${userId}: ${responseText}`);
+    logger.info(`[generateOutcomeLabelSuggestions] Received raw response from Gemini for user ${userId}. Length: ${responseText.length}.`);
 
-    let examples;
+    let suggestions;
     try {
-        examples = JSON.parse(responseText);
+        suggestions = JSON.parse(responseText);
     } catch (parseError) {
-        logger.error(`[generateIllustrativeExperiments] Failed to parse Gemini JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}"`);
-        throw new HttpsError('internal', `AI returned an invalid format. Could not parse examples. Details: ${parseError.message}`);
+        logger.error(`[generateOutcomeLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: <span class="math-inline">\{parseError\.message\}\. Raw response\: "</span>{responseText}"`);
+        throw new HttpsError('internal', `AI returned an invalid format. Could not parse suggestions. Details: ${parseError.message}`);
     }
 
-    // Validate the structure of the parsed examples
-    if (!Array.isArray(examples) || examples.length !== 2) {
-        logger.error(`[generateIllustrativeExperiments] Parsed response is not an array of 2 elements for user ${userId}. Parsed:`, examples);
-        throw new HttpsError('internal', 'AI did not return two experiment examples as expected.');
+    if (!Array.isArray(suggestions) || suggestions.length !== 5) {
+        logger.error(`[generateOutcomeLabelSuggestions] Parsed response is not an array of 5 elements for user ${userId}. Parsed:`, suggestions);
+        throw new HttpsError('internal', 'AI did not return five outcome suggestions as expected.');
     }
 
-    // Basic validation for each example (can be more thorough)
-    for (const example of examples) {
-        if (!example.title || !example.deeperGoal ||
-            !example.outcomeMetric || typeof example.outcomeMetric !== 'object' ||
-            !example.outcomeMetric.label || !example.outcomeMetric.unit || !example.outcomeMetric.goal ||
-            !Array.isArray(example.actions) || example.actions.length !== 3 ||
-            !example.actions.every(act => act.label && act.unit && act.goal)) {
-            logger.error(`[generateIllustrativeExperiments] One or more examples have an invalid structure for user ${userId}. Example:`, example);
-            throw new HttpsError('internal', 'AI returned examples with an invalid or incomplete structure.');
+    for (const suggestion of suggestions) {
+        if (!suggestion.label || !suggestion.suggestedUnitType || !suggestion.briefExplanation ||
+            typeof suggestion.label !== 'string' || suggestion.label.length > 45 ||
+            typeof suggestion.suggestedUnitType !== 'string' ||
+            typeof suggestion.briefExplanation !== 'string') {
+            logger.error(`[generateOutcomeLabelSuggestions] One or more suggestions have an invalid structure for user ${userId}. Suggestion:`, suggestion);
+            throw new HttpsError('internal', 'AI returned suggestions with an invalid or incomplete structure.');
         }
     }
 
-    logger.info(`[generateIllustrativeExperiments] Successfully generated and parsed ${examples.length} examples for user ${userId}.`);
-    return { success: true, examples: examples };
+    logger.info(`[generateOutcomeLabelSuggestions] Successfully generated and parsed ${suggestions.length} outcome suggestions for user ${userId}.`);
+    return { success: true, suggestions: suggestions };
 
   } catch (error) {
-    logger.error(`[generateIllustrativeExperiments] Error during Gemini API call or processing for user ${userId}, wish "${userWish}":`, error);
-    if (error instanceof HttpsError) { // Re-throw HttpsErrors
+    logger.error(`[generateOutcomeLabelSuggestions] Error during Gemini API call or processing for user <span class="math-inline">\{userId\}, wish "</span>{userWish}":`, error);
+    if (error instanceof HttpsError) {
         throw error;
     }
-    // Check for specific Gemini error messages if available, e.g., safety blocks
     if (error.message && error.message.toLowerCase().includes('safety')) {
-        logger.warn(`[generateIllustrativeExperiments] Gemini content generation blocked due to safety settings for user ${userId}, wish "${userWish}".`);
-        throw new HttpsError('resource-exhausted', "The AI couldn't generate examples for this wish due to content restrictions. Please try rephrasing your wish or try a different one."); // Using resource-exhausted as a somewhat relevant code
+        logger.warn(`[generateOutcomeLabelSuggestions] Gemini content generation blocked due to safety settings for user <span class="math-inline">\{userId\}, wish "</span>{userWish}".`);
+        throw new HttpsError('resource-exhausted', "The AI couldn't generate suggestions for this wish due to content restrictions. Please try rephrasing your wish or try a different one.");
     }
-    throw new HttpsError('internal', `Failed to generate AI examples due to a server error. Details: ${error.message}`);
+    throw new HttpsError('internal', `Failed to generate AI suggestions due to a server error. Details: ${error.message}`);
   }
 });
+
+// Ensure GEMINI_CONFIG and genAI are initialized as in your functions/index.js file
+
+/**
+ * Takes a user's "Deeper Wish" and their chosen "Outcome Label",
+ * and generates 3-5 specific unit suggestions for that outcome label using Gemini.
+ *
+ * Expected request.data: { userWish: string, chosenOutcomeLabel: string, outcomeLabelSuggestedUnitType?: string }
+ * Returns: { success: true, unitSuggestions: [{unit: string, unitCategory: string}, ...] }
+ * or { success: false, error: string, details?: any }
+ */
+exports.generateOutcomeUnitSuggestions = onCall(async (request) => {
+  logger.log("[generateOutcomeUnitSuggestions] Function called. Request data:", request.data);
+
+  // 1. Authentication & Validation
+  if (!request.auth) {
+    logger.warn("[generateOutcomeUnitSuggestions] Unauthenticated access attempt.");
+    throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
+  }
+  const userId = request.auth.uid;
+
+  if (!request.data || !request.data.userWish || typeof request.data.userWish !== 'string' || request.data.userWish.trim() === '' ||
+      !request.data.chosenOutcomeLabel || typeof request.data.chosenOutcomeLabel !== 'string' || request.data.chosenOutcomeLabel.trim() === '') {
+    logger.warn(`[generateOutcomeUnitSuggestions] Invalid argument: userWish or chosenOutcomeLabel missing/empty for user ${userId}.`);
+    throw new HttpsError('invalid-argument', 'The function must be called with a non-empty "userWish" and "chosenOutcomeLabel".');
+  }
+  const userWish = request.data.userWish.trim();
+  const chosenOutcomeLabel = request.data.chosenOutcomeLabel.trim();
+  // Optional: outcomeLabelSuggestedUnitType for context to the AI
+  const outcomeLabelSuggestedUnitType = request.data.outcomeLabelSuggestedUnitType || null;
+
+  logger.info(`[generateOutcomeUnitSuggestions] Processing for user: <span class="math-inline">\{userId\}, wish\: "</span>{userWish}", outcome label: "<span class="math-inline">\{chosenOutcomeLabel\}", suggested unit type context\: "</span>{outcomeLabelSuggestedUnitType}"`);
+
+  // 2. Check if Gemini Client is available
+  if (!genAI) {
+    logger.error("[generateOutcomeUnitSuggestions] Gemini AI client (genAI) is not initialized. Cannot generate unit suggestions.");
+    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
+  }
+
+  // 3. Construct Prompt for LLM
+  const suggestedUnitTypeContext = outcomeLabelSuggestedUnitType ? `The user's chosen outcome label ("<span class="math-inline">\{chosenOutcomeLabel\}"\) was initially categorized by an AI as potentially measurable by a '</span>{outcomeLabelSuggestedUnitType}'. Use this as a hint for relevance, but still provide diverse, specific unit suggestions.` : "";
+
+  const promptText = `
+    The user has a "Deeper Wish": "<span class="math-inline">\{userWish\}"\. They have chosen to track the "Outcome Metric Label": "{chosenOutcomeLabel}". Your task is to generate 3 to 5 distinct, specific, and practical "Unit/Scale" suggestions for how the user could measure their chosen Outcome Metric Label ("{chosenOutcomeLabel}") daily.
+    For each of the unit suggestions, you MUST provide:
+    1.  A "unit": A specific, clear string describing the unit or scale (e.g., "1-10 satisfaction scale", "Hours slept", "Completed tasks", "Yes (1) / No (0)", "Energy level (0-10 or Low/Medium/High)"). Max 20 characters.
+    2.  A "unitCategory": A very brief (1-3 words) classification of the unit type (e.g., "Scale", "Duration", "Count", "Binary", "Qualitative", "Categorical").
+
+    The unit suggestions should be diverse and appropriate for the given Outcome Label. They should be actionable for daily tracking.
+    Prioritize common and easy-to-understand measurement methods.
+
+    Return ONLY a valid JSON array containing 3 to 5 objects, where each object represents a unit suggestion and strictly follows the structure:
+    { "unit": "Example Unit/Scale", "unitCategory": "Example Category" }
+
+    Your entire response should be a JSON array. Do not include any other text or explanation outside of this JSON array.
+    Ensure the 'unit' strings are 70 characters or less.
+  `;
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const generationResult = await model.generateContent({
+        contents: [{ role: "user", parts: [{text: promptText}] }],
+        generationConfig: {
+            ...GEMINI_CONFIG,
+            temperature: 0.7,
+            responseMimeType: "application/json",
+        },
+    });
+
+    const response = await generationResult.response;
+    const responseText = response.text()?.trim();
+
+    if (!responseText) {
+        logger.warn(`[generateOutcomeUnitSuggestions] Gemini returned an empty response for user <span class="math-inline">\{userId\}, label\: "</span>{chosenOutcomeLabel}".`);
+        throw new HttpsError('internal', 'AI failed to generate unit suggestions (empty response).');
+    }
+
+    logger.info(`[generateOutcomeUnitSuggestions] Received raw response from Gemini for user ${userId}. Length: ${responseText.length}.`);
+
+    let unitSuggestions;
+    try {
+        unitSuggestions = JSON.parse(responseText);
+    } catch (parseError) {
+        logger.error(`[generateOutcomeUnitSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: <span class="math-inline">\{parseError\.message\}\. Raw response\: "</span>{responseText}"`);
+        throw new HttpsError('internal', `AI returned an invalid format. Could not parse unit suggestions. Details: ${parseError.message}`);
+    }
+
+    if (!Array.isArray(unitSuggestions) || unitSuggestions.length < 3 || unitSuggestions.length > 5) {
+        logger.error(`[generateOutcomeUnitSuggestions] Parsed response is not an array of 3-5 elements for user ${userId}. Found ${unitSuggestions.length}. Parsed:`, unitSuggestions);
+        throw new HttpsError('internal', 'AI did not return 3-5 unit suggestions as expected.');
+    }
+
+    for (const suggestion of unitSuggestions) {
+        if (!suggestion.unit || !suggestion.unitCategory ||
+            typeof suggestion.unit !== 'string' || suggestion.unit.length > 70 ||
+            typeof suggestion.unitCategory !== 'string') {
+            logger.error(`[generateOutcomeUnitSuggestions] One or more unit suggestions have an invalid structure for user ${userId}. Suggestion:`, suggestion);
+            throw new HttpsError('internal', 'AI returned unit suggestions with an invalid or incomplete structure.');
+        }
+    }
+
+    logger.info(`[generateOutcomeUnitSuggestions] Successfully generated and parsed ${unitSuggestions.length} unit suggestions for user ${userId}.`);
+    return { success: true, unitSuggestions: unitSuggestions };
+
+  } catch (error) {
+    logger.error(`[generateOutcomeUnitSuggestions] Error during Gemini API call or processing for user <span class="math-inline">\{userId\}, label "</span>{chosenOutcomeLabel}":`, error);
+    if (error instanceof HttpsError) {
+        throw error;
+    }
+    if (error.message && error.message.toLowerCase().includes('safety')) {
+        logger.warn(`[generateOutcomeUnitSuggestions] Gemini content generation blocked due to safety settings for user <span class="math-inline">\{userId\}, label "</span>{chosenOutcomeLabel}".`);
+        throw new HttpsError('resource-exhausted', "The AI couldn't generate unit suggestions due to content restrictions. Please try a different outcome label if this persists.");
+    }
+    throw new HttpsError('internal', `Failed to generate AI unit suggestions due to a server error. Details: ${error.message}`);
+  }
+});
+
 
 // Final blank line below this comment
