@@ -3880,5 +3880,139 @@ exports.generateOutcomeUnitSuggestions = onCall(async (request) => {
   }
 });
 
+// Add this new Firebase Callable Function to your functions/index.js file
+
+/**
+ * Generates 3-5 potential daily habit/input labels based on a user's wish,
+ * their defined outcome metric, and any habits already defined.
+ *
+ * Expected request.data: {
+ * userWish: string,
+ * outcomeMetric: { label: string, unit: string, goal: number },
+ * definedInputs: Array<{ label: string, unit: string, goal: number }> (optional)
+ * }
+ * Returns: { success: true, suggestions: [{label: string, briefExplanation: string}, ...] }
+ * or { success: false, error: string, details?: any }
+ */
+exports.generateInputLabelSuggestions = onCall(async (request) => {
+  logger.log("[generateInputLabelSuggestions] Function called. Request data:", request.data);
+
+  // 1. Authentication & Validation
+  if (!request.auth) {
+    logger.warn("[generateInputLabelSuggestions] Unauthenticated access attempt.");
+    throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
+  }
+  const userId = request.auth.uid;
+
+  if (!request.data ||
+      !request.data.userWish || typeof request.data.userWish !== 'string' || request.data.userWish.trim() === '' ||
+      !request.data.outcomeMetric || typeof request.data.outcomeMetric !== 'object' ||
+      !request.data.outcomeMetric.label || typeof request.data.outcomeMetric.label !== 'string' ||
+      !request.data.outcomeMetric.unit || typeof request.data.outcomeMetric.unit !== 'string' ||
+      request.data.outcomeMetric.goal === undefined || typeof request.data.outcomeMetric.goal !== 'number') {
+    logger.warn(`[generateInputLabelSuggestions] Invalid argument for user ${userId}. Wish or outcomeMetric is incomplete.`);
+    throw new HttpsError('invalid-argument', 'The function must be called with a valid "userWish" and a complete "outcomeMetric" object (label, unit, goal).');
+  }
+  const { userWish, outcomeMetric, definedInputs = [] } = request.data;
+
+  logger.info(`[generateInputLabelSuggestions] Processing for user: ${userId}, wish: "${userWish}", outcome: "${outcomeMetric.label}", defined inputs: ${definedInputs.length}`);
+
+  // 2. Check if Gemini Client is available
+  if (!genAI) { // [cite: 39]
+    logger.error("[generateInputLabelSuggestions] Gemini AI client (genAI) is not initialized."); // [cite: 1018]
+    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)"); // [cite: 1068]
+  }
+
+  // 3. Construct Prompt for LLM
+  let definedInputsContext = "";
+  if (definedInputs.length > 0) {
+    definedInputsContext = "The user has already defined these daily habits:\n";
+    definedInputs.forEach((input, index) => {
+      definedInputsContext += `${index + 1}. "${input.label}" (Goal: ${input.goal} ${input.unit})\n`;
+    });
+    definedInputsContext += "\nPlease suggest DIFFERENT and complementary habits.";
+  }
+
+  const promptText = `
+    A user has a "Deeper Wish": "${userWish}".
+    They are tracking a primary "Outcome Metric": "${outcomeMetric.label}" (measured in "${outcomeMetric.unit}", with a daily goal of ${outcomeMetric.goal}).
+
+    Your task is to suggest 3 to 5 distinct, actionable, and relevant "Daily Habit Labels" that the user could track. These habits should be actions they can take daily to positively influence their Outcome Metric and help them achieve their Deeper Wish.
+    ${definedInputsContext}
+
+    For each of the habit suggestions, you MUST provide:
+    1.  A "label": A clear, concise name for the daily habit (e.g., "Mindful Morning Walk", "Read One Chapter", "Limit Social Media to 30 Mins", "Evening Reflection Journal"). Max 45 characters.
+    2.  A "briefExplanation": A short (15-25 words) explanation of how this specific daily habit could plausibly connect to their Outcome Metric or Deeper Wish.
+
+    The suggestions should be diverse if possible. Avoid suggesting to track the Outcome Metric itself as a habit. Focus on actionable input behaviors.
+
+    Return ONLY a valid JSON array containing 3 to 5 objects, where each object represents a habit suggestion and strictly follows the structure:
+    { "label": "Example Habit Label", "briefExplanation": "Example explanation of its relevance." }
+
+    Your entire response should be a JSON array: [suggestion1, suggestion2, ..., suggestionN]
+    Do not include any other text or explanation outside of this JSON array.
+    Ensure labels are 45 characters or less.
+  `;
+
+  logger.info(`[generateInputLabelSuggestions] Sending prompt to Gemini for user ${userId}.`);
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // [cite: 950]
+    const generationResult = await model.generateContent({
+        contents: [{ role: "user", parts: [{text: promptText}] }],
+        generationConfig: {
+            ...GEMINI_CONFIG, // [cite: 43, 952, 1077, 1116]
+            temperature: 0.75, 
+            responseMimeType: "application/json", // [cite: 1077, 1116]
+        },
+    });
+    const response = await generationResult.response; // [cite: 955, 1049, 1078, 1117]
+    const responseText = response.text()?.trim(); // [cite: 1049, 1078, 1117]
+
+    if (!responseText) { // [cite: 1079]
+        logger.warn(`[generateInputLabelSuggestions] Gemini returned an empty response for user ${userId}, wish: "${userWish}".`); // [cite: 1079]
+        throw new HttpsError('internal', 'AI failed to generate habit suggestions (empty response).'); // [cite: 1079]
+    }
+
+    logger.info(`[generateInputLabelSuggestions] Received raw response from Gemini for user ${userId}. Length: ${responseText.length}.`); // [cite: 1080]
+
+    let suggestions;
+    try {
+        suggestions = JSON.parse(responseText); // [cite: 1081]
+    } catch (parseError) {
+        logger.error(`[generateInputLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}"`); // [cite: 1082]
+        throw new HttpsError('internal', `AI returned an invalid format for habit suggestions. Details: ${parseError.message}`); // [cite: 1083]
+    }
+
+    if (!Array.isArray(suggestions) || suggestions.length < 3 || suggestions.length > 5) { // [cite: 1084]
+        logger.error(`[generateInputLabelSuggestions] Parsed response is not an array of 3-5 elements for user ${userId}. Found ${suggestions.length}. Parsed:`, suggestions); // [cite: 1085]
+        throw new HttpsError('internal', 'AI did not return 3-5 habit suggestions as expected.'); // [cite: 1085]
+    }
+
+    for (const suggestion of suggestions) {
+        if (!suggestion.label || !suggestion.briefExplanation ||
+            typeof suggestion.label !== 'string' || suggestion.label.length > 45 || 
+            typeof suggestion.briefExplanation !== 'string') { // [cite: 1086]
+            logger.error(`[generateInputLabelSuggestions] One or more habit suggestions have an invalid structure for user ${userId}. Suggestion:`, suggestion); // [cite: 1087]
+            throw new HttpsError('internal', 'AI returned habit suggestions with an invalid or incomplete structure.'); // [cite: 1087]
+        }
+    }
+
+    logger.info(`[generateInputLabelSuggestions] Successfully generated and parsed ${suggestions.length} habit label suggestions for user ${userId}.`); // [cite: 1088]
+    return { success: true, suggestions: suggestions }; // [cite: 1089]
+
+  } catch (error) {
+    logger.error(`[generateInputLabelSuggestions] Error during Gemini API call or processing for user ${userId}, wish "${userWish}":`, error); // [cite: 1089, 1090]
+    if (error instanceof HttpsError) { // [cite: 1090]
+        throw error; // [cite: 1090]
+    }
+    if (error.message && error.message.toLowerCase().includes('safety')) { // [cite: 1052, 1091]
+        logger.warn(`[generateInputLabelSuggestions] Gemini content generation blocked due to safety settings for user ${userId}, wish "${userWish}".`); // [cite: 1092]
+        throw new HttpsError('resource-exhausted', "The AI couldn't generate habit suggestions for this wish due to content restrictions. Please try rephrasing your wish or contact support."); // [cite: 1092]
+    }
+    throw new HttpsError('internal', `Failed to generate AI habit suggestions due to a server error. Details: ${error.message}`); // [cite: 1093]
+  }
+});
+
 
 // Final blank line below this comment
