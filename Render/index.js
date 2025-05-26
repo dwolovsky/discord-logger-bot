@@ -1897,7 +1897,6 @@ How are you measuring this? What scale, or what units?
       const userTag = message.author.tag;
       const input3Label = setupData.currentInputDefinition?.label;
       const input3Unit = setupData.currentInputDefinition?.unit;
-
       // Ensure Input 3 label and unit are still in context
       if (!input3Label || !input3Unit || setupData.currentInputIndex !== 3) {
         console.error(`[MessageCreate AWAITING_INPUT3_TARGET_ERROR ${interactionIdForLog}] Missing Input 3 label/unit or incorrect index in setupData for user ${userTag}. State: ${setupData.dmFlowState}, Index: ${setupData.currentInputIndex}. Aborting.`);
@@ -1909,7 +1908,6 @@ How are you measuring this? What scale, or what units?
       }
 
       console.log(`[MessageCreate AWAITING_INPUT3_TARGET ${interactionIdForLog}] User ${userTag} (ID: ${userId}) sent target number: "${targetNumberStr}" for Input 3: "${input3Label}" (${input3Unit}).`);
-
       if (!targetNumberStr) {
         await message.author.send(
           `It looks like your response was empty. What is your daily **Target #** for your third habit **"${input3Label}"** (measured in ${input3Unit})?\n` +
@@ -1931,7 +1929,6 @@ How are you measuring this? What scale, or what units?
 
       // Validation passed
       setupData.currentInputDefinition.goal = targetNumber;
-
       // Add the fully defined Input 3 to the inputs array
       if (!setupData.inputs) { // Should exist from Input 1 & 2
         setupData.inputs = [];
@@ -1944,100 +1941,49 @@ How are you measuring this? What scale, or what units?
       }
 
       console.log(`[MessageCreate INPUT3_DEFINED ${interactionIdForLog}] User ${userTag} fully defined Input 3: Label="${setupData.inputs[2].label}", Unit="${setupData.inputs[2].unit}", Goal=${setupData.inputs[2].goal}. All inputs defined.`);
-
       // Clean up temporary holders
       delete setupData.currentInputDefinition;
       delete setupData.aiGeneratedUnitSuggestionsForCurrentItem;
+      
+      // ***** MODIFICATION START: Transition to Confirm/Edit step *****
+      setupData.dmFlowState = 'awaiting_metrics_confirmation'; 
+      userExperimentSetupData.set(userId, setupData);
 
-      // --- All habits defined, now save all settings and proceed to duration/reminders ---
-      // This logic is similar to 'add_another_habit_no_btn' handler's Firebase call part.
-
-      // Helper to format settings for Firebase
-      const formatSettingToStringHelper = (label, unit, goal) => {
-          if (label && typeof label === 'string' && label.trim() !== "" &&
-              unit && typeof unit === 'string' &&
-              goal !== undefined && goal !== null && !isNaN(parseFloat(goal))) {
-              return `${parseFloat(goal)}, ${unit.trim()}, ${label.trim()}`;
+      let summaryDescription = `**🎯 Deeper Goal / Problem / Theme:**\n${setupData.deeperProblem}\n\n` +
+                               `**📊 Daily Outcome to Track:**\n\`${setupData.outcomeGoal}, ${setupData.outcomeUnit}, ${setupData.outcomeLabel}\`\n\n` +
+                               `**🛠️ Daily Habits to Track:**\n`;
+      
+      setupData.inputs.forEach((input, index) => {
+          if (input && input.label && input.unit && input.goal !== undefined) {
+              summaryDescription += `${index + 1}. \`${input.goal}, ${input.unit}, ${input.label}\`\n`;
           }
-          console.warn(`[formatSettingToStringHelper] Invalid data for formatting during Input 3 finalization: L='${label}', U='${unit}', G='${goal}'`);
-          return "";
-      };
+      });
 
-      const outcomeSettingStrFirebase = formatSettingToStringHelper(setupData.outcomeLabel, setupData.outcomeUnit, setupData.outcomeGoal);
-      const inputSettingsStringsFirebase = setupData.inputs.map(input => input ? formatSettingToStringHelper(input.label, input.unit, input.goal) : "").filter(s => s !== "");
+      const confirmEmbed = new EmbedBuilder()
+          .setColor('#FFBF00') // Amber color
+          .setTitle('🔬 Review Your Full Experiment Metrics')
+          .setDescription(summaryDescription + "\n\nThis is your complete setup. Please review your settings. Do they look correct?")
+          .setFooter({ text: "You can edit these before setting duration."});
 
+      const confirmButtons = new ActionRowBuilder()
+          .addComponents(
+              new ButtonBuilder()
+                  .setCustomId('confirm_metrics_proceed_btn') // Same ID as used in add_another_habit_no_btn
+                  .setLabel('✅ Looks Good, Set Duration')
+                  .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                  .setCustomId('request_edit_metrics_modal_btn') // Same ID
+                  .setLabel('✏️ Edit Metrics/Goal')
+                  .setStyle(ButtonStyle.Primary)
+          );
 
-      if (!outcomeSettingStrFirebase || inputSettingsStringsFirebase.length === 0 || !inputSettingsStringsFirebase[0] || inputSettingsStringsFirebase[0].trim() === "") {
-           console.error(`[MessageCreate FINALIZE_FORMATTING_ERROR ${interactionIdForLog}] Failed to format Outcome or essential Input 1 for Firebase after Input 3 for ${userTag}.`);
-           await message.author.send("⚠️ Error: Could not prepare your Outcome or first Habit details correctly for saving. Please restart the setup with `/go`.");
-           userExperimentSetupData.delete(userId); // Clear data on critical error
-           return;
-      }
-
-      const firebasePayload = {
-        deeperProblem: setupData.deeperProblem,
-        outputSetting: outcomeSettingStrFirebase,
-        inputSettings: [
-          inputSettingsStringsFirebase[0] || "",
-          inputSettingsStringsFirebase[1] || "",
-          inputSettingsStringsFirebase[2] || ""
-        ],
-        userTag: userTag // From the top of MessageCreate handler
-      };
-
-      console.log(`[MessageCreate FINALIZE_FIREBASE_CALL ${interactionIdForLog}] Calling updateWeeklySettings for ${userTag}. Payload:`, JSON.stringify(firebasePayload));
-
-      try {
-        const updateSettingsResultFirebase = await callFirebaseFunction('updateWeeklySettings', firebasePayload, userId);
-
-        if (updateSettingsResultFirebase && updateSettingsResultFirebase.success === true && typeof updateSettingsResultFirebase.message === 'string') {
-          console.log(`[MessageCreate FINALIZE_FIREBASE_SUCCESS ${interactionIdForLog}] updateWeeklySettings successful for ${userTag}.`);
-          setupData.settingsMessage = updateSettingsResultFirebase.message;
-
-          setupData.dmFlowState = 'awaiting_duration_selection'; // Transition to duration
-          userExperimentSetupData.set(userId, setupData);
-
-          // Confirm all inputs and prompt for duration
-          let confirmationMessage = `✅ **Daily Habit 3 Confirmed!**\n` +
-                                      `🏷️ Label: **${setupData.inputs[2].label}**\n` +
-                                      `📏 Unit/Scale: **${setupData.inputs[2].unit}\n` +
-                                      `🔢 Daily Target: **${setupData.inputs[2].goal}\n\n` +
-                                      `All experiment metrics have been defined and saved!\n\n`;
-
-          const durationEmbed = new EmbedBuilder()
-              .setColor('#47d264')
-              .setTitle('🔬 Experiment Metrics Fully Defined & Saved!')
-              .setDescription(confirmationMessage + `Next, let's set your **experiment duration**. This determines when your first comprehensive stats report will be delivered.`)
-              .setFooter({text: "Select how long this experiment phase should last."})
-              .setTimestamp();
-
-          const durationSelect = new StringSelectMenuBuilder()
-              .setCustomId('experiment_duration_select')
-              .setPlaceholder('See your first big stats report in...')
-              .addOptions(
-                  new StringSelectMenuOptionBuilder().setLabel('1 Week').setValue('1_week').setDescription('Report in 7 days.'),
-                  new StringSelectMenuOptionBuilder().setLabel('2 Weeks').setValue('2_weeks').setDescription('Report in 14 days.'),
-                  new StringSelectMenuOptionBuilder().setLabel('3 Weeks').setValue('3_weeks').setDescription('Report in 21 days.'),
-                  new StringSelectMenuOptionBuilder().setLabel('4 Weeks').setValue('4_weeks').setDescription('Report in 28 days.')
-              );
-          const durationRow = new ActionRowBuilder().addComponents(durationSelect);
-
-          await message.author.send({
-              embeds: [durationEmbed],
-              components: [durationRow]
-          });
-          console.log(`[MessageCreate FINALIZE_DURATION_PROMPT_SENT ${interactionIdForLog}] All metrics saved. Prompted ${userTag} for experiment duration. State: '${setupData.dmFlowState}'.`);
-
-        } else {
-          console.error(`[MessageCreate FINALIZE_FIREBASE_FAIL ${interactionIdForLog}] updateWeeklySettings failed for ${userTag}. Result:`, updateSettingsResultFirebase);
-          await message.author.send(`❌ Error saving your complete experiment settings to the database: ${updateSettingsResultFirebase?.error || 'Unknown server error.'}. Please try starting the setup again with \`/go\` or contact support.`);
-          userExperimentSetupData.delete(userId); // Clear data on critical error
-        }
-      } catch (firebaseError) {
-          console.error(`[MessageCreate FINALIZE_FIREBASE_EXCEPTION ${interactionIdForLog}] Exception calling updateWeeklySettings for ${userTag}:`, firebaseError);
-          await message.author.send(`❌ An unexpected error occurred while saving your experiment settings: ${firebaseError.message}. Please try starting the setup again with \`/go\` or contact support.`);
-          userExperimentSetupData.delete(userId); // Clear data on critical error
-      }
+      await message.author.send({
+          content: "Amazing, all three daily habits are defined! Here's the full summary of your experiment's metrics:",
+          embeds: [confirmEmbed],
+          components: [confirmButtons]
+      });
+      console.log(`[MessageCreate INPUT3_DEFINED_PROMPT_CONFIRM_EDIT ${interactionIdForLog}] All metrics defined. Showed confirm/edit prompt to ${userTag}. State: ${setupData.dmFlowState}.`);
+      // ***** MODIFICATION END *****
     }
 
 
@@ -2654,7 +2600,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const dmChannel = await interaction.user.createDM();
         await dmChannel.send({
-            content: "Welcome to the AI Wish-to-Experiment Guide! ✨ Sometimes the biggest changes start with a simple wish.\n\nWhat's **one thing** you wish was different or better in your daily life right now?\n\n(e.g., 'I wish I had more energy,' 'I wish I was less stressed,' 'I wish I could focus better').\n\nType your wish below! (You can type 'cancel' at any time to stop this setup)."
+            content: "Welcome! ✨ The biggest changes start with a simple wish.\n\nWhat's **one thing** you wish was different in your daily life right now?\n\n(e.g., 'I wish I had more energy,' 'I wish I was less stressed,' 'I wish I has better relationships').\n\nType your wish below! (You'll be able to review and edit everything at the end, and type 'cancel' any time to stop this setup)."
         });
         const dmSentTime = performance.now();
         console.log(`[${interaction.customId} DM_SENT ${interaction.id}] Sent 'awaiting_wish' DM to ${userTag}. Took: ${(dmSentTime - updateTime).toFixed(2)}ms`);
@@ -2839,87 +2785,149 @@ client.on(Events.InteractionCreate, async interaction => {
       const userId = interaction.user.id;
       const userTagForLog = interaction.user.tag;
 
-      console.log(`[add_another_habit_no_btn START ${interactionId}] Clicked by ${userTagForLog}. Finalizing habit definitions and saving.`);
+      console.log(`[add_another_habit_no_btn START ${interactionId}] Clicked by ${userTagForLog}. Preparing to show confirm/edit options.`);
       try {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
         const deferTime = performance.now();
         console.log(`[add_another_habit_no_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - noAddHabitClickTime).toFixed(2)}ms`);
 
         const setupData = userExperimentSetupData.get(userId);
-        // Valid states: awaiting_add_another_habit_choice, or if they hit max inputs and clicked yes, we might have a similar state.
-        // For simplicity, we check for core data.
-        if (!setupData) {
-          console.warn(`[add_another_habit_no_btn WARN ${interactionId}] User ${userTagForLog} had no setupData.`);
-          await interaction.editReply({ content: "Your setup session seems to have expired or data was lost. Please try restarting with `/go`.", components: [], embeds: [] });
-          return;
-        }
-         if (setupData.dmFlowState !== 'awaiting_add_another_habit_choice' && setupData.dmFlowState !== 'ready_for_duration_after_max_inputs') { // ready_for_duration_after_max_inputs is a conceptual state if they hit yes on max inputs
-            console.warn(`[add_another_habit_no_btn WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData.dmFlowState}.`);
-            // Proceeding to save anyway if data is present, as "No more habits" implies finalization.
-        }
-
-
-        // Ensure all necessary data is present for updateWeeklySettings
-        if (!setupData.deeperProblem || !setupData.outcomeLabel || !setupData.outcomeUnit || setupData.outcomeGoal === undefined || !setupData.inputs || setupData.inputs.length === 0) {
-          console.error(`[add_another_habit_no_btn CRITICAL_DATA_MISSING ${interactionId}] Critical data missing for ${userTagForLog} before Firebase call. Data:`, setupData);
-          await interaction.editReply({ content: "⚠️ Error: Some core experiment details (like your Deeper Problem, Outcome, or first Habit) are missing. Please restart the setup using `/go`.", components: [], embeds: [] });
+        if (!setupData || !setupData.deeperProblem || !setupData.outcomeLabel || !setupData.inputs || setupData.inputs.length === 0) {
+          console.warn(`[add_another_habit_no_btn WARN ${interactionId}] User ${userTagForLog} had incomplete setupData to confirm. State: ${setupData?.dmFlowState}`);
+          await interaction.editReply({ content: "It seems some core experiment details are missing. Please try restarting the setup with `/go`.", components: [], embeds: [] });
           return;
         }
 
-        // Helper to format settings for Firebase
-        const formatSettingToString = (label, unit, goal) => {
-            // Ensure all parts are defined and goal is a number or can be parsed to one.
+        // Transition to a new state indicating we're ready for confirmation or edit
+        setupData.dmFlowState = 'awaiting_metrics_confirmation';
+        userExperimentSetupData.set(userId, setupData);
+
+        // --- Build the summary embed ---
+        let summaryDescription = `**🎯 Deeper Goal / Problem / Theme:**\n${setupData.deeperProblem}\n\n` +
+                                 `**📊 Daily Outcome to Track:**\n\`${setupData.outcomeGoal}, ${setupData.outcomeUnit}, ${setupData.outcomeLabel}\`\n\n` +
+                                 `**🛠️ Daily Habits to Track:**\n`;
+        
+        setupData.inputs.forEach((input, index) => {
+            if (input && input.label && input.unit && input.goal !== undefined) {
+                summaryDescription += `${index + 1}. \`${input.goal}, ${input.unit}, ${input.label}\`\n`;
+            }
+        });
+
+        const confirmEmbed = new EmbedBuilder()
+            .setColor('#FFBF00') // Amber color
+            .setTitle('🔬 Review Your Experiment Metrics')
+            .setDescription(summaryDescription + "\n\nPlease review your settings. Do they look correct?")
+            .setFooter({ text: "You can edit these before setting duration."});
+
+        const confirmButtons = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('confirm_metrics_proceed_btn')
+                    .setLabel('✅ Looks Good, Set Duration')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('request_edit_metrics_modal_btn')
+                    .setLabel('✏️ Edit Metrics/Goal')
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+        await interaction.editReply({
+            content: "Here's a summary of your experiment's Deeper Goal and daily metrics:",
+            embeds: [confirmEmbed],
+            components: [confirmButtons]
+        });
+        console.log(`[add_another_habit_no_btn CONFIRM_EDIT_PROMPT_SENT ${interactionId}] Showed confirm/edit prompt to ${userTagForLog}. State: ${setupData.dmFlowState}.`);
+
+      } catch (error) {
+        const errorTime = performance.now();
+        console.error(`[add_another_habit_no_btn ERROR ${interactionId}] Error at ${errorTime.toFixed(2)}ms:`, error);
+        if (interaction.deferred && !interaction.replied) {
+          try {
+            await interaction.editReply({ content: `❌ An error occurred while preparing the review step: ${error.message || 'Please try again.'}`, components: [], embeds: [] });
+          } catch (editError) {
+            console.error(`[add_another_habit_no_btn FALLBACK_ERROR ${interactionId}] Fallback error reply failed:`, editError);
+          }
+        } else if (!interaction.replied && !interaction.deferred) { // Should not happen if deferUpdate succeeded
+            try { await interaction.reply({ content: `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`, flags: MessageFlags.Ephemeral }); }
+            catch (e) { console.error(`[add_another_habit_no_btn ERROR_REPLY_FAIL ${interactionId}]`, e); }
+        }
+      }
+      const processEndTime = performance.now();
+      console.log(`[add_another_habit_no_btn END ${interactionId}] Finished processing. Total time: ${(processEndTime - noAddHabitClickTime).toFixed(2)}ms`);
+    }
+
+    else if (interaction.isButton() && interaction.customId === 'confirm_metrics_proceed_btn') {
+      const confirmProceedClickTime = performance.now();
+      const interactionId = interaction.id;
+      const userId = interaction.user.id;
+      const userTagForLog = interaction.user.tag;
+
+      console.log(`[confirm_metrics_proceed_btn START ${interactionId}] Clicked by ${userTagForLog}. Saving metrics and proceeding to duration.`);
+      try {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral }); // Acknowledge ephemerally
+        const deferTime = performance.now();
+        console.log(`[confirm_metrics_proceed_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - confirmProceedClickTime).toFixed(2)}ms`);
+
+        const setupData = userExperimentSetupData.get(userId);
+        if (!setupData || setupData.dmFlowState !== 'awaiting_metrics_confirmation' ||
+            !setupData.deeperProblem || !setupData.outcomeLabel || !setupData.outcomeUnit || setupData.outcomeGoal === undefined ||
+            !setupData.inputs || setupData.inputs.length === 0 || !setupData.inputs[0].label) {
+          console.warn(`[confirm_metrics_proceed_btn WARN ${interactionId}] User ${userTagForLog} had incomplete setupData or wrong state. State: ${setupData?.dmFlowState}`);
+          await interaction.editReply({ content: "⚠️ Error: Some core experiment details are missing or your session is in an unexpected state. Please restart the setup using `/go`.", components: [], embeds: [] });
+          return;
+        }
+
+        // Helper to format settings for Firebase, similar to the one in 'awaiting_input3_target_number'
+        const formatSettingToStringHelper = (label, unit, goal) => {
             if (label && typeof label === 'string' && label.trim() !== "" &&
                 unit && typeof unit === 'string' &&
                 goal !== undefined && goal !== null && !isNaN(parseFloat(goal))) {
                 return `${parseFloat(goal)}, ${unit.trim()}, ${label.trim()}`;
             }
-            console.warn(`[formatSettingToString] Invalid data for formatting: L='${label}', U='${unit}', G='${goal}'`);
+            console.warn(`[confirm_metrics_proceed_btn formatHelper] Invalid data for formatting: L='${label}', U='${unit}', G='${goal}'`);
             return "";
         };
 
-        const outcomeSettingStr = formatSettingToString(setupData.outcomeLabel, setupData.outcomeUnit, setupData.outcomeGoal);
-        const inputSettingsStrings = setupData.inputs.map(input => formatSettingToString(input.label, input.unit, input.goal)); // Already filters out empty strings if an input was ill-defined
+        const outcomeSettingStrFirebase = formatSettingToStringHelper(setupData.outcomeLabel, setupData.outcomeUnit, setupData.outcomeGoal);
+        const inputSettingsStringsFirebase = setupData.inputs.map(input => {
+            return (input && input.label) ? formatSettingToStringHelper(input.label, input.unit, input.goal) : "";
+        });
 
-        // Validate that essential parts were formatted
-        if (!outcomeSettingStr || inputSettingsStrings.length === 0 || !inputSettingsStrings[0] || inputSettingsStrings[0].trim() === "") {
-             console.error(`[add_another_habit_no_btn FORMATTING_ERROR ${interactionId}] Failed to format Outcome or essential Input 1 for Firebase. Outcome: "${outcomeSettingStr}", Input1: "${inputSettingsStrings[0]}"`);
-             await interaction.editReply({ content: "⚠️ Error: Could not prepare your Outcome or first Habit details correctly for saving. Please ensure they were fully defined and try restarting the setup with `/go`.", components: [], embeds: []});
+        if (!outcomeSettingStrFirebase || !inputSettingsStringsFirebase[0] || inputSettingsStringsFirebase[0].trim() === "") {
+             console.error(`[confirm_metrics_proceed_btn FORMATTING_ERROR ${interactionId}] Failed to format Outcome or essential Input 1 for Firebase for ${userTagForLog}.`);
+             await interaction.editReply({ content: "⚠️ Error: Could not prepare your Outcome or first Habit details correctly for saving. Please restart the setup with `/go`.", components: [], embeds: []});
              return;
         }
 
-        const payload = {
+        const firebasePayload = {
           deeperProblem: setupData.deeperProblem,
-          outputSetting: outcomeSettingStr,
-          inputSettings: [ // Ensure it's always an array of 3, with "" for unused.
-            inputSettingsStrings[0] || "",
-            inputSettingsStrings[1] || "",
-            inputSettingsStrings[2] || ""
+          outputSetting: outcomeSettingStrFirebase,
+          inputSettings: [
+            inputSettingsStringsFirebase[0] || "",
+            inputSettingsStringsFirebase[1] || "",
+            inputSettingsStringsFirebase[2] || ""
           ],
-          userTag: userTagForLog // Ensure userTag is included
+          userTag: userTagForLog
         };
+        console.log(`[confirm_metrics_proceed_btn FIREBASE_CALL ${interactionId}] Calling updateWeeklySettings for ${userTagForLog}. Payload:`, JSON.stringify(firebasePayload));
 
-        console.log(`[add_another_habit_no_btn FIREBASE_CALL ${interactionId}] Calling updateWeeklySettings for ${userTagForLog}. Payload:`, JSON.stringify(payload));
-        const updateSettingsResult = await callFirebaseFunction('updateWeeklySettings', payload, userId);
+        const updateSettingsResultFirebase = await callFirebaseFunction('updateWeeklySettings', firebasePayload, userId);
 
-        if (updateSettingsResult && updateSettingsResult.success === true && typeof updateSettingsResult.message === 'string') {
-          console.log(`[add_another_habit_no_btn FIREBASE_SUCCESS ${interactionId}] updateWeeklySettings successful for ${userTagForLog}.`);
-          setupData.settingsMessage = updateSettingsResult.message; // Store for later use
-
-          // --- Transition to Experiment Duration Selection ---
-          // This is the same duration selection UI used after the manual modal.
-          setupData.dmFlowState = 'awaiting_duration_selection'; // A common state for duration selection
+        if (updateSettingsResultFirebase && updateSettingsResultFirebase.success === true && typeof updateSettingsResultFirebase.message === 'string') {
+          console.log(`[confirm_metrics_proceed_btn FIREBASE_SUCCESS ${interactionId}] updateWeeklySettings successful for ${userTagForLog}.`);
+          setupData.settingsMessage = updateSettingsResultFirebase.message; // Store for later
+          setupData.dmFlowState = 'awaiting_duration_selection'; // Transition to duration
           userExperimentSetupData.set(userId, setupData);
 
           const durationEmbed = new EmbedBuilder()
-              .setColor('#47d264') // Greenish color
-              .setTitle('🔬 Experiment Metrics Saved!')
-              .setDescription(`${updateSettingsResult.message}\n\nNow, let's set your **experiment duration**. This determines when your first comprehensive stats report will be delivered.`)
+              .setColor('#47d264')
+              .setTitle('🔬 Experiment Metrics Confirmed & Saved!')
+              .setDescription(`Your Deeper Goal and daily metrics have been saved.\n\nNext, let's set your **experiment duration**. This determines when your first comprehensive stats report will be delivered.`)
               .setFooter({text: "Select how long this experiment phase should last."})
               .setTimestamp();
 
           const durationSelect = new StringSelectMenuBuilder()
-              .setCustomId('experiment_duration_select') // This ID is already handled
+              .setCustomId('experiment_duration_select') // Existing handler for this ID
               .setPlaceholder('See your first big stats report in...')
               .addOptions(
                   new StringSelectMenuOptionBuilder().setLabel('1 Week').setValue('1_week').setDescription('Report in 7 days.'),
@@ -2930,35 +2938,206 @@ client.on(Events.InteractionCreate, async interaction => {
           const durationRow = new ActionRowBuilder().addComponents(durationSelect);
 
           await interaction.editReply({
-              content: '', // Clear previous button message content
+              content: '', 
               embeds: [durationEmbed],
               components: [durationRow]
           });
-          console.log(`[add_another_habit_no_btn DURATION_PROMPT_SENT ${interactionId}] All metrics saved. Prompted ${userTagForLog} for experiment duration. State: '${setupData.dmFlowState}'.`);
-
+          console.log(`[confirm_metrics_proceed_btn DURATION_PROMPT_SENT ${interactionId}] Metrics saved. Prompted ${userTagForLog} for experiment duration. State: '${setupData.dmFlowState}'.`);
         } else {
-          console.error(`[add_another_habit_no_btn FIREBASE_FAIL ${interactionId}] updateWeeklySettings failed for ${userTagForLog}. Result:`, updateSettingsResult);
-          await interaction.editReply({ content: `❌ Error saving your experiment settings to the database: ${updateSettingsResult?.error || 'Unknown server error.'}. Please try again or contact support if this persists.`, components: [], embeds: [] });
+          console.error(`[confirm_metrics_proceed_btn FIREBASE_FAIL ${interactionId}] updateWeeklySettings failed for ${userTagForLog}. Result:`, updateSettingsResultFirebase);
+          await interaction.editReply({ content: `❌ Error saving your experiment settings: ${updateSettingsResultFirebase?.error || 'Unknown server error.'}. Please try clicking 'Looks Good' again, or 'Edit' if you see issues.`, components: [], embeds: [] });
         }
-
       } catch (error) {
         const errorTime = performance.now();
-        console.error(`[add_another_habit_no_btn ERROR ${interactionId}] Error processing button for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
-        // Ensure a reply if not already done (especially if defer succeeded but later code failed)
+        console.error(`[confirm_metrics_proceed_btn ERROR ${interactionId}] Error at ${errorTime.toFixed(2)}ms:`, error);
         if (interaction.deferred && !interaction.replied) {
           try {
-            await interaction.editReply({ content: `❌ An unexpected error occurred while finalizing your habits: ${error.message || 'Please try again.'}`, components: [], embeds: [] });
+            await interaction.editReply({ content: `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`, components: [], embeds: [] });
           } catch (editError) {
-            console.error(`[add_another_habit_no_btn FALLBACK_ERROR ${interactionId}] Fallback error reply failed for ${userTagForLog}:`, editError);
+            console.error(`[confirm_metrics_proceed_btn FALLBACK_ERROR ${interactionId}] Fallback error reply failed:`, editError);
           }
         } else if (!interaction.replied && !interaction.deferred) {
-            // Less likely path if defer is first, but as a safeguard
             try { await interaction.reply({ content: `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`, flags: MessageFlags.Ephemeral }); }
-            catch (e) { console.error(`[add_another_habit_no_btn ERROR_REPLY_FAIL ${interactionId}]`, e); }
+            catch (e) { console.error(`[confirm_metrics_proceed_btn ERROR_REPLY_FAIL ${interactionId}]`, e); }
         }
       }
       const processEndTime = performance.now();
-      console.log(`[add_another_habit_no_btn END ${interactionId}] Finished processing. Total time: ${(processEndTime - noAddHabitClickTime).toFixed(2)}ms`);
+      console.log(`[confirm_metrics_proceed_btn END ${interactionId}] Finished processing. Total time: ${(processEndTime - confirmProceedClickTime).toFixed(2)}ms`);
+    }
+
+    else if (interaction.isButton() && interaction.customId === 'request_edit_metrics_modal_btn') {
+      const requestEditClickTime = performance.now();
+      const interactionId = interaction.id;
+      const userId = interaction.user.id;
+      const userTagForLog = interaction.user.tag;
+
+      console.log(`[request_edit_metrics_modal_btn START ${interactionId}] Clicked by ${userTagForLog}. Preparing to show edit instructions and modal trigger button.`);
+      try {
+        // Since we are replying with new components, we should deferUpdate.
+        await interaction.deferUpdate({ flags: MessageFlags.Ephemeral }); 
+        const deferTime = performance.now();
+        console.log(`[request_edit_metrics_modal_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - requestEditClickTime).toFixed(2)}ms`);
+
+        const setupData = userExperimentSetupData.get(userId);
+        // Basic check to ensure setupData exists, more detailed checks happen before showing the actual modal.
+        if (!setupData || setupData.dmFlowState !== 'awaiting_metrics_confirmation') {
+          console.warn(`[request_edit_metrics_modal_btn WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState || 'no setupData'}.`);
+          await interaction.editReply({ content: "⚠️ Error: Your session seems to be in an unexpected state to start editing. Please try the `/go` command to restart if needed.", components: [], embeds: [] });
+          return;
+        }
+        
+        const instructionEmbed = new EmbedBuilder()
+            .setColor('#FFA500') // Orange for instruction/warning
+            .setTitle('✏️ Editing Your Experiment Metrics')
+            .setDescription(
+                "You're about to edit your Deeper Goal and daily metrics.\n\n" +
+                "**IMPORTANT FORMATTING:**\n" +
+                "The form will load with your current settings. If you make changes, please ensure each **Outcome** and **Habit** follows this exact format:\n" +
+                "`Goal #, Unit, Label` (e.g., `7.5, hours, Sleep Quality` or `1, yes/no, Meditate`)\n\n" +
+                "Use **commas** to separate the Goal, Unit, and Label. Leave optional habits blank if you don't want to use them.\n\n" +
+                "Click the button below when you're ready to open the edit form."
+            )
+            .setFooter({text: "Your current Duration and Reminder settings will remain unchanged by this edit."});
+
+        const openEditFormButton = new ButtonBuilder()
+            .setCustomId('show_edit_metrics_modal_btn') // New ID for the button that actually shows the modal
+            .setLabel('📋 Open Edit Form')
+            .setStyle(ButtonStyle.Success);
+
+        const instructionRow = new ActionRowBuilder().addComponents(openEditFormButton);
+
+        await interaction.editReply({
+            content: "Ready to make some changes?",
+            embeds: [instructionEmbed],
+            components: [instructionRow] // Present the button to open the modal
+        });
+        console.log(`[request_edit_metrics_modal_btn EDIT_INSTRUCTIONS_SENT ${interactionId}] Showed edit instructions and 'Open Edit Form' button to ${userTagForLog}.`);
+
+      } catch (error) {
+        const errorTime = performance.now();
+        console.error(`[request_edit_metrics_modal_btn ERROR ${interactionId}] Error at ${errorTime.toFixed(2)}ms:`, error);
+        if (interaction.deferred && !interaction.replied) {
+          try {
+            await interaction.editReply({ content: `❌ An error occurred while preparing the edit step: ${error.message || 'Please try again.'}`, components: [], embeds: [] });
+          } catch (editError) {
+            console.error(`[request_edit_metrics_modal_btn FALLBACK_ERROR ${interactionId}] Fallback error reply failed:`, editError);
+          }
+        } else if (!interaction.replied && !interaction.deferred) {
+            try { await interaction.reply({ content: `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`, ephemeral: true }); }
+            catch (e) { console.error(`[request_edit_metrics_modal_btn ERROR_REPLY_FAIL ${interactionId}]`, e); }
+        }
+      }
+      const processEndTime = performance.now();
+      console.log(`[request_edit_metrics_modal_btn END ${interactionId}] Finished processing. Total time: ${(processEndTime - requestEditClickTime).toFixed(2)}ms`);
+    }
+
+    else if (interaction.isButton() && interaction.customId === 'show_edit_metrics_modal_btn') {
+      const showModalClickTime = performance.now();
+      const interactionId = interaction.id;
+      const userId = interaction.user.id;
+      const userTagForLog = interaction.user.tag;
+
+      console.log(`[show_edit_metrics_modal_btn START ${interactionId}] Clicked by ${userTagForLog}. Preparing to show pre-filled edit modal.`);
+      try {
+        // interaction.showModal() must be the first reply to this specific interaction.
+        // No deferUpdate() or editReply() before it for this interaction.
+
+        const setupData = userExperimentSetupData.get(userId);
+        if (!setupData || setupData.dmFlowState !== 'awaiting_metrics_confirmation' ||
+            !setupData.deeperProblem || !setupData.outcomeLabel || !setupData.outcomeUnit || setupData.outcomeGoal === undefined ||
+            !setupData.inputs || setupData.inputs.length === 0) {
+          console.warn(`[show_edit_metrics_modal_btn WARN ${interactionId}] User ${userTagForLog} had incomplete setupData or wrong state for showing edit modal. State: ${setupData?.dmFlowState}`);
+          // Since showModal must be the first reply, if we can't show it, we reply with an error.
+          await interaction.reply({ content: "⚠️ Error: Could not retrieve your current experiment details to edit. Please try the 'Edit Metrics/Goal' button again, or restart the setup with `/go`.", ephemeral: true });
+          return;
+        }
+        
+        const formatSettingToString = (goal, unit, label) => {
+            if (label && typeof label === 'string' && label.trim() !== "" && unit && typeof unit === 'string' && goal !== undefined && goal !== null && !isNaN(parseFloat(goal))) {
+                return `${parseFloat(goal)}, ${unit.trim()}, ${label.trim()}`;
+            }
+            return "";
+        };
+
+        const deeperProblemValue = setupData.deeperProblem || "";
+        const outputValue = formatSettingToString(setupData.outcomeGoal, setupData.outcomeUnit, setupData.outcomeLabel);
+        
+        const inputValuesFormatted = ["", "", ""]; // Max 3 inputs
+        setupData.inputs.forEach((input, index) => {
+            if (index < 3 && input && input.label) { // Ensure input exists and has a label
+                inputValuesFormatted[index] = formatSettingToString(input.goal, input.unit, input.label);
+            }
+        });
+
+        const modal = new ModalBuilder()
+          .setCustomId('experiment_setup_modal') // Re-using the existing manual setup modal ID
+          .setTitle('✏️ Edit Metrics & Goal');
+
+        const deeperProblemInput = new TextInputBuilder()
+          .setCustomId('deeper_problem')
+          .setLabel("🧭 Deeper Goal / Problem / Theme?")
+          .setPlaceholder("e.g. 'Reduce distractions'")
+          .setStyle(TextInputStyle.Paragraph)
+          .setValue(deeperProblemValue)
+          .setRequired(true);
+
+        const outputSettingInput = new TextInputBuilder()
+          .setCustomId('output_setting')
+          .setLabel("🎯 Outcome (Format: Goal #, Unit, Label)")
+          .setPlaceholder("e.g. '7.5, hours, Sleep Quality'")
+          .setValue(outputValue)
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const input1SettingInput = new TextInputBuilder()
+          .setCustomId('input1_setting')
+          .setLabel("🛠️ Habit 1 (Format: Goal #, Unit, Label)")
+          .setPlaceholder("e.g. '15, minutes, Meditation'")
+          .setValue(inputValuesFormatted[0])
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true); // Input 1 is always required
+
+        const input2SettingInput = new TextInputBuilder()
+          .setCustomId('input2_setting')
+          .setLabel("🛠️ Habit 2 (Optional: #, Unit, Label)")
+          .setPlaceholder("Leave blank if not used. Else: '1, count, Tasks'")
+          .setValue(inputValuesFormatted[1])
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        const input3SettingInput = new TextInputBuilder()
+          .setCustomId('input3_setting')
+          .setLabel("🛠️ Habit 3 (Optional: #, Unit, Label)")
+          .setPlaceholder("Leave blank if not used. Else: '30, mins, Reading'")
+          .setValue(inputValuesFormatted[2])
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(deeperProblemInput),
+          new ActionRowBuilder().addComponents(outputSettingInput),
+          new ActionRowBuilder().addComponents(input1SettingInput),
+          new ActionRowBuilder().addComponents(input2SettingInput),
+          new ActionRowBuilder().addComponents(input3SettingInput)
+        );
+        
+        await interaction.showModal(modal);
+        const modalShownTime = performance.now();
+        console.log(`[show_edit_metrics_modal_btn MODAL_SHOWN ${interactionId}] Edit modal (experiment_setup_modal) shown to ${userTagForLog}. Took: ${(modalShownTime - showModalClickTime).toFixed(2)}ms`);
+        
+        // The existing 'experiment_setup_modal' submission handler in InteractionCreate
+        // will now be triggered when the user submits this modal.
+        // That handler should call updateWeeklySettings and then proceed to duration selection.
+
+      } catch (error) {
+        const errorTime = performance.now();
+        console.error(`[show_edit_metrics_modal_btn ERROR ${interactionId}] Error at ${errorTime.toFixed(2)}ms:`, error);
+        // Since interaction.showModal must be the first reply, if it fails,
+        // we can't easily send an ephemeral message for *this* interaction.
+        // The error will likely be logged, and the user might be stuck on the previous message.
+        // This scenario is less common if the setupData check passes.
+      }
+      // No processEndTime log here as the interaction is completed by showModal.
     }
 
     else if (interaction.customId === 'log_daily_progress_btn') {
