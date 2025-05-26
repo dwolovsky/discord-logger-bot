@@ -828,102 +828,106 @@ client.on(Events.MessageCreate, async message => {
     return;
   }
 
-  // --- Stage 1: Handle "awaiting_wish" ---
+// --- Stage 1: Handle "awaiting_wish" ---
   if (setupData.dmFlowState === 'awaiting_wish') {
-    const interactionIdForLog = setupData.interactionId || 'DM_FLOW'; // Ensure this is available
+    const interactionIdForLog = setupData.interactionId || 'DM_FLOW'; //
 
     if (!messageContent) {
-      await message.author.send("It looks like your Deeper Wish was empty. Please tell me, what's one thing you wish was different or better in your daily life right now?");
-      console.log(`[MessageCreate AWAITING_WISH_EMPTY ${interactionIdForLog}] User ${userTag} sent empty wish.`);
+      await message.author.send("It looks like your Deeper Wish was empty. Please tell me, what's one thing you wish was different or better in your daily life right now?"); //
+      console.log(`[MessageCreate AWAITING_WISH_EMPTY ${interactionIdForLog}] User ${userTag} sent empty wish.`); //
       return;
     }
 
     // Store the wish
     setupData.deeperWish = messageContent;
-    // +++ ADD THIS LINE TO RECONCILE +++
-    setupData.deeperProblem = messageContent; // Use the wish as the deeper problem
-    // +++ END OF ADDITION +++
-    setupData.dmFlowState = 'processing_wish'; // Transition state
+    setupData.deeperProblem = messageContent; // [cite: 1395]
+    setupData.dmFlowState = 'processing_wish'; // [cite: 1396]
     userExperimentSetupData.set(userId, setupData);
-    console.log(`[MessageCreate AWAITING_WISH_RECEIVED ${interactionIdForLog}] User <span class="math-inline">\{userTag\} submitted Deeper Wish\: "</span>{messageContent}". State changed to 'processing_wish'.`);
+    console.log(`[MessageCreate AWAITING_WISH_RECEIVED ${interactionIdForLog}] User ${userTag} submitted Deeper Wish: "${messageContent}". State changed to 'processing_wish'.`); //
 
-    await message.author.send(`Thanks for sharing your Deeper Wish: "${setupData.deeperWish}"\n\n🧠 Now, I'll brainstorm some potential Outcome Metric Labels you could track. This might take a moment...`);
+    // ---- MODIFICATION: Send the "thinking" message and store it ----
+    const thinkingMessage = await message.author.send(`Thanks for sharing your Deeper Wish: "${setupData.deeperWish}"\n\n🧠 Now, I'll brainstorm some potential Outcome Metric Labels you could track. This might take a moment...`); //
+    // ---- END MODIFICATION ----
 
     // --- Prepare to call Firebase Function for LLM Task (Outcome Label Suggestions) ---
     try {
-      console.log(`[MessageCreate LLM_CALL_START ${interactionIdForLog}] Calling 'generateOutcomeLabelSuggestions' Firebase function for <span class="math-inline">\{userTag\} with Deeper Wish\: "</span>{setupData.deeperWish}"`);
+      console.log(`[MessageCreate LLM_CALL_START ${interactionIdForLog}] Calling 'generateOutcomeLabelSuggestions' Firebase function for ${userTag} with Deeper Wish: "${setupData.deeperWish}"`); //
       if (!firebaseFunctions) {
-          throw new Error("Firebase Functions client not initialized.");
+          throw new Error("Firebase Functions client not initialized."); // [cite: 1400]
       }
 
       const llmResult = await callFirebaseFunction(
-        'generateOutcomeLabelSuggestions', // Updated Firebase Function name
+        'generateOutcomeLabelSuggestions', // [cite: 1401]
         { userWish: setupData.deeperWish },
         userId
-      );
-      console.log(`[MessageCreate LLM_CALL_END ${interactionIdForLog}] Firebase function 'generateOutcomeLabelSuggestions' returned for ${userTag}.`);
+      ); //
+      console.log(`[MessageCreate LLM_CALL_END ${interactionIdForLog}] Firebase function 'generateOutcomeLabelSuggestions' returned for ${userTag}.`); //
 
-      if (llmResult && llmResult.success && llmResult.suggestions && llmResult.suggestions.length === 5) {
-        setupData.aiGeneratedOutcomeLabelSuggestions = llmResult.suggestions; // Store suggestions
-        setupData.dmFlowState = 'awaiting_outcome_label_dropdown_selection'; // NEW Next state
-        userExperimentSetupData.set(userId, setupData);
-        console.log(`[MessageCreate LLM_SUCCESS ${interactionIdForLog}] Successfully received ${llmResult.suggestions.length} outcome label suggestions from LLM for ${userTag}.`);
-
-        // --- Build and Send Dropdown for Outcome Label Selection ---
+      if (llmResult && llmResult.success && llmResult.suggestions && llmResult.suggestions.length === 5) { // [cite: 1402]
+        setupData.aiGeneratedOutcomeLabelSuggestions = llmResult.suggestions; // [cite: 1402]
+        setupData.dmFlowState = 'awaiting_outcome_label_dropdown_selection'; // [cite: 1403]
+        userExperimentSetupData.set(userId, setupData); // [cite: 1404]
+        console.log(`[MessageCreate LLM_SUCCESS ${interactionIdForLog}] Successfully received ${llmResult.suggestions.length} outcome label suggestions from LLM for ${userTag}.`); // [cite: 1405]
+        
         const outcomeLabelSelectMenu = new StringSelectMenuBuilder()
-          .setCustomId('ai_outcome_label_select') // Unique ID for this select menu
-          .setPlaceholder('Select a suggested Outcome Label or choose to enter your own.');
-
+          .setCustomId('ai_outcome_label_select') // [cite: 1406]
+          .setPlaceholder('Select a suggested Outcome Label or choose to enter your own.'); // [cite: 1406]
         llmResult.suggestions.forEach((suggestion, index) => {
           outcomeLabelSelectMenu.addOptions(
             new StringSelectMenuOptionBuilder()
-              .setLabel(suggestion.label.substring(0, 100)) // Max label length for options is 100
-              .setValue(`ai_suggestion_${index}`) // Unique value for each AI suggestion
-              .setDescription((suggestion.briefExplanation || 'AI Suggested Label').substring(0, 100)) // Max description length 100
+              .setLabel(suggestion.label.substring(0, 100)) // [cite: 1407]
+              .setValue(`ai_suggestion_${index}`) // [cite: 1407]
+              .setDescription((suggestion.briefExplanation || 'AI Suggested Label').substring(0, 100)) // [cite: 1407, 1408]
           );
         });
         outcomeLabelSelectMenu.addOptions(
           new StringSelectMenuOptionBuilder()
-            .setLabel("✏️ Enter my own custom label...")
-            .setValue('custom_outcome_label')
-            .setDescription("Choose this to type your own outcome metric label.")
+            .setLabel("✏️ Enter my own custom label...") // [cite: 1409]
+            .setValue('custom_outcome_label') // [cite: 1409]
+            .setDescription("Choose this to type your own outcome metric label.") // [cite: 1409]
         );
+        const rowWithLabelSelect = new ActionRowBuilder().addComponents(outcomeLabelSelectMenu); // [cite: 1410]
+        let introMessage = `Okay, based on your Deeper Wish: **"${setupData.deeperWish}"**, here are some ideas for an **Outcome Metric Label**.\n\nSelect one from the dropdown, or choose "✏️ Enter my own..." to type a different one.\n\n`; // [cite: 1410]
 
-        const rowWithLabelSelect = new ActionRowBuilder().addComponents(outcomeLabelSelectMenu);
-
-        let introMessage = `Okay, based on your Deeper Wish: **"${setupData.deeperWish}"**, here are some ideas for an **Outcome Metric Label**.\n\nSelect one from the dropdown, or choose "✏️ Enter my own..." to type a different one.\n\n`;
-        // Optionally, still list them in text for users who might have trouble with interactions, or for clarity.
-        // llmResult.suggestions.forEach((sug, index) => {
-        //     introMessage += `**${index + 1}. <span class="math-inline">\{sug\.label\}\*\* \(</span>{sug.suggestedUnitType})\n    *${sug.briefExplanation}*\n`;
-        // });
-        // introMessage += `\nUse the dropdown below to make your choice.`;
-
-
-        await message.author.send({
+        // ---- MODIFICATION: Edit the "thinking" message ----
+        await thinkingMessage.edit({ //
             content: introMessage,
             components: [rowWithLabelSelect]
         });
-        console.log(`[MessageCreate LABEL_DROPDOWN_SENT ${interactionIdForLog}] Displayed AI outcome label suggestions dropdown to ${userTag}. State: ${setupData.dmFlowState}.`);
-
+        // ---- END MODIFICATION ----
+        console.log(`[MessageCreate LABEL_DROPDOWN_SENT ${interactionIdForLog}] Displayed AI outcome label suggestions dropdown to ${userTag}. State: ${setupData.dmFlowState}.`); // [cite: 1415]
       } else {
         // LLM call failed or returned unexpected data
-        let failureReason = "AI failed to return valid suggestions";
+        let failureReason = "AI failed to return valid suggestions"; // [cite: 1416]
         if (llmResult && llmResult.error) {
-            failureReason = llmResult.error;
-        } else if (llmResult && llmResult.suggestions && llmResult.suggestions.length !== 5) {
-            failureReason = `AI returned ${llmResult.suggestions?.length || 0} suggestions instead of 5.`;
+            failureReason = llmResult.error; // [cite: 1417]
+        } else if (llmResult && llmResult.suggestions && llmResult.suggestions.length !== 5) { // [cite: 1418]
+            failureReason = `AI returned ${llmResult.suggestions?.length || 0} suggestions instead of 5.`; // [cite: 1418, 1419]
         }
-        console.error(`[MessageCreate LLM_ERROR ${interactionIdForLog}] LLM call 'generateOutcomeLabelSuggestions' failed or returned invalid data for ${userTag}. Reason: ${failureReason}. Result:`, llmResult);
-        await message.author.send("I had a bit of trouble brainstorming Outcome Metric suggestions right now. 😕\n\nWhat **Label** would you like to give your Key Outcome Metric? This is the main thing you'll track *daily* to see if you're making progress on your Deeper Wish.\n\n(e.g., 'Energy Level', 'Sleep Quality', 'Tasks Completed', 'Stress Score')\n\nType just the label below (30 characters or less).");
-        setupData.dmFlowState = 'awaiting_outcome_label'; // Fallback to direct label input (text-based)
-        userExperimentSetupData.set(userId, setupData);
-        console.log(`[MessageCreate LLM_FAIL_RECOVERY_LABEL ${interactionIdForLog}] LLM failed for outcome label suggestions, sent fallback 'Ask Outcome Label (text)' prompt to ${userTag}. State: ${setupData.dmFlowState}.`);
+        console.error(`[MessageCreate LLM_ERROR ${interactionIdForLog}] LLM call 'generateOutcomeLabelSuggestions' failed or returned invalid data for ${userTag}. Reason: ${failureReason}. Result:`, llmResult); // [cite: 1419]
+        
+        // ---- MODIFICATION: Edit the "thinking" message with the fallback ----
+        await thinkingMessage.edit("I had a bit of trouble brainstorming Outcome Metric suggestions right now. 😕\n\nWhat **Label** would you like to give your Key Outcome Metric? This is the main thing you'll track *daily* to see if you're making progress on your Deeper Wish.\n\n(e.g., 'Energy Level', 'Sleep Quality', 'Tasks Completed', 'Stress Score')\n\nType just the label below (30 characters or less)."); //
+        // ---- END MODIFICATION ----
+        
+        setupData.dmFlowState = 'awaiting_outcome_label'; // Fallback to direct label input (text-based) // [cite: 1421]
+        userExperimentSetupData.set(userId, setupData); // [cite: 1421]
+        console.log(`[MessageCreate LLM_FAIL_RECOVERY_LABEL ${interactionIdForLog}] LLM failed for outcome label suggestions, sent fallback 'Ask Outcome Label (text)' prompt to ${userTag}. State: ${setupData.dmFlowState}.`); // [cite: 1422]
       }
     } catch (error) {
-      console.error(`[MessageCreate FIREBASE_FUNC_ERROR ${interactionIdForLog}] Error calling Firebase function 'generateOutcomeLabelSuggestions' or processing its result for ${userTag}:`, error);
-      await message.author.send("I encountered an issue trying to connect with my AI brain for suggestions. Please try again in a bit, or you can 'cancel' and use the manual setup for now.");
-      setupData.dmFlowState = 'awaiting_wish'; // Revert state so they can try sending wish again or cancel
-      userExperimentSetupData.set(userId, setupData);
+      console.error(`[MessageCreate FIREBASE_FUNC_ERROR ${interactionIdForLog}] Error calling Firebase function 'generateOutcomeLabelSuggestions' or processing its result for ${userTag}:`, error); // [cite: 1423]
+      
+      // ---- MODIFICATION: Try to edit the "thinking" message with an error message ----
+      try {
+        await thinkingMessage.edit("I encountered an issue trying to connect with my AI brain for suggestions. Please try again in a bit, or you can 'cancel' and use the manual setup for now."); //
+      } catch (editError) {
+        console.error(`[MessageCreate EDIT_THINKING_MESSAGE_ON_ERROR_FAIL ${interactionIdForLog}] Could not edit thinkingMessage after catch. Sending new message. Error:`, editError);
+        await message.author.send("I encountered an issue trying to connect with my AI brain for suggestions. Please try again in a bit, or you can 'cancel' and use the manual setup for now."); // Fallback to sending a new message if editing fails // [cite: 1424]
+      }
+      // ---- END MODIFICATION ----
+
+      setupData.dmFlowState = 'awaiting_wish'; // Revert state so they can try sending wish again or cancel // [cite: 1425]
+      userExperimentSetupData.set(userId, setupData); // [cite: 1425]
     }
   }
 
