@@ -1342,23 +1342,22 @@ client.on(Events.MessageCreate, async message => {
     }
 
     else if (setupData.dmFlowState === 'awaiting_input1_label_text') {
-      const input1Label = messageContent.trim(); // messageContent is from the top of MessageCreate
-      const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
+      const input1Label = messageContent.trim();
+      const interactionIdForLog = setupData.interactionId || 'DM_FLOW_INPUT1_LABEL_TEXT'; // More specific log ID
       const userId = message.author.id;
       const userTag = message.author.tag;
 
       console.log(`[MessageCreate AWAITING_INPUT1_LABEL_TEXT ${interactionIdForLog}] User ${userTag} (ID: ${userId}) sent Input 1 Label: "${input1Label}".`);
-
       if (!input1Label) {
         await message.author.send(
           `It looks like your label for the first Daily Habit was empty. What **Label** would you give this habit?\n` +
           `(e.g., "Morning Meditation", "Exercise", max 30 characters).`
         );
         console.log(`[MessageCreate INPUT1_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty Input 1 label.`);
-        return; // Keep state, wait for new message
+        return; 
       }
 
-      const MAX_LABEL_LENGTH = 30; // Consistent with outcome label
+      const MAX_LABEL_LENGTH = 30; 
       if (input1Label.length > MAX_LABEL_LENGTH) {
         await message.author.send(
           `That label for your habit is a bit long! Please keep it under **${MAX_LABEL_LENGTH} characters**.\n\n` +
@@ -1366,100 +1365,41 @@ client.on(Events.MessageCreate, async message => {
           `Could you provide a shorter one for your first Daily Habit?`
         );
         console.log(`[MessageCreate INPUT1_LABEL_TOO_LONG ${interactionIdForLog}] User ${userTag} sent Input 1 label over ${MAX_LABEL_LENGTH} chars: "${input1Label}".`);
-        return; // Keep state
+        return; 
       }
 
-      // Store the label temporarily before AI call for units
+      // Custom label is valid
       setupData.currentInputDefinition = { label: input1Label };
-      userExperimentSetupData.set(userId, setupData); // Save before async call
+      // ***** MODIFICATION START: Skip AI unit suggestions, go directly to custom unit text prompt *****
+      setupData.dmFlowState = 'awaiting_input1_custom_unit_text'; 
+      userExperimentSetupData.set(userId, setupData);
 
-      console.log(`[MessageCreate INPUT1_LABEL_VALID ${interactionIdForLog}] User ${userTag} submitted valid Input 1 Label: "${input1Label}". Calling generateOutcomeUnitSuggestions for its units.`);
+      const unitPromptMessage = `Okay, your first Daily Habit is: **"${input1Label}"**.
+How are you measuring this? What scale, or what units?
+(e.g., "minutes", "reps", "1-5 satisfaction", "yes/no", max 15 chars for the unit itself)`;
 
-      try {
-          // Re-use generateOutcomeUnitSuggestions: chosenOutcomeLabel will be the habit label
-          const unitSuggestionsResult = await callFirebaseFunction(
-              'generateOutcomeUnitSuggestions',
-              {
-                  userWish: setupData.deeperWish, // Provide context if AI uses it
-                  chosenOutcomeLabel: input1Label // Pass habit label here
-                  // outcomeLabelSuggestedUnitType can be omitted or null
-              },
-              userId
-          );
-
-          if (unitSuggestionsResult && unitSuggestionsResult.success && unitSuggestionsResult.unitSuggestions && unitSuggestionsResult.unitSuggestions.length > 0) {
-              setupData.aiGeneratedUnitSuggestionsForCurrentItem = unitSuggestionsResult.unitSuggestions;
-              setupData.dmFlowState = 'awaiting_input1_unit_dropdown_selection'; // Next state
-              userExperimentSetupData.set(userId, setupData);
-              console.log(`[MessageCreate INPUT1_UNIT_SUGGESTIONS_SUCCESS ${interactionIdForLog}] Received ${unitSuggestionsResult.unitSuggestions.length} unit suggestions for Input 1 "${input1Label}".`);
-
-              const unitSelectMenu = new StringSelectMenuBuilder()
-                  .setCustomId('ai_input1_unit_select') // *** NEW CUSTOM ID FOR INPUT 1 UNITS ***
-                  .setPlaceholder('Select a Unit/Scale for this habit or enter your own.');
-
-              unitSuggestionsResult.unitSuggestions.forEach((suggestion, index) => {
-                  unitSelectMenu.addOptions(
-                      new StringSelectMenuOptionBuilder()
-                          .setLabel(suggestion.unit.substring(0, 100))
-                          .setValue(`ai_input1_unit_suggestion_${index}`) // Value prefix reflects input1
-                          .setDescription((suggestion.unitCategory || 'AI Suggested Unit').substring(0, 100))
-                  );
-              });
-              unitSelectMenu.addOptions(
-                  new StringSelectMenuOptionBuilder()
-                      .setLabel("✏️ Enter my own custom unit...")
-                      .setValue('custom_input1_unit') // Value reflects input1
-                      .setDescription("Choose this to type your own unit/scale.")
-              );
-              const rowWithUnitSelect = new ActionRowBuilder().addComponents(unitSelectMenu);
-
-              const unitPromptMessage = `Okay, your first Daily Habit is: **"${input1Label}"**.
-             Based on this, here are some ideas for its **Unit/Scale**. Select one, or choose "✏️ Enter my own..." to type a different one.`;
-
-              await message.author.send({ content: unitPromptMessage, components: [rowWithUnitSelect] });
-              console.log(`[MessageCreate INPUT1_UNIT_DROPDOWN_SENT ${interactionIdForLog}] Displayed unit suggestions dropdown to ${userTag} for Input 1. State: ${setupData.dmFlowState}.`);
-
-          } else {
-              // AI call for units failed or returned no suggestions
-              console.warn(`[MessageCreate INPUT1_UNIT_SUGGESTIONS_FAIL ${interactionIdForLog}] AI call for unit suggestions failed for Input 1 "${input1Label}". Result:`, unitSuggestionsResult);
-              setupData.dmFlowState = 'awaiting_input1_custom_unit_text'; // Fallback to custom text input for unit
-              userExperimentSetupData.set(userId, setupData);
-
-              const fallbackUnitPrompt = `Okay, your first Daily Habit is **"${input1Label}"**.
-          I couldn't brainstorm specific unit suggestions right now.
-          How would you like to measure this daily? Please type your custom **Unit/Scale** below (e.g., "minutes", "reps", "done/not done", "1-5 effort"). Aim for a concise unit.`;
-              await message.author.send(fallbackUnitPrompt);
-              console.log(`[MessageCreate INPUT1_CUSTOM_UNIT_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for custom unit text for Input 1 (AI fail). State: ${setupData.dmFlowState}.`);
-          }
-      } catch (error) {
-          console.error(`[MessageCreate INPUT1_FIREBASE_FUNC_ERROR_UNITS ${interactionIdForLog}] Error calling 'generateOutcomeUnitSuggestions' for Input 1 "${input1Label}":`, error);
-          setupData.dmFlowState = 'awaiting_input1_custom_unit_text'; // Fallback
-          userExperimentSetupData.set(userId, setupData);
-          const errorPrompt = `I encountered an issue trying to get unit suggestions for your habit **"${input1Label}"**.
-        Please type your custom **Unit/Scale** for it below (e.g., "sessions", "pages read", "effort level 1-3"). Aim for a concise unit.`;
-          await message.author.send(errorPrompt);
-          console.log(`[MessageCreate INPUT1_CUSTOM_UNIT_ERROR_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for custom unit for Input 1 (Firebase error). State: ${setupData.dmFlowState}.`);
-      }
+      await message.author.send(unitPromptMessage);
+      console.log(`[MessageCreate INPUT1_LABEL_CONFIRMED_PROMPT_UNIT_TEXT ${interactionIdForLog}] Confirmed custom Input 1 Label. Prompted ${userTag} for custom unit text. State: ${setupData.dmFlowState}.`);
+      // ***** MODIFICATION END *****
     }
 
     else if (setupData.dmFlowState === 'awaiting_input2_label_text') {
-      const input2Label = messageContent.trim(); // messageContent is from the top of MessageCreate
-      const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
+      const input2Label = messageContent.trim();
+      const interactionIdForLog = setupData.interactionId || 'DM_FLOW_INPUT2_LABEL_TEXT';
       const userId = message.author.id;
       const userTag = message.author.tag;
 
       console.log(`[MessageCreate AWAITING_INPUT2_LABEL_TEXT ${interactionIdForLog}] User ${userTag} (ID: ${userId}) sent Input 2 Label: "${input2Label}".`);
-
       if (!input2Label) {
         await message.author.send(
           `It looks like your label for the second Daily Habit was empty. What **Label** would you give this habit?\n` +
           `(e.g., "Evening Review", "Limit Screen Time", max 30 characters).`
         );
         console.log(`[MessageCreate INPUT2_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty Input 2 label.`);
-        return; // Keep state, wait for new message
+        return;
       }
 
-      const MAX_LABEL_LENGTH = 30; // Consistent with other labels
+      const MAX_LABEL_LENGTH = 30;
       if (input2Label.length > MAX_LABEL_LENGTH) {
         await message.author.send(
           `That label for your second habit is a bit long! Please keep it under **${MAX_LABEL_LENGTH} characters**.\n\n` +
@@ -1467,98 +1407,47 @@ client.on(Events.MessageCreate, async message => {
           `Could you provide a shorter one for your second Daily Habit?`
         );
         console.log(`[MessageCreate INPUT2_LABEL_TOO_LONG ${interactionIdForLog}] User ${userTag} sent Input 2 label over ${MAX_LABEL_LENGTH} chars: "${input2Label}".`);
-        return; // Keep state
+        return;
       }
 
-      // Store the label temporarily before AI call for units
-      // Ensure currentInputDefinition is for the current input (Input 2)
+      // Custom label for Input 2 is valid
+      // Ensure currentInputDefinition is correctly scoped for Input 2
+      if (setupData.currentInputIndex !== 2) {
+         console.warn(`[MessageCreate INPUT2_LABEL_TEXT_WARN ${interactionIdForLog}] currentInputIndex is ${setupData.currentInputIndex}, expected 2. Resetting for Input 2.`);
+         setupData.currentInputIndex = 2; // Correct the index if it's off
+      }
       setupData.currentInputDefinition = { label: input2Label };
-      userExperimentSetupData.set(userId, setupData); // Save before async call
+      
+      // ***** MODIFICATION START: Skip AI unit suggestions, go directly to custom unit text prompt for Input 2 *****
+      setupData.dmFlowState = 'awaiting_input2_custom_unit_text'; 
+      userExperimentSetupData.set(userId, setupData);
 
-      console.log(`[MessageCreate INPUT2_LABEL_VALID ${interactionIdForLog}] User ${userTag} submitted valid Input 2 Label: "${input2Label}". Calling generateOutcomeUnitSuggestions for its units.`);
+      const unitPromptMessage = `Okay, your second Daily Habit is: **"${input2Label}"**.
+How are you measuring this? What scale, or what units?
+(e.g., "sessions", "yes/no", "pages read", max 15 chars for the unit itself)`;
 
-      try {
-          const unitSuggestionsResult = await callFirebaseFunction(
-              'generateOutcomeUnitSuggestions',
-              {
-                  userWish: setupData.deeperWish,
-                  chosenOutcomeLabel: input2Label // Pass habit label here
-              },
-              userId
-          );
-
-          if (unitSuggestionsResult && unitSuggestionsResult.success && unitSuggestionsResult.unitSuggestions && unitSuggestionsResult.unitSuggestions.length > 0) {
-              setupData.aiGeneratedUnitSuggestionsForCurrentItem = unitSuggestionsResult.unitSuggestions;
-              setupData.dmFlowState = 'awaiting_input2_unit_dropdown_selection'; // Next state for Input 2
-              userExperimentSetupData.set(userId, setupData);
-              console.log(`[MessageCreate INPUT2_UNIT_SUGGESTIONS_SUCCESS ${interactionIdForLog}] Received ${unitSuggestionsResult.unitSuggestions.length} unit suggestions for Input 2 "${input2Label}".`);
-
-              const unitSelectMenu = new StringSelectMenuBuilder()
-                  .setCustomId('ai_input2_unit_select') // *** NEW CUSTOM ID FOR INPUT 2 UNITS ***
-                  .setPlaceholder('Select a Unit/Scale for this habit or enter your own.');
-
-              unitSuggestionsResult.unitSuggestions.forEach((suggestion, index) => {
-                  unitSelectMenu.addOptions(
-                      new StringSelectMenuOptionBuilder()
-                          .setLabel(suggestion.unit.substring(0, 100))
-                          .setValue(`ai_input2_unit_suggestion_${index}`) // Value prefix reflects input2
-                          .setDescription((suggestion.unitCategory || 'AI Suggested Unit').substring(0, 100))
-                  );
-              });
-              unitSelectMenu.addOptions(
-                  new StringSelectMenuOptionBuilder()
-                      .setLabel("✏️ Enter my own custom unit...")
-                      .setValue('custom_input2_unit') // Value reflects input2
-                      .setDescription("Choose this to type your own unit/scale.")
-              );
-              const rowWithUnitSelect = new ActionRowBuilder().addComponents(unitSelectMenu);
-
-              const unitPromptMessage = `Okay, your second Daily Habit is: **"${input2Label}"**.
-             Based on this, here are some ideas for its **Unit/Scale**. Select one, or choose "✏️ Enter my own..." to type a different one.`;
-
-              await message.author.send({ content: unitPromptMessage, components: [rowWithUnitSelect] });
-              console.log(`[MessageCreate INPUT2_UNIT_DROPDOWN_SENT ${interactionIdForLog}] Displayed unit suggestions dropdown to ${userTag} for Input 2. State: ${setupData.dmFlowState}.`);
-
-          } else {
-              console.warn(`[MessageCreate INPUT2_UNIT_SUGGESTIONS_FAIL ${interactionIdForLog}] AI call for unit suggestions failed for Input 2 "${input2Label}". Result:`, unitSuggestionsResult);
-              setupData.dmFlowState = 'awaiting_input2_custom_unit_text'; // Fallback for Input 2
-              userExperimentSetupData.set(userId, setupData);
-
-              const fallbackUnitPrompt = `Okay, your second Daily Habit is **"${input2Label}"**.
-            I couldn't brainstorm specific unit suggestions right now.
-            How would you like to measure this daily? Please type your custom **Unit/Scale** below (e.g., "sessions", "yes/no"). Aim for a concise unit.`;
-              await message.author.send(fallbackUnitPrompt);
-              console.log(`[MessageCreate INPUT2_CUSTOM_UNIT_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for custom unit text for Input 2 (AI fail). State: ${setupData.dmFlowState}.`);
-          }
-      } catch (error) {
-          console.error(`[MessageCreate INPUT2_FIREBASE_FUNC_ERROR_UNITS ${interactionIdForLog}] Error calling 'generateOutcomeUnitSuggestions' for Input 2 "${input2Label}":`, error);
-          setupData.dmFlowState = 'awaiting_input2_custom_unit_text'; // Fallback for Input 2
-          userExperimentSetupData.set(userId, setupData);
-          const errorPrompt = `I encountered an issue trying to get unit suggestions for your habit **"${input2Label}"**.
-        Please type your custom **Unit/Scale** for it below (e.g., "times", "rating 1-3"). Aim for a concise unit.`;
-          await message.author.send(errorPrompt);
-          console.log(`[MessageCreate INPUT2_CUSTOM_UNIT_ERROR_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for custom unit for Input 2 (Firebase error). State: ${setupData.dmFlowState}.`);
-      }
+      await message.author.send(unitPromptMessage);
+      console.log(`[MessageCreate INPUT2_LABEL_CONFIRMED_PROMPT_UNIT_TEXT ${interactionIdForLog}] Confirmed custom Input 2 Label. Prompted ${userTag} for custom unit text. State: ${setupData.dmFlowState}.`);
+      // ***** MODIFICATION END *****
     }
     
     else if (setupData.dmFlowState === 'awaiting_input3_label_text') {
-      const input3Label = messageContent.trim(); // messageContent is from the top of MessageCreate
-      const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
+      const input3Label = messageContent.trim();
+      const interactionIdForLog = setupData.interactionId || 'DM_FLOW_INPUT3_LABEL_TEXT';
       const userId = message.author.id;
       const userTag = message.author.tag;
 
       console.log(`[MessageCreate AWAITING_INPUT3_LABEL_TEXT ${interactionIdForLog}] User ${userTag} (ID: ${userId}) sent Input 3 Label: "${input3Label}".`);
-
       if (!input3Label) {
         await message.author.send(
           `It looks like your label for the third Daily Habit was empty. What **Label** would you give this habit?\n` +
           `(e.g., "Journaling", "Practice Instrument", max 30 characters).`
         );
         console.log(`[MessageCreate INPUT3_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty Input 3 label.`);
-        return; // Keep state, wait for new message
+        return;
       }
 
-      const MAX_LABEL_LENGTH = 30; // Consistent
+      const MAX_LABEL_LENGTH = 30;
       if (input3Label.length > MAX_LABEL_LENGTH) {
         await message.author.send(
           `That label for your third habit is a bit long! Please keep it under **${MAX_LABEL_LENGTH} characters**.\n\n` +
@@ -1566,77 +1455,28 @@ client.on(Events.MessageCreate, async message => {
           `Could you provide a shorter one for your third Daily Habit?`
         );
         console.log(`[MessageCreate INPUT3_LABEL_TOO_LONG ${interactionIdForLog}] User ${userTag} sent Input 3 label over ${MAX_LABEL_LENGTH} chars: "${input3Label}".`);
-        return; // Keep state
+        return;
       }
 
-      // Store the label temporarily
+      // Custom label for Input 3 is valid
+      // Ensure currentInputDefinition is correctly scoped for Input 3
+      if (setupData.currentInputIndex !== 3) {
+         console.warn(`[MessageCreate INPUT3_LABEL_TEXT_WARN ${interactionIdForLog}] currentInputIndex is ${setupData.currentInputIndex}, expected 3. Resetting for Input 3.`);
+         setupData.currentInputIndex = 3; // Correct the index if it's off
+      }
       setupData.currentInputDefinition = { label: input3Label };
+
+      // ***** MODIFICATION START: Skip AI unit suggestions, go directly to custom unit text prompt for Input 3 *****
+      setupData.dmFlowState = 'awaiting_input3_custom_unit_text'; 
       userExperimentSetupData.set(userId, setupData);
 
-      console.log(`[MessageCreate INPUT3_LABEL_VALID ${interactionIdForLog}] User ${userTag} submitted valid Input 3 Label: "${input3Label}". Calling generateOutcomeUnitSuggestions for its units.`);
+      const unitPromptMessage = `Okay, your third Daily Habit is: **"${input3Label}"**.
+How are you measuring this? What scale, or what units?
+(e.g., "completed", "rating 1-5", "checkmarks", max 15 chars for the unit itself)`;
 
-      try {
-          const unitSuggestionsResult = await callFirebaseFunction(
-              'generateOutcomeUnitSuggestions',
-              {
-                  userWish: setupData.deeperWish,
-                  chosenOutcomeLabel: input3Label
-              },
-              userId
-          );
-
-          if (unitSuggestionsResult && unitSuggestionsResult.success && unitSuggestionsResult.unitSuggestions && unitSuggestionsResult.unitSuggestions.length > 0) {
-              setupData.aiGeneratedUnitSuggestionsForCurrentItem = unitSuggestionsResult.unitSuggestions;
-              setupData.dmFlowState = 'awaiting_input3_unit_dropdown_selection'; // Next state for Input 3
-              userExperimentSetupData.set(userId, setupData);
-              console.log(`[MessageCreate INPUT3_UNIT_SUGGESTIONS_SUCCESS ${interactionIdForLog}] Received ${unitSuggestionsResult.unitSuggestions.length} unit suggestions for Input 3 "${input3Label}".`);
-
-              const unitSelectMenu = new StringSelectMenuBuilder()
-                  .setCustomId('ai_input3_unit_select') // *** NEW CUSTOM ID FOR INPUT 3 UNITS ***
-                  .setPlaceholder('Select a Unit/Scale for this habit or enter your own.');
-
-              unitSuggestionsResult.unitSuggestions.forEach((suggestion, index) => {
-                  unitSelectMenu.addOptions(
-                      new StringSelectMenuOptionBuilder()
-                          .setLabel(suggestion.unit.substring(0, 100))
-                          .setValue(`ai_input3_unit_suggestion_${index}`) // Value prefix reflects input3
-                          .setDescription((suggestion.unitCategory || 'AI Suggested Unit').substring(0, 100))
-                  );
-              });
-              unitSelectMenu.addOptions(
-                  new StringSelectMenuOptionBuilder()
-                      .setLabel("✏️ Enter my own custom unit...")
-                      .setValue('custom_input3_unit') // Value reflects input3
-                      .setDescription("Choose this to type your own unit/scale.")
-              );
-              const rowWithUnitSelect = new ActionRowBuilder().addComponents(unitSelectMenu);
-
-              const unitPromptMessage = `Okay, your third Daily Habit is: **"${input3Label}"**.
-              Based on this, here are some ideas for its **Unit/Scale**. Select one, or choose "✏️ Enter my own..." to type a different one.`;
-
-              await message.author.send({ content: unitPromptMessage, components: [rowWithUnitSelect] });
-              console.log(`[MessageCreate INPUT3_UNIT_DROPDOWN_SENT ${interactionIdForLog}] Displayed unit suggestions dropdown to ${userTag} for Input 3. State: ${setupData.dmFlowState}.`);
-
-          } else {
-              console.warn(`[MessageCreate INPUT3_UNIT_SUGGESTIONS_FAIL ${interactionIdForLog}] AI call for unit suggestions failed for Input 3 "${input3Label}". Result:`, unitSuggestionsResult);
-              setupData.dmFlowState = 'awaiting_input3_custom_unit_text'; // Fallback for Input 3
-              userExperimentSetupData.set(userId, setupData);
-
-              const fallbackUnitPrompt = `Okay, your third Daily Habit is **"${input3Label}"**.
-          I couldn't brainstorm specific unit suggestions right now.
-          How would you like to measure this daily? Please type your custom **Unit/Scale** below. Aim for a concise unit.`;
-              await message.author.send(fallbackUnitPrompt);
-              console.log(`[MessageCreate INPUT3_CUSTOM_UNIT_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for custom unit text for Input 3 (AI fail). State: ${setupData.dmFlowState}.`);
-          }
-      } catch (error) {
-          console.error(`[MessageCreate INPUT3_FIREBASE_FUNC_ERROR_UNITS ${interactionIdForLog}] Error calling 'generateOutcomeUnitSuggestions' for Input 3 "${input3Label}":`, error);
-          setupData.dmFlowState = 'awaiting_input3_custom_unit_text'; // Fallback for Input 3
-          userExperimentSetupData.set(userId, setupData);
-          const errorPrompt = `I encountered an issue trying to get unit suggestions for your habit **"${input3Label}"**.
-        Please type your custom **Unit/Scale** for it below. Aim for a concise unit.`;
-          await message.author.send(errorPrompt);
-          console.log(`[MessageCreate INPUT3_CUSTOM_UNIT_ERROR_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for custom unit for Input 3 (Firebase error). State: ${setupData.dmFlowState}.`);
-      }
+      await message.author.send(unitPromptMessage);
+      console.log(`[MessageCreate INPUT3_LABEL_CONFIRMED_PROMPT_UNIT_TEXT ${interactionIdForLog}] Confirmed custom Input 3 Label. Prompted ${userTag} for custom unit text. State: ${setupData.dmFlowState}.`);
+      // ***** MODIFICATION END *****
     }
 
     else if (setupData.dmFlowState === 'awaiting_input1_custom_unit_text') {
@@ -4260,7 +4100,6 @@ client.on(Events.InteractionCreate, async interaction => {
           const suggestionIndex = parseInt(selectedValue.split('ai_input1_label_suggestion_')[1], 10);
           if (setupData.aiGeneratedInputLabelSuggestions && suggestionIndex >= 0 && suggestionIndex < setupData.aiGeneratedInputLabelSuggestions.length) {
             chosenHabitLabel = setupData.aiGeneratedInputLabelSuggestions[suggestionIndex].label;
-            // No need to store briefExplanation here unless you plan to display it again
             console.log(`[ai_input1_label_select AI_LABEL_CHOSEN ${interactionId}] User ${userTagForLog} selected AI habit label for Input 1: "${chosenHabitLabel}".`);
           } else {
             console.error(`[ai_input1_label_select ERROR ${interactionId}] Invalid AI habit label suggestion index or suggestions not found for ${userTagForLog}. Selected value: ${selectedValue}`);
@@ -4276,226 +4115,35 @@ client.on(Events.InteractionCreate, async interaction => {
         // AI-suggested habit label was chosen and is valid
         setupData.currentInputDefinition = { label: chosenHabitLabel };
         delete setupData.aiGeneratedInputLabelSuggestions; // Clean up suggestions for labels as it's now chosen
-        userExperimentSetupData.set(userId, setupData); // Save before async call for units
+        // ***** MODIFICATION START: Directly ask for unit text, no AI for unit *****
+        setupData.dmFlowState = 'awaiting_input1_custom_unit_text'; // State for user to type the unit
+        userExperimentSetupData.set(userId, setupData);
 
-        // Concise confirmation as requested
-        const confirmationAndUnitPromptLeadIn = `Chosen habit: "**${chosenHabitLabel}**".\nHow should we measure it?`;
+        const unitPromptMessage = `Chosen habit: "**${chosenHabitLabel}**".\n\nHow are you measuring this? What scale, or what units?\n(e.g., "minutes", "reps", "1-5 satisfaction", "yes/no", max 15 chars for the unit itself)`;
         
-        await interaction.editReply({ // Edit the reply to confirm and set stage for unit selection
-            content: confirmationAndUnitPromptLeadIn + "\n\n🧠 Let me suggest some units/scales for this habit...",
+        // Edit the interaction reply first (ephemeral confirmation)
+        await interaction.editReply({ 
+            content: `Okay, habit 1 is "**${chosenHabitLabel}**". Check your DMs to specify how you'll measure it.`,
             components: [] // Remove the label select menu
         });
-        console.log(`[ai_input1_label_select AI_LABEL_CONFIRMED ${interactionId}] Confirmed Input 1 Label for ${userTagForLog}. Now fetching unit suggestions.`);
-
-        // Now, call generateOutcomeUnitSuggestions (repurposed for habits)
-        try {
-          const unitSuggestionsResult = await callFirebaseFunction(
-            'generateOutcomeUnitSuggestions',
-            {
-              userWish: setupData.deeperWish,
-              chosenOutcomeLabel: chosenHabitLabel, // This is the HABIT LABEL
-              // outcomeLabelSuggestedUnitType is omitted for habits as discussed
-            },
-            userId
-          );
-
-          if (unitSuggestionsResult && unitSuggestionsResult.success && unitSuggestionsResult.unitSuggestions && unitSuggestionsResult.unitSuggestions.length > 0) {
-            setupData.aiGeneratedUnitSuggestionsForCurrentItem = unitSuggestionsResult.unitSuggestions;
-            setupData.dmFlowState = 'awaiting_input1_unit_dropdown_selection'; // This state should trigger the existing 'ai_input1_unit_select' handler
-            userExperimentSetupData.set(userId, setupData);
-            console.log(`[ai_input1_label_select INPUT1_UNIT_SUGGESTIONS_SUCCESS ${interactionId}] Received ${unitSuggestionsResult.unitSuggestions.length} unit suggestions for Input 1 habit "${chosenHabitLabel}".`);
-
-            const unitSelectMenu = new StringSelectMenuBuilder()
-              .setCustomId('ai_input1_unit_select') // CRITICAL: This ID matches your EXISTING handler for Input 1 Unit selection
-              .setPlaceholder('Select a Unit/Scale for this habit or enter your own.');
-
-            unitSuggestionsResult.unitSuggestions.forEach((suggestion, index) => {
-              unitSelectMenu.addOptions(
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(suggestion.unit.substring(0, 100))
-                  .setValue(`ai_input1_unit_suggestion_${index}`)
-                  .setDescription((suggestion.unitCategory || 'AI Suggested Unit').substring(0, 100))
-              );
-            });
-            unitSelectMenu.addOptions(
-              new StringSelectMenuOptionBuilder()
-                .setLabel("✏️ Enter my own custom unit...")
-                .setValue('custom_input1_unit') // This value should also be handled by your existing 'ai_input1_unit_select' logic
-                .setDescription("Choose this to type your own unit/scale.")
-            );
-            const rowWithUnitSelect = new ActionRowBuilder().addComponents(unitSelectMenu);
-            
-            // Follow up with the new message containing the unit dropdown
-            await interaction.followUp({ 
-                content: `Okay, here are some ideas for its **Unit/Scale** for "**${chosenHabitLabel}**".\nSelect one, or choose "✏️ Enter my own..." to type a different one.`,
-                components: [rowWithUnitSelect],
-                ephemeral: true 
-            });
-            console.log(`[ai_input1_label_select INPUT1_UNIT_DROPDOWN_SENT ${interactionId}] Displayed unit suggestions dropdown to ${userTagForLog} for Input 1 habit. State: ${setupData.dmFlowState}.`);
-
-          } else {
-            // AI call for units failed or returned no suggestions
-            console.warn(`[ai_input1_label_select INPUT1_UNIT_SUGGESTIONS_FAIL ${interactionId}] AI call for unit suggestions failed for Input 1 habit "${chosenHabitLabel}". Result:`, unitSuggestionsResult);
-            setupData.dmFlowState = 'awaiting_input1_custom_unit_text'; // Fallback to custom text input for unit
-            userExperimentSetupData.set(userId, setupData);
-            
-            const fallbackUnitPrompt = `I couldn't brainstorm specific unit suggestions for "**${chosenHabitLabel}**" right now. 😕\n\nHow would you like to measure this daily? Please type your custom **Unit/Scale** below (e.g., "minutes", "reps", "done/not done", max 15 characters).`;
-            await interaction.followUp({ content: fallbackUnitPrompt, ephemeral: true, components: [] });
-            console.log(`[ai_input1_label_select INPUT1_CUSTOM_UNIT_FALLBACK_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom unit text for Input 1 (AI unit fail). State: ${setupData.dmFlowState}.`);
-          }
-        } catch (error) {
-          console.error(`[ai_input1_label_select FIREBASE_FUNC_ERROR_UNITS ${interactionId}] Error calling 'generateOutcomeUnitSuggestions' for Input 1 habit "${chosenHabitLabel}":`, error);
-          setupData.dmFlowState = 'awaiting_input1_custom_unit_text'; // Fallback
-          userExperimentSetupData.set(userId, setupData);
-          const errorPrompt = `I encountered an issue trying to get unit suggestions for your habit "**${chosenHabitLabel}**".\nNo worries! Please type your custom **Unit/Scale** for it below (e.g., "sessions", "pages read", max 15 characters).`;
-          await interaction.followUp({ content: errorPrompt, ephemeral: true, components: [] });
-          console.log(`[ai_input1_label_select INPUT1_CUSTOM_UNIT_ERROR_FALLBACK_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom unit for Input 1 (Firebase error). State: ${setupData.dmFlowState}.`);
-        }
+        // Send the actual prompt as a new DM
+        await interaction.user.send(unitPromptMessage);
+        console.log(`[ai_input1_label_select CUSTOM_UNIT_PROMPT_SENT ${interactionId}] Confirmed Input 1 Label for ${userTagForLog}. Prompted for custom unit text via DM. State: ${setupData.dmFlowState}.`);
+        // ***** MODIFICATION END *****
 
       } catch (error) {
         const errorTime = performance.now();
         console.error(`[ai_input1_label_select ERROR ${interactionId}] Error processing Input 1 HABIT LABEL select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
-        if (!interaction.replied && !interaction.deferred) {
-            try { await interaction.reply({ content: "Sorry, something went wrong with the habit label selection. Please try again.", ephemeral: true }); }
-            catch (e) { console.error(`[ai_input1_label_select ERROR_REPLY_FAIL ${interactionId}]`, e); }
-        } else if (interaction.deferred && !interaction.replied) { // Check if deferred but not yet replied
+        if (interaction.deferred && !interaction.replied) { 
             try { await interaction.editReply({ content: "Sorry, something went wrong processing your habit label choice. You might need to try selecting again.", components: [] }); }
             catch (e) { console.error(`[ai_input1_label_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); }
-        } else { // If already replied (e.g. via editReply), try followup
+        } else { 
             try { await interaction.followUp({ content: "Sorry, an error occurred after your selection. Please try again if needed.", ephemeral: true }); }
             catch (e) { console.error(`[ai_input1_label_select ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
         }
       }
       const processEndTime = performance.now();
       console.log(`[ai_input1_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - input1LabelSelectSubmitTime).toFixed(2)}ms`);
-    }
-
-    else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input1_unit_select') {
-      const input1UnitSelectSubmitTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const userTagForLog = interaction.user.tag;
-
-      console.log(`[ai_input1_unit_select START ${interactionId}] Received Input 1 unit selection from ${userTagForLog}.`);
-      try {
-        await interaction.deferUpdate();
-        const deferTime = performance.now();
-        console.log(`[ai_input1_unit_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - input1UnitSelectSubmitTime).toFixed(2)}ms`);
-
-        const setupData = userExperimentSetupData.get(userId);
-        if (!setupData || setupData.dmFlowState !== 'awaiting_input1_unit_dropdown_selection' || !setupData.currentInputDefinition?.label) {
-          console.warn(`[ai_input1_unit_select WARN ${interactionId}] User ${userTagForLog} in unexpected state or missing Input 1 label. State: ${setupData?.dmFlowState}, Label: ${setupData?.currentInputDefinition?.label}`);
-          await interaction.followUp({ content: "It seems there was a mix-up with selecting the unit for your first habit, or your session expired. Please try restarting the experiment setup with `/go`.", ephemeral: true });
-          return;
-        }
-
-        const selectedValue = interaction.values[0];
-        let finalInput1Unit = "";
-        const input1Label = setupData.currentInputDefinition.label;
-
-        if (selectedValue === 'custom_input1_unit') {
-          console.log(`[ai_input1_unit_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom unit' for Input 1.`);
-          setupData.dmFlowState = 'awaiting_input1_custom_unit_text';
-          userExperimentSetupData.set(userId, setupData);
-
-          const customUnitPrompt = `Okay, you want to define your own Unit/Scale for your habit: **"${input1Label}"**.
-          Please type your custom Unit/Scale in a new message below (e.g., "pages read", "effort 1-5"). Aim for a concise unit.
-          Remember, the combination of "Habit Label + Unit" should ideally be under 45 characters.`;
-          try {
-            await interaction.editReply({
-              content: customUnitPrompt,
-              components: [] // Remove the unit select menu
-            });
-          } catch (editError) {
-            console.warn(`[ai_input1_unit_select EDIT_REPLY_FAIL_CUSTOM ${interactionId}] Failed to edit message for custom unit path for Input 1. Sending new DM. Error: ${editError.message}`);
-            await interaction.user.send(customUnitPrompt);
-          }
-          console.log(`[ai_input1_unit_select CUSTOM_UNIT_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom unit text for Input 1. State: ${setupData.dmFlowState}.`);
-          return; // Wait for user's text message
-
-        } else if (selectedValue.startsWith('ai_input1_unit_suggestion_')) {
-          const suggestionIndex = parseInt(selectedValue.split('ai_input1_unit_suggestion_')[1], 10);
-          if (setupData.aiGeneratedUnitSuggestionsForCurrentItem && suggestionIndex >= 0 && suggestionIndex < setupData.aiGeneratedUnitSuggestionsForCurrentItem.length) {
-            const chosenUnitSuggestion = setupData.aiGeneratedUnitSuggestionsForCurrentItem[suggestionIndex];
-            const aiSelectedUnitString = chosenUnitSuggestion.unit;
-
-            console.log(`[ai_input1_unit_select AI_UNIT_CHOSEN ${interactionId}] User ${userTagForLog} selected AI unit for Input 1: "${aiSelectedUnitString}".`);
-
-            // --- Combined Length Check for Input 1 Label + AI Unit ---
-            const combinedLength = (input1Label + " " + aiSelectedUnitString).length;
-            const MAX_COMBINED_LENGTH = 45;
-
-            if (combinedLength > MAX_COMBINED_LENGTH) {
-              console.warn(`[ai_input1_unit_select AI_UNIT_COMBO_TOO_LONG ${interactionId}] Combined length for Input 1 ("${input1Label} ${aiSelectedUnitString}") is ${combinedLength} (max ${MAX_COMBINED_LENGTH}). Asking for custom unit.`);
-              setupData.dmFlowState = 'awaiting_input1_custom_unit_text'; // Fallback to custom text
-              userExperimentSetupData.set(userId, setupData);
-
-              const tooLongPrompt = `The AI suggested unit ("${aiSelectedUnitString}") combined with your habit label ("${input1Label}") is a bit too long (${combinedLength} characters) for the daily log form (max ~${MAX_COMBINED_LENGTH} for "Label Unit" display).
-           Could you please type a shorter custom Unit/Scale for **"${input1Label}"** below? Aim for a concise unit.`;
-              try {
-                await interaction.editReply({
-                  content: tooLongPrompt,
-                  components: [] // Remove dropdown
-                });
-              } catch (editError) {
-                console.warn(`[ai_input1_unit_select EDIT_REPLY_FAIL_UNIT_TOO_LONG ${interactionId}] Error editing reply for AI unit too long (Input 1). Sending new DM. ${editError.message}`);
-                await interaction.user.send(tooLongPrompt);
-              }
-              return; // Wait for custom text input
-            }
-            // --- End Combined Length Check ---
-
-            finalInput1Unit = aiSelectedUnitString;
-            console.log(`[ai_input1_unit_select AI_UNIT_VALID ${interactionId}] AI unit "${finalInput1Unit}" for Input 1 label "${input1Label}" passed length check.`);
-          } else {
-            console.error(`[ai_input1_unit_select ERROR ${interactionId}] Invalid AI unit suggestion index for Input 1 for ${userTagForLog}. Value: ${selectedValue}`);
-            await interaction.followUp({ content: "Sorry, I couldn't process that unit selection for your habit. Please try choosing again or restarting the setup.", ephemeral: true });
-            return;
-          }
-        } else {
-          console.error(`[ai_input1_unit_select ERROR ${interactionId}] Unknown unit selection value for Input 1: ${selectedValue} for ${userTagForLog}.`);
-          await interaction.followUp({ content: "Sorry, an unexpected error occurred with your habit unit selection. Please try again.", ephemeral: true });
-          return;
-        }
-
-        // If an AI suggestion was chosen and passed validation
-        setupData.currentInputDefinition.unit = finalInput1Unit;
-        // Clear AI suggestions for units as we've used/processed them for current item
-        delete setupData.aiGeneratedUnitSuggestionsForCurrentItem;
-        setupData.dmFlowState = 'awaiting_input1_target_number'; // Next state
-        userExperimentSetupData.set(userId, setupData);
-
-        const targetPromptMessage = `Okay! For your habit:
-        📍 Label: **${input1Label}**
-        📏 Unit/Scale: **${finalInput1Unit}**
-
-        What is your daily **Target #** for "${input1Label}" (measured in ${finalInput1Unit})?
-        Please type just the number below (e.g., 15, 1, 0).`;
-
-        try {
-          await interaction.editReply({
-            content: targetPromptMessage,
-            components: [] // Remove the unit select menu
-          });
-        } catch (editError) {
-          console.warn(`[ai_input1_unit_select EDIT_REPLY_FAIL_TARGET_PROMPT ${interactionId}] Failed to edit message for Input 1 target prompt. Sending new DM. Error: ${editError.message}`);
-          await interaction.user.send(targetPromptMessage);
-        }
-        console.log(`[ai_input1_unit_select TARGET_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for Input 1 target number. State: ${setupData.dmFlowState}.`);
-
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[ai_input1_unit_select ERROR ${interactionId}] Error processing Input 1 unit select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
-        if (!interaction.replied && !interaction.deferred) {
-            try { await interaction.reply({ content: "Sorry, something went wrong with the habit unit selection. Please try again.", ephemeral: true }); }
-            catch (e) { console.error(`[ai_input1_unit_select ERROR_REPLY_FAIL ${interactionId}]`, e); }
-        } else if (!interaction.replied) {
-            try { await interaction.editReply({ content: "Sorry, something went wrong processing your habit unit choice. You might need to try selecting again.", components: [] }); }
-            catch (e) { console.error(`[ai_input1_unit_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); }
-        }
-      }
-      const processEndTime = performance.now();
-      console.log(`[ai_input1_unit_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - input1UnitSelectSubmitTime).toFixed(2)}ms`);
     }
 
     else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input2_label_select') {
@@ -4558,81 +4206,24 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // AI-suggested habit label was chosen and is valid
         setupData.currentInputDefinition = { label: chosenHabitLabel }; // currentInputDefinition now holds Input 2's label
-        delete setupData.aiGeneratedInputLabelSuggestions; // Clean up suggestions for labels
+        delete setupData.aiGeneratedInputLabelSuggestions; 
+        // ***** MODIFICATION START: Directly ask for unit text for Input 2 *****
+        setupData.dmFlowState = 'awaiting_input2_custom_unit_text'; // State for user to type the unit for Input 2
         userExperimentSetupData.set(userId, setupData);
 
-        const confirmationAndUnitPromptLeadIn = `Chosen habit 2: "**${chosenHabitLabel}**".\nHow should we measure it?`;
-        await interaction.editReply({ // Edit the ephemeral reply from the button
-            content: confirmationAndUnitPromptLeadIn + "\n\n🧠 Let me suggest some units/scales for this habit...",
-            components: []
+        const unitPromptMessage = `Chosen habit 2: "**${chosenHabitLabel}**".\n\nHow are you measuring this? What scale, or what units?\n(e.g., "sessions", "yes/no", "pages read", max 15 chars for the unit itself)`;
+        
+        await interaction.editReply({ 
+            content: `Okay, habit 2 is "**${chosenHabitLabel}**". Check your DMs to specify how you'll measure it.`,
+            components: [] 
         });
-        console.log(`[ai_input2_label_select AI_LABEL_CONFIRMED ${interactionId}] Confirmed Input 2 Label for ${userTagForLog}. Now fetching unit suggestions.`);
-
-        try {
-          const unitSuggestionsResult = await callFirebaseFunction(
-            'generateOutcomeUnitSuggestions',
-            {
-              userWish: setupData.deeperWish,
-              chosenOutcomeLabel: chosenHabitLabel, // This is Input 2's HABIT LABEL
-            },
-            userId
-          );
-
-          if (unitSuggestionsResult && unitSuggestionsResult.success && unitSuggestionsResult.unitSuggestions && unitSuggestionsResult.unitSuggestions.length > 0) {
-            setupData.aiGeneratedUnitSuggestionsForCurrentItem = unitSuggestionsResult.unitSuggestions;
-            setupData.dmFlowState = 'awaiting_input2_unit_dropdown_selection'; // Next state
-            userExperimentSetupData.set(userId, setupData);
-            console.log(`[ai_input2_label_select INPUT2_UNIT_SUGGESTIONS_SUCCESS ${interactionId}] Received ${unitSuggestionsResult.unitSuggestions.length} unit suggestions for Input 2 habit "${chosenHabitLabel}".`);
-
-            const unitSelectMenu = new StringSelectMenuBuilder()
-              .setCustomId('ai_input2_unit_select') // Custom ID for Input 2 unit selection
-              .setPlaceholder('Select a Unit/Scale for Habit 2 or enter your own.');
-
-            unitSuggestionsResult.unitSuggestions.forEach((suggestion, index) => {
-              unitSelectMenu.addOptions(
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(suggestion.unit.substring(0, 100))
-                  .setValue(`ai_input2_unit_suggestion_${index}`) // Dynamic value
-                  .setDescription((suggestion.unitCategory || 'AI Suggested Unit').substring(0, 100))
-              );
-            });
-            unitSelectMenu.addOptions(
-              new StringSelectMenuOptionBuilder()
-                .setLabel("✏️ Enter my own custom unit for Habit 2...")
-                .setValue('custom_input2_unit') // Dynamic value
-                .setDescription("Choose this to type your own unit/scale.")
-            );
-            const rowWithUnitSelect = new ActionRowBuilder().addComponents(unitSelectMenu);
-            
-            // Send as a new DM message
-            await interaction.user.send({ 
-                content: `Okay, here are some ideas for its **Unit/Scale** for your second habit, "**${chosenHabitLabel}**".\nSelect one, or choose "✏️ Enter my own..." to type a different one.`,
-                components: [rowWithUnitSelect]
-            });
-            console.log(`[ai_input2_label_select INPUT2_UNIT_DROPDOWN_SENT ${interactionId}] Displayed unit suggestions dropdown to ${userTagForLog} for Input 2 habit via new DM. State: ${setupData.dmFlowState}.`);
-
-          } else {
-            console.warn(`[ai_input2_label_select INPUT2_UNIT_SUGGESTIONS_FAIL ${interactionId}] AI call for unit suggestions failed for Input 2 habit "${chosenHabitLabel}". Result:`, unitSuggestionsResult);
-            setupData.dmFlowState = 'awaiting_input2_custom_unit_text'; // Fallback for Input 2 unit
-            userExperimentSetupData.set(userId, setupData);
-            
-            const fallbackUnitPrompt = `I couldn't brainstorm specific unit suggestions for your second habit, "**${chosenHabitLabel}**" right now. 😕\n\nHow would you like to measure this daily? Please type your custom **Unit/Scale** below (e.g., "sessions", "yes/no", max 15 characters).`;
-            await interaction.user.send(fallbackUnitPrompt); // Send new DM for fallback
-            console.log(`[ai_input2_label_select INPUT2_CUSTOM_UNIT_FALLBACK_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom unit text for Input 2 (AI unit fail) via new DM. State: ${setupData.dmFlowState}.`);
-          }
-        } catch (error) {
-          console.error(`[ai_input2_label_select FIREBASE_FUNC_ERROR_UNITS ${interactionId}] Error calling 'generateOutcomeUnitSuggestions' for Input 2 habit "${chosenHabitLabel}":`, error);
-          setupData.dmFlowState = 'awaiting_input2_custom_unit_text'; // Fallback
-          userExperimentSetupData.set(userId, setupData);
-          const errorPrompt = `I encountered an issue trying to get unit suggestions for your second habit, "**${chosenHabitLabel}**".\nNo worries! Please type your custom **Unit/Scale** for it below (e.g., "times", "rating 1-3", max 15 characters).`;
-          await interaction.user.send(errorPrompt); // Send new DM for error
-          console.log(`[ai_input2_label_select INPUT2_CUSTOM_UNIT_ERROR_FALLBACK_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom unit for Input 2 (Firebase error) via new DM. State: ${setupData.dmFlowState}.`);
-        }
+        await interaction.user.send(unitPromptMessage); // Send the actual prompt as a new DM
+        console.log(`[ai_input2_label_select CUSTOM_UNIT_PROMPT_SENT ${interactionId}] Confirmed Input 2 Label for ${userTagForLog}. Prompted for custom unit text via DM. State: ${setupData.dmFlowState}.`);
+        // ***** MODIFICATION END *****
 
       } catch (error) {
         const errorTime = performance.now();
         console.error(`[ai_input2_label_select ERROR ${interactionId}] Error processing Input 2 HABIT LABEL select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
-        // Generic error handling for the interaction itself
         if (interaction.deferred && !interaction.replied) {
             try { await interaction.editReply({ content: "Sorry, something went wrong processing your second habit label choice. You might need to try selecting again or restart the setup.", components: [] }); }
             catch (e) { console.error(`[ai_input2_label_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); }
@@ -4643,109 +4234,6 @@ client.on(Events.InteractionCreate, async interaction => {
       }
       const processEndTime = performance.now();
       console.log(`[ai_input2_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - input2LabelSelectSubmitTime).toFixed(2)}ms`);
-    }
-
-    else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input2_unit_select') {
-      const input2UnitSelectSubmitTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const userTagForLog = interaction.user.tag;
-
-      console.log(`[ai_input2_unit_select START ${interactionId}] Received Input 2 UNIT selection from ${userTagForLog}.`);
-      try {
-        await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
-        const deferTime = performance.now();
-        console.log(`[ai_input2_unit_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - input2UnitSelectSubmitTime).toFixed(2)}ms`);
-
-        const setupData = userExperimentSetupData.get(userId);
-        // Ensure correct state and that Input 2 label is defined
-        if (!setupData || setupData.dmFlowState !== 'awaiting_input2_unit_dropdown_selection' || 
-            !setupData.currentInputDefinition?.label || setupData.currentInputIndex !== 2) {
-          console.warn(`[ai_input2_unit_select WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState}, Index: ${setupData?.currentInputIndex}, Label: ${setupData?.currentInputDefinition?.label}. Current customId: ${interaction.customId}`);
-          await interaction.followUp({ content: "It seems there was a mix-up with selecting the unit for your second habit. Please try restarting the experiment setup with `/go`.", ephemeral: true });
-          return;
-        }
-
-        const selectedValue = interaction.values[0];
-        let finalInput2Unit = "";
-        const input2Label = setupData.currentInputDefinition.label;
-
-        if (selectedValue === 'custom_input2_unit') {
-          console.log(`[ai_input2_unit_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom unit' for Input 2.`);
-          setupData.dmFlowState = 'awaiting_input2_custom_unit_text'; // State for custom unit text for Input 2
-          userExperimentSetupData.set(userId, setupData);
-
-          const customUnitPrompt = `Okay, you want to define your own Unit/Scale for your second habit: **"${input2Label}"**.
-Please type your custom Unit/Scale in a new message below (e.g., "sessions", "yes/no", max 15 characters).
-Remember, the combination of "Habit Label + Unit" should ideally be under 45 characters.`;
-          
-          // Since this interaction is from a DM, editReply might fail. Send a new DM.
-          await interaction.user.send(customUnitPrompt);
-          await interaction.editReply({ content: "Okay, please type your custom unit for the second habit in our DM.", components: [] });
-          console.log(`[ai_input2_unit_select CUSTOM_UNIT_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom Input 2 unit text via new DM. State: ${setupData.dmFlowState}.`);
-          return; // Wait for user's text message
-
-        } else if (selectedValue.startsWith('ai_input2_unit_suggestion_')) {
-          const suggestionIndex = parseInt(selectedValue.split('ai_input2_unit_suggestion_')[1], 10);
-          if (setupData.aiGeneratedUnitSuggestionsForCurrentItem && suggestionIndex >= 0 && suggestionIndex < setupData.aiGeneratedUnitSuggestionsForCurrentItem.length) {
-            const chosenUnitSuggestion = setupData.aiGeneratedUnitSuggestionsForCurrentItem[suggestionIndex];
-            const aiSelectedUnitString = chosenUnitSuggestion.unit;
-            console.log(`[ai_input2_unit_select AI_UNIT_CHOSEN ${interactionId}] User ${userTagForLog} selected AI unit for Input 2: "${aiSelectedUnitString}".`);
-
-            const combinedLength = (input2Label + " " + aiSelectedUnitString).length;
-            const MAX_COMBINED_LENGTH = 45;
-            if (combinedLength > MAX_COMBINED_LENGTH) {
-              console.warn(`[ai_input2_unit_select AI_UNIT_COMBO_TOO_LONG ${interactionId}] Combined length for Input 2 ("${input2Label} ${aiSelectedUnitString}") is ${combinedLength}. Asking for custom unit.`);
-              setupData.dmFlowState = 'awaiting_input2_custom_unit_text';
-              userExperimentSetupData.set(userId, setupData);
-              const tooLongPrompt = `The AI suggested unit ("${aiSelectedUnitString}") combined with your second habit label ("${input2Label}") is a bit too long (${combinedLength} characters) for the daily log form (max ~${MAX_COMBINED_LENGTH}).
-Could you please type a shorter custom Unit/Scale for **"${input2Label}"** below? (max 15 characters for the unit itself).`;
-              await interaction.user.send(tooLongPrompt); // New DM
-              await interaction.editReply({ content: "The AI unit was a bit long. Please provide a shorter custom unit in our DM.", components: [] });
-              return; 
-            }
-            finalInput2Unit = aiSelectedUnitString;
-            console.log(`[ai_input2_unit_select AI_UNIT_VALID ${interactionId}] AI unit "${finalInput2Unit}" for Input 2 label "${input2Label}" passed length check.`);
-          } else {
-            console.error(`[ai_input2_unit_select ERROR ${interactionId}] Invalid AI unit suggestion index for Input 2 for ${userTagForLog}. Value: ${selectedValue}`);
-            await interaction.followUp({ content: "Sorry, I couldn't process that unit selection for your second habit. Please try choosing again or restarting.", ephemeral: true });
-            return;
-          }
-        } else {
-          console.error(`[ai_input2_unit_select ERROR ${interactionId}] Unknown unit selection value for Input 2: ${selectedValue} for ${userTagForLog}.`);
-          await interaction.followUp({ content: "Sorry, an unexpected error occurred with your second habit unit selection. Please try again.", ephemeral: true });
-          return;
-        }
-
-        setupData.currentInputDefinition.unit = finalInput2Unit;
-        delete setupData.aiGeneratedUnitSuggestionsForCurrentItem; 
-        setupData.dmFlowState = 'awaiting_input2_target_number'; // Next state: get target for Input 2
-        userExperimentSetupData.set(userId, setupData);
-
-        const targetPromptMessage = `Okay! For your second daily habit:
-        🏷️ Label: **${input2Label}**
-        📏 Unit/Scale: **${finalInput2Unit}**
-
-        What is your daily **Target #** for "${input2Label}" (measured in ${finalInput2Unit})?
-Please type just the number below.`;
-        
-        await interaction.user.send(targetPromptMessage); // Send new DM for target prompt
-        await interaction.editReply({ content: `Unit for "**${input2Label}**" confirmed as "**${finalInput2Unit}**". Now, please provide the target number in our DM.`, components: [] });
-        console.log(`[ai_input2_unit_select TARGET_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for Input 2 target number via new DM. State: ${setupData.dmFlowState}.`);
-
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[ai_input2_unit_select ERROR ${interactionId}] Error processing Input 2 UNIT select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
-        if (interaction.deferred && !interaction.replied) {
-            try { await interaction.editReply({ content: "Sorry, something went wrong with the second habit unit selection. Please try again or restart the setup.", components: [] }); }
-            catch (e) { console.error(`[ai_input2_unit_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); }
-        } else {
-             try { await interaction.followUp({ content: "Sorry, an error occurred after your unit selection for the second habit. Please try again if needed.", ephemeral: true }); }
-            catch (e) { console.error(`[ai_input2_unit_select ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
-        }
-      }
-      const processEndTime = performance.now();
-      console.log(`[ai_input2_unit_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - input2UnitSelectSubmitTime).toFixed(2)}ms`);
     }
 
     else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input3_label_select') {
@@ -4778,8 +4266,8 @@ Please type just the number below.`;
 
           const customLabelPrompt = `You chose to enter your own custom label for your third Daily Habit.\n\nPlease type your custom label in a new message below (max 30 characters).`;
           try {
-            await interaction.user.send(customLabelPrompt);
-            await interaction.editReply({ content: "Okay, please type your custom label for the third habit in our DM.", components: []});
+            await interaction.user.send(customLabelPrompt); // Send new DM
+            await interaction.editReply({ content: "Okay, please type your custom label for the third habit in our DM.", components: []}); // Ephemeral confirmation
           } catch (sendError) {
             console.warn(`[ai_input3_label_select SEND_FAIL_CUSTOM ${interactionId}] Failed to send DM for custom label path. Error: ${sendError.message}`);
             await interaction.editReply({ content: "Okay, please type your custom label for the third habit in our DM. (If you don't see the prompt, check our DMs).", components: []}).catch(e => console.error("EditReply also failed for Input 3 custom", e));
@@ -4806,74 +4294,19 @@ Please type just the number below.`;
         // AI-suggested habit label was chosen and is valid
         setupData.currentInputDefinition = { label: chosenHabitLabel }; // currentInputDefinition now holds Input 3's label
         delete setupData.aiGeneratedInputLabelSuggestions;
+        // ***** MODIFICATION START: Directly ask for unit text for Input 3 *****
+        setupData.dmFlowState = 'awaiting_input3_custom_unit_text'; // State for user to type the unit for Input 3
         userExperimentSetupData.set(userId, setupData);
 
-        const confirmationAndUnitPromptLeadIn = `Chosen habit 3: "**${chosenHabitLabel}**".\nHow should we measure it?`;
-        await interaction.editReply({
-            content: confirmationAndUnitPromptLeadIn + "\n\n🧠 Let me suggest some units/scales for this habit...",
-            components: []
+        const unitPromptMessage = `Chosen habit 3: "**${chosenHabitLabel}**".\n\nHow are you measuring this? What scale, or what units?\n(e.g., "completed", "rating 1-5", "checkmarks", max 15 chars for the unit itself)`;
+        
+        await interaction.editReply({ 
+            content: `Okay, habit 3 is "**${chosenHabitLabel}**". Check your DMs to specify how you'll measure it.`,
+            components: [] 
         });
-        console.log(`[ai_input3_label_select AI_LABEL_CONFIRMED ${interactionId}] Confirmed Input 3 Label for ${userTagForLog}. Now fetching unit suggestions.`);
-
-        try {
-          const unitSuggestionsResult = await callFirebaseFunction(
-            'generateOutcomeUnitSuggestions',
-            {
-              userWish: setupData.deeperWish,
-              chosenOutcomeLabel: chosenHabitLabel, // This is Input 3's HABIT LABEL
-            },
-            userId
-          );
-
-          if (unitSuggestionsResult && unitSuggestionsResult.success && unitSuggestionsResult.unitSuggestions && unitSuggestionsResult.unitSuggestions.length > 0) {
-            setupData.aiGeneratedUnitSuggestionsForCurrentItem = unitSuggestionsResult.unitSuggestions;
-            setupData.dmFlowState = 'awaiting_input3_unit_dropdown_selection'; // Next state
-            userExperimentSetupData.set(userId, setupData);
-            console.log(`[ai_input3_label_select INPUT3_UNIT_SUGGESTIONS_SUCCESS ${interactionId}] Received ${unitSuggestionsResult.unitSuggestions.length} unit suggestions for Input 3 habit "${chosenHabitLabel}".`);
-
-            const unitSelectMenu = new StringSelectMenuBuilder()
-              .setCustomId('ai_input3_unit_select') // Custom ID for Input 3 unit selection
-              .setPlaceholder('Select a Unit/Scale for Habit 3 or enter your own.');
-
-            unitSuggestionsResult.unitSuggestions.forEach((suggestion, index) => {
-              unitSelectMenu.addOptions(
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(suggestion.unit.substring(0, 100))
-                  .setValue(`ai_input3_unit_suggestion_${index}`) // Dynamic value
-                  .setDescription((suggestion.unitCategory || 'AI Suggested Unit').substring(0, 100))
-              );
-            });
-            unitSelectMenu.addOptions(
-              new StringSelectMenuOptionBuilder()
-                .setLabel("✏️ Enter my own custom unit for Habit 3...")
-                .setValue('custom_input3_unit') // Dynamic value
-                .setDescription("Choose this to type your own unit/scale.")
-            );
-            const rowWithUnitSelect = new ActionRowBuilder().addComponents(unitSelectMenu);
-            
-            await interaction.user.send({ 
-                content: `Okay, here are some ideas for its **Unit/Scale** for your third habit, "**${chosenHabitLabel}**".\nSelect one, or choose "✏️ Enter my own..." to type a different one.`,
-                components: [rowWithUnitSelect]
-            });
-            console.log(`[ai_input3_label_select INPUT3_UNIT_DROPDOWN_SENT ${interactionId}] Displayed unit suggestions dropdown to ${userTagForLog} for Input 3 habit via new DM. State: ${setupData.dmFlowState}.`);
-
-          } else {
-            console.warn(`[ai_input3_label_select INPUT3_UNIT_SUGGESTIONS_FAIL ${interactionId}] AI call for unit suggestions failed for Input 3 habit "${chosenHabitLabel}". Result:`, unitSuggestionsResult);
-            setupData.dmFlowState = 'awaiting_input3_custom_unit_text'; // Fallback for Input 3 unit
-            userExperimentSetupData.set(userId, setupData);
-            
-            const fallbackUnitPrompt = `I couldn't brainstorm specific unit suggestions for your third habit, "**${chosenHabitLabel}**" right now. 😕\n\nHow would you like to measure this daily? Please type your custom **Unit/Scale** below (e.g., "checkmarks", "focus score", max 15 characters).`;
-            await interaction.user.send(fallbackUnitPrompt);
-            console.log(`[ai_input3_label_select INPUT3_CUSTOM_UNIT_FALLBACK_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom unit text for Input 3 (AI unit fail) via new DM. State: ${setupData.dmFlowState}.`);
-          }
-        } catch (error) {
-          console.error(`[ai_input3_label_select FIREBASE_FUNC_ERROR_UNITS ${interactionId}] Error calling 'generateOutcomeUnitSuggestions' for Input 3 habit "${chosenHabitLabel}":`, error);
-          setupData.dmFlowState = 'awaiting_input3_custom_unit_text'; // Fallback
-          userExperimentSetupData.set(userId, setupData);
-          const errorPrompt = `I encountered an issue trying to get unit suggestions for your third habit, "**${chosenHabitLabel}**".\nNo worries! Please type your custom **Unit/Scale** for it below (e.g., "times", "rating 1-3", max 15 characters).`;
-          await interaction.user.send(errorPrompt);
-          console.log(`[ai_input3_label_select INPUT3_CUSTOM_UNIT_ERROR_FALLBACK_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom unit for Input 3 (Firebase error) via new DM. State: ${setupData.dmFlowState}.`);
-        }
+        await interaction.user.send(unitPromptMessage); // Send the actual prompt as a new DM
+        console.log(`[ai_input3_label_select CUSTOM_UNIT_PROMPT_SENT ${interactionId}] Confirmed Input 3 Label for ${userTagForLog}. Prompted for custom unit text via DM. State: ${setupData.dmFlowState}.`);
+        // ***** MODIFICATION END *****
 
       } catch (error) {
         const errorTime = performance.now();
@@ -4888,108 +4321,6 @@ Please type just the number below.`;
       }
       const processEndTime = performance.now();
       console.log(`[ai_input3_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - input3LabelSelectSubmitTime).toFixed(2)}ms`);
-    }
-
-    else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input3_unit_select') {
-      const input3UnitSelectSubmitTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const userTagForLog = interaction.user.tag;
-
-      console.log(`[ai_input3_unit_select START ${interactionId}] Received Input 3 UNIT selection from ${userTagForLog}.`);
-      try {
-        await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
-        const deferTime = performance.now();
-        console.log(`[ai_input3_unit_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - input3UnitSelectSubmitTime).toFixed(2)}ms`);
-
-        const setupData = userExperimentSetupData.get(userId);
-        // Ensure correct state and that Input 3 label is defined
-        if (!setupData || setupData.dmFlowState !== 'awaiting_input3_unit_dropdown_selection' || 
-            !setupData.currentInputDefinition?.label || setupData.currentInputIndex !== 3) {
-          console.warn(`[ai_input3_unit_select WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState}, Index: ${setupData?.currentInputIndex}, Label: ${setupData?.currentInputDefinition?.label}. Current customId: ${interaction.customId}`);
-          await interaction.followUp({ content: "It seems there was a mix-up with selecting the unit for your third habit. Please try restarting the experiment setup with `/go`.", ephemeral: true });
-          return;
-        }
-
-        const selectedValue = interaction.values[0];
-        let finalInput3Unit = "";
-        const input3Label = setupData.currentInputDefinition.label;
-
-        if (selectedValue === 'custom_input3_unit') {
-          console.log(`[ai_input3_unit_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom unit' for Input 3.`);
-          setupData.dmFlowState = 'awaiting_input3_custom_unit_text'; // State for custom unit text for Input 3
-          userExperimentSetupData.set(userId, setupData);
-
-          const customUnitPrompt = `Okay, you want to define your own Unit/Scale for your third habit: **"${input3Label}"**.
-Please type your custom Unit/Scale in a new message below (e.g., "completed", "rating 1-5", max 15 characters).
-Remember, the combination of "Habit Label + Unit" should ideally be under 45 characters.`;
-          
-          await interaction.user.send(customUnitPrompt); // Send new DM
-          await interaction.editReply({ content: "Okay, please type your custom unit for the third habit in our DM.", components: [] });
-          console.log(`[ai_input3_unit_select CUSTOM_UNIT_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom Input 3 unit text via new DM. State: ${setupData.dmFlowState}.`);
-          return; // Wait for user's text message
-
-        } else if (selectedValue.startsWith('ai_input3_unit_suggestion_')) {
-          const suggestionIndex = parseInt(selectedValue.split('ai_input3_unit_suggestion_')[1], 10);
-          if (setupData.aiGeneratedUnitSuggestionsForCurrentItem && suggestionIndex >= 0 && suggestionIndex < setupData.aiGeneratedUnitSuggestionsForCurrentItem.length) {
-            const chosenUnitSuggestion = setupData.aiGeneratedUnitSuggestionsForCurrentItem[suggestionIndex];
-            const aiSelectedUnitString = chosenUnitSuggestion.unit;
-            console.log(`[ai_input3_unit_select AI_UNIT_CHOSEN ${interactionId}] User ${userTagForLog} selected AI unit for Input 3: "${aiSelectedUnitString}".`);
-
-            const combinedLength = (input3Label + " " + aiSelectedUnitString).length;
-            const MAX_COMBINED_LENGTH = 45;
-            if (combinedLength > MAX_COMBINED_LENGTH) {
-              console.warn(`[ai_input3_unit_select AI_UNIT_COMBO_TOO_LONG ${interactionId}] Combined length for Input 3 ("${input3Label} ${aiSelectedUnitString}") is ${combinedLength}. Asking for custom unit.`);
-              setupData.dmFlowState = 'awaiting_input3_custom_unit_text';
-              userExperimentSetupData.set(userId, setupData);
-              const tooLongPrompt = `The AI suggested unit ("${aiSelectedUnitString}") combined with your third habit label ("${input3Label}") is a bit too long (${combinedLength} characters) for the daily log form (max ~${MAX_COMBINED_LENGTH}).
-Could you please type a shorter custom Unit/Scale for **"${input3Label}"** below? (max 15 characters for the unit itself).`;
-              await interaction.user.send(tooLongPrompt); // New DM
-              await interaction.editReply({ content: "The AI unit was a bit long. Please provide a shorter custom unit in our DM.", components: [] });
-              return; 
-            }
-            finalInput3Unit = aiSelectedUnitString;
-            console.log(`[ai_input3_unit_select AI_UNIT_VALID ${interactionId}] AI unit "${finalInput3Unit}" for Input 3 label "${input3Label}" passed length check.`);
-          } else {
-            console.error(`[ai_input3_unit_select ERROR ${interactionId}] Invalid AI unit suggestion index for Input 3 for ${userTagForLog}. Value: ${selectedValue}`);
-            await interaction.followUp({ content: "Sorry, I couldn't process that unit selection for your third habit. Please try choosing again or restarting.", ephemeral: true });
-            return;
-          }
-        } else {
-          console.error(`[ai_input3_unit_select ERROR ${interactionId}] Unknown unit selection value for Input 3: ${selectedValue} for ${userTagForLog}.`);
-          await interaction.followUp({ content: "Sorry, an unexpected error occurred with your third habit unit selection. Please try again.", ephemeral: true });
-          return;
-        }
-
-        setupData.currentInputDefinition.unit = finalInput3Unit;
-        delete setupData.aiGeneratedUnitSuggestionsForCurrentItem; 
-        setupData.dmFlowState = 'awaiting_input3_target_number'; // Next state: get target for Input 3
-        userExperimentSetupData.set(userId, setupData);
-
-        const targetPromptMessage = `Okay! For your third daily habit:
-        🏷️ Label: **${input3Label}**
-        📏 Unit/Scale: **${finalInput3Unit}**
-
-        What is your daily **Target #** for "${input3Label}" (measured in ${finalInput3Unit})?
-Please type just the number below.`;
-        
-        await interaction.user.send(targetPromptMessage); // Send new DM
-        await interaction.editReply({ content: `Unit for "**${input3Label}**" confirmed as "**${finalInput3Unit}**". Now, please provide the target number in our DM.`, components: [] });
-        console.log(`[ai_input3_unit_select TARGET_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for Input 3 target number via new DM. State: ${setupData.dmFlowState}.`);
-
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[ai_input3_unit_select ERROR ${interactionId}] Error processing Input 3 UNIT select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
-        if (interaction.deferred && !interaction.replied) {
-            try { await interaction.editReply({ content: "Sorry, something went wrong with the third habit unit selection. Please try again or restart the setup.", components: [] }); }
-            catch (e) { console.error(`[ai_input3_unit_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); }
-        } else {
-             try { await interaction.followUp({ content: "Sorry, an error occurred after your unit selection for the third habit. Please try again if needed.", ephemeral: true }); }
-            catch (e) { console.error(`[ai_input3_unit_select ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
-        }
-      }
-      const processEndTime = performance.now();
-      console.log(`[ai_input3_unit_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - input3UnitSelectSubmitTime).toFixed(2)}ms`);
     }
 
        // --- START: NEW Handler for Duration Select Menu Interaction ---
