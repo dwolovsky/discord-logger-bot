@@ -931,135 +931,82 @@ client.on(Events.MessageCreate, async message => {
     }
   }
 
-  // ... other dmFlowState handlers will go here as 'else if' ...
-  else if (setupData.dmFlowState === 'processing_wish') {
-    // User sent another message while wish was being processed.
-    // Tell them to wait or handle appropriately.
-    await message.author.send("I'm still thinking about your wish! I'll send the examples as soon as they're ready. 😊");
-    console.log(`[MessageCreate PROCESSING_WISH_INTERRUPT ${interactionIdForLog}] User ${userTag} sent message while wish was processing.`);
-  }
-
-   else if (setupData.dmFlowState === 'awaiting_outcome_label') {
-    const outcomeLabel = messageContent; // messageContent is from the top of MessageCreate
-
-    if (!outcomeLabel) {
-      await message.author.send("It looks like your response was empty. What **Label** would you give your Key Outcome Metric? (e.g., 'Energy Level', 'Sleep Quality')");
-      console.log(`[MessageCreate AWAITING_OUTCOME_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty outcome label.`);
-      return;
+    // ... other dmFlowState handlers will go here as 'else if' ...
+    else if (setupData.dmFlowState === 'processing_wish') {
+      // User sent another message while wish was being processed.
+      // Tell them to wait or handle appropriately.
+      await message.author.send("I'm still thinking about your wish! I'll send the examples as soon as they're ready. 😊");
+      console.log(`[MessageCreate PROCESSING_WISH_INTERRUPT ${interactionIdForLog}] User ${userTag} sent message while wish was processing.`);
     }
 
-    // Optional: Add length validation for outcomeLabel if desired here.
-    const MAX_LABEL_LENGTH = 30; // Example
-     if (outcomeLabel.length > MAX_LABEL_LENGTH) {
+    else if (setupData.dmFlowState === 'awaiting_outcome_label') {
+      const outcomeLabel = messageContent; // messageContent is from the top of MessageCreate
+
+      if (!outcomeLabel) {
+        await message.author.send("It looks like your response was empty. What **Label** would you give your Key Outcome Metric? (e.g., 'Energy Level', 'Sleep Quality')");
+        console.log(`[MessageCreate AWAITING_OUTCOME_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty outcome label.`);
+        return;
+      }
+
+      // Optional: Add length validation for outcomeLabel if desired here.
+      const MAX_LABEL_LENGTH = 30; // Example
+      if (outcomeLabel.length > MAX_LABEL_LENGTH) {
+        await message.author.send(
+          `That label is a bit long! Please keep it under **${MAX_LABEL_LENGTH} characters**.\n\n` +
+          `Your label for the Outcome Metric was: "${outcomeLabel}" (${outcomeLabel.length} chars).\n\n` +
+          `Could you provide a shorter one?`
+        );
+        console.log(`[MessageCreate OUTCOME_LABEL_TOO_LONG ${interactionIdForLog}] User ${userTag} sent outcome label over ${MAX_LABEL_LENGTH} chars: "${outcomeLabel}" (${outcomeLabel.length} chars).`);
+        return; // Keep user in 'awaiting_outcome_label' state to try again
+      }
+
+      setupData.outcomeLabel = outcomeLabel;
+      setupData.dmFlowState = 'awaiting_outcome_unit'; // Transition to the next part
+      userExperimentSetupData.set(userId, setupData);
+      console.log(`[MessageCreate OUTCOME_LABEL_RECEIVED ${interactionIdForLog}] User ${userTag} submitted outcome label: "${outcomeLabel}". State changed to '${setupData.dmFlowState}'.`);
+
+      // Now ask for the Outcome Metric Unit
       await message.author.send(
-        `That label is a bit long! Please keep it under **${MAX_LABEL_LENGTH} characters**.\n\n` +
-        `Your label for the Outcome Metric was: "${outcomeLabel}" (${outcomeLabel.length} chars).\n\n` +
-        `Could you provide a shorter one?`
+        `Got it. Your outcome metric is labeled: **"${setupData.outcomeLabel}"**.\n\n` +
+        `Now, how will you **Measure** this outcome daily? This is its **Unit**.\n` +
+        `Examples: '1-10 scale', 'hours slept', 'minutes focused', 'yes/no', 'tasks completed', 'pages read'.\n\nType the unit of measurement below.`
       );
-      console.log(`[MessageCreate OUTCOME_LABEL_TOO_LONG ${interactionIdForLog}] User ${userTag} sent outcome label over ${MAX_LABEL_LENGTH} chars: "${outcomeLabel}" (${outcomeLabel.length} chars).`);
-      return; // Keep user in 'awaiting_outcome_label' state to try again
+      console.log(`[MessageCreate ASK_OUTCOME_UNIT ${interactionIdForLog}] DM sent to ${userTag} asking for Outcome Unit.`);
     }
 
-    setupData.outcomeLabel = outcomeLabel;
-    setupData.dmFlowState = 'awaiting_outcome_unit'; // Transition to the next part
-    userExperimentSetupData.set(userId, setupData);
-    console.log(`[MessageCreate OUTCOME_LABEL_RECEIVED ${interactionIdForLog}] User ${userTag} submitted outcome label: "${outcomeLabel}". State changed to '${setupData.dmFlowState}'.`);
+    else if (setupData.dmFlowState === 'awaiting_outcome_unit') {
+      const outcomeUnit = messageContent.trim(); // messageContent from the top of MessageCreate
 
-    // Now ask for the Outcome Metric Unit
-    await message.author.send(
-      `Got it. Your outcome metric is labeled: **"${setupData.outcomeLabel}"**.\n\n` +
-      `Now, how will you **Measure** this outcome daily? This is its **Unit**.\n` +
-      `Examples: '1-10 scale', 'hours slept', 'minutes focused', 'yes/no', 'tasks completed', 'pages read'.\n\nType the unit of measurement below.`
-    );
-    console.log(`[MessageCreate ASK_OUTCOME_UNIT ${interactionIdForLog}] DM sent to ${userTag} asking for Outcome Unit.`);
-  }
+      if (!outcomeUnit) {
+        await message.author.send(
+          `It looks like your response was empty. How will you **Measure** your outcome metric **"${setupData.outcomeLabel}"** daily? This is its **Unit**.\n` +
+          `(e.g., '1-10 scale', 'hours slept', 'tasks completed')`
+        );
+        console.log(`[MessageCreate AWAITING_OUTCOME_UNIT_EMPTY ${interactionIdForLog}] User ${userTag} sent empty outcome unit for label: ${setupData.outcomeLabel}.`);
+        return;
+      }
 
-  else if (setupData.dmFlowState === 'awaiting_outcome_unit') {
-    const outcomeUnit = messageContent.trim(); // messageContent from the top of MessageCreate
+      // Optional: Add length validation for outcomeUnit if desired here.
+      // const MAX_UNIT_LENGTH = 30;
+      // if (outcomeUnit.length > MAX_UNIT_LENGTH) {
+      //   await message.author.send(`That unit is a bit long (max ${MAX_UNIT_LENGTH} chars). Can you provide a shorter one for measuring **"${setupData.outcomeLabel}"**?`);
+      //   console.log(`[MessageCreate OUTCOME_UNIT_TOO_LONG ${interactionIdForLog}] User ${userTag} sent outcome unit over ${MAX_UNIT_LENGTH} chars: "${outcomeUnit}"`);
+      //   return; // Keep user in 'awaiting_outcome_unit' state
+      // }
 
-    if (!outcomeUnit) {
+      setupData.outcomeUnit = outcomeUnit;
+      setupData.dmFlowState = 'awaiting_outcome_target_number';
+      userExperimentSetupData.set(userId, setupData);
+      console.log(`[MessageCreate OUTCOME_UNIT_RECEIVED ${interactionIdForLog}] User ${userTag} submitted outcome unit: "${outcomeUnit}" for label "${setupData.outcomeLabel}". State changed to '${setupData.dmFlowState}'.`);
+
+      // Now ask for the Outcome Metric Goal (Target #)
       await message.author.send(
-        `It looks like your response was empty. How will you **Measure** your outcome metric **"${setupData.outcomeLabel}"** daily? This is its **Unit**.\n` +
-        `(e.g., '1-10 scale', 'hours slept', 'tasks completed')`
+        `Unit for **"${setupData.outcomeLabel}"** set to: **"${setupData.outcomeUnit}"**.\n\n` +
+        `What's your daily **Target #** for **"${setupData.outcomeLabel}"** (measured in ${setupData.outcomeUnit})?\n` +
+        `For example, if it's a 1-10 scale, your target might be '7'. If it's hours slept, maybe '7.5'. If it's tasks, maybe '3'.\n\nType just the number below.`
       );
-      console.log(`[MessageCreate AWAITING_OUTCOME_UNIT_EMPTY ${interactionIdForLog}] User ${userTag} sent empty outcome unit for label: ${setupData.outcomeLabel}.`);
-      return;
+      console.log(`[MessageCreate ASK_OUTCOME_GOAL ${interactionIdForLog}] DM sent to ${userTag} asking for Outcome Goal.`);
     }
-
-    // Optional: Add length validation for outcomeUnit if desired here.
-    // const MAX_UNIT_LENGTH = 30;
-    // if (outcomeUnit.length > MAX_UNIT_LENGTH) {
-    //   await message.author.send(`That unit is a bit long (max ${MAX_UNIT_LENGTH} chars). Can you provide a shorter one for measuring **"${setupData.outcomeLabel}"**?`);
-    //   console.log(`[MessageCreate OUTCOME_UNIT_TOO_LONG ${interactionIdForLog}] User ${userTag} sent outcome unit over ${MAX_UNIT_LENGTH} chars: "${outcomeUnit}"`);
-    //   return; // Keep user in 'awaiting_outcome_unit' state
-    // }
-
-    setupData.outcomeUnit = outcomeUnit;
-    setupData.dmFlowState = 'awaiting_outcome_goal'; // Transition to the next part
-    userExperimentSetupData.set(userId, setupData);
-    console.log(`[MessageCreate OUTCOME_UNIT_RECEIVED ${interactionIdForLog}] User ${userTag} submitted outcome unit: "${outcomeUnit}" for label "${setupData.outcomeLabel}". State changed to '${setupData.dmFlowState}'.`);
-
-    // Now ask for the Outcome Metric Goal (Target #)
-    await message.author.send(
-      `Unit for **"${setupData.outcomeLabel}"** set to: **"${setupData.outcomeUnit}"**.\n\n` +
-      `What's your daily **Target #** for **"${setupData.outcomeLabel}"** (measured in ${setupData.outcomeUnit})?\n` +
-      `For example, if it's a 1-10 scale, your target might be '7'. If it's hours slept, maybe '7.5'. If it's tasks, maybe '3'.\n\nType just the number below.`
-    );
-    console.log(`[MessageCreate ASK_OUTCOME_GOAL ${interactionIdForLog}] DM sent to ${userTag} asking for Outcome Goal.`);
-  }
-
-  // +++ START: NEW HANDLER for awaiting_outcome_goal +++
-  else if (setupData.dmFlowState === 'awaiting_outcome_goal') {
-    const outcomeGoalStr = messageContent.trim(); // messageContent is from the top of MessageCreate
-    const interactionIdForLog = setupData.interactionId || 'DM_FLOW_FALLBACK';
-    const userId = message.author.id;
-    const userTag = message.author.tag;
-
-    console.log(`[MessageCreate AWAITING_OUTCOME_GOAL ${interactionIdForLog}] User ${userTag} (ID: ${userId}) sent outcome goal: "${outcomeGoalStr}" for Outcome: "${setupData.outcomeLabel}" (${setupData.outcomeUnit}).`);
-
-    if (!outcomeGoalStr) {
-      await message.author.send(
-        `It looks like your response was empty. What is your daily **Target #** for **"${setupData.outcomeLabel}"** (measured in ${setupData.outcomeUnit})?\n` +
-        `Please type just the number (e.g., 7, 7.5, 0, 1).`
-      );
-      console.log(`[MessageCreate OUTCOME_GOAL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty outcome goal.`);
-      return; // Keep state, wait for new message
-    }
-
-    const outcomeGoalNum = parseFloat(outcomeGoalStr);
-    if (isNaN(outcomeGoalNum)) {
-      await message.author.send(
-        `Hmm, "${outcomeGoalStr}" doesn't seem to be a valid number. \n\nWhat is your daily **Target #** for **"${setupData.outcomeLabel}"** (measured in ${setupData.outcomeUnit})?\n` +
-        `Please type just the number (e.g., 7, 7.5, 0, 1).`
-      );
-      console.log(`[MessageCreate OUTCOME_GOAL_NAN ${interactionIdForLog}] User ${userTag} sent non-numeric outcome goal: "${outcomeGoalStr}".`);
-      return; // Keep state
-    }
-
-    // Validation passed
-    setupData.outcomeGoal = outcomeGoalNum;
-    console.log(`[MessageCreate OUTCOME_METRIC_DEFINED_FALLBACK ${interactionIdForLog}] User ${userTag} fully defined Outcome Metric (via fallback): Label="${setupData.outcomeLabel}", Unit="${setupData.outcomeUnit}", Goal=${setupData.outcomeGoal}.`);
-
-    // --- Transition to defining Input 1 (mirroring the main AI flow's next step) ---
-    setupData.currentInputIndex = 1; // Start with Input 1
-    setupData.inputs = setupData.inputs || []; // Ensure inputs array exists
-    setupData.dmFlowState = 'awaiting_input1_label_text'; // For getting Input 1's label via text
-    userExperimentSetupData.set(userId, setupData);
-
-    const confirmationAndNextPrompt =
-        `✅ **Outcome Metric Confirmed (Fallback Path)!**
-        📍 Label: **${setupData.outcomeLabel}**
-        📏 Unit/Scale: **${setupData.outcomeUnit}**
-        🔢 Daily Target: **${setupData.outcomeGoal}**
-
-      Great! Now, let's define your first **Daily Habit / Input**. This is a specific action you plan to take each day that you believe will influence your Outcome Metric.
-      What **Label** would you give this first daily habit? (e.g., "Morning Meditation", "Exercise", "No Social Media After 9 PM", max 30 characters).
-      I can help with unit suggestions after you provide the label.`;
-
-    await message.author.send(confirmationAndNextPrompt);
-    console.log(`[MessageCreate PROMPT_INPUT1_LABEL_FALLBACK ${interactionIdForLog}] Outcome metric defined via fallback. Prompted ${userTag} for Input 1 Label. State: '${setupData.dmFlowState}'.`);
-  }
-  // +++ END: NEW HANDLER for awaiting_outcome_goal +++
 
       else if (setupData.dmFlowState === 'awaiting_custom_outcome_label_text') { //
       const customLabelText = messageContent.trim(); //
@@ -1220,46 +1167,44 @@ client.on(Events.MessageCreate, async message => {
     }
 
     else if (setupData.dmFlowState === 'awaiting_outcome_target_number') {
-      const targetNumberStr = messageContent.trim(); // messageContent is from the top of MessageCreate
-      const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
-      const userId = message.author.id;
-      const userTagForLog = message.author.tag; // Changed variable name for clarity with Firebase logs
+      const targetNumberStr = messageContent.trim(); //
+      const interactionIdForLog = setupData.interactionId || 'DM_FLOW'; //
+      const userId = message.author.id; //
+      const userTagForLog = message.author.tag; //
 
-      console.log(`[MessageCreate AWAITING_OUTCOME_TARGET ${interactionIdForLog}] User ${userTagForLog} (ID: ${userId}) sent target number: "${targetNumberStr}" for Outcome: "${setupData.outcomeLabel}" (${setupData.outcomeUnit}).`);
+      console.log(`[MessageCreate AWAITING_OUTCOME_TARGET ${interactionIdForLog}] User ${userTagForLog} (ID: ${userId}) sent target number: "${targetNumberStr}" for Outcome: "${setupData.outcomeLabel}" (${setupData.outcomeUnit}).`); //
       if (!targetNumberStr) {
         await message.author.send(
           `It looks like your response was empty. What is your daily **Target #** for **"${setupData.outcomeLabel}"** (measured in ${setupData.outcomeUnit})?\n` +
           `Please type just the number (e.g., 7, 7.5, 0, 1).`
-        );
-        console.log(`[MessageCreate OUTCOME_TARGET_EMPTY ${interactionIdForLog}] User ${userTagForLog} sent empty target number.`);
-        return; // Keep state, wait for new message
+        ); //
+        console.log(`[MessageCreate OUTCOME_TARGET_EMPTY ${interactionIdForLog}] User ${userTagForLog} sent empty target number.`); //
+        return; //
       }
 
-      const targetNumber = parseFloat(targetNumberStr);
+      const targetNumber = parseFloat(targetNumberStr); //
       if (isNaN(targetNumber)) {
         await message.author.send(
           `Hmm, "${targetNumberStr}" doesn't seem to be a valid number. \n\nWhat is your daily **Target #** for **"${setupData.outcomeLabel}"** (measured in ${setupData.outcomeUnit})?\n` +
           `Please type just the number (e.g., 7, 7.5, 0, 1).`
-        );
-        console.log(`[MessageCreate OUTCOME_TARGET_NAN ${interactionIdForLog}] User ${userTagForLog} sent non-numeric target: "${targetNumberStr}".`);
-        return; // Keep state
+        ); //
+        console.log(`[MessageCreate OUTCOME_TARGET_NAN ${interactionIdForLog}] User ${userTagForLog} sent non-numeric target: "${targetNumberStr}".`); //
+        return; //
       }
 
       // Validation passed
-      setupData.outcomeGoal = targetNumber;
-      // Outcome Metric is now fully defined:
-      // setupData.outcomeLabel, setupData.outcomeUnit, setupData.outcomeGoal
+      setupData.outcomeGoal = targetNumber; //
 
-      console.log(`[MessageCreate OUTCOME_METRIC_DEFINED ${interactionIdForLog}] User ${userTagForLog} fully defined Outcome Metric: Label="${setupData.outcomeLabel}", Unit="${setupData.outcomeUnit}", Goal=${setupData.outcomeGoal}.`);
+      console.log(`[MessageCreate OUTCOME_METRIC_DEFINED ${interactionIdForLog}] User ${userTagForLog} fully defined Outcome Metric: Label="${setupData.outcomeLabel}", Unit="${setupData.outcomeUnit}", Goal=${setupData.outcomeGoal}.`); //
+      setupData.currentInputIndex = 1; //
+      setupData.inputs = setupData.inputs || []; //
+      setupData.dmFlowState = 'processing_input1_label_suggestions'; //
+      userExperimentSetupData.set(userId, setupData); //
 
-      // --- NEW: Transition to AI-Assisted Input 1 Label Suggestion ---
-      setupData.currentInputIndex = 1; // Start with Input 1
-      setupData.inputs = setupData.inputs || []; // Ensure inputs array exists
-      setupData.dmFlowState = 'processing_input1_label_suggestions'; // New state for AI call
-      userExperimentSetupData.set(userId, setupData); // Save state before async call
-
-      console.log(`[MessageCreate PROCESS_INPUT1_LABELS_START ${interactionIdForLog}] State changed to '${setupData.dmFlowState}'. Attempting to get Input 1 label suggestions for ${userTagForLog}.`);
-      await message.author.send( // Let the user know what's happening
+      console.log(`[MessageCreate PROCESS_INPUT1_LABELS_START ${interactionIdForLog}] State changed to '${setupData.dmFlowState}'. Attempting to get Input 1 label suggestions for ${userTagForLog}.`); //
+      
+      // ---- MODIFICATION: Send the "thinking about habits" message and store it ----
+      const habitThinkingMessage = await message.author.send( //
         `✅ **Outcome Metric Confirmed!**
         📍 Label: **${setupData.outcomeLabel}**
         📏 Unit/Scale: **${setupData.outcomeUnit}**
@@ -1268,80 +1213,91 @@ client.on(Events.MessageCreate, async message => {
         Great! Now, let's define your first **Daily Habit / Input**. This is an action you plan to take each day that you believe will influence your Outcome Metric.
         🧠 I'll brainstorm some potential Daily Habit Labels for you. This might take a moment...`
       );
+      // ---- END MODIFICATION ----
 
       try {
         const habitSuggestionsResult = await callFirebaseFunction(
           'generateInputLabelSuggestions',
           {
-            userWish: setupData.deeperWish, // Make sure deeperWish was stored earlier in the flow
+            userWish: setupData.deeperWish, //
             outcomeMetric: {
               label: setupData.outcomeLabel,
               unit: setupData.outcomeUnit,
-              goal: setupData.outcomeGoal
+              goal: setupData.outcomeGoal //
             },
-            definedInputs: [] // No inputs defined yet for the first habit
+            definedInputs: [] // No inputs defined yet for the first habit //
           },
           userId
-        );
-
-        if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions && habitSuggestionsResult.suggestions.length > 0) {
-          setupData.aiGeneratedInputLabelSuggestions = habitSuggestionsResult.suggestions; // Store suggestions
-          setupData.dmFlowState = 'awaiting_input1_label_dropdown_selection'; // Next state: user picks from dropdown
-          userExperimentSetupData.set(userId, setupData);
-          console.log(`[MessageCreate INPUT1_LABEL_SUGGESTIONS_SUCCESS ${interactionIdForLog}] Received ${habitSuggestionsResult.suggestions.length} habit label suggestions for Input 1 for ${userTagForLog}.`);
-
+        ); //
+        if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions && habitSuggestionsResult.suggestions.length > 0) { //
+          setupData.aiGeneratedInputLabelSuggestions = habitSuggestionsResult.suggestions; //
+          setupData.dmFlowState = 'awaiting_input1_label_dropdown_selection'; //
+          userExperimentSetupData.set(userId, setupData); //
+          console.log(`[MessageCreate INPUT1_LABEL_SUGGESTIONS_SUCCESS ${interactionIdForLog}] Received ${habitSuggestionsResult.suggestions.length} habit label suggestions for Input 1 for ${userTagForLog}.`); //
           const habitLabelSelectMenu = new StringSelectMenuBuilder()
-            .setCustomId('ai_input1_label_select') // New Custom ID for this specific dropdown
-            .setPlaceholder('Select a suggested Habit Label or enter your own.');
-
+            .setCustomId('ai_input1_label_select') //
+            .setPlaceholder('Select a suggested Habit Label or enter your own.'); //
           habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
             habitLabelSelectMenu.addOptions(
               new StringSelectMenuOptionBuilder()
-                .setLabel(suggestion.label.substring(0, 100)) // Discord limit for label
-                .setValue(`ai_input1_label_suggestion_${index}`) // Unique value for this option
-                .setDescription((suggestion.briefExplanation || 'AI Suggested Habit').substring(0, 100)) // Discord limit for description
+                .setLabel(suggestion.label.substring(0, 100)) //
+                .setValue(`ai_input1_label_suggestion_${index}`) //
+                .setDescription((suggestion.briefExplanation || 'AI Suggested Habit').substring(0, 100)) //
             );
           });
           habitLabelSelectMenu.addOptions(
             new StringSelectMenuOptionBuilder()
-              .setLabel("✏️ Enter my own custom habit label...")
-              .setValue('custom_input1_label') // Value to trigger custom input path
-              .setDescription("Choose this to type your own habit label.")
+              .setLabel("✏️ Enter my own custom habit label...") //
+              .setValue('custom_input1_label') //
+              .setDescription("Choose this to type your own habit label.") //
           );
-          const rowWithHabitLabelSelect = new ActionRowBuilder().addComponents(habitLabelSelectMenu);
+          const rowWithHabitLabelSelect = new ActionRowBuilder().addComponents(habitLabelSelectMenu); //
 
-          await message.author.send({
+          // ---- MODIFICATION: Edit the "thinking about habits" message ----
+          await habitThinkingMessage.edit({ //
             content: `Okay, based on your Deeper Wish ("${setupData.deeperWish}") and Outcome Metric ("${setupData.outcomeLabel}"), here are some ideas for your **first Daily Habit Label**.\n\nSelect one from the dropdown, or choose "✏️ Enter my own..." to type a different one.`,
             components: [rowWithHabitLabelSelect]
           });
-          console.log(`[MessageCreate INPUT1_LABEL_DROPDOWN_SENT ${interactionIdForLog}] Displayed AI habit label suggestions dropdown to ${userTagForLog}. State: ${setupData.dmFlowState}.`);
-
+          // ---- END MODIFICATION ----
+          console.log(`[MessageCreate INPUT1_LABEL_DROPDOWN_SENT ${interactionIdForLog}] Displayed AI habit label suggestions dropdown to ${userTagForLog}. State: ${setupData.dmFlowState}.`); //
         } else {
           // AI call failed or returned no suggestions, fallback to manual input for label
-          let failureMessage = "I had a bit of trouble brainstorming Habit Label suggestions right now. 😕";
+          let failureMessage = "I had a bit of trouble brainstorming Habit Label suggestions right now. 😕"; //
           if (habitSuggestionsResult && habitSuggestionsResult.error) {
-            failureMessage += ` (Reason: ${habitSuggestionsResult.error})`;
+            failureMessage += ` (Reason: ${habitSuggestionsResult.error})`; //
           }
-          console.warn(`[MessageCreate INPUT1_LABEL_SUGGESTIONS_FAIL ${interactionIdForLog}] AI call failed or returned no data for Input 1 habit labels for ${userTagForLog}. Result:`, habitSuggestionsResult);
+          console.warn(`[MessageCreate INPUT1_LABEL_SUGGESTIONS_FAIL ${interactionIdForLog}] AI call failed or returned no data for Input 1 habit labels for ${userTagForLog}. Result:`, habitSuggestionsResult); //
+          setupData.dmFlowState = 'awaiting_input1_label_text'; //
+          userExperimentSetupData.set(userId, setupData); //
           
-          setupData.dmFlowState = 'awaiting_input1_label_text'; // Fallback to existing manual label input state
-          userExperimentSetupData.set(userId, setupData);
-          
-          await message.author.send(
+          // ---- MODIFICATION: Edit the "thinking about habits" message with fallback ----
+          await habitThinkingMessage.edit( //
             `${failureMessage}\n\nNo worries! What **Label** would you like to give your first Daily Habit / Input? ` +
             `(e.g., "Morning Meditation", "Exercise", "No Social Media After 9 PM", max 30 characters).`
           );
-          console.log(`[MessageCreate INPUT1_LABEL_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTagForLog} for Input 1 Label text (AI fail). State: ${setupData.dmFlowState}.`);
+          // ---- END MODIFICATION ----
+          console.log(`[MessageCreate INPUT1_LABEL_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTagForLog} for Input 1 Label text (AI fail). State: ${setupData.dmFlowState}.`); //
         }
       } catch (error) {
-        console.error(`[MessageCreate FIREBASE_FUNC_ERROR_INPUT_LABELS ${interactionIdForLog}] Error calling 'generateInputLabelSuggestions' for Input 1 for ${userTagForLog}:`, error);
-        setupData.dmFlowState = 'awaiting_input1_label_text'; // Fallback to existing manual label input state on error
-        userExperimentSetupData.set(userId, setupData);
-        await message.author.send(
-            "I encountered an issue trying to connect with my AI brain for habit suggestions. \n\nLet's set it up manually: " +
-            "What **Label** would you like to give your first Daily Habit / Input? (e.g., \"Morning Meditation\", max 30 characters)."
-        );
-        console.log(`[MessageCreate INPUT1_LABEL_ERROR_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTagForLog} for Input 1 Label text (Firebase error). State: ${setupData.dmFlowState}.`);
+        console.error(`[MessageCreate FIREBASE_FUNC_ERROR_INPUT_LABELS ${interactionIdForLog}] Error calling 'generateInputLabelSuggestions' for Input 1 for ${userTagForLog}:`, error); //
+        setupData.dmFlowState = 'awaiting_input1_label_text'; //
+        userExperimentSetupData.set(userId, setupData); //
+
+        // ---- MODIFICATION: Try to edit the "thinking about habits" message with error ----
+        try {
+            await habitThinkingMessage.edit( //
+                "I encountered an issue trying to connect with my AI brain for habit suggestions. \n\nLet's set it up manually: " +
+                "What **Label** would you like to give your first Daily Habit / Input? (e.g., \"Morning Meditation\", max 30 characters)."
+            );
+        } catch (editError) {
+            console.error(`[MessageCreate EDIT_HABIT_THINKING_ON_ERROR_FAIL ${interactionIdForLog}] Could not edit habitThinkingMessage after catch. Sending new message. Error:`, editError);
+            await message.author.send( // Fallback to sending a new message
+                "I encountered an issue trying to connect with my AI brain for habit suggestions. \n\nLet's set it up manually: " +
+                "What **Label** would you like to give your first Daily Habit / Input? (e.g., \"Morning Meditation\", max 30 characters)."
+            );
+        }
+        // ---- END MODIFICATION ----
+        console.log(`[MessageCreate INPUT1_LABEL_ERROR_FALLBACK_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTagForLog} for Input 1 Label text (Firebase error). State: ${setupData.dmFlowState}.`); //
       }
     }
 
