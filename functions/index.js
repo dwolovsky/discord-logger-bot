@@ -198,13 +198,13 @@ const INSIGHTS_PROMPT_TEMPLATE = (data) => {
 
   // Constructing the prompt
   let prompt = `
-You are an AI assistant providing insights on a user's self-experimentation data. Your tone should be supportive, analytical, and encouraging, focusing on actionable advice and learning. The goal is to provide insights that inspire the user to continue their journey of consistent small actions and encourage thoughtful experimentation with tweaks to make these actions easier and more impactful. Keep the total response concise (under 1890 characters).
+You are a "self science" assistant, providing insights on a user's habit experimentation data to help them see their life patterns and plan their next experiment. Your tone should be supportive, analytical, and encouraging, focusing on actionable advice and personal insights. The goal is to inspire the user to continue their journey of consistent small actions and encourage thoughtful experimentation with tweaks to make these actions easier and more impactful. That is the heart of self science. Keep your total response concise (under 1890 characters).
 
 **Experiment Context:**
-- User's Deeper Problem/Goal/Theme: ${data.deeperProblem || "Not specified"}
+- User's Deeper Wish: ${data.deeperProblem || "Not specified"}
 - Total Logs Processed in this Period: ${data.totalLogsProcessed || 0}
 
-**User's Overall Consistency (Outside this specific experiment):**
+**User's Consistency in daily logging:**
 - Current Overall Log Streak: ${data.userOverallStreak || 0} days
 - Longest Overall Log Streak: ${data.userOverallLongestStreak || 0} days
 
@@ -238,27 +238,26 @@ ${data.experimentNotesSummary && data.experimentNotesSummary.trim() !== ""
 Based *only* on the data provided above for This Experiment, provide succinct analysis (total length under 1890 characters) in three sections:
 
 ### 🫂 Challenges & Consistency
-Review the user's journey *within this experiment period*, focusing on friction points and consistency patterns evident in *this experiment's data (metric stats, correlations, combined effects)* and the provided *notes summary for this period*.
+Review the user's journey *within this experiment period*, focusing on friction points and consistency patterns evident in *this experiment's data (metric stats, correlations, combined effects)* and the provided *notes summary*.
 - Pinpoint recurring friction points or areas where consistency fluctuates, using *this experiment's data* and *notes for this period*.
 - **If possible, connect these friction points directly to specific phrases or feelings the user expressed in their *notes from this experiment period* around that time.** (e.g., 'The lower consistency for [Metric X] during this experiment might relate to when you mentioned feeling "[Quote from note]"').
-- Notice patterns in their consistency *within this experiment*: *When* do they seem most consistent or inconsistent according to *this period's data and notes*?
 - Where does their effort seem persistent *in this experiment*, even if results vary? Validate this effort clearly.
-- Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human, and reiterate the value of doing the self science experiments they're doing.
+- Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human, and reiterate the value of doing the self science experiments they're doing. Find various ways to remind them that growth comes from experiments.
 
 ### 🌱 Growth Highlights
 Highlight evidence of growth, adaptation, and the impact of sustained effort by analyzing patterns *within this experiment's data and notes*. Start by celebrating their consistency *during this experiment* (mention current overall streak if relevant as context) and the most significant positive trend or achievement observed *in this experiment's data*.
-- Are *this experiment's* metrics (average, variation, correlations) showing particular strengths or weaknesses?
-- Point out any potentially interesting (even if subtle) connections observed between *this experiment's metric trends* and themes found in the *notes from this period*.
-- Look for subtle shifts in language in *this period's notes*, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress *within this experiment*.
-- **Also, select 1-2 particularly insightful or representative short quotes directly from the provided 'Notes Summary' (from *this experiment*) that capture a key moment of learning, challenge, or success, and weave them into your analysis where relevant (citing the date if possible from the notes summary).**
+- Where are *this experiment's* metrics (average, variation, correlations) showing particular strengths?
 - How are their consistent small actions leading to evolution, as seen in *this experiment's data and reflections*?
+- Point out any potentially interesting (even if subtle) connections observed between *this experiment's metrics* and themes found in the *notes from this period*.
+- Look for subtle shifts in language in *this period's notes*, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress *within this experiment*.
+- **Also, select 1-2 particularly insightful or representative short quotes directly from the provided 'Notes Summary' (from *this experiment*) that capture a key moment of learning, challenge, or success, and weave them into your analysis where relevant.**
 
 ### 🧪 Experiments & Takeaway
-Remember, small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 4 small, actionable experiments (tweaks) for their *next experiment*, designed to make their current positive actions easier, more consistent, or slightly more impactful, based on the analysis of *this experiment's data*. Frame these as curious explorations, not fixes. Experiments should aim to:
+Small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 4 small, actionable experiments (tweaks) for their *next experiment*, designed to make their current positive actions easier, more consistent, or more impactful, based on the analysis of *this experiment's data*. Frame these as curious explorations, not fixes. Experiments should aim to:
 1. Build on momentum from positive trends or consistent efforts identified in the 'Growth Highlights' section for *this experiment*.
 2. Directly address the friction points or consistency challenges identified in the 'Challenges' section from *this experiment's data and notes*.
 3. **Prioritize suggesting experiments that directly explore questions, ideas, or 'what ifs' explicitly mentioned in the user's *notes from this experiment period*.** (Quote the relevant part of the note briefly if it helps frame the experiment).
-4. Make 3 suggestions focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. The last one should explicitly be mentioned as "something a bit different." It should give them an idea that's highly relevant but which they may not have thought of before.
+4. The first 3 suggestions should focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. The last one should explicitly be mentioned as "something a bit different." It should give them an idea that's highly relevant but which they may not have thought of before.
 
 Again, keep the total response under 1890 characters.
 ---
@@ -1424,6 +1423,11 @@ exports.setExperimentSchedule = onCall(async (request) => {
     // For simplicity in query later, let's aim for the same time of day, `daysToAdd` later.
     // Or, to be more precise for "end of experiment", consider setting it to the end of the chosen day.
     // For now, same time of day `daysToAdd` later is fine.
+    // NEW: Subtract a few hours to make stats available sooner
+    const hoursToSubtract = 3; // Adjust as needed (e.g., 3 to 6 hours)
+    experimentEndDate.setHours(experimentEndDate.getHours() - hoursToSubtract);
+
+    logger.log(`[setExperimentSchedule] User: ${userId}. Original rollover time would have been roughly ${new Date(now.getTime() + daysToAdd * 24*60*60*1000).toISOString()}. Adjusted experimentEndTimestamp (target for stats processing) to be ~${hoursToSubtract} hours sooner: ${experimentEndDate.toISOString()}`);
     const experimentEndTimestamp = admin.firestore.Timestamp.fromDate(experimentEndDate);
 
     // --- Calculate UTC reminder window if reminders are active ---
@@ -3276,15 +3280,44 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         actionReferenceInstruction = `some of their daily habits, like ${allLabels}.`;
                     }
 
+                    let experimentProgressContext = "";
+                    const schedule = userData.experimentCurrentSchedule; // Assuming 'schedule' is already defined
+                    const experimentSetAtDate = schedule.experimentSetAt?.toDate();
+                    const experimentEndDateDate = schedule.experimentEndTimestamp?.toDate();
+                    const nowForProgress = new Date();
+
+                    if (experimentSetAtDate && experimentEndDateDate && schedule.experimentDuration && nowForProgress > experimentSetAtDate && nowForProgress < experimentEndDateDate) {
+                        const totalDurationMillis = experimentEndDateDate.getTime() - experimentSetAtDate.getTime();
+                        const elapsedMillis = nowForProgress.getTime() - experimentSetAtDate.getTime();
+                        if (totalDurationMillis > 0) { // Avoid division by zero
+                            const progressRatio = elapsedMillis / totalDurationMillis;
+                            const durationText = schedule.experimentDuration.replace('_', '-');
+
+                            if (progressRatio < 0.15) { // First ~15%
+                                experimentProgressContext = `They've just started their current ${durationText} experiment period.`;
+                            } else if (progressRatio < 0.40) { // Up to ~40%
+                                experimentProgressContext = `They are early in their current ${durationText} experiment period.`;
+                            } else if (progressRatio < 0.70) { // Up to ~70%
+                                experimentProgressContext = `They are about midway through their current ${durationText} experiment period.`;
+                            } else if (progressRatio < 0.90) { // Up to ~90%
+                                experimentProgressContext = `They are progressing well and nearing the end of their ${durationText} experiment period.`;
+                            } else { // Last 10%
+                                experimentProgressContext = `They are in the final stretch of their current ${durationText} experiment period!`;
+                            }
+                        }
+                    }
+
                     // Using your edited prompt structure and adding time context and instructions
                     aiPromptText = `
                     You are generating a short, personalized reminder message for a user doing self-experiments.
-                    The message should be 1-3 sentences and under 200 characters.
-                    The tone must be positive, funny, and/or inspiring. It should be memorable.
+                    The message should be 1-3 sentences and under 150 characters.
+                    The tone must be positive and funny. It should grab attention and trigger curiosity.
 
-                    CONTEXT: ${timeContextForPrompt}
+                    CONTEXT:
+                    Time: ${timeContextForPrompt}
+                    ${experimentProgressContext ? `Progress: ${experimentProgressContext}` : ""}
 
-                    The user's current daily Habits (inputs) include:
+                    The user's current daily Habits include:
                     ${exampleActionsForPrompt}
 
                     Your main goal is to encourage the user to find intrinsic joy, curiosity, or immediate, small rewards while performing ${actionReferenceInstruction}.
@@ -3293,17 +3326,17 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     DO NOT use phrases like "achieve your goals" or "make progress."
 
                     IMPORTANT TIME CONSIDERATIONS:
-                    - Subtly tailor the message to reflect the time context provided above.
+                    - Subtly tailor the message to reflect the time context provided above. Avoid cliches about the time of day.
                     - If any of the user's actions (e.g., "${inputsForAI.map(i => i.label).join('/')}") seem strongly tied to a specific time of day (e.g., 'Morning Wakeup', 'Bedtime Routine'), ONLY mention them if the user's current local time of day is appropriate. Otherwise, focus on their other, more general actions or frame the reminder generally about doing something rewarding in their day without mentioning the time-specific action.
 
                     Creatively reference their specific actions. Vary whether you mention one, or multiple of their listed actions.
-                    You can draw stylistic inspiration from these examples, but generate something novel and varied:
+                    You can draw inspiration about the message essence from these examples, but generate something novel, varied, and funny if possible:
                     - "What if this ends up being your favorite part of today?"
                     - "There's a tiny reward hiding in this activity. Can you find it?"
                     - "This isn't self-discipline. It's self-discovery."
                     - "Forget the big goals. Make this moment just a little more rewarding."
 
-                    Generate only the reminder message text. 1-3 sentences and under 200 characters.
+                    Generate only the reminder message text. 1-3 sentences and under 150 characters.
                     `;
                     logger.info(`[sendScheduledReminders - AI Step 2 REV] User ${userId}: Constructed AI Prompt (Time-Aware):\n${aiPromptText}`);
 
@@ -3325,7 +3358,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                             contents: [{ role: "user", parts: [{text: aiPromptText}] }],
                             generationConfig: { 
                                 ...GEMINI_CONFIG, // Spread global config [cite: 46]
-                                temperature: 0.9, // Override temperature as requested
+                                temperature: 0.95, // Override temperature as requested
                                 // Candidate count can be managed here if needed, but default is 1
                                 // maxOutputTokens can also be set if the <200 char in prompt isn't strict enough
                                 // For a 200 char message, ~50-70 tokens should be more than enough.
@@ -3687,19 +3720,27 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
 
   // 3. Construct Prompt for LLM
   const promptText = `
-    Based on the user's "Deeper Wish": "${userWish}", your task is to generate five distinct and relevant potential "Outcome Metric Labels" that someone might track daily to see if they are making progress related to their wish.
+    Based on the user's "Deeper Wish" for their daily life: "${userWish}", your task is to generate 5 distinct and relevant potential "Outcome Metrics" that someone might track daily to see if they are making progress related to their wish.
+    It should be a **key state, feeling, or result** that helps the user know if they are making progress on their "Deeper Wish." The metric should be **simple to assess and record each day.**
+
+    Think in terms of things that are measurable by:
+        * **Simple Rating Scales:** How did the user feel or perceive a state?
+            * Examples: 'Satisfaction (0-10)', 'Career confidence', 'Energy Level (0-10)', 'Optimism (0-10)', 'Faith in myself (0-10), 'Motivation (0-10)', 'Stress (0-10)'.
+        * **Simple Counts of Key Results or Events outside the user's control (or that the user has so much inner resistance to, that it is practically outside their direct control):** Is the user accumulating specific positive states (or avoiding negative states) that are easy to identify and count?
+            * Examples: 'Mindful Moments', 'Food Cravings'.
+
+        Provide diverse labels that fit these simple measurement types for an **outcome**. Avoid suggesting labels that require complex tracking (like precise durations of subjective states) or are themselves actions/habits. The goal is a straightforward daily check-in on the outcome.
 
     For each of the five suggestions, you MUST provide:
     1.  A "label": A clear, concise name for the outcome metric they will track daily (e.g., 'Overall Mood', 'Productive Hours', 'Sleep Quality', 'Feeling of Connection', 'Stress Level'). Max 25 characters.
-    2.  A "suggestedUnitType": A very brief (1-3 words) suggested category for how this label might be measured (e.g., 'Rating Scale', 'Hours/Minutes', 'Yes/No', 'Count', 'Qualitative Note'). This type will guide further unit suggestions.
-    3.  A "briefExplanation": A short (10-15 words) explanation of why this outcome metric could be relevant to the user's wish.
+    2.  A "briefExplanation": A short (10-15 words) explanation of the relevance to the user's wish.
 
-    The suggestions should be diverse if possible.
-    Return ONLY a valid JSON array containing five objects, where each object represents an outcome metric suggestion and strictly follows the structure:
-    { "label": "Example Label", "suggestedUnitType": "Example Unit Type", "briefExplanation": "Example explanation." }
+    The suggestions should make sense, with 1 or 2 being more creative. Start the creative suggestions' "briefExplanations" with the word "More creative:"
+    Return ONLY a valid JSON array containing 5 objects, where each object represents an outcome metric suggestion and strictly follows the structure:
+    { "label": "Example Label", "briefExplanation": "Example explanation." }
 
     Your entire response should be a JSON array: [suggestion1, suggestion2, suggestion3, suggestion4, suggestion5]
-    Do not include any other text or explanation outside of this JSON array. Ensure labels are 45 characters or less.
+    Do not include any other text or explanation outside of this JSON array. Ensure each label is 25 characters or less.
   `;
 
   logger.info(`[generateOutcomeLabelSuggestions] Sending prompt to Gemini for user ${userId}.`);
@@ -3710,7 +3751,7 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
         contents: [{ role: "user", parts: [{text: promptText}] }],
         generationConfig: {
             ...GEMINI_CONFIG, // Your global Gemini config [cite: 967]
-            temperature: 0.75, 
+            temperature: 0.85, 
             responseMimeType: "application/json",
         },
     });
@@ -3761,122 +3802,6 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
         throw new HttpsError('resource-exhausted', "The AI couldn't generate suggestions for this wish due to content restrictions. Please try rephrasing your wish or try a different one.");
     }
     throw new HttpsError('internal', `Failed to generate AI suggestions due to a server error. Details: ${error.message}`);
-  }
-});
-
-// Ensure GEMINI_CONFIG and genAI are initialized as in your functions/index.js file
-
-/**
- * Takes a user's "Deeper Wish" and their chosen "Outcome Label",
- * and generates 3-5 specific unit suggestions for that outcome label using Gemini.
- *
- * Expected request.data: { userWish: string, chosenOutcomeLabel: string, outcomeLabelSuggestedUnitType?: string }
- * Returns: { success: true, unitSuggestions: [{unit: string, unitCategory: string}, ...] }
- * or { success: false, error: string, details?: any }
- */
-exports.generateOutcomeUnitSuggestions = onCall(async (request) => {
-  logger.log("[generateOutcomeUnitSuggestions] Function called. Request data:", request.data);
-
-  // 1. Authentication & Validation
-  if (!request.auth) {
-    logger.warn("[generateOutcomeUnitSuggestions] Unauthenticated access attempt.");
-    throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
-  }
-  const userId = request.auth.uid;
-
-  if (!request.data || !request.data.userWish || typeof request.data.userWish !== 'string' || request.data.userWish.trim() === '' ||
-      !request.data.chosenOutcomeLabel || typeof request.data.chosenOutcomeLabel !== 'string' || request.data.chosenOutcomeLabel.trim() === '') {
-    logger.warn(`[generateOutcomeUnitSuggestions] Invalid argument: userWish or chosenOutcomeLabel missing/empty for user ${userId}.`);
-    throw new HttpsError('invalid-argument', 'The function must be called with a non-empty "userWish" and "chosenOutcomeLabel".');
-  }
-  const userWish = request.data.userWish.trim();
-  const chosenOutcomeLabel = request.data.chosenOutcomeLabel.trim();
-  // Optional: outcomeLabelSuggestedUnitType for context to the AI
-  const outcomeLabelSuggestedUnitType = request.data.outcomeLabelSuggestedUnitType || null;
-
-  logger.info(`[generateOutcomeUnitSuggestions] Processing for user: <span class="math-inline">\{userId\}, wish\: "</span>{userWish}", outcome label: "<span class="math-inline">\{chosenOutcomeLabel\}", suggested unit type context\: "</span>{outcomeLabelSuggestedUnitType}"`);
-
-  // 2. Check if Gemini Client is available
-  if (!genAI) {
-    logger.error("[generateOutcomeUnitSuggestions] Gemini AI client (genAI) is not initialized. Cannot generate unit suggestions.");
-    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
-  }
-
-  // 3. Construct Prompt for LLM
-  const suggestedUnitTypeContext = outcomeLabelSuggestedUnitType ? `The user's chosen outcome label ("<span class="math-inline">\{chosenOutcomeLabel\}"\) was initially categorized by an AI as potentially measurable by a '</span>{outcomeLabelSuggestedUnitType}'. Use this as a hint for relevance, but still provide diverse, specific unit suggestions.` : "";
-
-  const promptText = `
-    The user has a "Deeper Wish": "<span class="math-inline">\{userWish\}"\. They have chosen to track the "Outcome Metric Label": "{chosenOutcomeLabel}". Your task is to generate 3 to 5 distinct, specific, and practical "Unit/Scale" suggestions for how the user could measure their chosen Outcome Metric Label ("{chosenOutcomeLabel}") daily.
-    For each of the unit suggestions, you MUST provide:
-    1.  A "unit": A specific, clear string describing the unit or scale (e.g., "1-10 satisfaction scale", "Hours slept", "Completed tasks", "Yes (1) / No (0)", "Energy level (0-10 or Low/Medium/High)"). Max 20 characters, a way to measure the outcome metric label.
-    2.  A "unitCategory": A very brief (1-3 words) classification of the unit type (e.g., "Scale", "Duration", "Count", "Binary", "Qualitative", "Categorical").
-
-    The unit suggestions should be diverse and appropriate for the given Outcome Label. They should be actionable for daily tracking.
-    Prioritize common and easy-to-understand measurement methods.
-
-    Return ONLY a valid JSON array containing 3 to 5 objects, where each object represents a unit suggestion and strictly follows the structure:
-    { "unit": "Example Unit/Scale", "unitCategory": "Example Category" }
-
-    Your entire response should be a JSON array. Do not include any other text or explanation outside of this JSON array.
-    Ensure the 'unit' strings are 20 characters or less each.
-  `;
-
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const generationResult = await model.generateContent({
-        contents: [{ role: "user", parts: [{text: promptText}] }],
-        generationConfig: {
-            ...GEMINI_CONFIG,
-            temperature: 0.7,
-            responseMimeType: "application/json",
-        },
-    });
-
-    const response = await generationResult.response;
-    const responseText = response.text()?.trim();
-
-    if (!responseText) {
-        logger.warn(`[generateOutcomeUnitSuggestions] Gemini returned an empty response for user <span class="math-inline">\{userId\}, label\: "</span>{chosenOutcomeLabel}".`);
-        throw new HttpsError('internal', 'AI failed to generate unit suggestions (empty response).');
-    }
-
-    logger.info(`[generateOutcomeUnitSuggestions] Received raw response from Gemini for user ${userId}. Length: ${responseText.length}.`);
-
-    let unitSuggestions;
-    try {
-        unitSuggestions = JSON.parse(responseText);
-    } catch (parseError) {
-        logger.error(`[generateOutcomeUnitSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: <span class="math-inline">\{parseError\.message\}\. Raw response\: "</span>{responseText}"`);
-        throw new HttpsError('internal', `AI returned an invalid format. Could not parse unit suggestions. Details: ${parseError.message}`);
-    }
-
-    if (!Array.isArray(unitSuggestions) || unitSuggestions.length < 3 || unitSuggestions.length > 5) {
-        logger.error(`[generateOutcomeUnitSuggestions] Parsed response is not an array of 3-5 elements for user ${userId}. Found ${unitSuggestions.length}. Parsed:`, unitSuggestions);
-        throw new HttpsError('internal', 'AI did not return 3-5 unit suggestions as expected.');
-    }
-
-    for (const suggestion of unitSuggestions) {
-        if (!suggestion.unit || !suggestion.unitCategory ||
-            typeof suggestion.unit !== 'string' || suggestion.unit.length > 70 ||
-            typeof suggestion.unitCategory !== 'string') {
-            logger.error(`[generateOutcomeUnitSuggestions] One or more unit suggestions have an invalid structure for user ${userId}. Suggestion:`, suggestion);
-            throw new HttpsError('internal', 'AI returned unit suggestions with an invalid or incomplete structure.');
-        }
-    }
-
-    logger.info(`[generateOutcomeUnitSuggestions] Successfully generated and parsed ${unitSuggestions.length} unit suggestions for user ${userId}.`);
-    return { success: true, unitSuggestions: unitSuggestions };
-
-  } catch (error) {
-    logger.error(`[generateOutcomeUnitSuggestions] Error during Gemini API call or processing for user <span class="math-inline">\{userId\}, label "</span>{chosenOutcomeLabel}":`, error);
-    if (error instanceof HttpsError) {
-        throw error;
-    }
-    if (error.message && error.message.toLowerCase().includes('safety')) {
-        logger.warn(`[generateOutcomeUnitSuggestions] Gemini content generation blocked due to safety settings for user <span class="math-inline">\{userId\}, label "</span>{chosenOutcomeLabel}".`);
-        throw new HttpsError('resource-exhausted', "The AI couldn't generate unit suggestions due to content restrictions. Please try a different outcome label if this persists.");
-    }
-    throw new HttpsError('internal', `Failed to generate AI unit suggestions due to a server error. Details: ${error.message}`);
   }
 });
 
@@ -3934,24 +3859,24 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   }
 
   const promptText = `
-    A user has a "Deeper Wish": "${userWish}".
+    A user has a "Deeper Wish" for their daily life: "${userWish}".
     They are tracking a primary "Outcome Metric": "${outcomeMetric.label}" (measured in "${outcomeMetric.unit}", with a daily goal of ${outcomeMetric.goal}).
 
-    Your task is to suggest 3 to 5 distinct, actionable, and relevant "Daily Habit Labels" that the user could track. These habits should be actions they can take daily to positively influence their Outcome Metric and help them achieve their Deeper Wish.
+    Your task is to suggest 5 distinct, actionable, and relevant "Daily Habit Labels" that the user could track. These habits should be actions they can take daily to positively influence their Outcome Metric and help them achieve their Deeper Wish.
     ${definedInputsContext}
 
     For each of the habit suggestions, you MUST provide:
-    1.  A "label": A clear, concise name for the daily habit (e.g., "Mindful Morning Walk", "Read One Chapter", "Limit Social Media to 30 Mins", "Evening Reflection Journal"). Max 45 characters.
-    2.  A "briefExplanation": A short (15-25 words) explanation of how this specific daily habit could plausibly connect to their Outcome Metric or Deeper Wish.
+    1.  A "label": A clear, concise name for the daily habit (e.g., "Mindful Morning Walk", "Read One Chapter", "Limit Social Media to 30 Mins", "Evening Reflection Journal"). Max 25 characters.
+    2.  A "briefExplanation": A short (10-15 words) explanation of how this specific daily habit could plausibly connect to their Outcome Metric or Deeper Wish.
 
-    The suggestions should be diverse if possible. Avoid suggesting to track the Outcome Metric itself as a habit. Focus on actionable input behaviors.
+    The suggestions should make sense in context, with 1 or 2 being more creative. Start the creative suggestions' "briefExplanations" with the word "More creative:" Avoid suggesting to track the Outcome Metric itself as a habit. Focus on actionable input behaviors.
 
-    Return ONLY a valid JSON array containing 3 to 5 objects, where each object represents a habit suggestion and strictly follows the structure:
+    Return ONLY a valid JSON array containing 5 objects, where each object represents a habit suggestion and strictly follows the structure:
     { "label": "Example Habit Label", "briefExplanation": "Example explanation of its relevance." }
 
     Your entire response should be a JSON array: [suggestion1, suggestion2, ..., suggestionN]
     Do not include any other text or explanation outside of this JSON array.
-    Ensure labels are 45 characters or less.
+    Ensure labels are 25 characters or less.
   `;
 
   logger.info(`[generateInputLabelSuggestions] Sending prompt to Gemini for user ${userId}.`);
@@ -3962,7 +3887,7 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
         contents: [{ role: "user", parts: [{text: promptText}] }],
         generationConfig: {
             ...GEMINI_CONFIG, // [cite: 43, 952, 1077, 1116]
-            temperature: 0.75, 
+            temperature: 0.85, 
             responseMimeType: "application/json", // [cite: 1077, 1116]
         },
     });
