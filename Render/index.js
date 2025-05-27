@@ -1017,7 +1017,7 @@ client.on(Events.MessageCreate, async message => {
 
       if (!customLabelText) { // [cite: 278]
         await message.author.send( // [cite: 278]
-          "It looks like your custom label was empty. Please type the label you'd like to use for your Outcome Metric (e.g., \"Overall Well-being\", max 30 characters)." // [cite: 278]
+          "It looks like your custom label was empty. Please type the label you'd like to use for your Outcome Metric\n\nE.g., \"Overall Well-being\"\n\n(max 30 characters)." // [cite: 278]
         ); // [cite: 278]
         console.log(`[MessageCreate CUSTOM_OUTCOME_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom outcome label.`); // [cite: 279]
         return; // [cite: 280]
@@ -1063,7 +1063,7 @@ client.on(Events.MessageCreate, async message => {
       if (!customOutcomeUnit) {
         await message.author.send(
           `It looks like your custom unit was empty. How would you like to measure **"${setupData.outcomeLabel}"** daily?\n` +
-          `Please type the Unit/Scale for your outcome (e.g., "0-10 rating", "% progress"). Aim for a concise unit.`
+          `Please type the Unit/Scale for your outcome\n\nE.g., "0-10 rating", "% progress".\n\nAim for a concise unit.`
         );
         console.log(`[MessageCreate CUSTOM_UNIT_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom unit.`);
         return; // Keep state, wait for new message
@@ -1402,7 +1402,7 @@ client.on(Events.MessageCreate, async message => {
       if (!customInput1Unit) {
         await message.author.send(
           `It looks like your custom unit for **"${input1Label}"** was empty. How would you like to measure this habit daily?\n` +
-          `Please type your custom Unit/Scale (e.g., "minutes", "reps", "0-10 effort", "pages"). Aim for a concise unit.`
+          `Please type your custom Unit/Scale\n\nE.g., "minutes", "reps", "0-10 effort", "pages"\n\nAim for a concise unit.`
         );
         console.log(`[MessageCreate INPUT1_CUSTOM_UNIT_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom unit for Input 1.`);
         return; // Keep state, wait for new message
@@ -1478,7 +1478,7 @@ client.on(Events.MessageCreate, async message => {
       if (!customInput2Unit) {
         await message.author.send(
           `It looks like your custom unit for your second habit **"${input2Label}"** was empty. How would you like to measure this habit daily?\n` +
-          `Please type your custom Unit/Scale (e.g., "minutes", "reps", "0-10 effort", "pages"). Aim for a concise unit.`
+          `Please type your custom Unit/Scale\n\nE.g., "minutes", "reps", "0-10 effort", "pages"\n\nAim for a concise unit.`
         );
         console.log(`[MessageCreate INPUT2_CUSTOM_UNIT_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom unit for Input 2.`);
         return; // Keep state, wait for new message
@@ -1551,7 +1551,7 @@ client.on(Events.MessageCreate, async message => {
       if (!customInput3Unit) {
         await message.author.send(
           `It looks like your custom unit for your third habit **"${input3Label}"** was empty. How would you like to measure this habit daily?\n` +
-          `Please type your custom Unit/Scale (e.g., "minutes", "reps", "0-10 effort", "pages"). Aim for a concise unit.`
+          `Please type your custom Unit/Scale\n\nE.g., "minutes", "reps", "0-10 effort", "pages"\n\nAim for a concise unit.`
         );
         console.log(`[MessageCreate INPUT3_CUSTOM_UNIT_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom unit for Input 3.`);
         return; // Keep state, wait for new message
@@ -2495,6 +2495,7 @@ client.on(Events.InteractionCreate, async interaction => {
             outcomeGoal: null,
             currentActionIndex: 0,
             actions: [],
+            guildId: interaction.guild.id,
             interactionId: interaction.id
         });
         console.log(`[${interaction.customId} STATE_INIT ${interaction.id}] Initialized DM flow state for ${userTag}: awaiting_wish.`);
@@ -2817,6 +2818,13 @@ client.on(Events.InteractionCreate, async interaction => {
         if (updateSettingsResultFirebase && updateSettingsResultFirebase.success === true && typeof updateSettingsResultFirebase.message === 'string') {
           console.log(`[confirm_metrics_proceed_btn FIREBASE_SUCCESS ${interactionId}] updateWeeklySettings successful for ${userTagForLog}.`);
           setupData.settingsMessage = updateSettingsResultFirebase.message; // Store for later
+
+          setupData.rawPayload = { // firebasePayload contains the strings ready for posting
+            deeperProblem: firebasePayload.deeperProblem,
+            outputSetting: firebasePayload.outputSetting, // This is the "Goal #, Unit, Label" string
+            inputSettings: firebasePayload.inputSettings // Array of "Goal #, Unit, Label" strings
+            };
+
           setupData.dmFlowState = 'awaiting_duration_selection'; // Transition to duration
           userExperimentSetupData.set(userId, setupData);
 
@@ -3805,45 +3813,62 @@ client.on(Events.InteractionCreate, async interaction => {
       const userId = interaction.user.id;
       const setupData = userExperimentSetupData.get(userId);
 
-      if (!setupData || !setupData.settingsMessage || !setupData.rawPayload) {
-          await interaction.editReply({ content: "⚠️ Error: Could not retrieve experiment details to post. Your settings are saved.", components: [] });
+      // Add guildId to the condition check
+      if (!setupData || !setupData.settingsMessage || !setupData.rawPayload || !setupData.guildId || !setupData.experimentDuration) {
+          await interaction.editReply({ content: "⚠️ Error: Could not retrieve complete experiment details or original server context to post. Your settings are saved.", components: [] });
+          userExperimentSetupData.delete(userId); // Cleanup
           return;
       }
 
-      const experimentsChannelId = '1364283719296483329';
-      const channel = interaction.guild.channels.cache.get(experimentsChannelId);
+      const experimentsChannelId = '1364283719296483329'; // Your hardcoded channel ID
+      let targetGuild;
+
+      try {
+          targetGuild = await client.guilds.fetch(setupData.guildId); // Fetch guild using stored ID
+      } catch (guildFetchError) {
+          console.error(`[post_exp_final_yes] Error fetching guild ${setupData.guildId}:`, guildFetchError);
+          await interaction.editReply({ content: "⚠️ Error: Could not find the original server to post to. Your settings are saved.", components: [] });
+          userExperimentSetupData.delete(userId); // Cleanup
+          return;
+      }
+
+      const channel = targetGuild.channels.cache.get(experimentsChannelId);
+      // For more robustness, consider: const channel = await targetGuild.channels.fetch(experimentsChannelId).catch(() => null);
+
 
       if (channel && channel.isTextBased()) {
           try {
-              const { deeperProblem, outputSetting, inputSettings } = setupData.rawPayload;
+              const { deeperProblem, outputSetting, inputSettings } = setupData.rawPayload; // [cite: 2262]
               const postEmbed = new EmbedBuilder()
-                  .setColor('#7289DA')
-                  .setTitle(`🚀 ${interaction.user.username} is starting a new experiment!`)
+                  .setColor('#7289DA') // Blue
+                  .setTitle(`🚀 ${interaction.user.username} is starting a new experiment!`) // interaction.user.username is fine from DM
                   .setDescription(`**🎯 Deeper Goal / Problem / Theme:**\n${deeperProblem}`)
                   .addFields(
                       { name: '📊 Daily Outcome to Track', value: outputSetting || "Not specified" },
                       { name: '🛠️ Habit 1', value: inputSettings[0] || "Not specified" }
                   )
-                  .setFooter({text: `Let's support them! Duration: ${setupData.experimentDuration.replace('_',' ')}`})
+                  .setFooter({ text: `Let's support them! Duration: ${setupData.experimentDuration.replace('_', ' ')}` })
                   .setTimestamp();
-              if (inputSettings[1]) {
+
+              if (inputSettings[1]) { // [cite: 2266]
                   postEmbed.addFields({ name: '🛠️ Habit 2', value: inputSettings[1], inline: true });
               }
-              if (inputSettings[2]) {
+              if (inputSettings[2]) { // [cite: 2267]
                   postEmbed.addFields({ name: '🛠️ Habit 3', value: inputSettings[2], inline: true });
               }
 
               await channel.send({ embeds: [postEmbed] });
-              await interaction.editReply({ content: `✅ Shared to the #experiments channel!`, components: [] });
+              await interaction.editReply({ content: `✅ Shared to the #experiments channel in ${targetGuild.name}!`, components: [] }); // [cite: 2269]
           } catch (postError) {
-              console.error(`[post_exp_final_yes] Error posting to channel ${experimentsChannelId}:`, postError);
-              await interaction.editReply({ content: "⚠️ Could not post to the #experiments channel. Please check my permissions there. Your settings are saved.", components: [] });
+              console.error(`[post_exp_final_yes] Error posting to channel ${experimentsChannelId}:`, postError); // [cite: 2270]
+              await interaction.editReply({ content: "⚠️ Could not post to the #experiments channel. Please check my permissions there. Your settings are saved.", components: [] }); // [cite: 2271]
           }
       } else {
-          await interaction.editReply({ content: "⚠️ Could not find the #experiments channel to post. Your settings are saved.", components: [] });
+          await interaction.editReply({ content: `⚠️ Could not find the #experiments channel in ${targetGuild.name}. Your settings are saved.`, components: [] }); // [cite: 2272]
       }
-      userExperimentSetupData.delete(userId); // Clean up
-   }
+      userExperimentSetupData.delete(userId); // Clean up [cite: 2273]
+  }
+   
    else if (interaction.isButton() && interaction.customId === 'post_exp_final_no') {
       await interaction.update({
           content: "👍 Got it! Your experiment is all set and kept private. Good luck!",
@@ -4772,7 +4797,8 @@ else if (interaction.isModalSubmit()) {
               input2Label: getLabel(payload.inputSettings[1], null),
               input3Label: getLabel(payload.inputSettings[2], null),
               outputLabel: getLabel(payload.outputSetting, "Output"),
-              rawPayload: payload
+              rawPayload: payload,
+              guildId: interaction.guild.id
           });
 
           // --- Build the Duration Embed (Using User Preferences from previous step) ---

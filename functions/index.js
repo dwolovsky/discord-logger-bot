@@ -252,7 +252,7 @@ Highlight evidence of growth, adaptation, and the impact of sustained effort by 
 - Look for subtle shifts in language in *this period's notes*, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress *within this experiment*.
 - **Also, select 1-2 particularly insightful or representative short quotes directly from the provided 'Notes Summary' (from *this experiment*) that capture a key moment of learning, challenge, or success, and weave them into your analysis where relevant.**
 
-### 🧪 Experiments & Takeaway
+### 🧪 Next Experiment Ideas
 Small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 4 small, actionable experiments (tweaks) for their *next experiment*, designed to make their current positive actions easier, more consistent, or more impactful, based on the analysis of *this experiment's data*. Frame these as curious explorations, not fixes. Experiments should aim to:
 1. Build on momentum from positive trends or consistent efforts identified in the 'Growth Highlights' section for *this experiment*.
 2. Directly address the friction points or consistency challenges identified in the 'Challenges' section from *this experiment's data and notes*.
