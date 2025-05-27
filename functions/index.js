@@ -1598,6 +1598,8 @@ function normalizeLabel(str) {
       .trim();
   }
 
+  const normalizeUnit = normalizeLabel;
+
 // Helper function to interpret group keys for summary messages
 function interpretFirebaseGroupKey(groupKeyString, input1Label, input2Label) {
   // groupKeyString is like 'input1High_input2Low', 'input1Low_input2High', etc.
