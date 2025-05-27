@@ -1044,7 +1044,7 @@ client.on(Events.MessageCreate, async message => {
       setupData.dmFlowState = 'awaiting_custom_outcome_unit_text'; // Transition to the state for typing the unit
       userExperimentSetupData.set(userId, setupData);
 
-      const unitPromptMessage = `Great! Your **Outcome Label** = "${setupData.outcomeLabel}".\n\nNow we need the "scale" or "units" to measure it by.\n\nHere are some ideas to get you started.\n\nFeel free to use these for inspiration, and type in your answer below!\n● 0-10 rating\n● % progress\n● completed items`;
+      const unitPromptMessage = `Great! Your **Outcome Label** = "${setupData.outcomeLabel}".\n\nNow we need the "scale" or "units" to measure it by.\n\nHere are some ideas to get you started.\n\nFeel free to use these for inspiration, and type in your answer below!\n● 0-10 rating\n● % progress\n● # of occurrences`;
       
       await message.author.send(unitPromptMessage);
       console.log(`[MessageCreate CUSTOM_LABEL_UNIT_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for custom outcome unit text (after custom label). State: ${setupData.dmFlowState}.`);
@@ -3919,7 +3919,7 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = 'awaiting_custom_outcome_unit_text'; // Transition to the state for typing the unit
           userExperimentSetupData.set(userId, setupData);
 
-          const unitPromptMessage = `Great! Your **Outcome Label** = "${setupData.outcomeLabel}".\n\nNow we need the "scale" or "units" to measure it by\n\nHere are some ideas to get you started.\n\nFeel free to use these for inspiration, and type in your answer below!\n\n● 0-10 rating\n● % progress\n● completed items`;
+          const unitPromptMessage = `Great! Your **Outcome Label** = "${setupData.outcomeLabel}".\n\nNow we need the "scale" or "units" to measure it by\n\nHere are some ideas to get you started.\n\nFeel free to use these for inspiration, and type in your answer below!\n\n● 0-10 rating\n● % progress\n● # of occurrences`;
           
           try {
             await interaction.editReply({ // Edit the DM message that had the label dropdown

@@ -3727,7 +3727,7 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
 
     Think in terms of things that are measurable by:
         * **Simple Rating Scales:** How did the user feel or perceive a state?
-            * Examples: 'Satisfaction (0-10)', 'Career confidence', 'Energy Level (0-10)', 'Optimism (0-10)', 'Faith in myself (0-10), 'Motivation (0-10)', 'Stress (0-10)'.
+            * Examples: 'Satisfaction', 'Career confidence', 'Energy Level', 'Optimism', 'Faith in myself, 'Motivation', 'Stress'.
         * **Simple Counts of Key Results or Events outside the user's control (or that the user has so much inner resistance to, that it is practically outside their direct control):** Is the user accumulating specific positive states (or avoiding negative states) that are easy to identify and count?
             * Examples: 'Mindful Moments', 'Food Cravings'.
 
