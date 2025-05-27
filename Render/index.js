@@ -871,7 +871,7 @@ client.on(Events.MessageCreate, async message => {
         
         const outcomeLabelSelectMenu = new StringSelectMenuBuilder()
           .setCustomId('ai_outcome_label_select') // [cite: 1406]
-          .setPlaceholder('Select a suggested Outcome Label or choose to enter your own.'); // [cite: 1406]
+          .setPlaceholder('Select an Outcome or choose to enter your own.'); // [cite: 1406]
         llmResult.suggestions.forEach((suggestion, index) => {
           outcomeLabelSelectMenu.addOptions(
             new StringSelectMenuOptionBuilder()
@@ -1185,7 +1185,7 @@ client.on(Events.MessageCreate, async message => {
           console.log(`[MessageCreate INPUT1_LABEL_SUGGESTIONS_SUCCESS ${interactionIdForLog}] Received ${habitSuggestionsResult.suggestions.length} habit label suggestions for Input 1 for ${userTagForLog}.`); //
           const habitLabelSelectMenu = new StringSelectMenuBuilder()
             .setCustomId('ai_input1_label_select') //
-            .setPlaceholder('Select a suggested Habit Label or enter your own.'); //
+            .setPlaceholder('Select a Habit or enter your own.'); //
           habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
             habitLabelSelectMenu.addOptions(
               new StringSelectMenuOptionBuilder()
@@ -2383,7 +2383,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const deeperProblemInput = new TextInputBuilder()
           .setCustomId('deeper_problem')
-          .setLabel("🧭 Deeper Problem / Goal / Theme?")
+          .setLabel("🧭 Deeper Wish?")
           .setPlaceholder("e.g. 'Reduce distractions' OR 'Go to sleep earlier.'")
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true);
@@ -2613,7 +2613,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
               const habitLabelSelectMenu = new StringSelectMenuBuilder()
                 .setCustomId(`ai_input${nextInputNumber}_label_select`) // Dynamic Custom ID
-                .setPlaceholder(`Select a suggested Label for Habit ${nextInputNumber} or enter your own.`);
+                .setPlaceholder(`Select a Label for Habit ${nextInputNumber} or enter your own.`);
 
               habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
                 habitLabelSelectMenu.addOptions(
@@ -2976,7 +2976,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const deeperProblemInput = new TextInputBuilder()
           .setCustomId('deeper_problem')
-          .setLabel("🧭 Deeper Goal / Problem / Theme?")
+          .setLabel("🧭 Deeper Wish?")
           .setPlaceholder("e.g. 'Reduce distractions'")
           .setStyle(TextInputStyle.Paragraph)
           .setValue(deeperProblemValue)
@@ -2985,7 +2985,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const outputSettingInput = new TextInputBuilder()
           .setCustomId('output_setting')
           .setLabel("🎯 Outcome (Format: Goal #, Unit, Label)")
-          .setPlaceholder("e.g. '7.5, hours, Sleep Quality'")
+          .setPlaceholder("e.g. '7.5, hours, Sleep'")
           .setValue(outputValue)
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
@@ -3001,7 +3001,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const input2SettingInput = new TextInputBuilder()
           .setCustomId('input2_setting')
           .setLabel("🛠️ Habit 2 (Optional: #, Unit, Label)")
-          .setPlaceholder("Leave blank if not used. Else: '1, count, Tasks'")
+          .setPlaceholder("Same format, or leave blank if not used.")
           .setValue(inputValuesFormatted[1])
           .setStyle(TextInputStyle.Short)
           .setRequired(false);
@@ -3009,7 +3009,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const input3SettingInput = new TextInputBuilder()
           .setCustomId('input3_setting')
           .setLabel("🛠️ Habit 3 (Optional: #, Unit, Label)")
-          .setPlaceholder("Leave blank if not used. Else: '30, mins, Reading'")
+          .setPlaceholder("Same format, or leave blank if not used.")
           .setValue(inputValuesFormatted[2])
           .setStyle(TextInputStyle.Short)
           .setRequired(false);
@@ -3086,7 +3086,7 @@ client.on(Events.InteractionCreate, async interaction => {
           console.log(`[log_daily_progress_btn] Building modal for user ${interaction.user.id}.`);
           const modal = new ModalBuilder()
             .setCustomId('dailyLogModal_firebase')
-            .setTitle(`📝 Fuel Your Experiment With Data`);
+            .setTitle(`📝 Fuel Your Experiment`);
           const components = [];
 
           components.push(
@@ -3094,7 +3094,7 @@ client.on(Events.InteractionCreate, async interaction => {
               new TextInputBuilder()
                 .setCustomId('log_output_value')
                 .setLabel(`${settings.output.label} ${settings.output.unit}`)
-                .setPlaceholder(`Ideal: ${settings.output.goal}`)
+                .setPlaceholder(`Goal: ${settings.output.goal}`)
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
             )
@@ -3104,7 +3104,7 @@ client.on(Events.InteractionCreate, async interaction => {
               new TextInputBuilder()
                 .setCustomId('log_input1_value')
                 .setLabel(`${settings.input1.label} ${settings.input1.unit}`)
-                .setPlaceholder(`Ideal: ${settings.input1.goal}`)
+                .setPlaceholder(`Goal: ${settings.input1.goal}`)
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
             )
@@ -3115,7 +3115,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 new TextInputBuilder()
                   .setCustomId('log_input2_value')
                   .setLabel(`${settings.input2.label} ${settings.input2.unit}`)
-                  .setPlaceholder(`Ideal: ${settings.input2.goal}`)
+                  .setPlaceholder(`Goal: ${settings.input2.goal}`)
                   .setStyle(TextInputStyle.Short)
                   .setRequired(true)
               )
@@ -3127,26 +3127,49 @@ client.on(Events.InteractionCreate, async interaction => {
                 new TextInputBuilder()
                   .setCustomId('log_input3_value')
                   .setLabel(`${settings.input3.label} ${settings.input3.unit}`)
-                  .setPlaceholder(`Ideal: ${settings.input3.goal}`)
+                  .setPlaceholder(`Goal: ${settings.input3.goal}`)
                   .setStyle(TextInputStyle.Short)
                   .setRequired(true)
                )
             );
           }
-          components.push(
-            new ActionRowBuilder().addComponents(
-              new TextInputBuilder()
-                .setCustomId('log_notes')
-                .setLabel('💭 Experiment / Life) Notes')
-                .setPlaceholder(
-                  settings.deeperProblem
-                    ? `Focus: ${settings.deeperProblem.substring(0, 85)}${settings.deeperProblem.length > 85 ? '...' : ''}`
-                    : 'What did you observe? Any questions or insights?'
-                )
-                .setStyle(TextInputStyle.Paragraph)
-                .setRequired(true)
-             )
-          );
+ 
+        // 1. Define the notesInput TextInputBuilder *without* the placeholder initially
+        const notesInput = new TextInputBuilder()
+          .setCustomId('log_notes')
+          .setLabel('💭 Experiment / Life) Notes')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true);
+
+        // 2. Logic to define the finalPlaceholder string
+        const userDeeperWish = settings.deeperProblem; // Get the user's deeper wish from settings
+        let finalPlaceholder;
+
+        if (userDeeperWish) {
+          const questionPrefix = "What happened that affected your goal? → ";
+          // Calculate remaining length for the wish.
+          // Aim for a total placeholder length of ~90-95 characters.
+          // The prefix "What happened that affected your goal? → " is 39 characters.
+          // So, let's allocate about 55 characters for the truncated wish.
+          const maxWishDisplayLength = 55; 
+
+          const truncatedWish = userDeeperWish.length > maxWishDisplayLength
+            ? userDeeperWish.substring(0, maxWishDisplayLength) + "..." // Add ellipsis if truncated
+            : userDeeperWish;
+          finalPlaceholder = questionPrefix + truncatedWish;
+        } else {
+          // Fallback if settings.deeperProblem is somehow not set or empty
+          finalPlaceholder = 'What did you observe? Any questions or insights?'; 
+        }
+
+        // 3. Set the dynamically created placeholder on notesInput
+        notesInput.setPlaceholder(finalPlaceholder);
+
+        // 4. Add the configured notesInput (now with the placeholder) to an ActionRowBuilder 
+        //    and then push it to your components array
+        components.push(
+          new ActionRowBuilder().addComponents(notesInput)
+        );
 
           modal.addComponents(components.slice(0, 5));
           await interaction.showModal(modal);
