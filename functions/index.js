@@ -3782,9 +3782,8 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
     }
 
     for (const suggestion of suggestions) {
-        if (!suggestion.label || !suggestion.suggestedUnitType || !suggestion.briefExplanation ||
+        if (!suggestion.label || !suggestion.briefExplanation ||
             typeof suggestion.label !== 'string' || suggestion.label.length > 45 ||
-            typeof suggestion.suggestedUnitType !== 'string' ||
             typeof suggestion.briefExplanation !== 'string') {
             logger.error(`[generateOutcomeLabelSuggestions] One or more suggestions have an invalid structure for user ${userId}. Suggestion:`, suggestion);
             throw new HttpsError('internal', 'AI returned suggestions with an invalid or incomplete structure.');
