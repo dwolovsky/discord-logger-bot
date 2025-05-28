@@ -3145,7 +3145,7 @@ client.on(Events.InteractionCreate, async interaction => {
         // 1. Define the notesInput TextInputBuilder *without* the placeholder initially
         const notesInput = new TextInputBuilder()
           .setCustomId('log_notes')
-          .setLabel('💭 Experiment / Life) Notes')
+          .setLabel('💭 Experiment & Life Notes')
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true);
 
@@ -3154,12 +3154,12 @@ client.on(Events.InteractionCreate, async interaction => {
         let finalPlaceholder;
 
         if (userDeeperWish) {
-          const questionPrefix = "What happened that affected your goal? → ";
+          const questionPrefix = "What affected your goal today? → ";
           // Calculate remaining length for the wish.
           // Aim for a total placeholder length of ~90-95 characters.
-          // The prefix "What happened that affected your goal? → " is 39 characters.
-          // So, let's allocate about 55 characters for the truncated wish.
-          const maxWishDisplayLength = 55; 
+          // The prefix "What affected your goal today? → " is 35 characters.
+          // So, let's allocate about 60 characters for the truncated wish.
+          const maxWishDisplayLength = 60; 
 
           const truncatedWish = userDeeperWish.length > maxWishDisplayLength
             ? userDeeperWish.substring(0, maxWishDisplayLength) + "..." // Add ellipsis if truncated
