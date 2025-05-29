@@ -3061,14 +3061,21 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
             const userData = userDoc.data();
 
             if (userData.experimentCurrentSchedule &&
+                typeof userData.experimentCurrentSchedule === 'object' &&
                 userData.experimentCurrentSchedule.remindersSkipped === false && // [cite: 827]
                 userData.experimentCurrentSchedule.reminderFrequency &&
                 userData.experimentCurrentSchedule.reminderFrequency !== 'none' && // [cite: 827]
                 userData.experimentCurrentSchedule.experimentEndTimestamp &&
+                typeof userData.experimentCurrentSchedule.experimentEndTimestamp.toDate === 'function' &&
                 userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() > now) { // [cite: 827]
 
                 const schedule = userData.experimentCurrentSchedule; // [cite: 827]
                 
+            if (typeof schedule !== 'object' || schedule === null) {
+                            logger.error(`sendScheduledReminders: User ${userId} experimentCurrentSchedule (variable 'schedule') was not a valid object for destructuring. Value:`, schedule);
+                            return; // Skip this user
+                        }
+
                 // --- Step 2: Initialize Daily Tracking Variables ---
                 const {
                     reminderWindowStartUTC, // [cite: 828]
