@@ -1017,7 +1017,7 @@ client.on(Events.MessageCreate, async message => {
 
       if (!customLabelText) { // [cite: 278]
         await message.author.send( // [cite: 278]
-          "It looks like your custom label was empty. Please type the label you'd like to use for your Outcome Metric\n\nE.g., \"Overall Well-being\"\n\n(max 30 characters)." // [cite: 278]
+          "It looks like your Outcome was empty. Please type your Outcome Metric\n\nE.g., \"Overall Well-being\"\n\n(max 30 characters)." // [cite: 278]
         ); // [cite: 278]
         console.log(`[MessageCreate CUSTOM_OUTCOME_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom outcome label.`); // [cite: 279]
         return; // [cite: 280]
@@ -1044,7 +1044,7 @@ client.on(Events.MessageCreate, async message => {
       setupData.dmFlowState = 'awaiting_custom_outcome_unit_text'; // Transition to the state for typing the unit
       userExperimentSetupData.set(userId, setupData);
 
-      const unitPromptMessage = `Great! Your **Outcome Label** = "${setupData.outcomeLabel}".\n\nNow we need the "scale" or "units" to measure it by.\n\nHere are some ideas to get you started.\n\nFeel free to use these for inspiration, and type in your answer below!\n● 0-10 rating\n● % progress\n● # of occurrences`;
+      const unitPromptMessage = `Great! Your **Outcome** = "${setupData.outcomeLabel}".\n\nNow we need the "scale" or "units" to measure it by.\n\nHere are some ideas to get you started.\n\nFeel free to use these for inspiration, and type in your answer below!\n● 0-10 rating\n● % progress\n● # of occurrences`;
       
       await message.author.send(unitPromptMessage);
       console.log(`[MessageCreate CUSTOM_LABEL_UNIT_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for custom outcome unit text (after custom label). State: ${setupData.dmFlowState}.`);
@@ -1103,11 +1103,7 @@ client.on(Events.MessageCreate, async message => {
 
       console.log(`[MessageCreate CUSTOM_UNIT_VALID ${interactionIdForLog}] User ${userTag} confirmed custom unit: "${customOutcomeUnit}" for label "${setupData.outcomeLabel}". Combo length: ${combinedLength}. State changed to '${setupData.dmFlowState}'.`);
 
-      const targetPromptMessage = `Perfect!
-    **Outcome Label:** "${setupData.outcomeLabel}"
-    Unit/Scale: "${setupData.outcomeUnit}"
-
-    What is your daily **Target #** for ${setupData.outcomeLabel} ${setupData.outcomeUnit}?\n\nPlease type the number below (e.g., 4, 7.5, 0, 1).`;
+      const targetPromptMessage = `Perfect! Your Measurable Outcome is\n\n**"${setupData.outcomeLabel}" "${setupData.outcomeUnit}"**\n\nWhat is your daily **Target Number** for\n\n${setupData.outcomeLabel} ${setupData.outcomeUnit}?\n\nPlease type the number below (e.g., 4, 7.5, 0, 1).`;
 
       await message.author.send(targetPromptMessage);
       console.log(`[MessageCreate CUSTOM_UNIT_TARGET_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for outcome target number.`);
@@ -1211,7 +1207,7 @@ client.on(Events.MessageCreate, async message => {
           console.log(`[MessageCreate INPUT1_LABEL_DROPDOWN_SENT ${interactionIdForLog}] Displayed AI habit label suggestions dropdown to ${userTagForLog}. State: ${setupData.dmFlowState}.`); //
         } else {
           // AI call failed or returned no suggestions, fallback to manual input for label
-          let failureMessage = "I had a bit of trouble brainstorming Habit Label suggestions right now. 😕"; //
+          let failureMessage = "I had a bit of trouble brainstorming Habit suggestions right now. 😕"; //
           if (habitSuggestionsResult && habitSuggestionsResult.error) {
             failureMessage += ` (Reason: ${habitSuggestionsResult.error})`; //
           }
@@ -3967,7 +3963,7 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = 'awaiting_custom_outcome_unit_text'; // Transition to the state for typing the unit
           userExperimentSetupData.set(userId, setupData);
 
-          const unitPromptMessage = `Great! Your **Outcome Label** = "${setupData.outcomeLabel}".\n\nNow we need the "scale" or "units" to measure it by\n\nHere are some ideas to get you started.\n\nFeel free to use these for inspiration, and type in your answer below!\n\n● 0-10 rating\n● % progress\n● # of occurrences`;
+          const unitPromptMessage = `Great! The Outcome you're tracking is\n\n**"${setupData.outcomeLabel}".**\n\nNow we need the "scale" or "units" to measure it by\n\nHere are some ideas to get you started.\n\nFeel free to use these for inspiration, and type in your answer below!\n\n● 0-10 rating\n● % progress\n● # of occurrences`;
           
           try {
             await interaction.editReply({ // Edit the DM message that had the label dropdown
@@ -4034,7 +4030,7 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = 'awaiting_input1_label_text'; // Fallback to existing state for manual text input
           userExperimentSetupData.set(userId, setupData);
 
-          const customLabelPrompt = `Please type the label for your habit (or life priority) below (max 30 characters, e.g., " Journaling", "Mindful Walk", "Exercise").`;
+          const customLabelPrompt = `Please type your habit (or life priority) below\n\nE.g.\n● " Journaling"\n● "Mindful Walk"\n● "Exercise".\n\n(max 30 characters)`;
           try {
             await interaction.editReply({
               content: customLabelPrompt,
@@ -4125,7 +4121,7 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = 'awaiting_input2_label_text'; // Fallback to existing state for manual text input
           userExperimentSetupData.set(userId, setupData);
 
-          const customLabelPrompt = `Please type the label for your habit (or life priority) below\n\n(e.g., " Journaling", "Mindful Walk", "Exercise").\n\nMax 30 characters`;
+          const customLabelPrompt = `Please type your habit (or life priority) below\n\nE.g.\n\n● " Journaling"\n● "Mindful Walk"\n● "Exercise"\n\n(max 30 characters)`;
           try {
             // Since this interaction is from a DM, editReply might fail if the original message is too old or not the last one.
             // Sending a new message is safer.
