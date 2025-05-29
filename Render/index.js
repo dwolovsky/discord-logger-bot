@@ -2038,6 +2038,61 @@ client.on(Events.InteractionCreate, async interaction => {
             const goDeferSuccessTime = performance.now();
             console.log(`[/go] Deferral took: ${(goDeferSuccessTime - goCommandStartTime).toFixed(2)}ms.`);
 
+            // ===== START MODIFIED PRE-FETCH for /go =====
+            (async () => {
+                const GO_CACHE_MAX_AGE_MS = 1 * 60 * 60 * 1000; // 1 hour for /go's own cache refresh
+                const userId = interaction.user.id; // Define userId for use in this scope
+                const userTag = interaction.user.tag; // Define userTag for use in this scope
+                const interactionId = interaction.id; // Define interactionId for use in this scope
+
+                try {
+                    const existingSetupData = userExperimentSetupData.get(userId);
+                    const currentCachedTime = existingSetupData?.preFetchedWeeklySettingsTimestamp;
+
+                    if (existingSetupData?.preFetchedWeeklySettings && currentCachedTime && (Date.now() - currentCachedTime < GO_CACHE_MAX_AGE_MS)) {
+                        console.log(`[/go ASYNC_PREFETCH_USE_CACHE ${interactionId}] Using existing recent pre-fetched settings for ${userTag}.`);
+                    } else {
+                        if (existingSetupData?.preFetchedWeeklySettings) { // Log if we are refreshing a stale cache
+                            console.log(`[/go ASYNC_PREFETCH_REFRESH_STALE ${interactionId}] Pre-fetched settings for ${userTag} are stale (older than ${GO_CACHE_MAX_AGE_MS / (60 * 1000)} mins). Refreshing.`);
+                        } else {
+                            console.log(`[/go ASYNC_PREFETCH_REFRESH_MISSING ${interactionId}] No recent pre-fetched settings for ${userTag}. Asynchronously pre-fetching.`);
+                        }
+                        
+                        const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
+                        // It's good practice to get the most current version of existingData before merging,
+                        // though for this specific pre-fetch, direct overwriting of prefetch fields is usually fine.
+                        const dataToStore = userExperimentSetupData.get(userId) || {}; 
+
+                        if (settingsResult && settingsResult.settings) {
+                            userExperimentSetupData.set(userId, {
+                                ...dataToStore, // Preserve other potential fields in setupData
+                                preFetchedWeeklySettings: settingsResult.settings,
+                                preFetchedWeeklySettingsTimestamp: Date.now()
+                            });
+                            console.log(`[/go ASYNC_PREFETCH_SUCCESS ${interactionId}] Successfully pre-fetched and cached new weekly settings for ${userTag}.`);
+                        } else {
+                            console.log(`[/go ASYNC_PREFETCH_NO_DATA ${interactionId}] No weekly settings found during async pre-fetch for ${userTag}. Current cache (if any) for preFetched fields might effectively be cleared or remain stale if not overwritten.`);
+                            // If no settings are returned, we might want to explicitly clear any old preFetched settings
+                            // to ensure the "Log Daily Data" button then performs a fresh fetch.
+                            const currentData = userExperimentSetupData.get(userId) || {};
+                            delete currentData.preFetchedWeeklySettings;
+                            delete currentData.preFetchedWeeklySettingsTimestamp;
+                            userExperimentSetupData.set(userId, currentData);
+                            console.log(`[/go ASYNC_PREFETCH_NO_DATA_CLEARED_CACHE ${interactionId}] Cleared any potentially stale preFetched settings for ${userTag} due to empty fetch result.`);
+                        }
+                    }
+                } catch (fetchError) {
+                    console.error(`[/go ASYNC_PREFETCH_ERROR ${interactionId}] Error pre-fetching weekly settings for ${userTag}:`, fetchError.message);
+                    // On error, clear potentially stale pre-fetched data to force a fresh fetch later
+                    const dataToClearOnError = userExperimentSetupData.get(userId) || {};
+                    delete dataToClearOnError.preFetchedWeeklySettings;
+                    delete dataToClearOnError.preFetchedWeeklySettingsTimestamp;
+                    userExperimentSetupData.set(userId, dataToClearOnError);
+                    console.log(`[/go ASYNC_PREFETCH_ERROR_CLEARED_CACHE ${interactionId}] Cleared any potentially stale preFetched settings for ${userTag} due to fetch error.`);
+                }
+            })();
+            // ===== END MODIFIED PRE-FETCH for /go =====
+
             // --- Create an Embed for the Go Hub message ---
             const goHubEmbed = new EmbedBuilder()
               .setColor('#7F00FF') // A nice vibrant purple, change as you like
@@ -2846,6 +2901,16 @@ client.on(Events.InteractionCreate, async interaction => {
 
           setupData.dmFlowState = 'awaiting_duration_selection'; // Transition to duration
           userExperimentSetupData.set(userId, setupData);
+          console.log(`[confirm_metrics_proceed_btn SETUP_DATA_UPDATED ${interactionId}] Updated setupData for user ${userId} in AI flow.`);
+          
+              // ===== START: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE (AI Flow) =====
+                if (setupData) { // setupData was retrieved and updated just above
+                    delete setupData.preFetchedWeeklySettings;
+                    delete setupData.preFetchedWeeklySettingsTimestamp;
+                    userExperimentSetupData.set(userId, setupData); // Save the changes to setupData
+                    console.log(`[confirm_metrics_proceed_btn CACHE_CLEARED ${interactionId}] Cleared pre-fetched weekly settings for user ${userTagForLog} after settings update (AI flow).`);
+                }
+                // ===== END: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE (AI Flow) =====
 
           const durationEmbed = new EmbedBuilder()
               .setColor('#47d264')
@@ -3074,21 +3139,82 @@ client.on(Events.InteractionCreate, async interaction => {
       try {
           // Logic copied from the old /log command handler
 
-          const fetchSettingsStartTime = performance.now();
-          console.log(`[log_daily_progress_btn] Fetching weekly settings for User: ${interaction.user.id}`);
-          const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, interaction.user.id);
-          const fetchSettingsTime = performance.now();
-          console.log(`[log_daily_progress_btn] getWeeklySettings call took: ${(fetchSettingsTime - fetchSettingsStartTime).toFixed(2)}ms.`);
+         // ===== START: MODIFIED LOGIC TO GET SETTINGS (PREFER PRE-FETCHED) =====
+            let settingsResult;
+            let directFetchPerformed = false; // Flag to track if we do a direct fetch
+            let fetchSettingsTime; // Will be set if direct fetch occurs
 
-          if ((fetchSettingsTime - logButtonStartTime) > 2800) {
-              console.warn(`[log_daily_progress_btn] Fetching settings took >2.8s for User ${interaction.user.tag}. Interaction likely expired.`);
-              try {
-                   await interaction.followUp({ content: "🚦 Sorry, we tripped while getting your settings. Please click 'Log Daily Data' again.", flags: MessageFlags.Ephemeral });
-              } catch (followUpError) {
-                 console.error('[log_daily_progress_btn] Failed to send timeout follow-up message:', followUpError);
-              }
-              return;
-          }
+            const setupData = userExperimentSetupData.get(interaction.user.id);
+            const preFetchedSettings = setupData?.preFetchedWeeklySettings;
+            const preFetchTime = setupData?.preFetchedWeeklySettingsTimestamp;
+            // Define the MAX_PREFETCH_AGE_MS for the "Log Daily Data" button's cache usage
+            const LOG_DATA_MAX_PREFETCH_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+            if (preFetchedSettings && preFetchTime && (Date.now() - preFetchTime < LOG_DATA_MAX_PREFETCH_AGE_MS)) {
+                console.log(`[log_daily_progress_btn] Using pre-fetched settings (age: ${((Date.now() - preFetchTime)/(60*1000)).toFixed(1)} mins) for User: ${interaction.user.id}`);
+                settingsResult = { success: true, settings: preFetchedSettings }; // Simulate the structure of callFirebaseFunction result
+                // DO NOT clear pre-fetched data here, as per the new strategy
+            } else {
+                if (preFetchedSettings) {
+                    console.log(`[log_daily_progress_btn] Pre-fetched settings for User: ${interaction.user.id} are stale (age: ${((Date.now() - preFetchTime)/(60*1000)).toFixed(1)} mins > ${LOG_DATA_MAX_PREFETCH_AGE_MS/(60*1000)} mins) or timestamp missing. Refetching.`);
+                } else {
+                    console.log(`[log_daily_progress_btn] No pre-fetched settings found for User: ${interaction.user.id}. Fetching directly.`);
+                }
+                // Fallback to direct fetch
+                const directFetchStartTime = performance.now();
+                settingsResult = await callFirebaseFunction('getWeeklySettings', {}, interaction.user.id);
+                fetchSettingsTime = performance.now(); // Set fetchSettingsTime here
+                directFetchPerformed = true;
+                console.log(`[log_daily_progress_btn] Direct getWeeklySettings call took: ${(fetchSettingsTime - directFetchStartTime).toFixed(2)}ms.`);
+            }
+            // ===== END: MODIFIED LOGIC TO GET SETTINGS =====
+
+          // ===== START: ADJUSTED TIMEOUT LOGIC =====
+            // This check is primarily for the scenario where a direct fetch might have caused a delay
+            // that could make the subsequent interaction.showModal() fail.
+            // logButtonStartTime is from the very start of this button handler.
+            // fetchSettingsTime is only defined if a directFetchWasPerformed.
+            // directFetchStartTime was defined inside the 'else' block for the direct fetch.
+
+            if (directFetchPerformed) {
+                // We only care about the fetch duration if a direct fetch actually happened.
+                // The 'fetchSettingsTime' variable is available here from the 'else' block.
+                // The 'directFetchStartTime' was also defined in that scope.
+                // To get the duration of the direct fetch itself:
+                // const directFetchDuration = fetchSettingsTime - directFetchStartTime; // directFetchStartTime needs to be accessible or re-scoped if used here.
+
+                // Let's check the overall time from button click up to now, IF a direct fetch was involved.
+                // If overall time is too long, and we know a direct fetch contributed, it's a problem.
+                const timeNowAfterFetchLogic = performance.now();
+                if ((timeNowAfterFetchLogic - logButtonStartTime) > 2800) {
+                    console.warn(`[log_daily_progress_btn] Settings retrieval (including a direct fetch) contributed to exceeding 2.8s total for User ${interaction.user.tag}. Overall time: ${(timeNowAfterFetchLogic - logButtonStartTime).toFixed(2)}ms. Modal might fail.`);
+                    // It's often best to attempt the interaction.showModal() and catch its specific error if the interaction token has expired.
+                    // However, if you want to try an explicit message before that:
+                    try {
+                        // Check if interaction is still available and not already fully replied to in an unexpected way
+                        if (interaction.replied || interaction.deferred) { // deferUpdate or deferReply was used at start of button handler
+                           // If trying to reply ephemerally to the original interaction that opened the modal
+                           // This button handler would typically call interaction.showModal(), which IS the reply.
+                           // So, sending another reply here before showModal might conflict.
+                           // The original code used followUp, which is for *after* a reply has been made.
+                           // If the intent is to *update* the message that the modal will replace, then editReply if deferred.
+                           // But since showModal IS the reply, this is tricky.
+                           // The safest bet is to let showModal attempt and catch its error.
+                           // For now, we just log the warning.
+                           // If you had a specific message before `showModal` for this case:
+                           // await interaction.editReply({ content: "🚦 Settings took a while to load. Trying to open the form now...", ephemeral: true });
+                           // This is probably not what you want if showModal is next.
+                           // The user's original code had a followUp, suggesting the modal wasn't the *only* reply path, or it was a followUp to an update.
+                           // Given this button is to show a modal, the primary failure will be showModal().
+                        }
+                    } catch (timeoutMsgError) {
+                        console.error('[log_daily_progress_btn] Error trying to send pre-modal timeout message:', timeoutMsgError);
+                    }
+                    // No explicit return here; let the flow proceed to try and show the modal,
+                    // and handle errors from showModal() itself if it times out.
+                }
+            }
+            // ===== END: ADJUSTED TIMEOUT LOGIC =====
 
           if (!settingsResult || !settingsResult.settings) {
             await interaction.update({
@@ -4870,6 +4996,15 @@ else if (interaction.isModalSubmit()) {
                 userExperimentSetupData.set(flowUserId, setupData); // Use flowUserId as key
                 console.log(`[experiment_setup_modal SETUP_DATA_UPDATED ${interactionIdForLog}] Updated setupData for user ${flowUserId}.`);
                 // ======================= DATA STORAGE CHANGE END =========================
+
+                // ===== START: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE =====
+                if (setupData) { // Ensure setupData (which is existingSetupData or a new object) exists
+                    delete setupData.preFetchedWeeklySettings;
+                    delete setupData.preFetchedWeeklySettingsTimestamp;
+                    userExperimentSetupData.set(flowUserId, setupData); // Save the changes to setupData
+                    console.log(`[experiment_setup_modal CACHE_CLEARED ${interactionIdForLog}] Cleared pre-fetched weekly settings for user ${flowUserId} after settings update.`);
+                }
+                // ===== END: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE =====
 
                 const durationEmbed = new EmbedBuilder()
                     .setColor('#47d264')
