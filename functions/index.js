@@ -19,7 +19,7 @@ const STREAK_CONFIG = {
         // FROZEN_DATES: 'frozenDates'       // Can be re-added if detailed freeze tracking is needed
     },
     TIMING_RULES: {
-        SAME_DAY_HOURS: 17, // Less than 17 hours since last log = same log day (streak doesn't advance)
+        SAME_DAY_HOURS: 10, // Less than 17 hours since last log = same log day (streak doesn't advance)
         MAX_CONSECUTIVE_HOURS: 30 // Less than or equal to 30 hours since last log = consecutive day (streak advances)
         // More than 30 hours = gap (check freezes)
     },
@@ -3290,7 +3290,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     }
 
                     let experimentProgressContext = "";
-                    const schedule = userData.experimentCurrentSchedule; // Assuming 'schedule' is already defined
+                    //const schedule = userData.experimentCurrentSchedule; // Assuming 'schedule' is already defined
                     const experimentSetAtDate = schedule.experimentSetAt?.toDate();
                     const experimentEndDateDate = schedule.experimentEndTimestamp?.toDate();
                     const nowForProgress = new Date();
