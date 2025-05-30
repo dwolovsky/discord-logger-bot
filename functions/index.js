@@ -2060,7 +2060,7 @@ async function _calculateAndStorePeriodStatsLogic(
                     const isSignificant = pValue !== null && pValue < 0.05;
 
                     if (strength === "🟦no detectable") { 
-                        interpretation = `There appears to be ${strength} correlation between ${inputLabel} and ${outputMetricLabel}.`;
+                        interpretation = `There appears to be\n${strength} correlation between\n${inputLabel} and ${outputMetricLabel}.`;
                     } else if (isSignificant) {
                         interpretation = `You can be 95% confident that there is a ${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.`;
                     } else {

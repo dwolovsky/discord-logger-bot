@@ -169,7 +169,7 @@ function setupStatsNotificationListener(client) {
                                 } else {
                                     if (metricDetails.average !== undefined && !isNaN(metricDetails.average)) fieldValue += `Average: ${parseFloat(metricDetails.average).toFixed(2)}\n`;
                                     else fieldValue += `Average: N/A\n`;
-                                    if (metricDetails.variationPercentage !== undefined && !isNaN(metricDetails.variationPercentage)) fieldValue += `Var: ${parseFloat(metricDetails.variationPercentage).toFixed(2)}%\n`;
+                                    if (metricDetails.variationPercentage !== undefined && !isNaN(metricDetails.variationPercentage)) fieldValue += `Variation: ${parseFloat(metricDetails.variationPercentage).toFixed(2)}%\n`;
                                     else fieldValue += `Varation: N/A\n`;
                                     if (metricDetails.dataPoints !== undefined) fieldValue += `Data Points: ${metricDetails.dataPoints}\n`;
                                     else fieldValue += `Data Points: N/A\n`;
@@ -186,7 +186,7 @@ function setupStatsNotificationListener(client) {
 
                         // Add CORRELATION fields dynamically (now showing Influence as R-squared)
                         if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
-                            statsEmbed.addFields({ name: '\u200B', value: '**Daily Habit → Outcome IMPACTS**' });
+                            statsEmbed.addFields({ name: '\u200B', value: '**Daily Habit → Outcome IMPACTS**\n\nSee how your habits correlated with your desired outcome' });
                             for (const inputMetricKey in statsReportData.correlations) {
                                 if (Object.prototype.hasOwnProperty.call(statsReportData.correlations, inputMetricKey)) {
                                     const corr = statsReportData.correlations[inputMetricKey];
@@ -196,9 +196,9 @@ function setupStatsNotificationListener(client) {
                                         const r = parseFloat(corr.coefficient);
                                         const rSquared = r * r; // Calculate R-squared
                                         // Display R-squared as a percentage with one decimal place
-                                        influenceFieldValue = `Influence %: **${(rSquared * 100).toFixed(1)}%**\nPairs: ${corr.n_pairs || 'N/A'}\n*${(corr.interpretation || 'N/A')}*`;
+                                        influenceFieldValue = `**Influence %: ${(rSquared * 100).toFixed(1)}%**\n\n*${(corr.interpretation || 'N/A')}*`;
                                     } else if (corr.status && corr.status.startsWith('skipped_')) {
-                                        influenceFieldValue = `Influence (R²): N/A\nPairs: ${corr.n_pairs || '0'}\n*${(corr.interpretation || 'Insufficient data for calculation.')}*`;
+                                        influenceFieldValue = `Influence: N/A\nPairs: ${corr.n_pairs || '0'}\n*${(corr.interpretation || 'Insufficient data for calculation.')}*`;
                                     }
 
                                     statsEmbed.addFields({
@@ -209,7 +209,7 @@ function setupStatsNotificationListener(client) {
                                 }
                             }
                         } else {
-                            statsEmbed.addFields({ name: '🔗 Influence (R²)', value: 'No influence data (correlations) was found or calculated for this report.', inline: false }); // Updated fallback text
+                            statsEmbed.addFields({ name: '🔗 Influence', value: 'No influence data (correlations) was found or calculated for this report.', inline: false }); // Updated fallback text
                         }
 
               // ============== REPLACED SECTION: PAIRWISE INTERACTION ANALYSIS ==============
@@ -2902,7 +2902,7 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = 'awaiting_duration_selection'; // Transition to duration
           userExperimentSetupData.set(userId, setupData);
           console.log(`[confirm_metrics_proceed_btn SETUP_DATA_UPDATED ${interactionId}] Updated setupData for user ${userId} in AI flow.`);
-          
+
               // ===== START: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE (AI Flow) =====
                 if (setupData) { // setupData was retrieved and updated just above
                     delete setupData.preFetchedWeeklySettings;
