@@ -289,6 +289,42 @@ function setupStatsNotificationListener(client) {
                                     botProcessingNode: process.env.RENDER_INSTANCE_ID || 'local_dev_stats'
                                 });
                                 console.log(`[StatsListener] Updated notification ${docId} to 'processed_by_bot'.`);
+
+                               // <<< START OF NEW MODIFICATION FOR DELAYED FOLLOW-UP >>>
+                                const delayMinutes = 5; // Or up to 10, e.g., Math.floor(Math.random() * 6) + 5; for 5-10 mins
+                                const delayMilliseconds = delayMinutes * 60 * 1000;
+
+                                console.log(`[StatsListener] Scheduling follow-up DM for user ${userId} in ${delayMinutes} minutes regarding experiment ${statsReportData.experimentId} conclusion.`);
+
+                                setTimeout(async () => {
+                                    try {
+                                        const followUpEmbed = new EmbedBuilder()
+                                            .setColor(0x4A90E2) // A different color, perhaps blue
+                                            .setTitle('Experiment Period Concluded')
+                                            .setDescription(`Just a heads-up!\n\nYour experiment for "${statsReportData.activeExperimentSettings?.deeperProblem || 'your recent experiment'}" has ended.\n\nSet your next experiment to keep your momentum 🚀\n\nYou can use the same setup, or try new metrics.`)
+                                            .setFooter({ text: `Experiment ID: ${statsReportData.experimentId || 'N/A'}` })
+                                            .setTimestamp();
+
+                                        const followUpActionRow = new ActionRowBuilder()
+                                            .addComponents(
+                                                new ButtonBuilder()
+                                                    .setCustomId('start_new_experiment_prompt_btn') // Same new custom ID as before
+                                                    .setLabel('🚀 Start New Experiment')
+                                                    .setStyle(ButtonStyle.Success) // Changed to Success for more prominence
+                                            );
+
+                                        await discordUser.send({
+                                            embeds: [followUpEmbed],
+                                            components: [followUpActionRow]
+                                        });
+                                        console.log(`[StatsListener] Successfully sent DELAYED follow-up DM to user ${userId} for experiment ${statsReportData.experimentId}.`);
+                                    } catch (followUpError) {
+                                        console.error(`[StatsListener] Failed to send DELAYED follow-up DM to user ${userId} for experiment ${statsReportData.experimentId}:`, followUpError);
+                                        // Not updating Firestore notification here as this is a best-effort follow-up
+                                    }
+                                }, delayMilliseconds);
+                                // <<< END OF NEW MODIFICATION FOR DELAYED FOLLOW-UP >>>
+
                             }).catch(async (dmError) => {
                                 console.error(`[StatsListener] Failed to send stats DM to user ${userId} for experiment ${statsReportData.experimentId}:`, dmError);
                                 await change.doc.ref.update({ status: 'error_dm_failed', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: dmError.message });
@@ -2559,18 +2595,46 @@ client.on(Events.InteractionCreate, async interaction => {
         const updateTime = performance.now();
         console.log(`[${interaction.customId} UPDATED_REPLY ${interaction.id}] Acknowledged button for ${userTag}. Took: ${(updateTime - aiSetupStartTime).toFixed(2)}ms`);
 
+        // New logic to correctly determine guildId and initialize/reset state
+    const currentSetupData = userExperimentSetupData.get(userId) || {};
+    const guildIdToUse = currentSetupData.guildId || process.env.GUILD_ID; // Prioritize already stored guildId (from DM flow), fallback to ENV
+
+    if (!guildIdToUse) {
+        console.error(`[${AI_ASSISTED_SETUP_BTN_ID} CRITICAL ${interaction.id}] guildId could not be determined for user ${userTag}. currentSetupData.guildId was ${currentSetupData.guildId}, process.env.GUILD_ID was ${process.env.GUILD_ID}`);
+        // Since interaction.update() was just called, use editReply for the error message.
+        await interaction.editReply({ content: "Critical error: Server context is missing for AI setup. Please try starting from `/go` in the server.", components: [], embeds: [] });
+        return; // Stop further execution in this handler
+    }
+
         userExperimentSetupData.set(userId, {
+            // Preserve essential IDs. userId and userTag are from the current interaction.
+            // guildId and interactionId (for this specific interaction) are explicitly set.
+            userId: userId,
+            userTag: userTag, // From current interaction
+            guildId: guildIdToUse, // Correctly determined guildId
+            interactionId: interaction.id, // ID of this button click
+
+            // Reset fields specific to the AI-assisted experiment definition flow
             dmFlowState: 'awaiting_wish',
-            wish: null,
-            aiGeneratedExamples: null,
-            deeperProblem: null,
+            deeperWish: null, // This is the field your MessageCreate handler for 'awaiting_wish' uses [cite: 1380]
+            deeperProblem: null, // Also set from the wish [cite: 1380]
+            aiGeneratedOutcomeLabelSuggestions: null, // Clear any previous suggestions
             outcomeLabel: null,
             outcomeUnit: null,
             outcomeGoal: null,
-            currentActionIndex: 0,
-            actions: [],
-            guildId: interaction.guild.id,
-            interactionId: interaction.id
+            currentInputIndex: 1, // Start by defining Input 1
+            inputs: [], // Reset any previously defined inputs
+            aiGeneratedInputLabelSuggestions: null, // Clear previous suggestions for habits
+            currentInputDefinition: null, // Clear any partially defined habit
+            aiGeneratedUnitSuggestionsForCurrentItem: null, // Clear previous unit suggestions
+
+            // Preserve other general fields from currentSetupData if they exist and are not meant to be reset by THIS flow.
+            // For example, if 'preFetchedWeeklySettings' was set by a preceding step, you might want to keep it.
+            // However, be cautious. If this button signals a "fresh start" for AI setup, extensive resets are good.
+            // Let's assume 'start_new_experiment_prompt_btn' sets 'preFetchedWeeklySettings' if needed.
+            // Any other fields from `currentSetupData` that are NOT specific to an active setup flow can be spread if desired:
+            // ...Object.fromEntries(Object.entries(currentSetupData).filter(([key]) => ![/*list of keys to always reset*/].includes(key))),
+            // For now, the explicit list above ensures key flow variables are reset.
         });
         console.log(`[${interaction.customId} STATE_INIT ${interaction.id}] Initialized DM flow state for ${userTag}: awaiting_wish.`);
 
@@ -3457,8 +3521,8 @@ client.on(Events.InteractionCreate, async interaction => {
       const processEndTime = performance.now();
       console.log(`[ai_insights_btn /go END ${interactionId}] Finished processing for user ${userId}. Total time: ${(processEndTime - goInsightsButtonStartTime).toFixed(2)}ms`);
     }
-
-  // --- Handler for "Get AI Insights" Button (from Stats DM) ---
+ 
+   // --- Handler for "Get AI Insights" Button (from Stats DM) ---
     else if (interaction.isButton() && interaction.customId.startsWith('get_ai_insights_btn_')) {
       const insightsButtonStartTime = performance.now();
       const interactionId = interaction.id; // For logging
@@ -3533,7 +3597,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // --- START: NEW Unified Handler for Reminder Select Menus ---
     // --- Handler for "Set Reminders" button (Now Step 1: Get Current Time) ---
-  else if (interaction.isButton() && interaction.customId === 'show_reminders_setup_modal_btn') {
+   else if (interaction.isButton() && interaction.customId === 'show_reminders_setup_modal_btn') {
     const buttonClickTime = performance.now();
     const interactionId = interaction.id;
     const userId = interaction.user.id;
@@ -3636,10 +3700,10 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     const processEndTime = performance.now();
     console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - buttonClickTime).toFixed(2)}ms`);
-  }
+   }
 
   // --- Handler for "Next: Set Reminder Window & Frequency" button (New Step 2) ---
-  else if (interaction.isButton() && interaction.customId === REMINDERS_SET_TIME_NEXT_BTN_ID) {
+   else if (interaction.isButton() && interaction.customId === REMINDERS_SET_TIME_NEXT_BTN_ID) {
       const nextStepClickTime = performance.now();
       const interactionId = interaction.id;
       const userId = interaction.user.id;
@@ -3766,8 +3830,8 @@ client.on(Events.InteractionCreate, async interaction => {
     // --- END: Handler for "Next: Set Reminder Window & Frequency" button ---
     // --- END: Unified Handler for Reminder Select Menus ---
 
-  // --- START: NEW Handler for Final Confirm Reminder Button (CONFIRM_REMINDER_BTN_ID) ---
-  else if (interaction.isButton() && interaction.customId === CONFIRM_REMINDER_BTN_ID) {
+   // --- START: NEW Handler for Final Confirm Reminder Button (CONFIRM_REMINDER_BTN_ID) ---
+   else if (interaction.isButton() && interaction.customId === CONFIRM_REMINDER_BTN_ID) {
     const confirmClickTime = performance.now();
     const interactionId = interaction.id;
     const userId = interaction.user.id;
@@ -3907,11 +3971,11 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     const processEndTime = performance.now();
     console.log(`[${interaction.customId} END ${interactionId}] Finished processing confirmation. Total time: ${(processEndTime - confirmClickTime).toFixed(2)}ms`);
-  }
-  // --- END: NEW Handler for Final Confirm Reminder Button ---
+   }
+   // --- END: NEW Handler for Final Confirm Reminder Button ---
 
-  // Button handler for "Skip Reminders"
-  else if (interaction.isButton() && interaction.customId === 'skip_reminders_btn') {
+   // Button handler for "Skip Reminders"
+   else if (interaction.isButton() && interaction.customId === 'skip_reminders_btn') {
     console.log(`[skip_reminders_btn] Clicked by ${interaction.user.tag}`);
     await interaction.deferUpdate(); // Acknowledge the button click
 
@@ -3950,10 +4014,10 @@ client.on(Events.InteractionCreate, async interaction => {
       console.error(`[skip_reminders_btn] Error calling setExperimentSchedule for ${userId} (reminders skipped):`, error);
       await interaction.editReply({ content: `❌ An error occurred while finalizing your experiment (reminders skipped): ${error.message}. Your experiment settings and duration are saved.`, components: [] });
     }
-  }
+   }
 
    // Button handlers for the FINAL "Post to group?"
-  else if (interaction.isButton() && interaction.customId === 'post_exp_final_yes') {
+   else if (interaction.isButton() && interaction.customId === 'post_exp_final_yes') {
       await interaction.deferUpdate(); // Acknowledge button
       const userId = interaction.user.id;
       const setupData = userExperimentSetupData.get(userId);
@@ -4012,7 +4076,7 @@ client.on(Events.InteractionCreate, async interaction => {
           await interaction.editReply({ content: `⚠️ Could not find the #experiments channel in ${targetGuild.name}. Your settings are saved.`, components: [] }); // [cite: 2272]
       }
       userExperimentSetupData.delete(userId); // Clean up [cite: 2273]
-  }
+   }
    
    else if (interaction.isButton() && interaction.customId === 'post_exp_final_no') {
       await interaction.update({
@@ -4020,7 +4084,118 @@ client.on(Events.InteractionCreate, async interaction => {
           components: []
       });
       userExperimentSetupData.delete(interaction.user.id); // Clean up
-  }
+   }
+
+    // --- Handler for "Start New Experiment?" button (from delayed DM) ---
+    else if (interaction.customId === 'start_new_experiment_prompt_btn') {
+      const buttonClickTime = performance.now();
+      const interactionId = interaction.id;
+      const userId = interaction.user.id;
+      const userTagForLog = interaction.user.tag;
+
+      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTagForLog}. Transitioning to AI/Manual setup choice. Time: ${buttonClickTime.toFixed(2)}ms`);
+
+      try {
+        // 1. Acknowledge the button click on the DM by removing the button.
+        await interaction.update({ // This updates the DM message the button was on
+          // content: "Taking you to experiment setup choices...", // Optional content update
+          components: [] // Remove the button
+        });
+        const updateTime = performance.now();
+        console.log(`[${interaction.customId} ACKNOWLEDGED ${interactionId}] DM Button acknowledged/updated. Took: ${(updateTime - buttonClickTime).toFixed(2)}ms`);
+
+        // 2. Use the single GUILD_ID from environment variables
+        const singleGuildId = process.env.GUILD_ID;
+        if (!singleGuildId) {
+          console.error(`[${interaction.customId} CRITICAL_ERROR ${interactionId}] GUILD_ID is not defined in environment variables.`);
+          // Send a new DM because the original interaction was already updated.
+          await interaction.user.send({ content: "Error: Bot configuration is missing critical information. Cannot proceed with experiment setup." });
+          return;
+        }
+
+        // 3. Initialize/Update userExperimentSetupData (similar to 'set_update_experiment_btn')
+        const existingData = userExperimentSetupData.get(userId) || {};
+        userExperimentSetupData.set(userId, {
+          ...existingData, // Preserve other data if any
+          userId: userId,
+          guildId: singleGuildId, // Use the single guild ID
+          userTag: userTagForLog,
+          // Clear any stale flow-specific data from a *previous* setup if this is a true restart point
+          dmFlowState: 'choosing_setup_method', // A conceptual state, next message handles actual choice
+          experimentDuration: null, // Reset duration from any previous flow
+          settingsMessage: null,    // Reset settings message
+          rawPayload: null,         // Reset raw payload
+          // Any other fields that should be reset when starting a new setup choice
+          interactionId: interactionId // Store current interaction ID for logging context
+        });
+        console.log(`[${interaction.customId} SETUP_DATA_INIT ${interactionId}] Initialized/Updated setupData for user ${userId} with hardcoded guildId: ${singleGuildId}.`);
+
+        // 4. (Optional but recommended) Asynchronously Pre-fetch Weekly Settings
+        (async () => {
+          const prefetchAsyncStartTime = performance.now();
+          try {
+            console.log(`[${interaction.customId} ASYNC_PREFETCH_START ${interactionId}] Asynchronously pre-fetching weekly settings for ${userTagForLog}.`);
+            const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
+            const currentSetupDataForPrefetch = userExperimentSetupData.get(userId) || {}; // Get latest
+
+            if (settingsResult && settingsResult.settings) {
+              userExperimentSetupData.set(userId, { ...currentSetupDataForPrefetch, preFetchedWeeklySettings: settingsResult.settings, preFetchedWeeklySettingsTimestamp: Date.now() });
+              console.log(`[${interaction.customId} ASYNC_PREFETCH_SUCCESS ${interactionId}] Successfully pre-fetched and cached weekly settings for ${userTagForLog}.`);
+            } else {
+              const { preFetchedWeeklySettings, preFetchedWeeklySettingsTimestamp, ...restOfData } = currentSetupDataForPrefetch;
+              userExperimentSetupData.set(userId, restOfData);
+              console.log(`[${interaction.customId} ASYNC_PREFETCH_NO_DATA ${interactionId}] No weekly settings found for ${userTagForLog} during async pre-fetch. Cleared prefetch cache fields.`);
+            }
+          } catch (fetchError) {
+            console.error(`[${interaction.customId} ASYNC_PREFETCH_ERROR ${interactionId}] Error pre-fetching weekly settings for ${userTagForLog}:`, fetchError.message);
+            const currentSetupDataOnError = userExperimentSetupData.get(userId) || {};
+            const { preFetchedWeeklySettings, preFetchedWeeklySettingsTimestamp, ...restOfDataOnError } = currentSetupDataOnError;
+            userExperimentSetupData.set(userId, restOfDataOnError); // Clear prefetch on error
+          } finally {
+            console.log(`[${interaction.customId} ASYNC_PREFETCH_DURATION ${interactionId}] Async pre-fetching took: ${(performance.now() - prefetchAsyncStartTime).toFixed(2)}ms.`);
+          }
+        })();
+
+        // 5. Build and send the AI/Manual choice embed as a NEW DM
+        //    (Reusing the embed and buttons from 'set_update_experiment_btn' handler)
+        const choiceEmbed = new EmbedBuilder()
+          .setColor('#7F00FF')
+          .setTitle('🔬 How would you like to set up your new experiment?')
+          .setDescription("Choose your preferred method:\n\n✨ **AI Assisted (Beginner):** I'll guide you step-by-step, starting with a wish and helping you define your experiment with AI examples.\n\n✍️ **Manual Setup (Advanced):** You'll fill out a form with all your experiment details directly.");
+
+        const aiButton = new ButtonBuilder()
+          .setCustomId(AI_ASSISTED_SETUP_BTN_ID) // Existing ID
+          .setLabel('✨ AI Assisted (Beginner)')
+          .setStyle(ButtonStyle.Primary);
+
+        const manualButton = new ButtonBuilder()
+          .setCustomId(MANUAL_SETUP_BTN_ID) // Existing ID
+          .setLabel('✍️ Manual Setup (Advanced)')
+          .setStyle(ButtonStyle.Secondary);
+
+        const choiceRow = new ActionRowBuilder().addComponents(aiButton, manualButton);
+
+        await interaction.user.send({ // Send as a new DM
+          content: "Let's get your next experiment started!",
+          embeds: [choiceEmbed],
+          components: [choiceRow]
+        });
+        console.log(`[${interaction.customId} CHOICE_DM_SENT ${interactionId}] AI/Manual choice DM sent to ${userTagForLog}.`);
+
+      } catch (error) {
+        const errorTime = performance.now();
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing button for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
+        // Attempt to send a new DM for the error, as the original interaction was already updated.
+        try {
+          await interaction.user.send({ content: "Sorry, there was an issue transitioning you to the experiment setup. Please try using the `/go` command in the server." });
+        } catch (dmError) {
+          console.error(`[${interaction.customId} FALLBACK_DM_ERROR ${interactionId}] Failed to send error DM to ${userTagForLog}:`, dmError);
+        }
+      }
+      const processEndTime = performance.now();
+      console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - buttonClickTime).toFixed(2)}ms`);
+    }
+    // Make sure this is placed before the final 'else' for unrecognized interactions
 
 
   } // End of "if (interaction.isButton())" block
