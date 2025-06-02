@@ -2414,7 +2414,7 @@ client.on(Events.InteractionCreate, async interaction => {
             "4. At the end of the experiment, \nwe get stats and AI insights.\n\n" +
             "5. We use them to set our next experiment."
           )
-          .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/5ac4984b6b71a4781f3a787934d8cc6ca3b7f909/Active%20Pictures/Experiment%20lifecycle%20eagle.jpeg'); // << REPLACE THIS URL
+          .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/experiment%20lifecycle%20comic%202.jpeg');
 
         const nextButton2 = new ButtonBuilder()
           .setCustomId('welcome_dm_next_2')
