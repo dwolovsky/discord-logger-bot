@@ -300,8 +300,8 @@ function setupStatsNotificationListener(client) {
                                     try {
                                         const followUpEmbed = new EmbedBuilder()
                                             .setColor(0x4A90E2) // A different color, perhaps blue
-                                            .setTitle('Experiment Period Concluded')
-                                            .setDescription(`Just a heads-up!\n\nYour experiment for "${statsReportData.activeExperimentSettings?.deeperProblem || 'your recent experiment'}" has ended.\n\nSet your next experiment to keep your momentum 🚀\n\nYou can use the same setup, or try new metrics.`)
+                                            .setTitle('Experiment Transition')
+                                            .setDescription(`Just a heads-up!\n\nYour experiment for "${statsReportData.activeExperimentSettings?.deeperProblem || 'your recent experiment'}" has ended.\n\nSet your next experiment to keep momentum! 🚀\n\nYou can use the same setup, or try new metrics.`)
                                             .setFooter({ text: `Experiment ID: ${statsReportData.experimentId || 'N/A'}` })
                                             .setTimestamp();
 
