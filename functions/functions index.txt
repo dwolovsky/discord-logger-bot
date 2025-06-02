@@ -19,7 +19,7 @@ const STREAK_CONFIG = {
         // FROZEN_DATES: 'frozenDates'       // Can be re-added if detailed freeze tracking is needed
     },
     TIMING_RULES: {
-        SAME_DAY_HOURS: 17, // Less than 17 hours since last log = same log day (streak doesn't advance)
+        SAME_DAY_HOURS: 10, // Less than 17 hours since last log = same log day (streak doesn't advance)
         MAX_CONSECUTIVE_HOURS: 30 // Less than or equal to 30 hours since last log = consecutive day (streak advances)
         // More than 30 hours = gap (check freezes)
     },
@@ -72,6 +72,9 @@ const STREAK_CONFIG = {
       AUTO_APPLY: true // Assumes freezes are auto-applied if available and needed
     }
 };
+
+const MMW_TARGET_MINUTES = [5, 15, 25, 35, 50, 55]; // Your chosen MMWs
+const MMW_FLEXIBILITY = 3; // +/- 3 minutes for hitting the target
 
 // --- Default Reminder Messages (Editable Array) ---
 const defaultReminderMessages = [
@@ -133,31 +136,22 @@ const { FieldValue } = require("firebase-admin/firestore");
 // ============== AI INSIGHTS SETUP ==================
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Ensure GEMINI_API_KEY is set in your Firebase environment variables
-let GEMINI_API_KEY;
 let genAI;
+// Check for the environment variable that your deployment logs show is being set.
+const apiKeyToUse = process.env.GEMINI_API_KEY; // Using GEMINI_API_KEY with underscore
 
-try {
-  GEMINI_API_KEY = config().gemini?.key; // Accessing the key set via functions:config:set gemini.key
-                                        // The ?. is optional chaining in case 'gemini' object itself is missing
-} catch (e) {
-    logger.error("Error accessing functions.config().gemini.key. This might happen during initial cold start or if config is not set.", e);
-    // Attempt to fall back to process.env for local testing with .env file if config() is not populated
-    GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (GEMINI_API_KEY) {
-        logger.info("Falling back to process.env.GEMINI_API_KEY for local testing.");
-    }
-}
-
-if (GEMINI_API_KEY) {
+if (apiKeyToUse) {
   try {
-    genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    logger.info("GoogleGenerativeAI initialized successfully.");
+    genAI = new GoogleGenerativeAI(apiKeyToUse);
+    logger.info(`GoogleGenerativeAI initialized successfully using API key from process.env.GEMINI_API_KEY.`);
   } catch (error) {
-    logger.error("Failed to initialize GoogleGenerativeAI:", error);
+    logger.error("Failed to initialize GoogleGenerativeAI with process.env.GEMINI_API_KEY:", error);
+    genAI = null; 
   }
 } else {
-  logger.warn("GEMINI_API_KEY not found in environment variables (checked functions.config().gemini.key and process.env.GEMINI_API_KEY). AI Insights will not be available.");
+  // This warning means the specific variable process.env.GEMINI_API_KEY was not found.
+  logger.warn("process.env.GEMINI_API_KEY was NOT found. AI-dependent features will be unavailable.");
+  genAI = null; 
 }
 
 const GEMINI_CONFIG = {
@@ -204,13 +198,13 @@ const INSIGHTS_PROMPT_TEMPLATE = (data) => {
 
   // Constructing the prompt
   let prompt = `
-You are an AI assistant providing insights on a user's self-experimentation data. Your tone should be supportive, analytical, and encouraging, focusing on actionable advice and learning. The goal is to provide insights that inspire the user to continue their journey of consistent small actions and encourage thoughtful experimentation with tweaks to make these actions easier and more impactful. Keep the total response concise (under 1890 characters).
+You are a "self science" assistant, providing insights on a user's habit experimentation data to help them see their life patterns and plan their next experiment. Your tone should be supportive, analytical, and encouraging, focusing on actionable advice and personal insights. The goal is to inspire the user to continue their journey of consistent small actions and encourage thoughtful experimentation with tweaks to make these actions easier and more impactful. That is the heart of self science. Keep your total response concise (under 1890 characters).
 
 **Experiment Context:**
-- User's Deeper Problem/Goal/Theme: ${data.deeperProblem || "Not specified"}
+- User's Deeper Wish: ${data.deeperProblem || "Not specified"}
 - Total Logs Processed in this Period: ${data.totalLogsProcessed || 0}
 
-**User's Overall Consistency (Outside this specific experiment):**
+**User's Consistency in daily logging:**
 - Current Overall Log Streak: ${data.userOverallStreak || 0} days
 - Longest Overall Log Streak: ${data.userOverallLongestStreak || 0} days
 
@@ -224,7 +218,7 @@ ${data.skippedMetricsData && data.skippedMetricsData.length > 0
   ? "\n  Metrics Skipped Due to Insufficient Data:\n  " + data.skippedMetricsData.map(m => `${m.label} (had ${m.dataPoints} data points, needed ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS})`).join("\n  ")
   : ""}
 
-**2. Action → Key Result Impacts (Correlations):**
+**2. Daily Habit → Daily Outcome Impacts (Correlations):**
 ${data.correlationsData && Object.keys(data.correlationsData).length > 0
   ? Object.values(data.correlationsData).map(formatCorrelation).join("\n")
   : "  No correlation data was calculated for this experiment."}
@@ -244,36 +238,26 @@ ${data.experimentNotesSummary && data.experimentNotesSummary.trim() !== ""
 Based *only* on the data provided above for This Experiment, provide succinct analysis (total length under 1890 characters) in three sections:
 
 ### 🫂 Challenges & Consistency
-Review the user's journey *within this experiment period*, focusing on friction points and consistency patterns evident in *this experiment's data (metric stats, correlations, combined effects)* and the provided *notes summary for this period*.
+Review the user's journey *within this experiment period*, focusing on friction points and consistency patterns evident in *this experiment's data (metric stats, correlations, combined effects)* and the provided *notes summary*.
 - Pinpoint recurring friction points or areas where consistency fluctuates, using *this experiment's data* and *notes for this period*.
 - **If possible, connect these friction points directly to specific phrases or feelings the user expressed in their *notes from this experiment period* around that time.** (e.g., 'The lower consistency for [Metric X] during this experiment might relate to when you mentioned feeling "[Quote from note]"').
-- Notice patterns in their consistency *within this experiment*: *When* do they seem most consistent or inconsistent according to *this period's data and notes*?
 - Where does their effort seem persistent *in this experiment*, even if results vary? Validate this effort clearly.
-- Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human, and reiterate the value of doing the self science experiments they're doing.
+- Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human, and reiterate the value of doing the self science experiments they're doing. Find various ways to remind them that growth comes from experiments.
 
 ### 🌱 Growth Highlights
 Highlight evidence of growth, adaptation, and the impact of sustained effort by analyzing patterns *within this experiment's data and notes*. Start by celebrating their consistency *during this experiment* (mention current overall streak if relevant as context) and the most significant positive trend or achievement observed *in this experiment's data*.
-- Are *this experiment's* metrics (average, variation, correlations) showing particular strengths or weaknesses?
-- Point out any potentially interesting (even if subtle) connections observed between *this experiment's metric trends* and themes found in the *notes from this period*.
-- Look for subtle shifts in language in *this period's notes*, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress *within this experiment*.
-- **Also, select 1-2 particularly insightful or representative short quotes directly from the provided 'Notes Summary' (from *this experiment*) that capture a key moment of learning, challenge, or success, and weave them into your analysis where relevant (citing the date if possible from the notes summary).**
+- Where are *this experiment's* metrics (average, variation, correlations) showing particular strengths?
 - How are their consistent small actions leading to evolution, as seen in *this experiment's data and reflections*?
+- Point out any potentially interesting (even if subtle) connections observed between *this experiment's metrics* and themes found in the *notes from this period*.
+- Look for subtle shifts in language in *this period's notes*, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress *within this experiment*.
+- **Also, select 1-2 particularly insightful or representative short quotes directly from the provided 'Notes Summary' (from *this experiment*) that capture a key moment of learning, challenge, or success, and weave them into your analysis where relevant.**
 
-### 🧪 Experiments & Takeaway
-Remember, small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 3 small, actionable experiments (tweaks) for their *next experiment*, designed to make their current positive actions easier, more consistent, or slightly more impactful, based on the analysis of *this experiment's data*. Frame these as curious explorations, not fixes. Experiments should aim to:
+### 🧪 Next Experiment Ideas
+Small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 4 small, actionable experiments (tweaks) for their *next experiment*, designed to make their current positive actions easier, more consistent, or more impactful, based on the analysis of *this experiment's data*. Frame these as curious explorations, not fixes. Experiments should aim to:
 1. Build on momentum from positive trends or consistent efforts identified in the 'Growth Highlights' section for *this experiment*.
 2. Directly address the friction points or consistency challenges identified in the 'Challenges' section from *this experiment's data and notes*.
 3. **Prioritize suggesting experiments that directly explore questions, ideas, or 'what ifs' explicitly mentioned in the user's *notes from this experiment period*.** (Quote the relevant part of the note briefly if it helps frame the experiment).
-4. Make 2 suggestions focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. The last one should explicitly be mentioned as "something a bit different." It should give them an idea that's highly relevant but which they may not have thought of before.
-
-**Finally, craft a 'Thought to Take With You'. This should be a concise (1-2 sentences, max 50 words), aphorism-style reflection. It should:
-    1.  Acknowledge that the path of self-discovery has its ups and downs, normalizing any challenges observed in THIS experiment's data or notes.
-    2.  Subtly embed a small, forward-looking suggestion or a shift in perspective that builds on a key learning from THIS experiment.
-    3.  Aim to leave the user with a feeling of gentle encouragement and the inspiration to continue their journey.
-    If a unique metaphor or a well-known saying can be aptly adapted to fit the user's specific experience in THIS experiment (drawing from their notes or the data), feel free to use it. However, the priority is a genuine, insightful, and encouraging closing thought over a forced or generic statement. This thought should resonate with their 'Deeper Problem/Goal' if possible.**
-(Example that normalizes, suggests, and inspires: 'Every experiment, even with its unexpected turns, lights the path ahead a little more.')
-(Another example: 'The stumbles in our experiments are often the soil for our most profound growth.')
-(Example with a fitting metaphor: 'Like a gardener discovering which soil best suits a particular seed, this experiment has shown that [Condition Y] helps your [Metric Z] flourish. How can you ensure more of that "rich soil" next week?')
+4. The first 3 suggestions should focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. The last one should explicitly be mentioned as "something a bit different." It should give them an idea that's highly relevant but which they may not have thought of before.
 
 Again, keep the total response under 1890 characters.
 ---
@@ -361,7 +345,7 @@ exports.submitLog = onRequest( // Renaming back to submitLog for simplicity, ens
       // 3. Extract User Info and Payload
       const userId = decodedToken.uid;
       const userTag = decodedToken.name || `User_${userId}`; // Use 'name' claim if available in token
-      const { inputValues, outputValue, notes } = request.body; // Data from request.body
+      const { inputValues, outputValue, notes, userTag: receivedUserTag } = request.body; // Data from request.body
   
       logger.info(`submitLog (HTTP): Processing request for user: ${userId} (${userTag})`);
       logger.debug("submitLog (HTTP): Received payload:", request.body);
@@ -466,7 +450,7 @@ exports.submitLog = onRequest( // Renaming back to submitLog for simplicity, ens
         // --- Prepare Firestore Log Document Data ---
         const logEntry = {
           userId: userId,
-          userTag: userTag, // Use tag derived from token
+          userTag: receivedUserTag || userTag, // Use tag derived from token
           timestamp: FieldValue.serverTimestamp(), // Ensure FieldValue is imported
           logDate: new Date().toISOString().split('T')[0],
           inputs: parsedAndLoggedInputs, // Contains successfully parsed AND logged inputs including goals
@@ -509,7 +493,26 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     const logData = snap.data();
     const logId = event.params.logId;
     const userId = logData.userId;
-    const userTagForMessage = logData.userTag || `User_${userId}`; // For public message
+    //const userTagForMessage = logData.userTag || `User_${userId}`; // For public message
+    // NEW LOGIC for displayNameForMessage:
+    let displayNameForMessage;
+    const storedUserTag = logData.userTag; // This should be "username#discriminator" or similar
+
+    if (storedUserTag && storedUserTag.includes('#')) {
+        const usernamePart = storedUserTag.substring(0, storedUserTag.lastIndexOf('#'));
+        if (usernamePart && usernamePart.trim() !== "") { // Ensure username part is not empty or just whitespace
+            displayNameForMessage = usernamePart; // Primary: username
+        } else {
+            displayNameForMessage = storedUserTag; // Fallback: full tag if username part is empty (e.g., tag was just "#1234")
+        }
+    } else if (storedUserTag && storedUserTag.trim() !== "") {
+        // If no '#', it might be a new unique username or just a name stored previously. Use it as is.
+        displayNameForMessage = storedUserTag;
+    } else {
+        displayNameForMessage = `User_${userId}`; // Deepest fallback: User_USERID
+    }
+    // END NEW LOGIC
+
 
     const logTimestamp = (logData.timestamp && typeof logData.timestamp.toDate === 'function')
                          ? logData.timestamp.toDate() : null;
@@ -524,14 +527,14 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
         return;
     }
 
-    logger.log(`Streak trigger started for user ${userId} (tag: ${userTagForMessage}) due to log ${logId}`);
+    logger.log(`Streak trigger started for user ${userId} (tag: ${displayNameForMessage}) due to log ${logId}`);
     const userRef = admin.firestore().collection('users').doc(userId);
 
     try {
         await admin.firestore().runTransaction(async (transaction) => {
             const userDoc = await transaction.get(userRef);
             const isNewUser = !userDoc.exists;
-            let currentData = { streak: 0, longest: 0, freezes: 0, lastLog: null, userTag: userTagForMessage };
+            let currentData = { streak: 0, longest: 0, freezes: 0, lastLog: null, userTag: displayNameForMessage };
             let previousStreak = 0;
 
             if (userDoc.exists) {
@@ -543,7 +546,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                     freezes: Math.min(userData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING] || 0, STREAK_CONFIG.FREEZES.MAX || 5),
                     lastLog: (userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP] && typeof userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP].toDate === 'function')
                              ? userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP].toDate() : null,
-                    userTag: userData[STREAK_CONFIG.FIELDS.USER_TAG] || userTagForMessage
+                    userTag: userData[STREAK_CONFIG.FIELDS.USER_TAG] || displayNameForMessage
                 };
                 logger.log(`User ${userId} found. Current streak data:`, currentData);
             } else {
@@ -615,11 +618,11 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
 
         if (isTrueFirstDay) {
             logger.log(`[onLogCreatedUpdateStreak] User ${userId} is on their TRUE Day 1. Preparing welcome messages.`);
-            dmMessageText = `🎉 Welcome to your habit tracking journey, ${userTagForMessage}! ` +
+            dmMessageText = `🎉 Welcome to your habit tracking journey, ${displayNameForMessage}! ` +
                             `You've just logged Day 1 of your streak for the first time (or first time in a while). That's awesome! ` +
                             `Keep it up! You've also earned the 'Originator' role. 🔥`;
 
-            tempPublicMessage = `🎉 Please welcome @${userTagForMessage} to their habit tracking journey! ` +
+            tempPublicMessage = `🎉 Please welcome @${displayNameForMessage} to their habit tracking journey! ` +
                                 `They've just logged Day 1! Show some support! 🚀`;
 
             // Assign 'Originator' role
@@ -633,7 +636,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
         } else if (newState.streakBroken && newState.newStreak === 1) {
             // This is the existing streak reset logic
             dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
-            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', userTagForMessage);
+            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', displayNameForMessage);
             needsRoleCleanupForPublicMessage = true;
             const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
             if (firstRole) {
@@ -652,13 +655,13 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                     logger.log(`User ${userId} hit role milestone: ${roleInfo.name} at ${newState.newStreak} days.`);
                     // Public message for role achievement (if not a streak break and not Day 1 welcome)
                     if (roleInfo.days > 1 && !newState.streakBroken && !isTrueFirstDay) {
-                         tempPublicMessage = `🎉 Big congrats to ${userTagForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
+                         tempPublicMessage = `🎉 Big congrats to ${displayNameForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
                     }
                 }
             }
             // Streak extension public message (if no specific role milestone and not Day 1 welcome)
             if (!tempPublicMessage && newState.streakContinued && newState.newStreak > previousStreak && !newState.streakBroken && !roleInfo && !isTrueFirstDay) {
-                tempPublicMessage = `🥳 ${userTagForMessage} just extended their streak to ${newState.newStreak} days! Keep it up!`;
+                tempPublicMessage = `🥳 ${displayNameForMessage} just extended their daily logging streak to ${newState.newStreak} days! Keep it up!`;
             }
         }
         // ***** END OF MODIFIED LOGIC FOR DAY 1 WELCOME *****
@@ -698,15 +701,15 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
 
         // --- Determine PENDING_PUBLIC_MESSAGE ---
         if (newState.streakBroken && newState.newStreak === 1) {
-            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', userTagForMessage);
+            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', displayNameForMessage);
             needsRoleCleanupForPublicMessage = true; // A streak reset to 1 always implies role cleanup for public view
             logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Streak Reset. Message: "${tempPublicMessage}"`);
         } else if (roleInfo && roleInfo.days > 0 && !newState.streakBroken) {
             // This is a role milestone achievement (and not part of a streak break scenario)
-            tempPublicMessage = `🎉 Big congrats to ${userTagForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
+            tempPublicMessage = `🎉 Big congrats to ${displayNameForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
             logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Role Milestone. Message: "${tempPublicMessage}"`);
         } else if (newState.streakContinued && newState.newStreak > previousStreak && !newState.streakBroken && !roleInfo) {
-            tempPublicMessage = `🥳 ${userTagForMessage} just extended their streak to ${newState.newStreak} days! Keep it up!`;
+            tempPublicMessage = `🥳 ${displayNameForMessage} just extended their daily logging streak to ${newState.newStreak} days! Keep it up!`;
             logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Streak Extension. Message: "${tempPublicMessage}"`);
         } else {
             logger.log(`[onLogCreatedUpdateStreak] No specific public message condition met. Streak: ${newState.newStreak}, Broken: ${newState.streakBroken}, Continued: ${newState.streakContinued}, RoleInfo: ${roleInfo ? roleInfo.name : 'None'}`);
@@ -868,7 +871,7 @@ exports.updateWeeklySettings = onCall(async (request) => {
     }
   
     const userId = request.auth.uid;
-    const { deeperProblem, inputSettings, outputSetting } = request.data; // Expect 'deeperProblem'
+    const { deeperProblem, inputSettings, outputSetting, userTag: receivedUserTag } = request.data; // Expect 'deeperProblem'
     logger.log(`updateWeeklySettings called by user: ${userId} for problem: "${deeperProblem}"`);
   
     // Validate 'deeperProblem'
@@ -915,7 +918,7 @@ exports.updateWeeklySettings = onCall(async (request) => {
     try {
       const db = admin.firestore();
       const userDocRef = db.collection('users').doc(userId);
-      await userDocRef.set({ weeklySettings: weeklySettingsData }, { merge: true });
+      await userDocRef.set({ weeklySettings: weeklySettingsData, userTag: receivedUserTag }, { merge: true });
       logger.log(`Successfully updated weekly settings for user ${userId}:`, weeklySettingsData);
   
       const formatSettingForMessage = (setting, name) => {
@@ -1420,6 +1423,11 @@ exports.setExperimentSchedule = onCall(async (request) => {
     // For simplicity in query later, let's aim for the same time of day, `daysToAdd` later.
     // Or, to be more precise for "end of experiment", consider setting it to the end of the chosen day.
     // For now, same time of day `daysToAdd` later is fine.
+    // NEW: Subtract a few hours to make stats available sooner
+    const hoursToSubtract = 3; // Adjust as needed (e.g., 3 to 6 hours)
+    experimentEndDate.setHours(experimentEndDate.getHours() - hoursToSubtract);
+
+    logger.log(`[setExperimentSchedule] User: ${userId}. Original rollover time would have been roughly ${new Date(now.getTime() + daysToAdd * 24*60*60*1000).toISOString()}. Adjusted experimentEndTimestamp (target for stats processing) to be ~${hoursToSubtract} hours sooner: ${experimentEndDate.toISOString()}`);
     const experimentEndTimestamp = admin.firestore.Timestamp.fromDate(experimentEndDate);
 
     // --- Calculate UTC reminder window if reminders are active ---
@@ -1589,6 +1597,8 @@ function normalizeLabel(str) {
       .replace(/\s+/g, ' ') // Consolidate multiple spaces
       .trim();
   }
+
+  const normalizeUnit = normalizeLabel;
 
 // Helper function to interpret group keys for summary messages
 function interpretFirebaseGroupKey(groupKeyString, input1Label, input2Label) {
@@ -2050,11 +2060,11 @@ async function _calculateAndStorePeriodStatsLogic(
                     const isSignificant = pValue !== null && pValue < 0.05;
 
                     if (strength === "🟦no detectable") { 
-                        interpretation = `There appears to be ${strength} correlation between ${inputLabel} and ${outputMetricLabel}.`;
+                        interpretation = `There appears to be\n${strength} correlation between\n${inputLabel} and ${outputMetricLabel}.`;
                     } else if (isSignificant) {
-                        interpretation = `You can be 95% confident that there is a ${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.`;
+                        interpretation = `You can be 95% confident that there is a\n${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.`;
                     } else {
-                        interpretation = `It appears there may be a ${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}. Worth getting more data?`;
+                        interpretation = `It appears there may be a\n${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}. Worth getting more data?`;
                     }
 
                     correlations[inputLabel] = {
@@ -2899,176 +2909,564 @@ exports.getComparativeExperimentStats = onCall(async (request) => {
 
 });
 
+function determineMaxReminders(frequencyString) {
+    if (frequencyString === 'daily_1' || frequencyString === 'every_other_day') return 1;
+    if (frequencyString === 'daily_2') return 2;
+    if (frequencyString === 'daily_3') return 3;
+    if (frequencyString === 'daily_4') return 4;
+    return 0; // Default for 'none' or unknown
+}
+
+function getDayOfYear(date) { // [cite: 819, 820]
+    const start = new Date(date.getUTCFullYear(), 0, 0);
+    const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+    const oneDay = 1000 * 60 * 60 * 24;
+    return Math.floor(diff / oneDay);
+}
+
+
+/**
+ * Calculates the duration of a time window in hours.
+ * Handles windows that span midnight.
+ * @param {number} startHourUTC Start hour (0-23).
+ * @param {number} endHourUTC End hour (0-23).
+ * @returns {number} Duration in hours.
+ */
+function calculateWindowDuration(startHourUTC, endHourUTC) {
+    if (startHourUTC === endHourUTC) return 24; // Full day window
+    if (endHourUTC > startHourUTC) {
+        return endHourUTC - startHourUTC;
+    } else { // Spans midnight
+        return (24 - startHourUTC) + endHourUTC;
+    }
+}
+
+/**
+ * Defines the first and second halves of a reminder window.
+ * @param {number} startHourUTC Reminder window start hour (0-23).
+ * @param {number} endHourUTC Reminder window end hour (0-23).
+ * @returns {{firstHalf: {start: number, end: number}, secondHalf: {start: number, end: number}, midPointHourFloored: number } | null}
+ * Object with start/end hours for each half, or null if invalid input.
+ * Hours are UTC, 0-23. 'end' is exclusive for checking.
+ */
+function getReminderWindowHalves(startHourUTC, endHourUTC) {
+    if (typeof startHourUTC !== 'number' || typeof endHourUTC !== 'number' ||
+        startHourUTC < 0 || startHourUTC > 23 || endHourUTC < 0 || endHourUTC > 23) {
+        logger.warn(`[getReminderWindowHalves] Invalid start/end hours: ${startHourUTC}-${endHourUTC}`);
+        return null;
+    }
+
+    const duration = calculateWindowDuration(startHourUTC, endHourUTC);
+    if (duration <= 0) {
+        logger.warn(`[getReminderWindowHalves] Invalid duration ${duration} for window ${startHourUTC}-${endHourUTC}`);
+        return null;
+    }
+
+    const halfDuration = duration / 2;
+    let midPointHour = (startHourUTC + halfDuration) % 24;
+
+    let firstHalf = { start: startHourUTC, end: midPointHour };
+    let secondHalf = { start: midPointHour, end: endHourUTC };
+
+    // Adjust for clarity: midPointHourFloored is the hour where the second half begins.
+    // 'end' hours in the returned objects will be exclusive for checks like currentHour < half.end
+    
+    // If midpoint isn't an integer, the first half effectively ends at floor(midPointHour),
+    // and second half starts at floor(midPointHour).
+    // For checks like currentHour >= start && currentHour < end
+    // If duration is odd, one half will be slightly longer.
+    // Example: 9 to 18 (9 hours). Half duration 4.5. Midpoint 13.5.
+    // First half: 9, 10, 11, 12 (4 hours if midPointHour is floored for end)
+    // Second half: 13, 14, 15, 16, 17 (5 hours)
+    // Let's make the split as even as possible for hour-based checks.
+    // The midPointHour will be the start of the second half.
+    // The end of the first half will be midPointHour.
+
+    //logger.info(`[getReminderWindowHalves] Window ${startHourUTC}-${endHourUTC}. Duration: ${duration}. HalfDuration: ${halfDuration}. MidPointHourRaw: ${startHourUTC + halfDuration}. MidPointHourMod24: ${midPointHour}`);
+    
+    return {
+        firstHalf: { start: startHourUTC, end: midPointHour }, // firstHalf.end is exclusive
+        secondHalf: { start: midPointHour, end: endHourUTC },   // secondHalf.end is exclusive
+        midPointHourFloored: Math.floor(midPointHour) // Integer hour for easier understanding if needed
+    };
+}
+
+/**
+ * Determines which half of the window the current UTC hour falls into.
+ * @param {number} currentUTCHour The current UTC hour (0-23).
+ * @param {object} windowHalves The object returned by getReminderWindowHalves.
+ * @returns {'first_half' | 'second_half' | 'outside'} String indicating the half.
+ */
+function getCurrentWindowHalf(currentUTCHour, windowHalves) {
+    if (!windowHalves) return 'outside';
+
+    const { firstHalf, secondHalf } = windowHalves;
+
+    // Check first half
+    // Handles wrap-around for firstHalf.start > firstHalf.end (e.g. window 22:00 - 02:00, first half 22:00 - 00:00)
+    if (firstHalf.start <= firstHalf.end) { // Normal window part
+        if (currentUTCHour >= firstHalf.start && currentUTCHour < firstHalf.end) {
+            return 'first_half';
+        }
+    } else { // Window part wraps around midnight
+        if (currentUTCHour >= firstHalf.start || currentUTCHour < firstHalf.end) {
+            return 'first_half';
+        }
+    }
+
+    // Check second half
+    // Handles wrap-around for secondHalf.start > secondHalf.end (e.g. window 22:00 - 04:00, second half 01:00 - 04:00)
+    if (secondHalf.start <= secondHalf.end) { // Normal window part
+        if (currentUTCHour >= secondHalf.start && currentUTCHour < secondHalf.end) {
+            return 'second_half';
+        }
+    } else { // Window part wraps around midnight
+        if (currentUTCHour >= secondHalf.start || currentUTCHour < secondHalf.end) {
+            return 'second_half';
+        }
+    }
+    
+    // Special case: If window is 24 hours (start === end for both halves after calculation)
+    // and duration was 24, then midPointHour would be startHourUTC + 12.
+    // e.g. Window 9-9. Duration 24. Midpoint 21.
+    // First half: 9 - 21. Second half: 21 - 9.
+    // If currentUTCHour is exactly on the midPointHour, it's considered start of second_half by convention here.
+    // If currentUTCHour is exactly on startHourUTC (and it's a 24h window), it's start of first_half.
+
+    return 'outside';
+}
+
 /**
  * Scheduled function to check for and trigger user reminders.
  * Runs periodically (e.g., every 30 minutes).
  */
-exports.sendScheduledReminders = onSchedule("every 30 minutes", async (event) => {
+exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) => {
     logger.log("sendScheduledReminders: Scheduled function triggered.", event.scheduleTime);
     const db = admin.firestore();
-    const now = new Date(); // Current server time in UTC
+    const now = new Date();
     const currentUTCHour = now.getUTCHours();
-    const currentUTCDayOfYear = getDayOfYear(now); // Helper function needed
-
-    // Helper function to get day of the year (1-366)
-    function getDayOfYear(date) {
-        const start = new Date(date.getUTCFullYear(), 0, 0);
-        const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
-        const oneDay = 1000 * 60 * 60 * 24;
-        return Math.floor(diff / oneDay);
-    }
-
-    const SEND_PROBABILITY = 0.70; // 70% chance to send an eligible reminder per check
+    const currentUTCMinute = now.getUTCMinutes();
+    const currentUTCDayOfYear = getDayOfYear(now); // [cite: 824]
 
     try {
         const usersSnapshot = await db.collection('users').get();
         if (usersSnapshot.empty) {
-            logger.log("sendScheduledReminders: No users found.");
+            logger.log("sendScheduledReminders: No users found."); // [cite: 826]
             return null;
         }
 
         const reminderPromises = [];
-        usersSnapshot.forEach(userDoc => {
+        usersSnapshot.forEach(async userDoc => { // Add async here
             const userId = userDoc.id;
             const userData = userDoc.data();
 
             if (userData.experimentCurrentSchedule &&
-                userData.experimentCurrentSchedule.remindersSkipped === false &&
+                typeof userData.experimentCurrentSchedule === 'object' &&
+                userData.experimentCurrentSchedule.remindersSkipped === false && // [cite: 827]
                 userData.experimentCurrentSchedule.reminderFrequency &&
-                userData.experimentCurrentSchedule.reminderFrequency !== 'none' &&
+                userData.experimentCurrentSchedule.reminderFrequency !== 'none' && // [cite: 827]
                 userData.experimentCurrentSchedule.experimentEndTimestamp &&
-                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() > now) { // Experiment is still active
+                typeof userData.experimentCurrentSchedule.experimentEndTimestamp.toDate === 'function' &&
+                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() > now) { // [cite: 827]
 
-                const schedule = userData.experimentCurrentSchedule;
+                const schedule = userData.experimentCurrentSchedule; // [cite: 827]
+                
+            if (typeof schedule !== 'object' || schedule === null) {
+                            logger.error(`sendScheduledReminders: User ${userId} experimentCurrentSchedule (variable 'schedule') was not a valid object for destructuring. Value:`, schedule);
+                            return; // Skip this user
+                        }
+
+                // --- Step 2: Initialize Daily Tracking Variables ---
                 const {
-                    reminderWindowStartUTC,
-                    reminderWindowEndUTC,
-                    reminderFrequency,
-                    lastReminderSentDayOfYearUTC,
-                    remindersSentOnLastDay
+                    reminderWindowStartUTC, // [cite: 828]
+                    reminderWindowEndUTC, // [cite: 828]
+                    reminderFrequency, // [cite: 828]
+                    lastReminderSentDayOfYearUTC, // [cite: 828]
+                    remindersSentOnLastDay, // [cite: 829]
+                    firstHalfReminderSentForDay: storedFirstHalfSent, // For Step 2 & 3
+                    secondHalfReminderSentForDay: storedSecondHalfSent, // For Step 2 & 3
+                    lastReminderSentEpochDayUTC // [cite: 835]
                 } = schedule;
 
-                if (typeof reminderWindowStartUTC !== 'number' || typeof reminderWindowEndUTC !== 'number') {
-                    logger.warn(`sendScheduledReminders: User ${userId} has incomplete UTC reminder window settings. Skipping.`);
-                    return; 
+                if (typeof reminderWindowStartUTC !== 'number' || typeof reminderWindowEndUTC !== 'number') { // [cite: 830]
+                    logger.warn(`sendScheduledReminders: User ${userId} has incomplete UTC reminder window settings. Skipping.`); // [cite: 830]
+                    return; // to next userDoc
                 }
 
-                let windowDurationHours;
-                let isInWindow = false;
+                let actualRemindersSentToday;
+                let firstHalfFlagForToday; // Tracks if a reminder has been sent/allocated to first half *today*
+                let secondHalfFlagForToday; // Tracks if a reminder has been sent/allocated to second half *today*
 
-                if (reminderWindowStartUTC <= reminderWindowEndUTC) { 
-                    windowDurationHours = reminderWindowEndUTC - reminderWindowStartUTC;
-                    if (currentUTCHour >= reminderWindowStartUTC && currentUTCHour < reminderWindowEndUTC) {
-                        isInWindow = true;
+                if (lastReminderSentDayOfYearUTC === currentUTCDayOfYear) {
+                    actualRemindersSentToday = remindersSentOnLastDay || 0; // [cite: 833]
+                    firstHalfFlagForToday = storedFirstHalfSent || false;
+                    secondHalfFlagForToday = storedSecondHalfSent || false;
+                } else {
+                    actualRemindersSentToday = 0;
+                    firstHalfFlagForToday = false;
+                    secondHalfFlagForToday = false;
+                }
+                // --- End Step 2 Initialization ---
+
+                const maxRemindersToday = determineMaxReminders(reminderFrequency); // [cite: 831]
+
+                // 1. Limit Check
+                if (actualRemindersSentToday >= maxRemindersToday) { // [cite: 834]
+                    return; // Daily limit met
+                }
+
+                // 2. "Every other day" logic
+                if (reminderFrequency === 'every_other_day') { // [cite: 834]
+                    const currentEpochDayUTC = Math.floor(now.getTime() / (1000 * 60 * 60 * 24)); // [cite: 834]
+                    const lastSentEpochDay = lastReminderSentEpochDayUTC; // From destructuring [cite: 835]
+
+                    if (typeof lastSentEpochDay === 'number') {
+                        if (currentEpochDayUTC === lastSentEpochDay) { // [cite: 836]
+                            return; // Already sent on this epoch day
+                        }
+                        if (currentEpochDayUTC - lastSentEpochDay < 2) { // [cite: 837]
+                            return; // Sent on the immediately preceding epoch day, so skip today
+                        }
                     }
-                } else { 
-                    windowDurationHours = (24 - reminderWindowStartUTC) + reminderWindowEndUTC;
-                    if (currentUTCHour >= reminderWindowStartUTC || currentUTCHour < reminderWindowEndUTC) {
-                        isInWindow = true;
+                }
+
+                // 3. Magic Minute Window Hit Check
+                let magicMinuteHit = false; // [cite: 838]
+                for (const targetMin of MMW_TARGET_MINUTES) { // [cite: 839]
+                    if (currentUTCMinute >= (targetMin - MMW_FLEXIBILITY) && currentUTCMinute <= (targetMin + MMW_FLEXIBILITY)) { // [cite: 839]
+                        magicMinuteHit = true; // [cite: 839]
+                        break;
+                    }
+                }
+                if (!magicMinuteHit) { // [cite: 841]
+                    return; // Not a magic minute time
+                }
+
+                // --- Step 1 & 3 Integration: Calculate Halves and Determine Current Half ---
+                const windowHalves = getReminderWindowHalves(reminderWindowStartUTC, reminderWindowEndUTC);
+                const currentHalf = getCurrentWindowHalf(currentUTCHour, windowHalves); // Can be 'first_half', 'second_half', 'outside_window', 'invalid_halves'
+                
+                if (currentHalf === 'invalid_halves' || currentHalf === 'outside_window') {
+                    // logger.log(`User ${userId} is outside window or halves invalid. CurrentHalf: ${currentHalf}`);
+                    return; // Not in a valid part of the window
+                }
+                // --- End Step 1 & 3 Integration ---
+
+                // --- Step 3: Core Eligibility Logic based on Halves ---
+                let sendThisReminder = false;
+
+                if (maxRemindersToday === 1) {
+                    // Deterministically pick a target half for the day
+                    const targetHalfForSingle = ((currentUTCDayOfYear + parseInt(userId.slice(-1), 16)) % 2 === 0) ? 'first_half' : 'second_half';
+                    if (currentHalf === targetHalfForSingle && actualRemindersSentToday === 0) {
+                        sendThisReminder = true;
+                    }
+                } else if (maxRemindersToday >= 2) {
+                    if (currentHalf === 'first_half' && !firstHalfFlagForToday) {
+                        sendThisReminder = true; // Send the first reminder for the first half
+                    } else if (currentHalf === 'second_half' && !secondHalfFlagForToday) {
+                        sendThisReminder = true; // Send the first reminder for the second half
+                    } else if (firstHalfFlagForToday && secondHalfFlagForToday) {
+                        // Both halves have had their guaranteed reminder, send any remaining ones
+                        if (actualRemindersSentToday < maxRemindersToday) {
+                             sendThisReminder = true;
+                        }
+                    } else if ( (currentHalf === 'first_half' && firstHalfFlagForToday && !secondHalfFlagForToday && (maxRemindersToday - actualRemindersSentToday > 1 )) ||
+                                (currentHalf === 'second_half' && secondHalfFlagForToday && !firstHalfFlagForToday && (maxRemindersToday - actualRemindersSentToday > 1 )) ) {
+                        // Current half is done, other half is not, and we have enough reminders left to fill both and then some.
+                        // This allows filling up more than the guaranteed 1 per half if maxReminders is > 2
+                        if (actualRemindersSentToday < maxRemindersToday) {
+                            sendThisReminder = true;
+                        }
+                    } else if ( (currentHalf === 'first_half' && !firstHalfFlagForToday && secondHalfFlagForToday && actualRemindersSentToday < maxRemindersToday) ||
+                                (currentHalf === 'second_half' && !secondHalfFlagForToday && firstHalfFlagForToday && actualRemindersSentToday < maxRemindersToday) ){
+                        // This case handles if one half is done, current MMW is in the other *undone* half
+                        sendThisReminder = true;
                     }
                 }
                 
-                const isFullDayWindow = reminderWindowStartUTC === 0 && reminderWindowEndUTC === 0 && reminderFrequency !== 'none';
-                if (windowDurationHours <= 0 && !isFullDayWindow) {
-                    logger.info(`sendScheduledReminders: User ${userId} has a zero or negative duration reminder window (${reminderWindowStartUTC}-${reminderWindowEndUTC} UTC) and it's not a full day window. No reminders will be sent.`);
-                    return; 
+                if (!sendThisReminder) {
+                    // logger.log(`User ${userId}, Freq: ${reminderFrequency}, SentToday: ${actualRemindersSentToday}/${maxRemindersToday}, CH: ${currentHalf}, FHDone: ${firstHalfFlagForToday}, SHDone: ${secondHalfFlagForToday}. No send.`);
+                    return; // Conditions not met to send
                 }
+                // --- End Step 3 Core Logic ---
+
+                logger.log(`sendScheduledReminders: User ${userId} PASSED ALL CHECKS. Attempting send. Freq: ${reminderFrequency}, SentToday(before): ${actualRemindersSentToday}/${maxRemindersToday}, CurrentHalf: ${currentHalf}, 1stHalfSent: ${firstHalfFlagForToday}, 2ndHalfSent: ${secondHalfFlagForToday}. Time: ${currentUTCHour}:${String(currentUTCMinute).padStart(2,'0')}`);
                 
-                if (!isInWindow) {
-                    return; 
-                }
 
-                let shouldAttemptSendThisCheck = false; 
-                const newRemindersSentThisUTCDay = (lastReminderSentDayOfYearUTC === currentUTCDayOfYear) ? (remindersSentOnLastDay || 0) : 0;
-                
-                if (reminderFrequency === 'daily_1') {
-                    if (newRemindersSentThisUTCDay < 1) {
-                        if (Math.random() < SEND_PROBABILITY) {
-                            shouldAttemptSendThisCheck = true;
-                        } else {
-                            logger.log(`sendScheduledReminders: User ${userId} (daily_1) - Eligible, but probabilistically skipped this run (${((1-SEND_PROBABILITY)*100).toFixed(0)}% chance).`);
-                        }
-                    }
-                } else if (reminderFrequency === 'daily_2') {
-                    if (newRemindersSentThisUTCDay < 2) {
-                        if (Math.random() < SEND_PROBABILITY) {
-                            shouldAttemptSendThisCheck = true;
-                        } else {
-                            logger.log(`sendScheduledReminders: User ${userId} (daily_2, attempt for reminder #${newRemindersSentThisUTCDay + 1}) - Eligible, but probabilistically skipped this run (${((1-SEND_PROBABILITY)*100).toFixed(0)}% chance).`);
-                        }
-                    }
-                } else if (reminderFrequency === 'every_other_day') {
-                    if (newRemindersSentThisUTCDay < 1) {
-                        if (lastReminderSentDayOfYearUTC === null || (currentUTCDayOfYear % 2 !== lastReminderSentDayOfYearUTC % 2)) {
-                            shouldAttemptSendThisCheck = true;
-                        }
-                    }
-                }
+                // --- AI Personalization Step 1: Access settings & prepare input data ---
+                let inputsForAI = []; // Initialize as an empty array
+                const scheduledSettings = schedule.scheduledExperimentSettings;
 
-                if (shouldAttemptSendThisCheck) {
-                    logger.log(`sendScheduledReminders: User ${userId} is IN window (${reminderWindowStartUTC}-${reminderWindowEndUTC} UTC, current: ${currentUTCHour}) and Attempting Send (Freq: ${reminderFrequency}, Prior Sent Today: ${newRemindersSentThisUTCDay}).`);
-                    
-                    const randomDefaultMessage = defaultReminderMessages[Math.floor(Math.random() * defaultReminderMessages.length)];
-                    let finalReminderMessage = randomDefaultMessage;
-
-                    if (schedule.scheduledExperimentSettings) {
-                        const settings = schedule.scheduledExperimentSettings;
-                        const activeInputLabels = []; // Changed from activeInputs to activeInputLabels
-
-                        if (settings.input1 && settings.input1.label && settings.input1.label.trim() !== "") {
-                            activeInputLabels.push(settings.input1.label); // Store only the label
-                        }
-                        if (settings.input2 && settings.input2.label && settings.input2.label.trim() !== "") {
-                            activeInputLabels.push(settings.input2.label); // Store only the label
-                        }
-                        if (settings.input3 && settings.input3.label && settings.input3.label.trim() !== "") {
-                            activeInputLabels.push(settings.input3.label); // Store only the label
-                        }
-
-                        if (activeInputLabels.length > 0) {
-                            const randomInputLabel = activeInputLabels[Math.floor(Math.random() * activeInputLabels.length)]; // Select a label string
-                            // Construct message without the unit
-                            finalReminderMessage = `${randomInputLabel}: ${randomDefaultMessage}`; 
-                            logger.log(`sendScheduledReminders: User ${userId} - Selected input for reminder: "${randomInputLabel}". Full message: "${finalReminderMessage}"`);
-                        } else {
-                            logger.warn(`sendScheduledReminders: User ${userId} - No active input labels found in scheduledExperimentSettings. Using default format: "${finalReminderMessage}"`);
-                        }
-                    } else {
-                        logger.warn(`sendScheduledReminders: User ${userId} - scheduledExperimentSettings not found. Using default reminder format: "${finalReminderMessage}"`);
-                    }
-                    
-                    const reminderDocId = db.collection('pendingReminderDMs').doc().id;
-                    const reminderPromise = db.collection('pendingReminderDMs').doc(reminderDocId).set({
-                        userId: userId,
-                        userTag: userData.userTag || `User_${userId}`,
-                        messageToSend: finalReminderMessage,
-                        experimentId: schedule.experimentId || null,
-                        status: 'pending',
-                        createdAt: FieldValue.serverTimestamp(),
-                    }).then(() => {
-                        logger.log(`sendScheduledReminders: Created pendingReminderDM ${reminderDocId} for user ${userId}.`);
-                        return userDoc.ref.update({
-                            'experimentCurrentSchedule.lastReminderSentDayOfYearUTC': currentUTCDayOfYear,
-                            'experimentCurrentSchedule.remindersSentOnLastDay': newRemindersSentThisUTCDay + 1
+                if (genAI && scheduledSettings) { // Only proceed if AI client and settings are available [cite: 39, 44, 849]
+                    if (scheduledSettings.input1 && scheduledSettings.input1.label?.trim()) {
+                        inputsForAI.push({ 
+                            label: scheduledSettings.input1.label, 
+                            unit: scheduledSettings.input1.unit || "" 
                         });
-                    }).catch(err => {
-                        logger.error(`sendScheduledReminders: Failed to write pendingReminderDM or update user doc for ${userId}`, err);
-                    });
-                    reminderPromises.push(reminderPromise);
-                } else if (isInWindow) {
-                     logger.log(`sendScheduledReminders: User ${userId} is IN window but NOT attempting send this check. Freq: ${reminderFrequency}, Prior Sent Today: ${newRemindersSentThisUTCDay}, Current UTC Day: ${currentUTCDayOfYear}.`);
+                    }
+                    if (scheduledSettings.input2 && scheduledSettings.input2.label?.trim()) {
+                        inputsForAI.push({ 
+                            label: scheduledSettings.input2.label, 
+                            unit: scheduledSettings.input2.unit || "" 
+                        });
+                    }
+                    if (scheduledSettings.input3 && scheduledSettings.input3.label?.trim()) {
+                        inputsForAI.push({ 
+                            label: scheduledSettings.input3.label, 
+                            unit: scheduledSettings.input3.unit || "" 
+                        });
+                    }
+
+                    if (inputsForAI.length > 0) {
+                        // For now, just log what we've collected.
+                        // In a real scenario, this log might be too verbose for every user,
+                        // but it's useful for this step-by-step confirmation.
+                        logger.info(`[sendScheduledReminders - AI Step 1] User ${userId}: Prepared inputsForAI:`, JSON.stringify(inputsForAI));
+                    } else {
+                        // logger.info(`[sendScheduledReminders - AI Step 1] User ${userId}: No configured inputs found in scheduledSettings for AI prompt.`);
+                    }
+                } else {
+                    // logger.info(`[sendScheduledReminders - AI Step 1] User ${userId}: genAI not available or no scheduledSettings. Skipping AI data prep.`);
                 }
-            } else {
-                 // logger.log(`sendScheduledReminders: User ${userId} has no active reminder schedule or experiment ended.`);
+                // --- End AI Personalization Step 1 ---
+
+                // --- AI Personalization Step 2: Construct LLM Prompt Text with Time Context ---
+                let aiPromptText = ""; 
+
+                if (genAI && scheduledSettings && inputsForAI.length > 0) {
+                    let timeContextForPrompt = "It's currently a general time for the user.";
+                    const userInitialUTCOffsetHours = schedule.initialUTCOffsetHours; // [cite: 420, 421]
+
+                    if (typeof userInitialUTCOffsetHours === 'number') {
+                        const userLocalHour = (currentUTCHour - userInitialUTCOffsetHours + 24) % 24;
+                        
+                        let localTimeOfDayCategory = "";
+                        if (userLocalHour >= 5 && userLocalHour < 12) localTimeOfDayCategory = "morning";
+                        else if (userLocalHour >= 12 && userLocalHour < 17) localTimeOfDayCategory = "afternoon";
+                        else if (userLocalHour >= 17 && userLocalHour < 21) localTimeOfDayCategory = "evening";
+                        else localTimeOfDayCategory = "night"; // Covers 21-23 and 0-4
+
+                        // Determine position within their local reminder window
+                        const localWindowStart = (schedule.reminderWindowStartUTC - userInitialUTCOffsetHours + 24) % 24;
+                        const localWindowEnd = (schedule.reminderWindowEndUTC - userInitialUTCOffsetHours + 24) % 24;
+                        const windowDuration = calculateWindowDuration(localWindowStart, localWindowEnd); // Assumes calculateWindowDuration is available
+
+                        let positionInWindow = "in their reminder window";
+                        if (windowDuration > 0 && windowDuration <= 24) { // Ensure valid duration
+                            let hoursIntoWindow;
+                            if (localWindowStart <= userLocalHour) { // Current hour is same day as window start
+                                hoursIntoWindow = userLocalHour - localWindowStart;
+                            } else { // Current hour is next day (window spanned midnight)
+                                hoursIntoWindow = (24 - localWindowStart) + userLocalHour;
+                            }
+
+                            if (hoursIntoWindow < windowDuration / 3) positionInWindow = "early in their reminder window";
+                            else if (hoursIntoWindow < (windowDuration * 2) / 3) positionInWindow = "midway through their reminder window";
+                            else positionInWindow = "nearing the end of their reminder window";
+                        }
+                        
+                        const formatHourForPrompt = (hour24) => {
+                            const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+                            const period = hour24 < 12 || hour24 === 24 ? 'AM' : 'PM';
+                             if (hour24 === 0) return '12AM (Midnight)';
+                             if (hour24 === 12) return '12PM (Noon)';
+                            return `${hour12}${period}`;
+                        };
+
+                        timeContextForPrompt = `It's currently ${localTimeOfDayCategory} for the user (around ${formatHourForPrompt(userLocalHour)} local time), ` +
+                                               `and they are ${positionInWindow} (local window: ${formatHourForPrompt(localWindowStart)} - ${formatHourForPrompt(localWindowEnd)}).`;
+                    }
+
+                    const exampleActionsForPrompt = inputsForAI.map(inp => `- '${inp.label}'${inp.unit ? ` (unit: ${inp.unit})` : ''}`).join('\n');
+                    let actionReferenceInstruction = "one of their daily habits below.";
+                    if (inputsForAI.length === 1) {
+                        actionReferenceInstruction = `their daily habit: '${inputsForAI[0].label}'.`;
+                    } else if (inputsForAI.length === 2) {
+                        actionReferenceInstruction = `their daily habits: '${inputsForAI[0].label}' or '${inputsForAI[1].label}'.`;
+                    } else if (inputsForAI.length >= 3) {
+                        const allLabels = inputsForAI.map(inp => `'${inp.label}'`).slice(0, 3).join(', ');
+                        actionReferenceInstruction = `some of their daily habits, like ${allLabels}.`;
+                    }
+
+                    let experimentProgressContext = "";
+                    //const schedule = userData.experimentCurrentSchedule; // Assuming 'schedule' is already defined
+                    const experimentSetAtDate = schedule.experimentSetAt?.toDate();
+                    const experimentEndDateDate = schedule.experimentEndTimestamp?.toDate();
+                    const nowForProgress = new Date();
+
+                    if (experimentSetAtDate && experimentEndDateDate && schedule.experimentDuration && nowForProgress > experimentSetAtDate && nowForProgress < experimentEndDateDate) {
+                        const totalDurationMillis = experimentEndDateDate.getTime() - experimentSetAtDate.getTime();
+                        const elapsedMillis = nowForProgress.getTime() - experimentSetAtDate.getTime();
+                        if (totalDurationMillis > 0) { // Avoid division by zero
+                            const progressRatio = elapsedMillis / totalDurationMillis;
+                            const durationText = schedule.experimentDuration.replace('_', '-');
+
+                            if (progressRatio < 0.15) { // First ~15%
+                                experimentProgressContext = `They've just started their current ${durationText} experiment period.`;
+                            } else if (progressRatio < 0.40) { // Up to ~40%
+                                experimentProgressContext = `They are early in their current ${durationText} experiment period.`;
+                            } else if (progressRatio < 0.70) { // Up to ~70%
+                                experimentProgressContext = `They are about midway through their current ${durationText} experiment period.`;
+                            } else if (progressRatio < 0.90) { // Up to ~90%
+                                experimentProgressContext = `They are progressing well and nearing the end of their ${durationText} experiment period.`;
+                            } else { // Last 10%
+                                experimentProgressContext = `They are in the final stretch of their current ${durationText} experiment period!`;
+                            }
+                        }
+                    }
+
+                    // Using your edited prompt structure and adding time context and instructions
+                    aiPromptText = `
+                    You are generating a short, personalized reminder message for a user doing self-experiments.
+                    The message should be 1-3 sentences and under 150 characters.
+                    The tone must be positive and funny. It should grab attention and trigger curiosity.
+
+                    CONTEXT:
+                    Time: ${timeContextForPrompt}
+                    ${experimentProgressContext ? `Progress: ${experimentProgressContext}` : ""}
+
+                    The user's current daily Habits include:
+                    ${exampleActionsForPrompt}
+
+                    Your main goal is to encourage the user to find intrinsic joy, curiosity, or immediate, small rewards while performing ${actionReferenceInstruction}.
+                    Focus on the experience of the action itself.
+                    DO NOT mention their larger, overall goals (deeperProblem) or their progress on main outcome metrics.
+                    DO NOT use phrases like "achieve your goals" or "make progress."
+
+                    IMPORTANT TIME CONSIDERATIONS:
+                    - Subtly tailor the message to reflect the time context provided above. Avoid cliches about the time of day.
+                    - If any of the user's actions (e.g., "${inputsForAI.map(i => i.label).join('/')}") seem strongly tied to a specific time of day (e.g., 'Morning Wakeup', 'Bedtime Routine'), ONLY mention them if the user's current local time of day is appropriate. Otherwise, focus on their other, more general actions or frame the reminder generally about doing something rewarding in their day without mentioning the time-specific action.
+
+                    Creatively reference their specific actions. Vary whether you mention one, or multiple of their listed actions.
+                    You can draw inspiration about the message essence from these examples, but generate something novel, varied, and funny if possible:
+                    - "What if this ends up being your favorite part of today?"
+                    - "There's a tiny reward hiding in this activity. Can you find it?"
+                    - "This isn't self-discipline. It's self-discovery."
+                    - "Forget the big goals. Make this moment just a little more rewarding."
+
+                    Generate only the reminder message text. 1-3 sentences and under 150 characters.
+                    `;
+                    logger.info(`[sendScheduledReminders - AI Step 2 REV] User ${userId}: Constructed AI Prompt (Time-Aware):\n${aiPromptText}`);
+
+                } else if (inputsForAI.length === 0 && genAI && scheduledSettings) {
+                    // logger.info(`[sendScheduledReminders - AI Step 2 REV] User ${userId}: No inputsForAI, skipping AI prompt construction.`);
+                }
+                // --- End AI Personalization Step 2 with Time Context ---
+
+                // --- AI Personalization Step 3: Make LLM API Call & Handle Response ---
+                let finalReminderMessage = ""; // Will hold the message to be sent
+                let usedAiMessage = false;     // Flag to track if AI message was successfully used
+
+                // Condition to attempt AI generation: genAI client is ready, and we have a prompt
+                if (genAI && aiPromptText && aiPromptText.trim() !== "") {
+                    // logger.info(`[sendScheduledReminders - AI Step 3] User ${userId}: Attempting AI message generation.`); // Optional: can be verbose
+                    try {
+                        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Or "gemini-1.5-pro"
+                        const generationResult = await model.generateContent({
+                            contents: [{ role: "user", parts: [{text: aiPromptText}] }],
+                            generationConfig: { 
+                                ...GEMINI_CONFIG, // Spread global config [cite: 46]
+                                temperature: 0.95, // Override temperature as requested
+                                // Candidate count can be managed here if needed, but default is 1
+                                // maxOutputTokens can also be set if the <200 char in prompt isn't strict enough
+                                // For a 200 char message, ~50-70 tokens should be more than enough.
+                                // Let's use the prompt for char limit first.
+                            }, 
+                        });
+                        const response = await generationResult.response;
+                        const candidateText = response.text()?.trim();
+
+                        if (candidateText && candidateText.length > 0 && candidateText.length <= 200) { // Check length too
+                            finalReminderMessage = candidateText;
+                            usedAiMessage = true;
+                            logger.info(`[sendScheduledReminders - AI Step 3] User ${userId}: AI message GENERATED & USED: "${finalReminderMessage}"`);
+                        } else if (candidateText) {
+                            logger.warn(`[sendScheduledReminders - AI Step 3] User ${userId}: AI generated text but it was empty or too long (length: ${candidateText.length}). Falling back. Text: "${candidateText}"`);
+                        } else {
+                            logger.warn(`[sendScheduledReminders - AI Step 3] User ${userId}: AI generation attempt resulted in no candidate text. Falling back.`);
+                        }
+                    } catch (aiError) {
+                        logger.error(`[sendScheduledReminders - AI Step 3] User ${userId}: AI message generation FAILED. Error:`, aiError.message);
+                        // Fallback will occur as usedAiMessage is false
+                    }
+                } else {
+                    // logger.info(`[sendScheduledReminders - AI Step 3] User ${userId}: Skipping AI call (genAI not ready or no prompt text).`);
+                }
+
+                // Fallback logic: If AI wasn't used (or failed), use the default message system
+                if (!usedAiMessage) {
+                    const randomDefaultMessage = defaultReminderMessages[Math.floor(Math.random() * defaultReminderMessages.length)];
+                    finalReminderMessage = randomDefaultMessage;
+                    // Reuse scheduledSettings if already defined, or get it from schedule
+                    const currentScheduledSettings = scheduledSettings || schedule.scheduledExperimentSettings; 
+
+                    if (currentScheduledSettings) {
+                        const activeInputLabelsForFallback = [];
+                        if (currentScheduledSettings.input1?.label?.trim()) activeInputLabelsForFallback.push(currentScheduledSettings.input1.label);
+                        if (currentScheduledSettings.input2?.label?.trim()) activeInputLabelsForFallback.push(currentScheduledSettings.input2.label);
+                        if (currentScheduledSettings.input3?.label?.trim()) activeInputLabelsForFallback.push(currentScheduledSettings.input3.label);
+                        
+                        if (activeInputLabelsForFallback.length > 0) {
+                            const randomInputLabel = activeInputLabelsForFallback[Math.floor(Math.random() * activeInputLabelsForFallback.length)];
+                            finalReminderMessage = `${randomInputLabel}: ${randomDefaultMessage}`;
+                        }
+                    }
+                    logger.info(`[sendScheduledReminders - AI Step 3] User ${userId}: Using FALLBACK message: "${finalReminderMessage}"`);
+                }
+                // --- End AI Personalization Step 3 ---
+
+                const reminderDocId = db.collection('pendingReminderDMs').doc().id; // [cite: 855]
+                
+                // --- Step 4: Update Tracking Fields in Firestore Payload ---
+                const updatePayload = {
+                    'experimentCurrentSchedule.lastReminderSentDayOfYearUTC': currentUTCDayOfYear,
+                    'experimentCurrentSchedule.remindersSentOnLastDay': actualRemindersSentToday + 1,
+                    // Ensure flags are set to true, not incremented
+                    'experimentCurrentSchedule.firstHalfReminderSentForDay': currentHalf === 'first_half' ? true : firstHalfFlagForToday,
+                    'experimentCurrentSchedule.secondHalfReminderSentForDay': currentHalf === 'second_half' ? true : secondHalfFlagForToday,
+                };
+                // If it's a new day, the local flags (firstHalfFlagForToday, secondHalfFlagForToday) were already false.
+                // So, if currentHalf is 'first_half', it correctly sets 'experimentCurrentSchedule.firstHalfReminderSentForDay' to true.
+                // If currentHalf is 'second_half', it correctly sets 'experimentCurrentSchedule.secondHalfReminderSentForDay' to true.
+                // If one was already true from a previous run *today*, it remains true.
+
+                if (lastReminderSentDayOfYearUTC !== currentUTCDayOfYear) {
+                    // If it's the first reminder of a new day, explicitly ensure both flags are set according to current send,
+                    // and the other is reset (or remains false if not this half).
+                    updatePayload['experimentCurrentSchedule.firstHalfReminderSentForDay'] = (currentHalf === 'first_half');
+                    updatePayload['experimentCurrentSchedule.secondHalfReminderSentForDay'] = (currentHalf === 'second_half');
+                }
+
+
+                if (reminderFrequency === 'every_other_day') { // [cite: 856]
+                    updatePayload['experimentCurrentSchedule.lastReminderSentEpochDayUTC'] = Math.floor(now.getTime() / (1000 * 60 * 60 * 24)); // [cite: 856]
+                }
+                // --- End Step 4 Payload ---
+
+                const reminderPromise = db.collection('pendingReminderDMs').doc(reminderDocId).set({ // [cite: 857]
+                    userId: userId,
+                    userTag: userData.userTag || `User_${userId}`, // [cite: 857]
+                    messageToSend: finalReminderMessage, 
+                    experimentId: schedule.experimentId || null, // [cite: 858]
+                    status: 'pending', // [cite: 858]
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(), // [cite: 858]
+                }).then(() => {
+                    logger.log(`sendScheduledReminders: Created pendingReminderDM ${reminderDocId} for user ${userId}.`); // [cite: 859]
+                    return userDoc.ref.update(updatePayload); // [cite: 859]
+                }).catch(err => {
+                    logger.error(`sendScheduledReminders: Failed to write pendingReminderDM or update user doc for ${userId}`, err); // [cite: 859]
+                });
+                reminderPromises.push(reminderPromise); // [cite: 860]
             }
         });
 
-        await Promise.all(reminderPromises);
-        logger.log(`sendScheduledReminders: Processing complete. Dispatched ${reminderPromises.length} potential reminders.`);
+        await Promise.all(reminderPromises); // [cite: 861, 862]
+        logger.log(`sendScheduledReminders: Processing complete. Dispatched ${reminderPromises.length} potential reminders.`); // [cite: 862]
         return null;
 
     } catch (error) {
-        logger.error("sendScheduledReminders: Overall error in scheduled function:", error);
+        logger.error("sendScheduledReminders: Overall error in scheduled function:", error); // [cite: 863, 864]
         return null;
     }
 });
@@ -3298,6 +3696,256 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
   }
 });
 
+/**
+ * Takes a user's "Deeper Wish" and generates five potential outcome metric labels
+ * with suggested unit types and brief explanations using Gemini.
+ *
+ * Expected request.data: { userWish: string }
+ * Returns: { success: true, suggestions: [{label: string, suggestedUnitType: string, briefExplanation: string}, ...] }
+ * or { success: false, error: string, details?: any }
+ */
+exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
+  logger.log("[generateOutcomeLabelSuggestions] Function called. Request data:", request.data);
+
+  // 1. Authentication & Validation
+  if (!request.auth) {
+    logger.warn("[generateOutcomeLabelSuggestions] Unauthenticated access attempt.");
+    throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
+  }
+  const userId = request.auth.uid;
+
+  if (!request.data || !request.data.userWish || typeof request.data.userWish !== 'string' || request.data.userWish.trim() === '') {
+    logger.warn(`[generateOutcomeLabelSuggestions] Invalid argument: userWish missing or empty for user ${userId}.`);
+    throw new HttpsError('invalid-argument', 'The function must be called with a non-empty "userWish".');
+  }
+  const userWish = request.data.userWish.trim();
+  logger.info(`[generateOutcomeLabelSuggestions] Processing request for user: <span class="math-inline">\{userId\}, wish\: "</span>{userWish}"`);
+
+  // 2. Check if Gemini Client is available
+  if (!genAI) {
+    logger.error("[generateOutcomeLabelSuggestions] Gemini AI client (genAI) is not initialized. Cannot generate suggestions.");
+    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
+  }
+
+  // 3. Construct Prompt for LLM
+  const promptText = `
+    Based on the user's "Deeper Wish" for their daily life: "${userWish}", your task is to generate 5 distinct and relevant potential "Outcome Metrics" that someone might track daily to see if they are making progress related to their wish.
+    It should be a **key state, feeling, or result** that helps the user know if they are making progress on their "Deeper Wish." The metric should be **simple to assess and record each day.**
+
+    Think in terms of things that are measurable by:
+        * **Simple Rating Scales:** How did the user feel or perceive a state?
+            * Examples: 'Satisfaction', 'Career confidence', 'Energy Level', 'Optimism', 'Faith in myself, 'Motivation', 'Stress'.
+        * **Simple Counts of Key Results or Events outside the user's control (or that the user has so much inner resistance to, that it is practically outside their direct control):** Is the user accumulating specific positive states (or avoiding negative states) that are easy to identify and count?
+            * Examples: 'Mindful Moments', 'Food Cravings'.
+
+        Provide diverse labels that fit these simple measurement types for an **outcome**. Avoid suggesting labels that require complex tracking (like precise durations of subjective states) or are themselves actions/habits. The goal is a straightforward daily check-in on the outcome.
+
+    For each of the five suggestions, you MUST provide:
+    1.  A "label": A clear, concise name for the outcome metric they will track daily (e.g., 'Overall Mood', 'Productive Hours', 'Sleep Quality', 'Feeling of Connection', 'Stress Level'). Max 25 characters.
+    2.  A "briefExplanation": A short (10-15 words) explanation of the relevance to the user's wish.
+
+    The suggestions should make sense, with 1 or 2 being more creative. Start the creative suggestions' "briefExplanations" with the word "More creative:"
+    Return ONLY a valid JSON array containing 5 objects, where each object represents an outcome metric suggestion and strictly follows the structure:
+    { "label": "Example Label", "briefExplanation": "Example explanation." }
+
+    Your entire response should be a JSON array: [suggestion1, suggestion2, suggestion3, suggestion4, suggestion5]
+    Do not include any other text or explanation outside of this JSON array. Ensure each label is 25 characters or less.
+  `;
+
+  logger.info(`[generateOutcomeLabelSuggestions] Sending prompt to Gemini for user ${userId}.`);
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const generationResult = await model.generateContent({
+        contents: [{ role: "user", parts: [{text: promptText}] }],
+        generationConfig: {
+            ...GEMINI_CONFIG, // Your global Gemini config [cite: 967]
+            temperature: 0.85, 
+            responseMimeType: "application/json",
+        },
+    });
+
+    const response = await generationResult.response;
+    const responseText = response.text()?.trim();
+
+    if (!responseText) {
+        logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user <span class="math-inline">\{userId\}, wish\: "</span>{userWish}".`);
+        throw new HttpsError('internal', 'AI failed to generate suggestions (empty response).');
+    }
+
+    logger.info(`[generateOutcomeLabelSuggestions] Received raw response from Gemini for user ${userId}. Length: ${responseText.length}.`);
+
+    let suggestions;
+    try {
+        suggestions = JSON.parse(responseText);
+    } catch (parseError) {
+        logger.error(`[generateOutcomeLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: <span class="math-inline">\{parseError\.message\}\. Raw response\: "</span>{responseText}"`);
+        throw new HttpsError('internal', `AI returned an invalid format. Could not parse suggestions. Details: ${parseError.message}`);
+    }
+
+    if (!Array.isArray(suggestions) || suggestions.length !== 5) {
+        logger.error(`[generateOutcomeLabelSuggestions] Parsed response is not an array of 5 elements for user ${userId}. Parsed:`, suggestions);
+        throw new HttpsError('internal', 'AI did not return five outcome suggestions as expected.');
+    }
+
+    for (const suggestion of suggestions) {
+        if (!suggestion.label || !suggestion.briefExplanation ||
+            typeof suggestion.label !== 'string' || suggestion.label.length > 45 ||
+            typeof suggestion.briefExplanation !== 'string') {
+            logger.error(`[generateOutcomeLabelSuggestions] One or more suggestions have an invalid structure for user ${userId}. Suggestion:`, suggestion);
+            throw new HttpsError('internal', 'AI returned suggestions with an invalid or incomplete structure.');
+        }
+    }
+
+    logger.info(`[generateOutcomeLabelSuggestions] Successfully generated and parsed ${suggestions.length} outcome suggestions for user ${userId}.`);
+    return { success: true, suggestions: suggestions };
+
+  } catch (error) {
+    logger.error(`[generateOutcomeLabelSuggestions] Error during Gemini API call or processing for user <span class="math-inline">\{userId\}, wish "</span>{userWish}":`, error);
+    if (error instanceof HttpsError) {
+        throw error;
+    }
+    if (error.message && error.message.toLowerCase().includes('safety')) {
+        logger.warn(`[generateOutcomeLabelSuggestions] Gemini content generation blocked due to safety settings for user <span class="math-inline">\{userId\}, wish "</span>{userWish}".`);
+        throw new HttpsError('resource-exhausted', "The AI couldn't generate suggestions for this wish due to content restrictions. Please try rephrasing your wish or try a different one.");
+    }
+    throw new HttpsError('internal', `Failed to generate AI suggestions due to a server error. Details: ${error.message}`);
+  }
+});
+
+// Add this new Firebase Callable Function to your functions/index.js file
+
+/**
+ * Generates 3-5 potential daily habit/input labels based on a user's wish,
+ * their defined outcome metric, and any habits already defined.
+ *
+ * Expected request.data: {
+ * userWish: string,
+ * outcomeMetric: { label: string, unit: string, goal: number },
+ * definedInputs: Array<{ label: string, unit: string, goal: number }> (optional)
+ * }
+ * Returns: { success: true, suggestions: [{label: string, briefExplanation: string}, ...] }
+ * or { success: false, error: string, details?: any }
+ */
+exports.generateInputLabelSuggestions = onCall(async (request) => {
+  logger.log("[generateInputLabelSuggestions] Function called. Request data:", request.data);
+
+  // 1. Authentication & Validation
+  if (!request.auth) {
+    logger.warn("[generateInputLabelSuggestions] Unauthenticated access attempt.");
+    throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
+  }
+  const userId = request.auth.uid;
+
+  if (!request.data ||
+      !request.data.userWish || typeof request.data.userWish !== 'string' || request.data.userWish.trim() === '' ||
+      !request.data.outcomeMetric || typeof request.data.outcomeMetric !== 'object' ||
+      !request.data.outcomeMetric.label || typeof request.data.outcomeMetric.label !== 'string' ||
+      !request.data.outcomeMetric.unit || typeof request.data.outcomeMetric.unit !== 'string' ||
+      request.data.outcomeMetric.goal === undefined || typeof request.data.outcomeMetric.goal !== 'number') {
+    logger.warn(`[generateInputLabelSuggestions] Invalid argument for user ${userId}. Wish or outcomeMetric is incomplete.`);
+    throw new HttpsError('invalid-argument', 'The function must be called with a valid "userWish" and a complete "outcomeMetric" object (label, unit, goal).');
+  }
+  const { userWish, outcomeMetric, definedInputs = [] } = request.data;
+
+  logger.info(`[generateInputLabelSuggestions] Processing for user: ${userId}, wish: "${userWish}", outcome: "${outcomeMetric.label}", defined inputs: ${definedInputs.length}`);
+
+  // 2. Check if Gemini Client is available
+  if (!genAI) { // [cite: 39]
+    logger.error("[generateInputLabelSuggestions] Gemini AI client (genAI) is not initialized."); // [cite: 1018]
+    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)"); // [cite: 1068]
+  }
+
+  // 3. Construct Prompt for LLM
+  let definedInputsContext = "";
+  if (definedInputs.length > 0) {
+    definedInputsContext = "The user has already defined these daily habits:\n";
+    definedInputs.forEach((input, index) => {
+      definedInputsContext += `${index + 1}. "${input.label}" (Goal: ${input.goal} ${input.unit})\n`;
+    });
+    definedInputsContext += "\nPlease suggest DIFFERENT and complementary habits.";
+  }
+
+  const promptText = `
+    A user has a "Deeper Wish" for their daily life: "${userWish}".
+    They are tracking a primary "Outcome Metric": "${outcomeMetric.label}" (measured in "${outcomeMetric.unit}", with a daily goal of ${outcomeMetric.goal}).
+
+    Your task is to suggest 5 distinct, actionable, and relevant "Daily Habit Labels" that the user could track. These habits should be actions they can take daily to positively influence their Outcome Metric and help them achieve their Deeper Wish.
+    ${definedInputsContext}
+
+    For each of the habit suggestions, you MUST provide:
+    1.  A "label": A clear, concise name for the daily habit (e.g., "Mindful Morning Walk", "Read One Chapter", "Limit Social Media to 30 Mins", "Evening Reflection Journal"). Max 25 characters.
+    2.  A "briefExplanation": A short (10-15 words) explanation of how this specific daily habit could plausibly connect to their Outcome Metric or Deeper Wish.
+
+    The suggestions should make sense in context, with 1 or 2 being more creative. Start the creative suggestions' "briefExplanations" with the word "More creative:" Avoid suggesting to track the Outcome Metric itself as a habit. Focus on actionable input behaviors.
+
+    Return ONLY a valid JSON array containing 5 objects, where each object represents a habit suggestion and strictly follows the structure:
+    { "label": "Example Habit Label", "briefExplanation": "Example explanation of its relevance." }
+
+    Your entire response should be a JSON array: [suggestion1, suggestion2, ..., suggestionN]
+    Do not include any other text or explanation outside of this JSON array.
+    Ensure labels are 25 characters or less.
+  `;
+
+  logger.info(`[generateInputLabelSuggestions] Sending prompt to Gemini for user ${userId}.`);
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // [cite: 950]
+    const generationResult = await model.generateContent({
+        contents: [{ role: "user", parts: [{text: promptText}] }],
+        generationConfig: {
+            ...GEMINI_CONFIG, // [cite: 43, 952, 1077, 1116]
+            temperature: 0.85, 
+            responseMimeType: "application/json", // [cite: 1077, 1116]
+        },
+    });
+    const response = await generationResult.response; // [cite: 955, 1049, 1078, 1117]
+    const responseText = response.text()?.trim(); // [cite: 1049, 1078, 1117]
+
+    if (!responseText) { // [cite: 1079]
+        logger.warn(`[generateInputLabelSuggestions] Gemini returned an empty response for user ${userId}, wish: "${userWish}".`); // [cite: 1079]
+        throw new HttpsError('internal', 'AI failed to generate habit suggestions (empty response).'); // [cite: 1079]
+    }
+
+    logger.info(`[generateInputLabelSuggestions] Received raw response from Gemini for user ${userId}. Length: ${responseText.length}.`); // [cite: 1080]
+
+    let suggestions;
+    try {
+        suggestions = JSON.parse(responseText); // [cite: 1081]
+    } catch (parseError) {
+        logger.error(`[generateInputLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}"`); // [cite: 1082]
+        throw new HttpsError('internal', `AI returned an invalid format for habit suggestions. Details: ${parseError.message}`); // [cite: 1083]
+    }
+
+    if (!Array.isArray(suggestions) || suggestions.length < 3 || suggestions.length > 5) { // [cite: 1084]
+        logger.error(`[generateInputLabelSuggestions] Parsed response is not an array of 3-5 elements for user ${userId}. Found ${suggestions.length}. Parsed:`, suggestions); // [cite: 1085]
+        throw new HttpsError('internal', 'AI did not return 3-5 habit suggestions as expected.'); // [cite: 1085]
+    }
+
+    for (const suggestion of suggestions) {
+        if (!suggestion.label || !suggestion.briefExplanation ||
+            typeof suggestion.label !== 'string' || suggestion.label.length > 45 || 
+            typeof suggestion.briefExplanation !== 'string') { // [cite: 1086]
+            logger.error(`[generateInputLabelSuggestions] One or more habit suggestions have an invalid structure for user ${userId}. Suggestion:`, suggestion); // [cite: 1087]
+            throw new HttpsError('internal', 'AI returned habit suggestions with an invalid or incomplete structure.'); // [cite: 1087]
+        }
+    }
+
+    logger.info(`[generateInputLabelSuggestions] Successfully generated and parsed ${suggestions.length} habit label suggestions for user ${userId}.`); // [cite: 1088]
+    return { success: true, suggestions: suggestions }; // [cite: 1089]
+
+  } catch (error) {
+    logger.error(`[generateInputLabelSuggestions] Error during Gemini API call or processing for user ${userId}, wish "${userWish}":`, error); // [cite: 1089, 1090]
+    if (error instanceof HttpsError) { // [cite: 1090]
+        throw error; // [cite: 1090]
+    }
+    if (error.message && error.message.toLowerCase().includes('safety')) { // [cite: 1052, 1091]
+        logger.warn(`[generateInputLabelSuggestions] Gemini content generation blocked due to safety settings for user ${userId}, wish "${userWish}".`); // [cite: 1092]
+        throw new HttpsError('resource-exhausted', "The AI couldn't generate habit suggestions for this wish due to content restrictions. Please try rephrasing your wish or contact support."); // [cite: 1092]
+    }
+    throw new HttpsError('internal', `Failed to generate AI habit suggestions due to a server error. Details: ${error.message}`); // [cite: 1093]
+  }
+});
 
 
 // Final blank line below this comment

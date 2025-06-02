@@ -2062,9 +2062,9 @@ async function _calculateAndStorePeriodStatsLogic(
                     if (strength === "🟦no detectable") { 
                         interpretation = `There appears to be\n${strength} correlation between\n${inputLabel} and ${outputMetricLabel}.`;
                     } else if (isSignificant) {
-                        interpretation = `You can be 95% confident that there is a ${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.`;
+                        interpretation = `You can be 95% confident that there is a\n${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.`;
                     } else {
-                        interpretation = `It appears there may be a ${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}. Worth getting more data?`;
+                        interpretation = `It appears there may be a\n${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}. Worth getting more data?`;
                     }
 
                     correlations[inputLabel] = {
