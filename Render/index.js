@@ -803,6 +803,10 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('go')
           .setDescription('Self Science Hub')
+          .toJSON(),
+        new SlashCommandBuilder()
+          .setName('hi')
+          .setDescription('Begin the welcome and onboarding sequence.')
           .toJSON()
       ]}
     );
@@ -1924,39 +1928,40 @@ client.on(Events.MessageCreate, async message => {
   console.log(`[MessageCreate DM_HANDLER END ${interactionIdForLog}] Finished DM processing for ${userTag}.`);
 });
 
-// ===== NEW MEMBER WELCOME SEQUENCE =====
+// ===== NEW MEMBER WELCOME SEQUENCE (Prompt to use /hi) =====
 client.on(Events.GuildMemberAdd, async member => {
-  // Ensure the member is not a bot
   if (member.user.bot) return;
 
-  console.log(`[GuildMemberAdd] New member joined: ${member.user.tag} (ID: ${member.user.id}) in guild ${member.guild.name}. Initiating welcome DM sequence.`);
+  console.log(`[GuildMemberAdd] New member joined: ${member.user.tag} (ID: ${member.user.id}). Sending prompt to use /hi command.`);
+
+  // --- IMPORTANT: Define WELCOME_CHANNEL_ID ---
+  // Make sure WELCOME_CHANNEL_ID is defined, either from your .env or directly here if not already.
+  // For example, if it's in your .env:
+  // const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID;
+  // Or hardcode it if you haven't set it up in .env for this specific ID:
+  const SPECIFIC_WELCOME_CHANNEL_ID = '1363161131723526437'; // <<<< REPLACE THIS WITH YOUR ACTUAL CHANNEL ID
+
+  if (!SPECIFIC_WELCOME_CHANNEL_ID) {
+    console.error("[GuildMemberAdd] CRITICAL: WELCOME_CHANNEL_ID is not defined. Cannot send welcome prompt.");
+    return;
+  }
+
+  const welcomeChannel = member.guild.channels.cache.get(SPECIFIC_WELCOME_CHANNEL_ID);
+  if (!welcomeChannel || !welcomeChannel.isTextBased()) {
+    console.error(`[GuildMemberAdd] Welcome channel ID ${SPECIFIC_WELCOME_CHANNEL_ID} not found or is not text-based for ${member.guild.name}. Cannot send /hi prompt for ${member.user.tag}.`);
+    return;
+  }
 
   try {
-    const welcomeEmbed1 = new EmbedBuilder()
-      .setColor('#57F287') // A welcoming green
-      .setTitle('👋 Welcome to the Self Science Community!')
-      .setDescription("You're a fledgling Self Scientist, about to start your 1st experiment!")
-      .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/5ac4984b6b71a4781f3a787934d8cc6ca3b7f909/Active%20Pictures/Fledgling%20Self%20Scientist.jpeg');
+    const welcomePromptMessage = `🎉 Welcome to the Self Science Community, ${member}! 🎉\n\nTo get started, please type the command:\n\n➡️ **/hi**\n\n...and press Send (or enter).`;
 
-    const nextButton1 = new ButtonBuilder()
-      .setCustomId('welcome_dm_next_1')
-      .setLabel('Next')
-      .setStyle(ButtonStyle.Primary);
-
-    const row1 = new ActionRowBuilder().addComponents(nextButton1);
-
-    await member.send({ embeds: [welcomeEmbed1], components: [row1] });
-    console.log(`[GuildMemberAdd] Sent welcome DM 1 to ${member.user.tag}.`);
+    await welcomeChannel.send(welcomePromptMessage);
+    console.log(`[GuildMemberAdd] Sent /hi prompt to channel ${SPECIFIC_WELCOME_CHANNEL_ID} for ${member.user.tag}.`);
 
   } catch (error) {
-    console.error(`[GuildMemberAdd] Failed to send welcome DM 1 to ${member.user.tag}:`, error);
-    if (error.code === 50007) { // Cannot send messages to this user (DMs disabled)
-      console.warn(`[GuildMemberAdd] Could not DM ${member.user.tag}. They likely have DMs disabled for this server or globally.`);
-      // Optionally, send a message to a welcome channel in the server if DMs fail
-      // const welcomeChannel = member.guild.channels.cache.get('YOUR_WELCOME_CHANNEL_ID');
-      // if (welcomeChannel && welcomeChannel.isTextBased()) {
-      //   welcomeChannel.send(`Welcome @${member.user.tag}! I tried to send you a welcome message, but your DMs are closed. Please enable DMs to get started or type /go here!`);
-      // }
+    console.error(`[GuildMemberAdd] Failed to send /hi prompt to channel for ${member.user.tag}:`, error);
+    if (error.code === 50013) { // Missing Permissions
+        console.warn(`[GuildMemberAdd] Bot lacks permissions in welcome channel ${SPECIFIC_WELCOME_CHANNEL_ID}.`);
     }
   }
 });
@@ -2226,7 +2231,53 @@ client.on(Events.InteractionCreate, async interaction => {
             }
           }
           break;
-        }
+          }
+
+          case 'hi': { // Handler for the new /hi command
+              const hiCommandStartTime = performance.now();
+              const interactionId = interaction.id;
+              console.log(`[/hi START ${interactionId}] command invoked by ${interaction.user.tag}. Time: ${hiCommandStartTime.toFixed(2)}ms`);
+              try {
+                // === REUSE YOUR EXISTING welcomeEmbed1 DEFINITION ===
+                // Make sure your existing welcomeEmbed1 is defined and accessible here.
+                // For example, if it's defined globally or you can re-instantiate it:
+                const welcomeEmbed1 = new EmbedBuilder() // Or however you defined it
+                  .setColor('#57F287')
+                  .setTitle('👋 Welcome to the Self Science Community!')
+                  .setDescription("You're a fledgling Self Scientist, about to start your 1st experiment!")
+                  .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/5ac4984b6b71a4781f3a787934d8cc6ca3b7f909/Active%20Pictures/Fledgling%20Self%20Scientist.jpeg');
+
+                // === CREATE/REUSE YOUR BUTTON (ensure new Custom ID) ===
+                const nextButton1 = new ButtonBuilder() // Or however you defined it
+                  .setCustomId('welcome_ephemeral_next_1') // **NEW Custom ID for this flow**
+                  .setLabel('Next Step') // Or your existing label e.g., "Next"
+                  .setStyle(ButtonStyle.Primary);
+
+                const row1 = new ActionRowBuilder().addComponents(nextButton1);
+
+                await interaction.reply({
+                  embeds: [welcomeEmbed1], // Your existing embed
+                  components: [row1],
+                  ephemeral: true // This makes the message visible only to the user who typed /hi
+                });
+                const replyTime = performance.now();
+                console.log(`[/hi SUCCESS ${interactionId}] Sent ephemeral welcome step 1 to ${interaction.user.tag}. Took: ${(replyTime - hiCommandStartTime).toFixed(2)}ms`);
+
+              } catch (error) {
+                const errorTime = performance.now();
+                console.error(`[/hi ERROR ${interactionId}] Error sending ephemeral welcome step 1 at ${errorTime.toFixed(2)}ms:`, error);
+                if (!interaction.replied && !interaction.deferred) {
+                  try {
+                      await interaction.reply({ content: "Sorry, I couldn't start the welcome sequence. Please try the `/hi` command again.", ephemeral: true });
+                  } catch (e) { console.error(`[/hi FALLBACK_ERROR_REPLY_FAIL ${interactionId}]`, e); }
+                } else {
+                  try {
+                      await interaction.followUp({ content: "Sorry, I couldn't start the welcome sequence. Please try the `/hi` command again.", ephemeral: true });
+                  } catch (e) { console.error(`[/hi FALLBACK_ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
+                }
+              }
+              break;
+            } // End case 'hi'
 
           default: {
             console.warn('⚠️ Unrecognized command:', interaction.commandName);
@@ -2262,7 +2313,7 @@ client.on(Events.InteractionCreate, async interaction => {
     // Optional: Add performance logging if desired
     // const buttonStartTime = performance.now();
     // console.log(`⚡ Received button interaction: ${interaction.customId} from ${interaction.user.tag} at ${buttonStartTime.toFixed(2)}ms`);
-        if (interaction.customId === 'set_update_experiment_btn') {
+    if (interaction.customId === 'set_update_experiment_btn') {
             const handlerEntryPerfNow = performance.now();
 
             // ======================= MODIFICATION START =======================
@@ -2393,79 +2444,91 @@ client.on(Events.InteractionCreate, async interaction => {
             const handlerEndPerfNow = performance.now();
             console.log(`[${interaction.customId} HANDLER_END ${interactionIdForChoiceLog}] User: ${userTagForChoice}. PerfTime: ${handlerEndPerfNow.toFixed(2)}ms. TotalInHandler: ${(handlerEndPerfNow - handlerEntryPerfNow).toFixed(2)}ms.`);
         } // End of 'set_update_experiment_btn' handler
-
-
-    // ===== NEW MEMBER WELCOME SEQUENCE - STEP 1 BUTTON =====
-    else if (interaction.customId === 'welcome_dm_next_1') {
-      // This interaction happens in a DM
-      console.log(`[WelcomeSequence] Button 'welcome_dm_next_1' clicked by ${interaction.user.tag}`);
+    
+    // New handler for the first button in the ephemeral welcome sequence
+    else if (interaction.customId === 'welcome_ephemeral_next_1') {
+      const buttonClickTime = performance.now();
+      const interactionId = interaction.id;
+      console.log(`[Button welcome_ephemeral_next_1 START ${interactionId}] clicked by ${interaction.user.tag}. Time: ${buttonClickTime.toFixed(2)}ms`);
       try {
-        // Acknowledge the button press by updating the message (e.g., remove buttons from previous message)
-        await interaction.update({ components: [] }); // Removes buttons from the first DM
-
-        const welcomeEmbed2 = new EmbedBuilder()
-          .setColor('#57F287') // Consistent color
+        // === REUSE YOUR EXISTING welcomeEmbed2 DEFINITION ===
+        const welcomeEmbed2 = new EmbedBuilder() // Or however you defined it
+          .setColor('#57F287')
           .setTitle('🔬 How Experiments Improve Your Life')
           .setDescription(
-            "As Self Scientists, we run habit experiments to improve our lives:\n\n" +
+            "Self Scientists run habit experiments to improve our lives.\nHere's what those look like\n(also illustrated in the comic below).\n\n" +
             "1. We start with a wish.\n\n" +
-            "2. We turn it into a trackable metric.\n\n" +
-            "3. We pick 1 - 3 habits to test.\nLog how much we do each day.\n\n" +
+            "2. Turn it into a trackable metric.\n\n" +
+            "3. Pick 1 - 3 habits to test.\nLog how much we do each day.\n\n" +
             "4. At the end of the experiment, \nwe get stats and AI insights.\n\n" +
-            "5. We use them to set our next experiment."
+            "Then we use those insights to do it all again, better every time."
           )
           .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/experiment%20lifecycle%20comic%202.jpeg');
 
-        const nextButton2 = new ButtonBuilder()
-          .setCustomId('welcome_dm_next_2')
-          .setLabel('Next')
+        // === CREATE/REUSE YOUR BUTTON (ensure new Custom ID) ===
+        const nextButton2 = new ButtonBuilder() // Or however you defined it
+          .setCustomId('welcome_ephemeral_next_2') // **NEW Custom ID for the next button**
+          .setLabel('Next Step') // Or your existing label
           .setStyle(ButtonStyle.Primary);
 
         const row2 = new ActionRowBuilder().addComponents(nextButton2);
 
-        // Send the second DM as a new message
-        await interaction.user.send({ embeds: [welcomeEmbed2], components: [row2] });
-        console.log(`[WelcomeSequence] Sent welcome DM 2 to ${interaction.user.tag}.`);
-
+        await interaction.update({ // This updates the existing ephemeral message
+          embeds: [welcomeEmbed2], // Your existing embed
+          components: [row2],
+          ephemeral: true // Keep it ephemeral
+        });
+        const updateTime = performance.now();
+        console.log(`[Button welcome_ephemeral_next_1 SUCCESS ${interactionId}] Updated ephemeral message to step 2 for ${interaction.user.tag}. Took: ${(updateTime - buttonClickTime).toFixed(2)}ms`);
       } catch (error) {
-        console.error(`[WelcomeSequence] Error handling 'welcome_dm_next_1' for ${interaction.user.tag}:`, error);
-        // If interaction.update failed, we might not be able to send a followUp or editReply.
-        // If sending the new DM failed, we could try to inform the user ephemerally if the interaction is still valid,
-        // but this is less likely to succeed if the DM channel itself has issues.
-        // For now, primary error logging is the focus for DM interactions.
+        const errorTime = performance.now();
+        console.error(`[Button welcome_ephemeral_next_1 ERROR ${interactionId}] Error updating to step 2 at ${errorTime.toFixed(2)}ms:`, error);
+        try {
+            if (interaction.replied || interaction.deferred) {
+                 await interaction.followUp({content: "There was an issue showing the next step. Please try the `/hi` command again if you don't see an update.", ephemeral: true });
+            } else {
+                 await interaction.reply({content: "There was an issue showing the next step. Please try the `/hi` command again.", ephemeral: true });
+            }
+        } catch (e) { console.error(`[Button welcome_ephemeral_next_1 FALLBACK_ERROR ${interactionId}]`, e);}
       }
     }
-    // ===== END NEW MEMBER WELCOME SEQUENCE - STEP 1 BUTTON =====
 
-    // ===== NEW MEMBER WELCOME SEQUENCE - STEP 2 BUTTON =====
-    else if (interaction.customId === 'welcome_dm_next_2') {
-      // This interaction happens in a DM
-      console.log(`[WelcomeSequence] Button 'welcome_dm_next_2' clicked by ${interaction.user.tag}`);
+    // New handler for the second button in the ephemeral welcome sequence
+    else if (interaction.customId === 'welcome_ephemeral_next_2') {
+      const buttonClickTime = performance.now();
+      const interactionId = interaction.id;
+      console.log(`[Button welcome_ephemeral_next_2 START ${interactionId}] clicked by ${interaction.user.tag}. Time: ${buttonClickTime.toFixed(2)}ms`);
       try {
-        // Acknowledge the button press by updating the message (e.g., remove buttons from previous message)
-        await interaction.update({ components: [] }); // Removes buttons from the second DM
-
-        const welcomeEmbed3 = new EmbedBuilder()
-          .setColor('#57F287') // Consistent color
+        // === REUSE YOUR EXISTING welcomeEmbed3 DEFINITION ===
+        const welcomeEmbed3 = new EmbedBuilder() // Or however you defined it
+          .setColor('#57F287')
           .setTitle('🚀 Ready to Get Started?')
           .setDescription(
             "Type `/go` and press send. It'll open your \"Go Hub\" where you'll manage all your experiments.\n\n" +
-            "Good luck, Scientist! Message the group or Davewolo directly if you have any questions."
+            "Good luck, Scientist!\n\nMessage the group or Davewolo directly if you have any questions."
           )
-          .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/5ac4984b6b71a4781f3a787934d8cc6ca3b7f909/Active%20Pictures/Self%20Scientist%20Saluting.jpeg') // << REPLACE THIS URL
+          .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/5ac4984b6b71a4781f3a787934d8cc6ca3b7f909/Active%20Pictures/Self%20Scientist%20Saluting.jpeg')
           .setFooter({ text: "Type /go and press send when ready!" });
 
-        // Send the third DM as a new message (no button on this one)
-        await interaction.user.send({ embeds: [welcomeEmbed3] });
-        console.log(`[WelcomeSequence] Sent welcome DM 3 to ${interaction.user.tag}. Sequence complete.`);
-
+        await interaction.update({ // Update to the final ephemeral message
+          embeds: [welcomeEmbed3], // Your existing embed
+          components: [], // No more buttons on the final step
+          ephemeral: true // Keep it ephemeral
+        });
+        const updateTime = performance.now();
+        console.log(`[Button welcome_ephemeral_next_2 SUCCESS ${interactionId}] Updated ephemeral message to final step for ${interaction.user.tag}. Took: ${(updateTime - buttonClickTime).toFixed(2)}ms`);
       } catch (error) {
-        console.error(`[WelcomeSequence] Error handling 'welcome_dm_next_2' for ${interaction.user.tag}:`, error);
-        // Error handling similar to the previous button
+        const errorTime = performance.now();
+        console.error(`[Button welcome_ephemeral_next_2 ERROR ${interactionId}] Error updating to final step at ${errorTime.toFixed(2)}ms:`, error);
+        try {
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp({content: "There was an issue showing the final welcome message. You can now use the `/go` command.", ephemeral: true });
+            } else {
+                await interaction.reply({content: "There was an issue showing the final welcome message. You can now use the `/go` command.", ephemeral: true });
+            }
+        } catch (e) { console.error(`[Button welcome_ephemeral_next_2 FALLBACK_ERROR ${interactionId}]`, e);}
       }
     }
-    // ===== END NEW MEMBER WELCOME SEQUENCE - STEP 2 BUTTON =====
-    
 
     else if (interaction.customId === MANUAL_SETUP_BTN_ID) {
           const manualSetupStartTime = performance.now();
