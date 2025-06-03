@@ -31,29 +31,30 @@ const STREAK_CONFIG = {
         // Role definitions based on streak days reached
         ROLES: [
             // NOTE: Ensure these names match desired Discord role names if the bot is to create them.
-            { name: 'Originator', days: 1, color: '#FFB3B3' },      // Light red
-            { name: 'Mover', days: 15, color: '#FF6666' },         // Medium red
-            { name: 'Navigator', days: 30, color: '#FF0000' },          // Bright red
-            { name: 'Signal', days: 60, color: '#CC0000' },          // Deep red
-            { name: 'Centurion', days: 100, color: '#990000' },         // Dark red
-            { name: 'Vector', days: 150, color: '#FFD1B3' },         // Light orange
-            { name: 'Blaster', days: 200, color: '#FFA366' },           // Medium orange
-            { name: 'Corona', days: 250, color: '#FF8000' },   // Bright orange
-            { name: 'Luminary', days: 300, color: '#CC6600' },    // Deep orange
-            { name: 'Orbiter', days: 365, color: '#FFF4B3' },   // Light yellow
-            { name: 'Radiance', days: 400, color: '#FFE666' },     // Medium yellow
-            { name: 'Pulsar', days: 450, color: '#FFD700' },   // Bright yellow
-            { name: 'Quantum', days: 500, color: '#B3FFB3' },     // Light green
-            { name: 'Zenith', days: 550, color: '#66FF66' },       // Medium green
-            { name: 'Nexus', days: 600, color: '#00FF00' },      // Bright green
-            { name: 'Paragon', days: 650, color: '#009900' },           // Deep green
-            { name: 'Supernova', days: 700, color: '#B3B3FF' },      // Light blue
-            { name: 'Axiom', days: 750, color: '#6666FF' },    // Medium blue
-            { name: 'Oracle', days: 800, color: '#0000FF' },          // Bright blue
-            { name: 'Divinator', days: 850, color: '#000099' }, // Deep blue
-            { name: 'Cosmic', days: 900, color: '#D1B3FF' }, // Light purple
-            { name: 'Infinity', days: 950, color: '#9933FF' }, // Medium purple
-            { name: 'Transcendent', days: 1000, color: '#4B0082' } // Deep purple/indigo
+            { name: 'Level 1', days: 1, color: '#FFB3B3' },      // Light red
+            { name: 'Level 15', days: 15, color: '#FF6666' },         // Medium red
+            { name: 'Level 30', days: 30, color: '#FF0000' },          // Bright red
+            { name: 'Level 60', days: 60, color: '#CC0000' },          // Deep red
+            { name: 'Level 100', days: 100, color: '#990000' },         // Dark red
+            { name: 'Level 150', days: 150, color: '#FFD1B3' },         // Light orange
+            { name: 'Level 200', days: 200, color: '#FFA366' },           // Medium orange
+            { name: 'Level 250', days: 250, color: '#FF8000' },   // Bright orange
+            { name: 'Level 300', days: 300, color: '#CC6600' },    // Deep orange
+            { name: 'Level Kronos', days: 365, color: '#FFF4B3' },   // Light yellow
+            { name: 'Level 400', days: 400, color: '#FFE666' },     // Medium yellow
+            { name: 'Level 450', days: 450, color: '#FFD700' },   // Bright yellow
+            { name: 'Level 500', days: 500, color: '#B3FFB3' },     // Light green
+            { name: 'Level 550', days: 550, color: '#66FF66' },       // Medium green
+            { name: 'Level 600', days: 600, color: '#00FF00' },      // Bright green
+            { name: 'Level 650', days: 650, color: '#009900' },           // Deep green
+            { name: 'Level 700', days: 700, color: '#B3B3FF' },      // Light blue
+            { name: 'Level Biennium', days: 730, color: '#00998b' },
+            { name: 'Level 750', days: 750, color: '#6666FF' },    // Medium blue
+            { name: 'Level 800', days: 800, color: '#0000FF' },          // Bright blue
+            { name: 'Level 850', days: 850, color: '#000099' }, // Deep blue
+            { name: 'Level 900', days: 900, color: '#D1B3FF' }, // Light purple
+            { name: 'Level 950', days: 950, color: '#9933FF' }, // Medium purple
+            { name: 'Level 1000', days: 1000, color: '#4B0082' } // Deep purple/indigo
         ]
     },
     MESSAGES: {
@@ -620,7 +621,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
             logger.log(`[onLogCreatedUpdateStreak] User ${userId} is on their TRUE Day 1. Preparing welcome messages.`);
             dmMessageText = `🎉 Welcome to your habit tracking journey, ${displayNameForMessage}! ` +
                             `You've just logged Day 1 of your streak for the first time (or first time in a while). That's awesome! ` +
-                            `Keep it up! You've also earned the 'Originator' role. 🔥`;
+                            `Keep it up! You've also earned the 'Level 1' role. 🔥`;
 
             tempPublicMessage = `🎉 Please welcome @${displayNameForMessage} to their habit tracking journey! ` +
                                 `They've just logged Day 1! Show some support! 🚀`;

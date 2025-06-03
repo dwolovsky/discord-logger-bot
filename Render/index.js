@@ -525,11 +525,11 @@ const experimentSetupMotivationalMessages = [
 
 const FREEZE_ROLE_BASENAME = '❄️ Freezes';
 const STREAK_MILESTONE_ROLE_NAMES = [
-  'Originator', 'Mover', 'Navigator', 'Signal', 'Centurion',
-  'Vector', 'Blaster', 'Corona', 'Luminary', 'Orbiter',
-  'Radiance', 'Pulsar', 'Quantum', 'Zenith', 'Nexus',
-  'Paragon', 'Supernova', 'Axiom', 'Oracle', 'Divinator',
-  'Cosmic', 'Infinity', 'Transcendent'
+  'Level 1', 'Level 15', 'Level 30', 'Level 60', 'Level 100',
+  'Level 150', 'Level 200', 'Level 250', 'Level 300', 'Level Kronos',
+  'Level 400', 'Level 450', 'Level 500', 'Level 550', 'Level 600',
+  'Level 650', 'Level 700', 'Level Biennium', 'Level 750', 'Level 800',
+  'Level 850', 'Level 900', 'Level 950', 'Level 1000'
 ];
 
 // --- New Custom IDs for Reminder Setup ---
@@ -2456,12 +2456,12 @@ client.on(Events.InteractionCreate, async interaction => {
           .setColor('#57F287')
           .setTitle('🔬 How Experiments Improve Your Life')
           .setDescription(
-            "Self Scientists run habit experiments to improve our lives.\nHere's what those look like\n(also illustrated in the comic below).\n\n" +
-            "1. We start with a wish.\n\n" +
-            "2. Turn it into a trackable metric.\n\n" +
-            "3. Pick 1 - 3 habits to test.\nLog how much we do each day.\n\n" +
-            "4. At the end of the experiment, \nwe get stats and AI insights.\n\n" +
-            "Then we use those insights to do it all again, better every time."
+            "Self Scientists run habit experiments to improve our lives.\n\nHere are the steps\n(see the comic below too).\n\n" +
+            "1. Start with a wish to improve your life.\n\n" +
+            "2. AI helps you turn it into a trackable metric.\n\n" +
+            "3. Pick 1 - 3 habits to test.\nLog your stats each day\n(takes 2 mins).\n\n" +
+            "4. At the end of the experiment,\nyou get stats and AI insights.\n\n" +
+            "Then you use those insights\nto make your habits\neasier and better for YOU."
           )
           .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/experiment%20lifecycle%20comic%202.jpeg');
 
@@ -2504,7 +2504,7 @@ client.on(Events.InteractionCreate, async interaction => {
           .setColor('#57F287')
           .setTitle('🚀 Ready to Get Started?')
           .setDescription(
-            "Type `/go` and press send. It'll open your \"Go Hub\" where you'll manage all your experiments.\n\n" +
+            "Type `/go` and press send. It'll open your Hub where you manage your experiments.\n\n" +
             "Good luck, Scientist!\n\nMessage the group or Davewolo directly if you have any questions."
           )
           .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/5ac4984b6b71a4781f3a787934d8cc6ca3b7f909/Active%20Pictures/Self%20Scientist%20Saluting.jpeg')
@@ -5081,7 +5081,7 @@ else if (interaction.isModalSubmit()) {
               const targetFreezeRoleName = userData.pendingFreezeRoleUpdate;
               console.log(`[dailyLogModal_firebase] Processing freeze role update for ${member.user.tag} to: ${targetFreezeRoleName}`);
               try {
-                  const targetRole = await ensureRole(guild, targetFreezeRoleName, '#ADD8E6'); // Light blue
+                  const targetRole = await ensureRole(guild, targetFreezeRoleName, null);
                   const currentFreezeRoles = member.roles.cache.filter(role => role.name.startsWith(FREEZE_ROLE_BASENAME) && role.name !== targetFreezeRoleName);
                   if (currentFreezeRoles.size > 0) {
                       await member.roles.remove(currentFreezeRoles);
@@ -5436,34 +5436,6 @@ else if (interaction.isModalSubmit()) {
 
 }); // end of client.on(Events.InteractionCreate)
 
-
-// Helper functions outside the interaction handler
-async function handleRoleUpdate(interaction, streakCount, result) {
-  try {
-    const guild = interaction.guild;
-    const member = interaction.member;
-    
-    // Get all existing streak roles from the user
-    const existingRoles = member.roles.cache.filter(role => 
-      role.tags?.botId === client.user.id  // Roles created by this bot
-    );
-
-    // Remove any existing streak roles
-    for (const [_, role] of existingRoles) {
-      await member.roles.remove(role.id);
-    }
-
-    // Create and assign the new role if roleInfo is provided
-    if (result.roleInfo) {
-      const newRole = await ensureRole(guild, result.roleInfo.name, result.roleInfo.color);
-      await member.roles.add(newRole.id);
-    }
-  } catch (error) {
-    console.error('Error in handleRoleUpdate:', error);
-  }
-}
-
-// In Render/index.js (Place these outside the InteractionCreate handler)
 
 /**
  * Ensures a role exists in the guild, creating it if necessary.
