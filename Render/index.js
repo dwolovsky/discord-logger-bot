@@ -3984,7 +3984,7 @@ client.on(Events.InteractionCreate, async interaction => {
     console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - buttonClickTime).toFixed(2)}ms`);
    }
 
-  // --- Handler for "Next: Set Reminder Window & Frequency" button (New Step 2) ---
+   // --- Handler for "Next: Set Reminder Window & Frequency" button (New Step 2) ---
    else if (interaction.isButton() && interaction.customId === REMINDERS_SET_TIME_NEXT_BTN_ID) {
       const nextStepClickTime = performance.now();
       const interactionId = interaction.id;
@@ -4490,16 +4490,16 @@ client.on(Events.InteractionCreate, async interaction => {
       const userId = interaction.user.id; 
       const userTagForLog = interaction.user.tag; 
 
-      console.log(`[ai_outcome_label_select START ${interactionId}] Received selection from ${userTagForLog}.`); [cite: 1337]
+      console.log(`[ai_outcome_label_select START ${interactionId}] Received selection from ${userTagForLog}.`); // [cite: 1337]
       try { 
         await interaction.deferUpdate(); 
         const deferTime = performance.now();
-        console.log(`[ai_outcome_label_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - selectMenuSubmitTime).toFixed(2)}ms`); [cite: 1338]
+        console.log(`[ai_outcome_label_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - selectMenuSubmitTime).toFixed(2)}ms`); //[cite: 1338]
 
         const setupData = userExperimentSetupData.get(userId);
         if (!setupData || setupData.dmFlowState !== 'awaiting_outcome_label_dropdown_selection') { 
-          console.warn(`[ai_outcome_label_select WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState || 'no setupData'}. Current interaction customId: ${interaction.customId}`); [cite: 1339]
-          await interaction.followUp({ content: "It seems there was a mix-up with our current step, or your session expired. Please try starting the AI setup again with the `/go` command if you see this message repeatedly.", ephemeral: true }); [cite: 1340]
+          console.warn(`[ai_outcome_label_select WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState || 'no setupData'}. Current interaction customId: ${interaction.customId}`); //[cite: 1339]
+          await interaction.followUp({ content: "It seems there was a mix-up with our current step, or your session expired. Please try starting the AI setup again with the `/go` command if you see this message repeatedly.", ephemeral: true }); // [cite: 1340]
           return; 
         }
 
@@ -4507,45 +4507,45 @@ client.on(Events.InteractionCreate, async interaction => {
         let outcomeLabel = "";
 
         if (selectedValue === 'custom_outcome_label') { 
-          console.log(`[ai_outcome_label_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom label'.`); [cite: 1343]
+          console.log(`[ai_outcome_label_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom label'.`); // [cite: 1343]
           setupData.dmFlowState = 'awaiting_custom_outcome_label_text'; // New state 
-          userExperimentSetupData.set(userId, setupData); [cite: 1344]
+          userExperimentSetupData.set(userId, setupData); // [cite: 1344]
           try { 
             await interaction.editReply({ 
               content: `Ok, please type your custom label below (max 30 characters, e.g., "Optimism Score", "Faith in myself," "Productivity Level").`, 
               components: [] // Remove the select menu 
-            }); [cite: 1345]
+            }); // [cite: 1345]
           } catch (editError) { 
-            console.warn(`[ai_outcome_label_select EDIT_REPLY_FAIL ${interactionId}] Failed to edit original message for custom path. Sending new DM. Error: ${editError.message}`); [cite: 1346]
-            await interaction.user.send("Okay, please type your custom Outcome Metric Label below\n\nExamples:\n● \"Optimism Score\"\n● \"Faith in myself\"\n● \"Productivity Level\"\n\n(max length = 30 characters)."); [cite: 1347]
+            console.warn(`[ai_outcome_label_select EDIT_REPLY_FAIL ${interactionId}] Failed to edit original message for custom path. Sending new DM. Error: ${editError.message}`); // [cite: 1346]
+            await interaction.user.send("Okay, please type your custom Outcome Metric Label below\n\nExamples:\n● \"Optimism Score\"\n● \"Faith in myself\"\n● \"Productivity Level\"\n\n(max length = 30 characters)."); // [cite: 1347]
           } 
-          console.log(`[ai_outcome_label_select CUSTOM_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom label text. State: ${setupData.dmFlowState}.`); [cite: 1348]
+          console.log(`[ai_outcome_label_select CUSTOM_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom label text. State: ${setupData.dmFlowState}.`); // [cite: 1348]
           return; // Wait for user's text message 
 
         } else if (selectedValue.startsWith('ai_suggestion_')) { 
           const suggestionIndex = parseInt(selectedValue.split('ai_suggestion_')[1], 10);
           if (setupData.aiGeneratedOutcomeLabelSuggestions && suggestionIndex >= 0 && suggestionIndex < setupData.aiGeneratedOutcomeLabelSuggestions.length) { 
             const chosenSuggestion = setupData.aiGeneratedOutcomeLabelSuggestions[suggestionIndex];
-            outcomeLabel = chosenSuggestion.label; [cite: 1350]
+            outcomeLabel = chosenSuggestion.label; // [cite: 1350]
             // outcomeLabelSuggestedUnitType = chosenSuggestion.suggestedUnitType; // We don't need to store or use this anymore for AI unit gen
           } else { 
-            console.error(`[ai_outcome_label_select ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for ${userTagForLog}. Selected value: ${selectedValue}`); [cite: 1351]
-            await interaction.followUp({ content: "Sorry, I couldn't process that selection. Please try choosing again or restarting the setup.", ephemeral: true }); [cite: 1352]
+            console.error(`[ai_outcome_label_select ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for ${userTagForLog}. Selected value: ${selectedValue}`); //[cite: 1351]
+            await interaction.followUp({ content: "Sorry, I couldn't process that selection. Please try choosing again or restarting the setup.", ephemeral: true }); //[cite: 1352]
             return; 
           }
           // If an AI suggestion was chosen and processed:
-          setupData.outcomeLabel = outcomeLabel; [cite: 1353]
+          setupData.outcomeLabel = outcomeLabel; //[cite: 1353]
           // delete setupData.outcomeLabelSuggestedUnitType; // Clean up if it was previously set [cite: 1354]
           userExperimentSetupData.set(userId, setupData);
-          console.log(`[ai_outcome_label_select AI_SUGGESTION_CONFIRMED ${interactionId}] User ${userTagForLog} selected Outcome Label: "${outcomeLabel}". Proceeding to ask for custom unit.`); [cite: 1355]
+          console.log(`[ai_outcome_label_select AI_SUGGESTION_CONFIRMED ${interactionId}] User ${userTagForLog} selected Outcome Label: "${outcomeLabel}". Proceeding to ask for custom unit.`); // [cite: 1355]
           
           // ***** CORRECTED SECTION FOR OUTCOME UNIT DROPDOWN *****
-          setupData.dmFlowState = 'awaiting_outcome_unit_dropdown_selection'; [cite: 1356]
-          userExperimentSetupData.set(userId, setupData); [cite: 1357]
+          setupData.dmFlowState = 'awaiting_outcome_unit_dropdown_selection'; // [cite: 1356]
+          userExperimentSetupData.set(userId, setupData); // [cite: 1357]
           
           const outcomeUnitSelectMenu = new StringSelectMenuBuilder()
               .setCustomId(OUTCOME_UNIT_SELECT_ID) 
-              .setPlaceholder('How will you measure this outcome daily?'); [cite: 1358]
+              .setPlaceholder('How will you measure this outcome daily?'); // [cite: 1358]
           
           PREDEFINED_OUTCOME_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
               outcomeUnitSelectMenu.addOptions(
@@ -4560,10 +4560,10 @@ client.on(Events.InteractionCreate, async interaction => {
               new StringSelectMenuOptionBuilder()
                   .setLabel("✏️ Enter my own custom unit...")
                   .setValue(CUSTOM_UNIT_OPTION_VALUE) 
-          ); [cite: 1360]
+          ); // [cite: 1360]
           
-          const rowWithOutcomeUnitSelect = new ActionRowBuilder().addComponents(outcomeUnitSelectMenu); [cite: 1361]
-          const unitDropdownPromptMessage = `Great! The Outcome you're tracking is\n\n**"${setupData.outcomeLabel}"**.\n\nHow will you measure this daily? Choose a numerical scale/unit from the list, or enter your own.`; [cite: 1362]
+          const rowWithOutcomeUnitSelect = new ActionRowBuilder().addComponents(outcomeUnitSelectMenu); // [cite: 1361]
+          const unitDropdownPromptMessage = `Great! The Outcome you're tracking is\n\n**"${setupData.outcomeLabel}"**.\n\nHow will you measure this daily? Choose a numerical scale/unit from the list, or enter your own.`; // [cite: 1362]
           // ***** END: CORRECTED SECTION *****
           
           try {
@@ -4571,37 +4571,40 @@ client.on(Events.InteractionCreate, async interaction => {
             await interaction.editReply({ 
               content: unitDropdownPromptMessage,
               components: [rowWithOutcomeUnitSelect] 
-            }); [cite: 1364]
+            }); // [cite: 1364]
           } catch (editError) {
-            console.warn(`[ai_outcome_label_select EDIT_REPLY_FAIL_UNIT_DROPDOWN ${interactionId}] Failed to edit message for outcome unit dropdown. Sending new DM. Error: ${editError.message}`); [cite: 1365]
+            console.warn(`[ai_outcome_label_select EDIT_REPLY_FAIL_UNIT_DROPDOWN ${interactionId}] Failed to edit message for outcome unit dropdown. Sending new DM. Error: ${editError.message}`); // [cite: 1365]
             await interaction.user.send({
                 content: unitDropdownPromptMessage,
                 components: [rowWithOutcomeUnitSelect]
-            }); [cite: 1366]
+            }); // [cite: 1366]
           }
-          console.log(`[ai_outcome_label_select OUTCOME_UNIT_DROPDOWN_SENT ${interactionId}] Prompted ${userTagForLog} with outcome unit dropdown. State: ${setupData.dmFlowState}.`); [cite: 1367]
+          console.log(`[ai_outcome_label_select OUTCOME_UNIT_DROPDOWN_SENT ${interactionId}] Prompted ${userTagForLog} with outcome unit dropdown. State: ${setupData.dmFlowState}.`); // [cite: 1367]
           
         } else { 
-          console.error(`[ai_outcome_label_select ERROR ${interactionId}] Unknown selection value: ${selectedValue} for user ${userTagForLog}.`); [cite: 1368]
+          console.error(`[ai_outcome_label_select ERROR ${interactionId}] Unknown selection value: ${selectedValue} for user ${userTagForLog}.`); // [cite: 1368]
           await interaction.followUp({ content: "Sorry, an unexpected error occurred with your selection. Please try again.", ephemeral: true }); 
           return; 
         }
       } catch (error) { 
         const errorTime = performance.now();
-        console.error(`[ai_outcome_label_select ERROR ${interactionId}] Error processing select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error); [cite: 1370]
+        console.error(`[ai_outcome_label_select ERROR ${interactionId}] Error processing select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error); // [cite: 1370]
         if (!interaction.replied && !interaction.deferred) { 
-            try { await interaction.reply({ content: "Sorry, something went wrong with that selection. Please try again.", ephemeral: true }); [cite: 1372] } 
-            catch (e) { console.error(`[ai_outcome_label_select ERROR_REPLY_FAIL ${interactionId}]`, e); [cite: 1373] } 
-        } else if (!interaction.replied) { 
-            try { await interaction.editReply({ content: "Sorry, something went wrong processing your choice. You might need to try selecting again.", components: [] }); [cite: 1374] } 
-            catch (e) { console.error(`[ai_outcome_label_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); [cite: 1375] } 
-        } else { 
+            try { await interaction.reply({ content: "Sorry, something went wrong with that selection. Please try again.", ephemeral: true }); // [cite: 1372] } 
+         } catch (e) { console.error(`[ai_outcome_label_select ERROR_REPLY_FAIL ${interactionId}]`, e); // [cite: 1373] } 
+        }
+       } else if (!interaction.replied) { 
+            try { await interaction.editReply({ content: "Sorry, something went wrong processing your choice. You might need to try selecting again.", components: [] });//  [cite: 1374] } 
+         } catch (e) { console.error(`[ai_outcome_label_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); // [cite: 1375] } 
+        }
+       } else { 
             // If an error occurs after a followUp, further followUps might be complex.
         } 
       } 
       const processEndTime = performance.now();
-      console.log(`[ai_outcome_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - selectMenuSubmitTime).toFixed(2)}ms`); [cite: 1378]
+      console.log(`[ai_outcome_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - selectMenuSubmitTime).toFixed(2)}ms`); // [cite: 1378]
     }
+  
     
     else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input1_label_select') {
       const input1LabelSelectSubmitTime = performance.now();
@@ -5285,14 +5288,11 @@ client.on(Events.InteractionCreate, async interaction => {
       const processEndTime = performance.now();
       console.log(`[ReminderSelect END ${interactionId}] Finished processing ${menuId}. Total time: ${(processEndTime - selectSubmitTime).toFixed(2)}ms`);
     }
-
-  }
-
-  
+   }
 
    // Handle modal submission
-else if (interaction.isModalSubmit()) {
- // +++ COMPLETE MODAL SUBMISSION HANDLER FOR DAILY LOG (FIREBASE) +++
+  else if (interaction.isModalSubmit()) {
+  // +++ COMPLETE MODAL SUBMISSION HANDLER FOR DAILY LOG (FIREBASE) +++
     if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_firebase') {
 
       const modalSubmitStartTime = performance.now();
@@ -5790,14 +5790,12 @@ else if (interaction.isModalSubmit()) {
         console.log(`[experiment_setup_modal END ${interactionIdForLog}] Processing finished for User: ${flowUserTag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`); // Use flowUserTag, interactionIdForLog
         // ======================= LOGGING CHANGE END =========================
     } // End of if (interaction.customId === 'experiment_setup_modal')
-}
+   }
 
       console.log(`--- InteractionCreate END [${interactionId}] ---\n`);
       const interactionListenerEndPerfNow = performance.now();
       console.log(`[InteractionListener END ${interaction.id}] Processing finished. TotalInListener: ${(interactionListenerEndPerfNow - interactionEntryPerfNow).toFixed(2)}ms.`);
-
-}); // end of client.on(Events.InteractionCreate)
-
+ });  // end of client.on(Events.InteractionCreate)
 
 /**
  * Ensures a role exists in the guild, creating it if necessary.
