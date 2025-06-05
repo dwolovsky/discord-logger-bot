@@ -68,10 +68,16 @@ function setupStatsNotificationListener(client) {
       return;
   }
 
+  // Helper function to check against the keyword list, defined once
+  const isTimeMetric = (unit) => {
+      if (!unit) return false;
+      const lowerUnit = unit.toLowerCase().trim();
+      return TIME_OF_DAY_KEYWORDS.includes(lowerUnit);
+  };
+
   console.log("Setting up Firestore listener for 'pendingStatsNotifications'...");
 
   const notificationsRef = dbAdmin.collection('pendingStatsNotifications');
-
   notificationsRef.where('status', '==', 'ready').onSnapshot(snapshot => {
       console.log(`[StatsListener DEBUG] Snapshot received. Empty: ${snapshot.empty}. Size: ${snapshot.size}. Timestamp: ${new Date().toISOString()}`);
           if (!snapshot.empty) {
@@ -86,18 +92,18 @@ function setupStatsNotificationListener(client) {
               return;
           }
 
+     
       snapshot.docChanges().forEach(async (change) => {
         console.log("<<<<< SETUP STATS LISTENER FUNCTION ENTERED - NEW CODE RUNNING >>>>>");
-          if (change.type === 'added' || change.type === 'modified') { // Process new and re-processed notifications
+        if (change.type === 'added' || change.type === 'modified') { // Process new and re-processed notifications
               const notification = change.doc.data();
               const docId = change.doc.id; // Firestore document ID (e.g., userId_experimentId)
               const { userId, experimentId, userTag, statsDocumentId } = notification;
-
               console.log(`[StatsListener] Detected 'ready' notification for user ${userId}, experiment ${experimentId}. Doc ID: ${docId}`);
 
-              let discordUser = null; 
-                try {
-                    discordUser = await client.users.fetch(userId); 
+              let discordUser = null;
+              try {
+                    discordUser = await client.users.fetch(userId);
                     if (!discordUser) { // Defensive check, fetch usually throws on major errors but good to be safe
                         console.error(`[StatsListener] Fetched Discord user is null or undefined for userId: ${userId}. Doc ID: ${docId}`);
                         await change.doc.ref.update({ 
@@ -110,7 +116,7 @@ function setupStatsNotificationListener(client) {
                     // Use discordUser.tag if available, otherwise fall back to userTag from notificationData
                     const effectiveUserTag = discordUser.tag || userTag || 'Unknown User';
                     console.log(`[StatsListener] Successfully fetched Discord user ${effectiveUserTag} (${userId}) for stats.`);
-                } catch (userFetchError) {
+              } catch (userFetchError) {
                     console.error(`[StatsListener] Failed to fetch Discord user ${userId} for stats. Doc ID: ${docId}:`, userFetchError);
                     await change.doc.ref.update({ 
                         status: 'error_user_not_found', 
@@ -129,10 +135,8 @@ function setupStatsNotificationListener(client) {
 
                     if (statsReportSnap.exists) {
                         const statsReportData = statsReportSnap.data();
-
                         // This log was very helpful, let's keep it for now or you can remove it later
                         console.log("<<<<< !!! STATS REPORT DATA OBJECT IS !!! >>>>>", JSON.stringify(statsReportData, null, 2));
-
                         // The DEBUG logs for individual parts (optional, you can remove if the one above is sufficient)
                         console.log(`[StatsListener] DEBUG: statsReportData.calculatedMetricStats RAW:`, statsReportData.calculatedMetricStats);
                         console.log(`[StatsListener] DEBUG: Type of statsReportData.calculatedMetricStats: ${typeof statsReportData.calculatedMetricStats}`);
@@ -157,10 +161,9 @@ function setupStatsNotificationListener(client) {
                             )
                             .setTimestamp()
                             .setFooter({ text: `Experiment ID: ${statsReportData.experimentId || 'N/A'}` });
-
                         // Add detailed STATISTICS fields dynamically
                         if (statsReportData.calculatedMetricStats && typeof statsReportData.calculatedMetricStats === 'object' && Object.keys(statsReportData.calculatedMetricStats).length > 0) {
-                            statsEmbed.addFields({ name: '\u200B', value: '**📊 CORE STATISTICS**' }); // Added icon for consistency
+                            statsEmbed.addFields({ name: '\u200B', value: '**📊 CORE STATISTICS**' });// Added icon for consistency
                             for (const metricKey in statsReportData.calculatedMetricStats) {
                             const metricDetails = statsReportData.calculatedMetricStats[metricKey];
                             let fieldValue = '';
@@ -169,9 +172,9 @@ function setupStatsNotificationListener(client) {
                             } else {
                                 // --- START MODIFICATION ---
                                 if (metricDetails.average !== undefined && !isNaN(metricDetails.average)) {
-                                    // Check if the unit is 'Time of Day'
-                                    if (metricDetails.unit === 'Time of Day') {
-                                        fieldValue += `Average: ${formatDecimalAsTime(metricDetails.average)}\n`;
+                                    // Check if the unit matches any time of day keyword
+                                    if (isTimeMetric(metricDetails.unit)) {
+                                         fieldValue += `Average: ${formatDecimalAsTime(metricDetails.average)}\n`;
                                     } else {
                                         fieldValue += `Average: ${parseFloat(metricDetails.average).toFixed(2)}\n`;
                                     }
@@ -201,7 +204,7 @@ function setupStatsNotificationListener(client) {
                             for (const inputMetricKey in statsReportData.correlations) {
                                 if (Object.prototype.hasOwnProperty.call(statsReportData.correlations, inputMetricKey)) {
                                     const corr = statsReportData.correlations[inputMetricKey];
-                                    let influenceFieldValue = `Influence: N/A\nPairs: ${corr.n_pairs || 'N/A'}\n*${(corr.interpretation || 'Not calculated')}*`; // Default text updated
+                                    let influenceFieldValue = `Influence: N/A\nPairs: ${corr.n_pairs || 'N/A'}\n*${(corr.interpretation || 'Not calculated')}*`;// Default text updated
 
                                     if (corr.status === 'calculated' && corr.coefficient !== undefined && !isNaN(corr.coefficient)) {
                                         const r = parseFloat(corr.coefficient);
@@ -231,19 +234,17 @@ function setupStatsNotificationListener(client) {
                     name: '\u200B',
                     value: "Some actions can have a stronger effect on your outcome when combined with other actions. Check if that's happening here.",
                     inline: false
-                }); 
-
-                    for (const pairKey in statsReportData.pairwiseInteractionResults) {
+                });
+                  for (const pairKey in statsReportData.pairwiseInteractionResults) {
                         if (Object.prototype.hasOwnProperty.call(statsReportData.pairwiseInteractionResults, pairKey)) {
                             const pairData = statsReportData.pairwiseInteractionResults[pairKey];
-
                             // Only add a field if there's a meaningful summary to show
                             // And it's not one of the default "skipped" messages (or filter as you see fit)
                             if (pairData && pairData.summary && pairData.summary.trim() !== "" && 
-                                !pairData.summary.toLowerCase().includes("skipped") && 
+                                 !pairData.summary.toLowerCase().includes("skipped") && 
                                 !pairData.summary.toLowerCase().includes("no meaningful conclusion") &&
                                 !pairData.summary.toLowerCase().includes("thresholds for output") &&
-                                !pairData.summary.toLowerCase().includes("not enough days")) {
+                                 !pairData.summary.toLowerCase().includes("not enough days")) {
 
                                 const pairName = `${pairData.input1Label} & ${pairData.input2Label}`;
                                 statsEmbed.addFields({
@@ -276,7 +277,7 @@ function setupStatsNotificationListener(client) {
               // ============== END: PAIRWISE INTERACTION ANALYSIS SECTION ==============
                         const actionRow = new ActionRowBuilder()
                             .addComponents(
-                                new ButtonBuilder()
+                                 new ButtonBuilder()
                                     .setCustomId(`compare_exp_stats_btn_${statsReportData.experimentId}`) // Ensure experimentId is correctly used
                                     .setLabel('Compare with Recent Experiments')
                                     .setStyle(ButtonStyle.Primary),
@@ -284,18 +285,17 @@ function setupStatsNotificationListener(client) {
                                     .setCustomId(`get_ai_insights_btn_${statsReportData.experimentId}`)
                                     .setLabel('💡 Get AI Insights')
                                     .setStyle(ButtonStyle.Success) // Or ButtonStyle.Primary as per your preference
-                            );
-                        
+                             );
                         // DM Sending Logic (ensure this part is outside the block you are replacing if it was separate,
                         // or ensure it's correctly placed relative to the new code if it was part of the old block)
                         if (discordUser) {
-                            await discordUser.send({
+                             await discordUser.send({
                                 embeds: [statsEmbed],
                                 components: [actionRow]
-                            }).then(async () => {
+                             }).then(async () => {
                                 console.log(`[StatsListener] Successfully sent stats DM (with compare button) to user ${userId} for experiment ${statsReportData.experimentId}.`);
                                 await change.doc.ref.update({
-                                    status: 'processed_by_bot',
+                                     status: 'processed_by_bot',
                                     processedAt: admin.firestore.FieldValue.serverTimestamp(),
                                     botProcessingNode: process.env.RENDER_INSTANCE_ID || 'local_dev_stats'
                                 });
@@ -304,30 +304,28 @@ function setupStatsNotificationListener(client) {
                                // <<< START OF NEW MODIFICATION FOR DELAYED FOLLOW-UP >>>
                                 const delayMinutes = 5; // Or up to 10, e.g., Math.floor(Math.random() * 6) + 5; for 5-10 mins
                                 const delayMilliseconds = delayMinutes * 60 * 1000;
-
                                 console.log(`[StatsListener] Scheduling follow-up DM for user ${userId} in ${delayMinutes} minutes regarding experiment ${statsReportData.experimentId} conclusion.`);
-
                                 setTimeout(async () => {
                                     try {
                                         const followUpEmbed = new EmbedBuilder()
-                                            .setColor(0x4A90E2) // A different color, perhaps blue
+                                             .setColor(0x4A90E2) // A different color, perhaps blue
                                             .setTitle('Experiment Transition')
-                                            .setDescription(`Just a heads-up!\n\nYour experiment for "${statsReportData.activeExperimentSettings?.deeperProblem || 'your recent experiment'}" has ended.\n\nSet your next experiment to keep momentum! 🚀\n\nYou can use the same setup, or try new metrics.`)
+                                             .setDescription(`Check your stats above! ⬆️\n\nAt this point, you have 2 options:\n\n1. Start a new experiment\n(click the button below)\n\n2. Continue with the same experiment.\nKeep logging as usual.\nYou'll get a weekly stats update\nAND new weekly AI insights too!`)
                                             .setFooter({ text: `Experiment ID: ${statsReportData.experimentId || 'N/A'}` })
                                             .setTimestamp();
 
                                         const followUpActionRow = new ActionRowBuilder()
-                                            .addComponents(
+                                             .addComponents(
                                                 new ButtonBuilder()
-                                                    .setCustomId('start_new_experiment_prompt_btn') // Same new custom ID as before
+                                                      .setCustomId('start_new_experiment_prompt_btn') // Same new custom ID as before
                                                     .setLabel('🚀 Start New Experiment')
                                                     .setStyle(ButtonStyle.Success) // Changed to Success for more prominence
-                                            );
+                                             );
 
                                         await discordUser.send({
                                             embeds: [followUpEmbed],
                                             components: [followUpActionRow]
-                                        });
+                                         });
                                         console.log(`[StatsListener] Successfully sent DELAYED follow-up DM to user ${userId} for experiment ${statsReportData.experimentId}.`);
                                     } catch (followUpError) {
                                         console.error(`[StatsListener] Failed to send DELAYED follow-up DM to user ${userId} for experiment ${statsReportData.experimentId}:`, followUpError);
@@ -338,19 +336,19 @@ function setupStatsNotificationListener(client) {
 
                             }).catch(async (dmError) => {
                                 console.error(`[StatsListener] Failed to send stats DM to user ${userId} for experiment ${statsReportData.experimentId}:`, dmError);
-                                await change.doc.ref.update({ status: 'error_dm_failed', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: dmError.message });
+                                 await change.doc.ref.update({ status: 'error_dm_failed', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: dmError.message });
                             });
                         } else {
                             // This 'else' corresponds to 'if (discordUser)'
                             // The status update for 'error_user_not_found' should have happened earlier
-                            // if discordUser was null. We just log here that DM wasn't sent.
+                             // if discordUser was null. We just log here that DM wasn't sent.
                             console.log(`[StatsListener] Discord user ${userId} not found. Cannot send stats DM for experiment ${statsReportData.experimentId}. Notification status should already be 'error_user_not_found'.`);
                         }
                     // ================================================================================
                     // END OF CODE BLOCK TO REPLACE
                     // ================================================================================
                     } else {
-                        // This 'else' corresponds to 'if (statsReportSnap.exists)'
+                         // This 'else' corresponds to 'if (statsReportSnap.exists)'
                         console.error(`[StatsListener] Stats report document not found for user ${userId}, experiment ${statsDocumentId || experimentId}. Doc ID: ${docId}`);
                         await change.doc.ref.update({ status: 'error_report_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: 'Stats report document could not be found in Firestore.' });
                     }
@@ -652,6 +650,27 @@ const LOG_TIME_SELECT_H_ID = 'log_time_select_h';
 const LOG_TIME_SELECT_M_ID = 'log_time_select_m';
 const LOG_TIME_SELECT_AP_ID = 'log_time_select_ap';
 const LOG_TIME_NEXT_BTN_ID = 'log_time_next_btn';
+
+// --- Keywords for detecting Time of Day units ---
+// This list is used to flexibly identify when a user-entered UNIT
+// should trigger the special time-picker UI. It is checked case-insensitively.
+const TIME_OF_DAY_KEYWORDS = [
+    'time of day',      // The primary, explicit unit
+    'clock time',       // A common alternative
+    'specific time',
+    'exact time',
+    "o'clock",          // e.g., for a goal of "8 o'clock"
+    'oclock',           // Common misspelling
+    'o clock',          // Common variant
+    'am/pm',            // Indicates a 12-hour clock time
+    'a.m./p.m.',
+    'am',
+    'pm',
+    'a.m.',
+    'p.m.',
+    'am.',
+    'pm.'
+];
 
 // These Custom IDs remain the same from our previous discussion
 const OUTCOME_UNIT_SELECT_ID = 'outcome_unit_select';
@@ -3594,8 +3613,17 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const settings = settingsResult.settings;
         const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
-        const timeMetrics = metrics.filter(metric => metric.unit === 'Time of Day');
-        const otherMetrics = metrics.filter(metric => metric.unit !== 'Time of Day');
+
+        // Helper function to check against the keyword list
+        const isTimeMetric = (unit) => {
+            if (!unit) return false;
+            const lowerUnit = unit.toLowerCase().trim();
+            // Check if the trimmed, lowercased unit is an exact match for any keyword
+            return TIME_OF_DAY_KEYWORDS.includes(lowerUnit);
+        };
+
+        const timeMetrics = metrics.filter(metric => isTimeMetric(metric.unit));
+        const otherMetrics = metrics.filter(metric => !isTimeMetric(metric.unit));
 
         // Store all necessary info for the duration of the logging flow
         const setupData = userExperimentSetupData.get(userId) || {};

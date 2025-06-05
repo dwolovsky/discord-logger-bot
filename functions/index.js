@@ -1517,9 +1517,10 @@ exports.setExperimentSchedule = onCall(async (request) => {
     };
 
     try {
-        await userDocRef.set({
+        logger.log(`Overwriting experiment schedule for user ${userId}. New experiment ID: ${experimentId}. This will stop any prior 'continuous mode' reports.`);
+        await userDocRef.update({
             experimentCurrentSchedule: experimentScheduleData
-        }, { merge: true });
+        });
         logger.log(`Successfully saved experiment schedule for user ${userId}:`, experimentScheduleData);
 
         let message = `✅ Experiment (ID: ${experimentId}) duration set to ${data.experimentDuration.replace('_', ' ')}.`;
@@ -1531,7 +1532,7 @@ exports.setExperimentSchedule = onCall(async (request) => {
             message += ` Reminders scheduled (frequency: ${data.reminderFrequency.replace('_', ' ')}, window: ${data.reminderWindowStartHour}:00-${data.reminderWindowEndHour}:00 based on your local time).`;
         }
 
-        return { success: true, message: message, experimentId: experimentId }; // MODIFIED: Return experimentId
+        return { success: true, message: message, experimentId: experimentId };
 
     } catch (error) {
         logger.error("Error writing experiment schedule to Firestore for user:", userId, error);
@@ -2466,17 +2467,17 @@ exports.calculateAndStorePeriodStats = onCall(async (request) => {
 });
 // ============== END OF onCall WRAPPER ==============
 
-/**
- * Scheduled function to check for ended experiments and trigger statistics calculation.
- * Runs periodically (e.g., every hour).
- */
+// Scheduled function to check for ended experiments and trigger statistics calculation.
+// Runs periodically (e.g., every hour).
+// NOW HANDLES BOTH ended experiments and recurring weekly stats for users without an active experiment.
+
 exports.checkForEndedExperimentsAndTriggerStats = onSchedule("every 1 hours", async (event) => {
     logger.log("checkForEndedExperimentsAndTriggerStats: Scheduled function triggered.", event.scheduleTime);
     const db = admin.firestore();
     const now = admin.firestore.Timestamp.now(); // Current Firestore Timestamp
+    const nowJs = now.toDate(); // JavaScript Date object for calculations
 
     try {
-        // Query for user documents that have an experimentCurrentSchedule
         const usersSnapshot = await db.collection('users').get();
         if (usersSnapshot.empty) {
             logger.log("checkForEndedExperimentsAndTriggerStats: No users found.");
@@ -2489,92 +2490,132 @@ exports.checkForEndedExperimentsAndTriggerStats = onSchedule("every 1 hours", as
         usersSnapshot.forEach(userDoc => {
             const userId = userDoc.id;
             const userData = userDoc.data();
+            const schedule = userData.experimentCurrentSchedule;
 
-            if (userData.experimentCurrentSchedule &&
-                userData.experimentCurrentSchedule.experimentEndTimestamp &&
-                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() <= now.toDate() &&
-                (userData.experimentCurrentSchedule.statsProcessed === undefined ||
-                 userData.experimentCurrentSchedule.statsProcessed === false)) {
+            if (!schedule) return; // Skip user if they have no schedule
 
-                logger.log(`checkForEndedExperimentsAndTriggerStats: Found ended experiment for user ${userId}, experimentId: ${userData.experimentCurrentSchedule.experimentId}`);
-                const schedule = userData.experimentCurrentSchedule;
-                const userTag = userData.userTag || `User_${userId}`;
+            const userTag = userData.userTag || `User_${userId}`;
 
-                const experimentId = schedule.experimentId;
-                const activeExperimentSettings = schedule.scheduledExperimentSettings;
-                const experimentSettingsTimestampInput = schedule.experimentSetAt; // This is a Firestore Timestamp object or compatible
-                const experimentEndDateISOInput = schedule.experimentEndTimestamp.toDate().toISOString();
+            // BRANCH 1: A defined experiment has just ended.
+            if (schedule.experimentEndTimestamp && schedule.experimentEndTimestamp.toDate() <= nowJs && (schedule.statsProcessed === undefined || schedule.statsProcessed === false)) {
 
-                if (!experimentId) {
-                    logger.error(`checkForEndedExperimentsAndTriggerStats: Missing experimentId for user ${userId}. Skipping.`);
-                    return; // continue to next user
-                }
-                if (!activeExperimentSettings) {
-                    logger.warn(`checkForEndedExperimentsAndTriggerStats: Missing scheduledExperimentSettings for user ${userId}, experiment ${experimentId}. Stats might be incomplete or fail if called without settings.`);
-                    // If settings are absolutely crucial and _calculateAndStorePeriodStatsLogic can't handle their absence,
-                    // you might choose to skip here or ensure the logic function has robust defaults/error handling.
-                    // For now, we proceed, relying on _calculateAndStorePeriodStatsLogic's validation.
-                }
-                if (!experimentSettingsTimestampInput) {
-                    logger.error(`checkForEndedExperimentsAndTriggerStats: Missing experimentSetAt (as experimentSettingsTimestampInput) for user ${userId}, experiment ${experimentId}. Skipping.`);
-                    return; // continue to next user
-                }
-
-                // Call the internal helper function directly
+                logger.log(`checkForEndedExperimentsAndTriggerStats: Found ended DEFINED experiment for user ${userId}, experimentId: ${schedule.experimentId}`);
+                
                 const processingPromise = _calculateAndStorePeriodStatsLogic(
                     userId,
                     userTag,
-                    experimentId,
-                    experimentSettingsTimestampInput, // Pass the Firestore Timestamp object (or compatible)
-                    experimentEndDateISOInput,        // Pass the ISO string
-                    activeExperimentSettings,
-                    "checkForEndedExperimentsAndTriggerStats" // Indicate calling context
+                    schedule.experimentId,
+                    schedule.experimentSetAt,
+                    schedule.experimentEndTimestamp.toDate().toISOString(),
+                    schedule.scheduledExperimentSettings,
+                    "checkForEndedExperimentsAndTriggerStats_Defined"
                 )
                 .then(async (statsResult) => {
                     if (statsResult && statsResult.success) {
-                        logger.log(`checkForEndedExperimentsAndTriggerStats: Successfully processed stats (status: ${statsResult.status}) for user ${userId}, experiment ${experimentId}. Stored Doc ID: ${statsResult.experimentId}`);
-                        // Update experimentCurrentSchedule to mark as processed
+                        logger.log(`checkForEndedExperimentsAndTriggerStats: Successfully processed defined experiment for user ${userId}. Stored Doc ID: ${statsResult.experimentId}. Setting up for continuous mode.`);
+                        
+                        // Set the next weekly stats timestamp for 7 days from now
+                        const nextWeeklyTimestamp = new Date(nowJs.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+                        // Update schedule to mark as processed and set up continuous mode
                         await userDoc.ref.update({
                             'experimentCurrentSchedule.statsProcessed': true,
-                            'experimentCurrentSchedule.statsDocumentId': statsResult.experimentId, // experimentId is the doc ID
-                            'experimentCurrentSchedule.statsCalculationTimestamp': FieldValue.serverTimestamp()
+                            'experimentCurrentSchedule.statsDocumentId': statsResult.experimentId,
+                            'experimentCurrentSchedule.statsCalculationTimestamp': FieldValue.serverTimestamp(),
+                            // --- SETUP FOR CONTINUOUS MODE ---
+                            'experimentCurrentSchedule.statsMode': 'continuous',
+                            'experimentCurrentSchedule.continuousStatsStartDate': schedule.experimentSetAt, // Keep original start date
+                            'experimentCurrentSchedule.nextWeeklyStatsTimestamp': admin.firestore.Timestamp.fromDate(nextWeeklyTimestamp)
                         });
 
-                        // Notify the bot by writing to pendingStatsNotifications
-                        // Only create notification if stats were actually calculated (not just insufficient_data)
-                        // or if you want to notify for insufficient_data as well (current logic will notify).
-                        const notificationRef = db.collection('pendingStatsNotifications').doc(`${userId}_${experimentId}`);
+                        // Create notification for the user
+                        const notificationRef = db.collection('pendingStatsNotifications').doc(`${userId}_${statsResult.experimentId}`);
                         await notificationRef.set({
                             userId: userId,
                             userTag: userTag,
                             experimentId: statsResult.experimentId,
-                            statsDocumentId: statsResult.experimentId, // Redundant but consistent with bot listener
-                            status: 'ready', // This triggers the bot
+                            statsDocumentId: statsResult.experimentId,
+                            status: 'ready',
                             generatedAt: FieldValue.serverTimestamp(),
-                            message: statsResult.message || `Stats report for experiment ${experimentId} is ready (status: ${statsResult.status}).`
+                            message: statsResult.message || `Stats report for experiment ${statsResult.experimentId} is ready.`
                         });
-                        logger.log(`checkForEndedExperimentsAndTriggerStats: Notification created for user ${userId}, experiment ${experimentId}.`);
+
+                        logger.log(`checkForEndedExperimentsAndTriggerStats: Notification created for user ${userId}, experiment ${statsResult.experimentId}.`);
                         processedCount++;
                     } else {
-                        // This block handles failures returned by _calculateAndStorePeriodStatsLogic
-                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to calculate stats for user ${userId}, experiment ${experimentId}. Result:`, statsResult);
+                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to calculate stats for defined experiment for user ${userId}. Result:`, statsResult);
                         await userDoc.ref.update({
                             'experimentCurrentSchedule.statsProcessed': 'failed',
-                            'experimentCurrentSchedule.statsProcessingError': statsResult?.message || 'Unknown error during stats calculation logic.'
+                            'experimentCurrentSchedule.statsProcessingError': statsResult?.message || 'Unknown error during stats calculation.'
                         });
                     }
                 })
                 .catch(async (error) => {
-                    // This catch block is for unexpected errors thrown by _calculateAndStorePeriodStatsLogic
-                    // or during the .then() block's async operations (like Firestore updates).
-                    logger.error(`checkForEndedExperimentsAndTriggerStats: Critical error during processing for user ${userId}, experiment ${experimentId}:`, error);
+                    logger.error(`checkForEndedExperimentsAndTriggerStats: Critical error processing defined experiment for user ${userId}:`, error);
                     try {
-                        await userDoc.ref.update({
-                            'experimentCurrentSchedule.statsProcessed': 'critical_error',
-                            'experimentCurrentSchedule.statsProcessingError': error.message || 'Critical unhandled error during stats calculation/notification.'
-                        });
+                        await userDoc.ref.update({ 'experimentCurrentSchedule.statsProcessed': 'critical_error', 'experimentCurrentSchedule.statsProcessingError': error.message });
                     } catch (updateError) {
-                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to update statsProcessed status to critical_error for ${userId}, experiment ${experimentId}`, updateError);
+                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to update status to critical_error for ${userId}`, updateError);
+                    }
+                });
+                promises.push(processingPromise);
+
+            // BRANCH 2: User is in continuous mode and their next weekly report is due.
+            } else if (schedule.statsMode === 'continuous' && schedule.nextWeeklyStatsTimestamp && schedule.nextWeeklyStatsTimestamp.toDate() <= nowJs) {
+                
+                // Generate a new unique ID for this weekly stats report
+                const weeklyExperimentId = db.collection('users').doc(userId).collection('experimentStats').doc().id;
+                
+                logger.log(`checkForEndedExperimentsAndTriggerStats: Found user ${userId} due for CONTINUOUS weekly stats. Generating report with new ID: ${weeklyExperimentId}`);
+
+                const processingPromise = _calculateAndStorePeriodStatsLogic(
+                    userId,
+                    userTag,
+                    weeklyExperimentId, // The new ID for this specific report
+                    schedule.continuousStatsStartDate, // The START date from their last defined experiment
+                    nowJs.toISOString(),               // The END date is right now
+                    schedule.scheduledExperimentSettings, // Use the settings from their last defined experiment
+                    "checkForEndedExperimentsAndTriggerStats_Continuous"
+                )
+                .then(async (statsResult) => {
+                    if (statsResult && statsResult.success) {
+                        logger.log(`checkForEndedExperimentsAndTriggerStats: Successfully processed continuous stats for user ${userId}. Stored Doc ID: ${statsResult.experimentId}.`);
+                        
+                        // Schedule the *next* weekly report
+                        const nextWeeklyTimestamp = new Date(nowJs.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+                        // Update the timestamp for the next run
+                        await userDoc.ref.update({
+                            'experimentCurrentSchedule.nextWeeklyStatsTimestamp': admin.firestore.Timestamp.fromDate(nextWeeklyTimestamp),
+                            'experimentCurrentSchedule.lastWeeklyStatsId': statsResult.experimentId, // Optional: track the last generated ID
+                            'experimentCurrentSchedule.statsProcessingError': FieldValue.delete() // Clear previous error on success
+                        });
+
+                        // Create notification for the user (same as the other branch)
+                        const notificationRef = db.collection('pendingStatsNotifications').doc(`${userId}_${statsResult.experimentId}`);
+                        await notificationRef.set({
+                            userId: userId,
+                            userTag: userTag,
+                            experimentId: statsResult.experimentId,
+                            statsDocumentId: statsResult.experimentId,
+                            status: 'ready',
+                            generatedAt: FieldValue.serverTimestamp(),
+                            message: `Your weekly stats report is ready!`
+                        });
+
+                        logger.log(`checkForEndedExperimentsAndTriggerStats: Continuous notification created for user ${userId}, experiment ${statsResult.experimentId}.`);
+                        processedCount++;
+                    } else {
+                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to calculate continuous stats for user ${userId}. Result:`, statsResult);
+                        await userDoc.ref.update({ 'experimentCurrentSchedule.statsProcessingError': statsResult?.message || 'Unknown error during continuous stats calculation.' });
+                    }
+                })
+                .catch(async (error) => {
+                    logger.error(`checkForEndedExperimentsAndTriggerStats: Critical error processing continuous stats for user ${userId}:`, error);
+                    try {
+                        await userDoc.ref.update({ 'experimentCurrentSchedule.statsProcessingError': `Critical error during continuous processing: ${error.message}` });
+                    } catch (updateError) {
+                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to update continuous status to critical_error for ${userId}`, updateError);
                     }
                 });
                 promises.push(processingPromise);
@@ -2582,9 +2623,8 @@ exports.checkForEndedExperimentsAndTriggerStats = onSchedule("every 1 hours", as
         });
 
         await Promise.all(promises);
-        logger.log(`checkForEndedExperimentsAndTriggerStats: Processing complete. ${processedCount} experiments processed.`);
+        logger.log(`checkForEndedExperimentsAndTriggerStats: Processing complete. ${processedCount} experiments/reports processed.`);
         return null;
-
     } catch (error) {
         logger.error("checkForEndedExperimentsAndTriggerStats: Overall error in scheduled function:", error);
         return null;
@@ -3749,25 +3789,18 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
   // 3. Construct Prompt for LLM
   const promptText = `
     Based on the user's "Deeper Wish" for their daily life: "${userWish}", your task is to generate 5 distinct and relevant "Outcome Metrics" the user could track daily to see if they are making progress related to their wish.
-    It should be a **key state, feeling, or result** that helps the user know if they are making progress on their "Deeper Wish." The metric should be **simple to assess and record as a postive number (>0, decimals included) each day.**
-
-    Think in terms of things that are measurable by:
-        * **Simple Rating Scales:** How did the user feel or perceive a state?
-            * Examples: 'Satisfaction', 'Career confidence', 'Energy Level', 'Optimism', 'Faith in myself, 'Motivation', 'Stress'.
-        * **Simple Counts of Key Results or Events outside the user's control (or that the user has so much inner resistance to, that it is practically outside their direct control):** Is the user accumulating specific positive states (or avoiding negative states) that are easy to identify and count?
-            * Examples: 'Mindful Moments', 'Food Cravings'.
-
-        Provide diverse labels that fit these simple measurement types for an **outcome**. Avoid suggesting labels that require complex tracking (like precise durations of subjective states) or are themselves actions/habits. The goal is a 1-minute daily logging of the outcome metric.
+    It should be a **key state, feeling, or result** that helps the user know if they are making progress on their "Deeper Wish." The metric should be **simple to assess and record as a non-negative number (>=0, decimals included) each day.** The goal is a 1-minute daily logging of the outcome metric.
 
     For your reference: after you provide the labels, the user will choose a scale/units to measure the outcome by. Users will get scale/unit suggestions from this array:
     { label: '0-10 rating', description: 'A numerical scale from 0 to 10.' },
     { label: '1=Yes / 0=No', description: 'Yes/No with 1 for Yes, 0 for No.' },
+    { label: 'Time of Day', description: 'Log a specific time using H:M AM/PM dropdowns.' },
     { label: 'Tasks completed', description: 'Count of tasks finished.' },
     { label: 'Days in a row', description: 'Number of consecutive days.' },
-    { label: 'AM', description: 'Use decimals, e.g., 9:30 = 9.5.' },
-    { label: 'PM', description: 'Use decimals, e.g., 4:15 = 4.25.' },
     { label: '% growth', description: 'Percentage increase (no negative numbers).' },
     { label: 'Compared to yesterday', description: '0=Much Worse, 5=Same, 10=Much Better.' }
+
+    Provide diverse labels that easily fit these simple measurement types for an **outcome**. Avoid suggesting labels that require complex tracking (like precise durations of subjective states). Outcomes should also not be actions/habits themselves. The outcome is a result of doing certain habits.
 
     For each of the five suggestions, you MUST provide:
         1.  A "label": A clear, concise name for the outcome metric they will track daily (e.g., 'Overall Mood', 'Productive Hours', 'Sleep Quality', 'Feeling of Connection', 'Stress Level'). Max 25 characters.
@@ -3899,8 +3932,22 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
     A user has a "Deeper Wish" for their daily life: "${userWish}".
     They are tracking a primary "Outcome Metric": "${outcomeMetric.label}" (measured in "${outcomeMetric.unit}", with a daily goal of ${outcomeMetric.goal}).
 
-    Your task is to suggest 5 distinct, actionable, and relevant "Daily Habit Labels" that the user could track. These habits should be actions they can take daily to positively influence their Outcome Metric and help them achieve their Deeper Wish.
+    Your task is to suggest 5 distinct, actionable, and relevant "Daily Habits" (just habit labels, without units) that the user could track. These habits should be actions they can take daily to positively influence their Outcome Metric and help them achieve their Deeper Wish.
     ${definedInputsContext}
+
+    For your reference: after you provide the labels, the user will choose a scale/units to measure the habit by. Users will get scale/unit suggestions from this array:
+    { label: 'Repetitions', description: 'e.g., Number of push-ups, times you did X.' },
+    { label: '1=Yes / 0=No', description: 'Yes/No with 1 for Yes, 0 for No.' },
+    { label: 'Time of Day', description: 'Log a specific time using Hour:Minute AM/PM dropdowns.' },
+    { label: 'Minutes', description: 'Duration in minutes.' },
+    { label: 'Hours', description: 'Duration in hours (can use decimals).' },
+    { label: 'Times/day', description: 'How many occurrences per day.' },
+    { label: 'Pages', description: 'e.g., Pages read.' },
+    { label: 'Words', description: 'e.g., Words written.' },
+    { label: 'Tasks done', description: 'E.g. Counted from a checklist.' },
+    { label: '% done', description: 'Percentage of habit completed (0-100).' }
+
+    Provide diverse habits that easily fit these simple measurement types for a daily habit.
 
     For each of the habit suggestions, you MUST provide:
     1.  A "label": A clear, concise name for the daily habit (e.g., "Mindful Morning Walk", "Read One Chapter", "Limit Social Media to 30 Mins", "Evening Reflection Journal"). Max 25 characters.
