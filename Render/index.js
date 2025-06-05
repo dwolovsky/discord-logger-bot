@@ -162,24 +162,35 @@ function setupStatsNotificationListener(client) {
                         if (statsReportData.calculatedMetricStats && typeof statsReportData.calculatedMetricStats === 'object' && Object.keys(statsReportData.calculatedMetricStats).length > 0) {
                             statsEmbed.addFields({ name: '\u200B', value: '**📊 CORE STATISTICS**' }); // Added icon for consistency
                             for (const metricKey in statsReportData.calculatedMetricStats) {
-                                const metricDetails = statsReportData.calculatedMetricStats[metricKey];
-                                let fieldValue = '';
-                                if (metricDetails.status === 'skipped_insufficient_data') {
-                                    fieldValue = `Average: N/A (Needs ${metricDetails.dataPoints !== undefined ? 5 : 'more'} data points)\nVaration %: N/A\nData Points: ${metricDetails.dataPoints !== undefined ? metricDetails.dataPoints : 'N/A'}`;
+                            const metricDetails = statsReportData.calculatedMetricStats[metricKey];
+                            let fieldValue = '';
+                            if (metricDetails.status === 'skipped_insufficient_data') {
+                                fieldValue = `Average: N/A (Needs ${metricDetails.dataPoints !== undefined ? 5 : 'more'} data points)\nVaration %: N/A\nData Points: ${metricDetails.dataPoints !== undefined ? metricDetails.dataPoints : 'N/A'}`;
+                            } else {
+                                // --- START MODIFICATION ---
+                                if (metricDetails.average !== undefined && !isNaN(metricDetails.average)) {
+                                    // Check if the unit is 'Time of Day'
+                                    if (metricDetails.unit === 'Time of Day') {
+                                        fieldValue += `Average: ${formatDecimalAsTime(metricDetails.average)}\n`;
+                                    } else {
+                                        fieldValue += `Average: ${parseFloat(metricDetails.average).toFixed(2)}\n`;
+                                    }
                                 } else {
-                                    if (metricDetails.average !== undefined && !isNaN(metricDetails.average)) fieldValue += `Average: ${parseFloat(metricDetails.average).toFixed(2)}\n`;
-                                    else fieldValue += `Average: N/A\n`;
-                                    if (metricDetails.variationPercentage !== undefined && !isNaN(metricDetails.variationPercentage)) fieldValue += `Variation: ${parseFloat(metricDetails.variationPercentage).toFixed(2)}%\n`;
-                                    else fieldValue += `Varation: N/A\n`;
-                                    if (metricDetails.dataPoints !== undefined) fieldValue += `Data Points: ${metricDetails.dataPoints}\n`;
-                                    else fieldValue += `Data Points: N/A\n`;
+                                    fieldValue += `Average: N/A\n`;
                                 }
-                                
-                                if (fieldValue.trim() !== '') {
-                                    const fieldName = (metricDetails.label ? metricDetails.label.charAt(0).toUpperCase() + metricDetails.label.slice(1) : metricKey.charAt(0).toUpperCase() + metricKey.slice(1));
-                                    statsEmbed.addFields({ name: fieldName, value: fieldValue.trim(), inline: true });
-                                }
+                                // --- END MODIFICATION ---
+
+                                if (metricDetails.variationPercentage !== undefined && !isNaN(metricDetails.variationPercentage)) fieldValue += `Variation: ${parseFloat(metricDetails.variationPercentage).toFixed(2)}%\n`;
+                                else fieldValue += `Varation: N/A\n`;
+                                if (metricDetails.dataPoints !== undefined) fieldValue += `Data Points: ${metricDetails.dataPoints}\n`;
+                                else fieldValue += `Data Points: N/A\n`;
                             }
+                            
+                            if (fieldValue.trim() !== '') {
+                                const fieldName = (metricDetails.label ? metricDetails.label.charAt(0).toUpperCase() + metricDetails.label.slice(1) : metricKey.charAt(0).toUpperCase() + metricKey.slice(1));
+                                statsEmbed.addFields({ name: fieldName, value: fieldValue.trim(), inline: true });
+                            }
+                        }
                         } else {
                             statsEmbed.addFields({ name: '📊 Core Statistics', value: 'No detailed core statistics were found in this report.', inline: false });
                         }
@@ -461,6 +472,84 @@ const { getAuth, signInWithCustomToken, getIdToken } = require("firebase/auth");
 
 const userExperimentSetupData = new Map(); // To temporarily store data between modals
 
+/**
+ * Formats a decimal number representing hours into a 12-hour clock format (e.g., 8.5 -> "8:30 AM").
+ * @param {number | null} decimalHours - The decimal time to format.
+ * @returns {string} The formatted time string or 'N/A'.
+ */
+function formatDecimalAsTime(decimalHours) {
+    if (isNaN(decimalHours) || decimalHours === null) return 'N/A';
+    let hours = Math.floor(decimalHours) % 24;
+    const minutesFraction = decimalHours - Math.floor(decimalHours);
+    let minutes = Math.round(minutesFraction * 60);
+    const paddedMinutes = minutes < 10 ? '0' + minutes : String(minutes);
+    const period = hours >= 12 ? 'PM' : 'AM';
+    if (hours > 12) { hours -= 12; }
+    else if (hours === 0) { hours = 12; } // 0 hour is 12 AM
+    return `${hours}:${paddedMinutes} ${period}`;
+}
+
+/**
+ * Manages the sequential flow for logging time-based metrics.
+ * It either prompts for the next time metric or shows a button to open the final modal.
+ * @param {import('discord.js').Interaction} interaction - The interaction to reply to or update.
+ * @param {string} userId - The ID of the user.
+ */
+async function sendNextTimeLogPrompt(interaction, userId) {
+  const setupData = userExperimentSetupData.get(userId);
+  if (!setupData || !setupData.logFlowSettings) {
+    console.error(`[sendNextTimeLogPrompt] Critical: Missing setupData or logFlowSettings for ${userId}.`);
+    // Use editReply since the interaction is already deferred
+    await interaction.editReply({ content: "Error: Your logging session has expired or is invalid. Please start again with `/go`.", components: [], embeds: [] });
+    return;
+  }
+
+  const { logFlowTimeMetrics = [], logFlowSettings = {} } = setupData;
+  const timeLogIndex = setupData.timeLogIndex || 0;
+
+  if (timeLogIndex < logFlowTimeMetrics.length) {
+    // --- There are more time metrics to log ---
+    const currentMetric = logFlowTimeMetrics[timeLogIndex];
+    console.log(`[sendNextTimeLogPrompt] Prompting user ${userId} for time metric ${timeLogIndex + 1}/${logFlowTimeMetrics.length}: "${currentMetric.label}"`);
+
+    const stepIndicator = `(Step ${timeLogIndex + 1} of ${logFlowTimeMetrics.length})`;
+    const timeEmbed = new EmbedBuilder()
+      .setColor('#3498DB')
+      .setTitle(`🕰️ Log Time for: ${currentMetric.label}`)
+      .setDescription(`Please select the time you are logging for this specific metric. ${stepIndicator}`)
+      .setFooter({ text: 'Make your selection, then click Next.' });
+
+    const timeHourSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_H_ID).setPlaceholder('Select the HOUR').addOptions(Array.from({ length: 12 }, (_, i) => new StringSelectMenuOptionBuilder().setLabel(String(i + 1)).setValue(String(i + 1))));
+    const timeMinuteSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_M_ID).setPlaceholder('Select the MINUTE').addOptions(new StringSelectMenuOptionBuilder().setLabel(':00').setValue('00'), new StringSelectMenuOptionBuilder().setLabel(':15').setValue('15'), new StringSelectMenuOptionBuilder().setLabel(':30').setValue('30'), new StringSelectMenuOptionBuilder().setLabel(':45').setValue('45'));
+    const timeAmPmSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_AP_ID).setPlaceholder('Select AM or PM').addOptions(new StringSelectMenuOptionBuilder().setLabel('AM').setValue('AM'), new StringSelectMenuOptionBuilder().setLabel('PM').setValue('PM'));
+    const nextButton = new ButtonBuilder().setCustomId(LOG_TIME_NEXT_BTN_ID).setLabel('Next →').setStyle(ButtonStyle.Primary);
+
+    await interaction.editReply({
+      embeds: [timeEmbed],
+      components: [
+        new ActionRowBuilder().addComponents(timeHourSelect),
+        new ActionRowBuilder().addComponents(timeMinuteSelect),
+        new ActionRowBuilder().addComponents(timeAmPmSelect),
+        new ActionRowBuilder().addComponents(nextButton)
+      ]
+    });
+  } else {
+    // --- All time metrics are logged. Show a button to open the final modal. ---
+    console.log(`[sendNextTimeLogPrompt] All ${logFlowTimeMetrics.length} time metrics logged for ${userId}. Prompting to open final modal.`);
+    
+    const finalButton = new ButtonBuilder()
+        .setCustomId('continue_to_final_log_btn') // New Custom ID
+        .setLabel('✍️ Continue to Final Step')
+        .setStyle(ButtonStyle.Success);
+
+    await interaction.editReply({
+        content: "✅ All time-based metrics have been recorded. Click below to log your remaining metrics and notes.",
+        embeds: [],
+        components: [new ActionRowBuilder().addComponents(finalButton)]
+    });
+  }
+}
+
 // ====== ENVIRONMENT VARIABLES ======
 const APPLICATION_ID = process.env.APPLICATION_ID;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -538,10 +627,9 @@ const STREAK_MILESTONE_ROLE_NAMES = [
 const PREDEFINED_OUTCOME_UNIT_SUGGESTIONS = [
     { label: '0-10 rating', description: 'A numerical scale from 0 to 10.' },
     { label: '1=Yes / 0=No', description: 'Yes/No with 1 for Yes, 0 for No.' },
+    { label: 'Time of Day', description: 'At / Before / After a specific time.' },
     { label: 'Tasks completed', description: 'Count of tasks finished.' },
     { label: 'Days in a row', description: 'Number of consecutive days.' },
-    { label: 'AM', description: 'Use decimals, e.g., 9:30 = 9.5.' },
-    { label: 'PM', description: 'Use decimals, e.g., 4:15 = 4.25.' },
     { label: '% growth', description: 'Percentage increase (no negative numbers).' },
     { label: 'Compared to yesterday', description: '0=Much Worse, 5=Same, 10=Much Better.' }
 ];
@@ -549,6 +637,7 @@ const PREDEFINED_OUTCOME_UNIT_SUGGESTIONS = [
 const PREDEFINED_HABIT_UNIT_SUGGESTIONS = [
     { label: 'Repetitions', description: 'e.g., Number of push-ups, times you did X.' },
     { label: '1=Yes / 0=No', description: 'Yes/No with 1 for Yes, 0 for No.' },
+    { label: 'Time of Day', description: 'At / Before / After a specific time.' },
     { label: 'Minutes', description: 'Duration in minutes.' },
     { label: 'Hours', description: 'Duration in hours (can use decimals).' },
     { label: 'Times/day', description: 'How many occurrences per day.' },
@@ -557,6 +646,12 @@ const PREDEFINED_HABIT_UNIT_SUGGESTIONS = [
     { label: 'Tasks done', description: 'E.g. Counted from a checklist.' },
     { label: '% done', description: 'Percentage of habit completed (0-100).' }
 ];
+
+// --- Custom IDs for Time-based Metric Logging ---
+const LOG_TIME_SELECT_H_ID = 'log_time_select_h';
+const LOG_TIME_SELECT_M_ID = 'log_time_select_m';
+const LOG_TIME_SELECT_AP_ID = 'log_time_select_ap';
+const LOG_TIME_NEXT_BTN_ID = 'log_time_next_btn';
 
 // These Custom IDs remain the same from our previous discussion
 const OUTCOME_UNIT_SELECT_ID = 'outcome_unit_select';
@@ -3479,218 +3574,209 @@ client.on(Events.InteractionCreate, async interaction => {
       // No processEndTime log here as the interaction is completed by showModal.
     }
 
+    // --- Handler for "Log Daily Data" Button (NEW, WITH SEQUENTIAL LOGIC) ---
     else if (interaction.customId === 'log_daily_progress_btn') {
       const logButtonStartTime = performance.now();
-      console.log(`[log_daily_progress_btn] Button clicked by User: ${interaction.user.tag}, InteractionID: ${interaction.id}`);
+      const userId = interaction.user.id;
+      const interactionId = interaction.id;
+      console.log(`[log_daily_progress_btn START ${interactionId}] Button clicked by User: ${userId}`);
       try {
-          // Logic copied from the old /log command handler
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const deferTime = performance.now();
+        console.log(`[log_daily_progress_btn DEFERRED ${interactionId}] Deferral took: ${(deferTime - logButtonStartTime).toFixed(2)}ms`);
 
-         // ===== START: MODIFIED LOGIC TO GET SETTINGS (PREFER PRE-FETCHED) =====
-            let settingsResult;
-            let directFetchPerformed = false; // Flag to track if we do a direct fetch
-            let fetchSettingsTime; // Will be set if direct fetch occurs
-
-            const setupData = userExperimentSetupData.get(interaction.user.id);
-            const preFetchedSettings = setupData?.preFetchedWeeklySettings;
-            const preFetchTime = setupData?.preFetchedWeeklySettingsTimestamp;
-            // Define the MAX_PREFETCH_AGE_MS for the "Log Daily Data" button's cache usage
-            const LOG_DATA_MAX_PREFETCH_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-            if (preFetchedSettings && preFetchTime && (Date.now() - preFetchTime < LOG_DATA_MAX_PREFETCH_AGE_MS)) {
-                console.log(`[log_daily_progress_btn] Using pre-fetched settings (age: ${((Date.now() - preFetchTime)/(60*1000)).toFixed(1)} mins) for User: ${interaction.user.id}`);
-                settingsResult = { success: true, settings: preFetchedSettings }; // Simulate the structure of callFirebaseFunction result
-                // DO NOT clear pre-fetched data here, as per the new strategy
-            } else {
-                if (preFetchedSettings) {
-                    console.log(`[log_daily_progress_btn] Pre-fetched settings for User: ${interaction.user.id} are stale (age: ${((Date.now() - preFetchTime)/(60*1000)).toFixed(1)} mins > ${LOG_DATA_MAX_PREFETCH_AGE_MS/(60*1000)} mins) or timestamp missing. Refetching.`);
-                } else {
-                    console.log(`[log_daily_progress_btn] No pre-fetched settings found for User: ${interaction.user.id}. Fetching directly.`);
-                }
-                // Fallback to direct fetch
-                const directFetchStartTime = performance.now();
-                settingsResult = await callFirebaseFunction('getWeeklySettings', {}, interaction.user.id);
-                fetchSettingsTime = performance.now(); // Set fetchSettingsTime here
-                directFetchPerformed = true;
-                console.log(`[log_daily_progress_btn] Direct getWeeklySettings call took: ${(fetchSettingsTime - directFetchStartTime).toFixed(2)}ms.`);
-            }
-            // ===== END: MODIFIED LOGIC TO GET SETTINGS =====
-
-          // ===== START: ADJUSTED TIMEOUT LOGIC =====
-            // This check is primarily for the scenario where a direct fetch might have caused a delay
-            // that could make the subsequent interaction.showModal() fail.
-            // logButtonStartTime is from the very start of this button handler.
-            // fetchSettingsTime is only defined if a directFetchWasPerformed.
-            // directFetchStartTime was defined inside the 'else' block for the direct fetch.
-
-            if (directFetchPerformed) {
-                // We only care about the fetch duration if a direct fetch actually happened.
-                // The 'fetchSettingsTime' variable is available here from the 'else' block.
-                // The 'directFetchStartTime' was also defined in that scope.
-                // To get the duration of the direct fetch itself:
-                // const directFetchDuration = fetchSettingsTime - directFetchStartTime; // directFetchStartTime needs to be accessible or re-scoped if used here.
-
-                // Let's check the overall time from button click up to now, IF a direct fetch was involved.
-                // If overall time is too long, and we know a direct fetch contributed, it's a problem.
-                const timeNowAfterFetchLogic = performance.now();
-                if ((timeNowAfterFetchLogic - logButtonStartTime) > 2800) {
-                    console.warn(`[log_daily_progress_btn] Settings retrieval (including a direct fetch) contributed to exceeding 2.8s total for User ${interaction.user.tag}. Overall time: ${(timeNowAfterFetchLogic - logButtonStartTime).toFixed(2)}ms. Modal might fail.`);
-                    // It's often best to attempt the interaction.showModal() and catch its specific error if the interaction token has expired.
-                    // However, if you want to try an explicit message before that:
-                    try {
-                        // Check if interaction is still available and not already fully replied to in an unexpected way
-                        if (interaction.replied || interaction.deferred) { // deferUpdate or deferReply was used at start of button handler
-                           // If trying to reply ephemerally to the original interaction that opened the modal
-                           // This button handler would typically call interaction.showModal(), which IS the reply.
-                           // So, sending another reply here before showModal might conflict.
-                           // The original code used followUp, which is for *after* a reply has been made.
-                           // If the intent is to *update* the message that the modal will replace, then editReply if deferred.
-                           // But since showModal IS the reply, this is tricky.
-                           // The safest bet is to let showModal attempt and catch its error.
-                           // For now, we just log the warning.
-                           // If you had a specific message before `showModal` for this case:
-                           // await interaction.editReply({ content: "🚦 Settings took a while to load. Trying to open the form now...", ephemeral: true });
-                           // This is probably not what you want if showModal is next.
-                           // The user's original code had a followUp, suggesting the modal wasn't the *only* reply path, or it was a followUp to an update.
-                           // Given this button is to show a modal, the primary failure will be showModal().
-                        }
-                    } catch (timeoutMsgError) {
-                        console.error('[log_daily_progress_btn] Error trying to send pre-modal timeout message:', timeoutMsgError);
-                    }
-                    // No explicit return here; let the flow proceed to try and show the modal,
-                    // and handle errors from showModal() itself if it times out.
-                }
-            }
-            // ===== END: ADJUSTED TIMEOUT LOGIC =====
-
-          if (!settingsResult || !settingsResult.settings) {
-            await interaction.update({
-              content: "🤔 You haven't set up your weekly experiment yet. Please use the 'Set Experiment' button first from the `/go` hub.",
-              embeds: [], // Clear any previous embed
-              components: []
-            });
-            return;
-          }
-          const settings = settingsResult.settings;
-          const outputConfigured = settings.output && settings.output.label && settings.output.label.trim() !== "";
-          const input1Configured = settings.input1 && settings.input1.label && settings.input1.label.trim() !== "";
-          if (!outputConfigured || !input1Configured) {
-            await interaction.update({
-              content: "📝 Your experiment setup is incomplete (Daily Outcome & Habit 1 required). Please use 'Set Experiment' from the `/go` hub to set them.",
-              embeds: [], // Clear any previous embed
-              components: []
-            });
-            return;
-          }
-
-          console.log(`[log_daily_progress_btn] Building modal for user ${interaction.user.id}.`);
-          const modal = new ModalBuilder()
-            .setCustomId('dailyLogModal_firebase')
-            .setTitle(`📝 Fuel Your Experiment`);
-          const components = [];
-
-          components.push(
-            new ActionRowBuilder().addComponents(
-              new TextInputBuilder()
-                .setCustomId('log_output_value')
-                .setLabel(`${settings.output.label} ${settings.output.unit}`)
-                .setPlaceholder(`Goal: ${settings.output.goal}`)
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-            )
-          );
-          components.push(
-            new ActionRowBuilder().addComponents(
-              new TextInputBuilder()
-                .setCustomId('log_input1_value')
-                .setLabel(`${settings.input1.label} ${settings.input1.unit}`)
-                .setPlaceholder(`Goal: ${settings.input1.goal}`)
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-            )
-          );
-          if (settings.input2 && settings.input2.label && settings.input2.label.trim() !== "") {
-            components.push(
-              new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                  .setCustomId('log_input2_value')
-                  .setLabel(`${settings.input2.label} ${settings.input2.unit}`)
-                  .setPlaceholder(`Goal: ${settings.input2.goal}`)
-                  .setStyle(TextInputStyle.Short)
-                  .setRequired(true)
-              )
-             );
-          }
-          if (settings.input3 && settings.input3.label && settings.input3.label.trim() !== "") {
-            components.push(
-              new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                  .setCustomId('log_input3_value')
-                  .setLabel(`${settings.input3.label} ${settings.input3.unit}`)
-                  .setPlaceholder(`Goal: ${settings.input3.goal}`)
-                  .setStyle(TextInputStyle.Short)
-                  .setRequired(true)
-               )
-            );
-          }
- 
-        // 1. Define the notesInput TextInputBuilder *without* the placeholder initially
-        const notesInput = new TextInputBuilder()
-          .setCustomId('log_notes')
-          .setLabel('💭 Experiment & Life Notes')
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true);
-
-        // 2. Logic to define the finalPlaceholder string
-        const userDeeperWish = settings.deeperProblem; // Get the user's deeper wish from settings
-        let finalPlaceholder;
-
-        if (userDeeperWish) {
-          const questionPrefix = "What affected your goal today? → ";
-          // Calculate remaining length for the wish.
-          // Aim for a total placeholder length of ~90-95 characters.
-          // The prefix "What affected your goal today? → " is 35 characters.
-          // So, let's allocate about 60 characters for the truncated wish.
-          const maxWishDisplayLength = 60; 
-
-          const truncatedWish = userDeeperWish.length > maxWishDisplayLength
-            ? userDeeperWish.substring(0, maxWishDisplayLength) + "..." // Add ellipsis if truncated
-            : userDeeperWish;
-          finalPlaceholder = questionPrefix + truncatedWish;
-        } else {
-          // Fallback if settings.deeperProblem is somehow not set or empty
-          finalPlaceholder = 'What did you observe? Any questions or insights?'; 
+        // Get settings and identify metric types
+        const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
+        if (!settingsResult || !settingsResult.settings) {
+          await interaction.editReply({ content: "🤔 You haven't set up your weekly experiment yet. Please use the 'Set Experiment' button first.", components: [] });
+          return;
         }
 
-        // 3. Set the dynamically created placeholder on notesInput
-        notesInput.setPlaceholder(finalPlaceholder);
+        const settings = settingsResult.settings;
+        const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
+        const timeMetrics = metrics.filter(metric => metric.unit === 'Time of Day');
+        const otherMetrics = metrics.filter(metric => metric.unit !== 'Time of Day');
 
-        // 4. Add the configured notesInput (now with the placeholder) to an ActionRowBuilder 
-        //    and then push it to your components array
-        components.push(
-          new ActionRowBuilder().addComponents(notesInput)
-        );
+        // Store all necessary info for the duration of the logging flow
+        const setupData = userExperimentSetupData.get(userId) || {};
+        setupData.logFlowSettings = settings;
+        setupData.logFlowTimeMetrics = timeMetrics;
+        setupData.logFlowOtherMetrics = otherMetrics;
+        setupData.timeLogIndex = 0; // Initialize index for sequential logging
+        setupData.loggedTimeValues = {}; // Initialize object to store results
+        userExperimentSetupData.set(userId, setupData);
 
-          modal.addComponents(components.slice(0, 5));
-          await interaction.showModal(modal);
-          const showModalTime = performance.now();
-          console.log(`[log_daily_progress_btn] showModal called successfully at ${showModalTime.toFixed(2)}ms. Total time: ${(showModalTime - logButtonStartTime).toFixed(2)}ms`);
-
+        if (timeMetrics.length > 0) {
+          // --- TIME METRICS EXIST: START SEQUENTIAL FLOW ---
+          // The helper function will now handle showing the first prompt
+          await sendNextTimeLogPrompt(interaction, userId);
+        } else {
+          // --- NO TIME METRICS: SHOW A BUTTON TO OPEN THE STANDARD MODAL ---
+          // This prevents the "defer/showModal" conflict.
+          console.log(`[log_daily_progress_btn INFO ${interactionId}] No time metrics found. Prompting to open standard log form.`);
+          const openModalButton = new ButtonBuilder()
+            .setCustomId('show_standard_log_modal_btn') // This is a new custom ID we will handle next
+            .setLabel('✍️ Open Log Form')
+            .setStyle(ButtonStyle.Success);
+          
+          await interaction.editReply({
+            content: "Ready to log your daily metrics? Click the button below to open the form.",
+            components: [new ActionRowBuilder().addComponents(openModalButton)]
+          });
+        }
       } catch (error) {
-          console.error(`[log_daily_progress_btn] Error for User ${interaction.user.tag}, InteractionID: ${interaction.id}:`, error);
-           if (!interaction.replied && !interaction.deferred && !interaction.responded) {
-                let userErrorMessage = '❌ An error occurred while preparing your log form. Please try again.';
-                if (error.message && (error.message.includes('Firebase Error') || error.message.includes('authentication failed'))) {
-                      userErrorMessage = `❌ Error fetching settings: ${error.message}`;
-                }
-                try {
-                    await interaction.reply({ content: userErrorMessage, flags: MessageFlags.Ephemeral });
-                } catch (replyError) { console.error('[log_daily_progress_btn] Failed to send error reply:', replyError); }
-           } else {
-                try {
-                     await interaction.followUp({ content: '❌ An error occurred after initiating the log process. Please try clicking the button again.', flags: MessageFlags.Ephemeral });
-                 } catch (followUpError) { console.error('[log_daily_progress_btn] Failed to send error follow-up:', followUpError); }
-           }
+        console.error(`[log_daily_progress_btn ERROR ${interactionId}] Error for User ${userId}:`, error);
+        const userErrorMessage = `❌ An error occurred while preparing your log form: ${error.message || 'Please try again.'}`;
+        if (interaction.replied || interaction.deferred) {
+          try { await interaction.editReply({ content: userErrorMessage, components: [], embeds: [] }); }
+          catch (e) { console.error(`[log_daily_progress_btn] Fallback editReply failed:`, e); }
+        }
       }
+    }
+
+    else if (interaction.customId === 'show_standard_log_modal_btn') {
+        const showModalButtonStartTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Building standard modal.`);
+        try {
+            const setupData = userExperimentSetupData.get(userId);
+            const settings = setupData?.logFlowSettings;
+
+            if (!settings) {
+                console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
+                await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Daily Data' again.", ephemeral: true });
+                return;
+            }
+
+            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
+            const components = [settings.output, settings.input1, settings.input2, settings.input3]
+                .filter(metric => metric && metric.label)
+                .map(metric => {
+                    let customId;
+                    if (metric.label === settings.output.label) customId = 'log_output_value';
+                    else if (metric.label === settings.input1.label) customId = 'log_input1_value';
+                    else if (metric.label === settings.input2.label) customId = 'log_input2_value';
+                    else if (metric.label === settings.input3.label) customId = 'log_input3_value';
+                    
+                    return new ActionRowBuilder().addComponents(
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} ${metric.unit}`).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                    );
+                });
+
+            const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
+            let finalPlaceholder = 'What did you observe? Any questions or insights?';
+            if (settings.deeperProblem) {
+                finalPlaceholder = `What affected your goal today? → ${settings.deeperProblem.substring(0, 60)}`;
+            }
+            notesInput.setPlaceholder(finalPlaceholder);
+            components.push(new ActionRowBuilder().addComponents(notesInput));
+
+            modal.addComponents(components);
+            await interaction.showModal(modal);
+            console.log(`[${interaction.customId} SUCCESS ${interactionId}] Standard modal shown to ${userId}.`);
+
+        } catch(error) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show standard modal for ${userId}:`, error);
+        }
+    }
+
+    else if (interaction.customId === LOG_TIME_NEXT_BTN_ID) {
+        const timeNextButtonStartTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        console.log(`[${LOG_TIME_NEXT_BTN_ID} START ${interactionId}] Clicked by ${userId}.`);
+        try {
+            await interaction.deferUpdate();
+
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || !setupData.logTimeH || !setupData.logTimeM || !setupData.logTimeAP) {
+                await interaction.editReply({ content: '⚠️ Please select an Hour, Minute, and AM/PM before clicking "Next".' });
+                return;
+            }
+
+            // Get the current metric being logged
+            const timeLogIndex = setupData.timeLogIndex || 0;
+            const currentMetric = setupData.logFlowTimeMetrics[timeLogIndex];
+
+            // Convert time to decimal
+            let hour = parseInt(setupData.logTimeH, 10);
+            const minute = parseInt(setupData.logTimeM, 10);
+            if (setupData.logTimeAP === 'PM' && hour !== 12) hour += 12;
+            if (setupData.logTimeAP === 'AM' && hour === 12) hour = 0;
+            const decimalTime = hour + (minute / 60);
+
+            // Store the result
+            setupData.loggedTimeValues[currentMetric.label] = decimalTime;
+            console.log(`[${LOG_TIME_NEXT_BTN_ID} INFO ${interactionId}] Stored time ${decimalTime} for metric "${currentMetric.label}".`);
+
+            // Increment index and clean up selections for the next prompt
+            setupData.timeLogIndex = timeLogIndex + 1;
+            delete setupData.logTimeH;
+            delete setupData.logTimeM;
+            delete setupData.logTimeAP;
+            userExperimentSetupData.set(userId, setupData);
+
+            // Call the helper to show the next prompt or the final button
+            await sendNextTimeLogPrompt(interaction, userId);
+
+        } catch (error) {
+            console.error(`[${LOG_TIME_NEXT_BTN_ID} ERROR ${interactionId}] Error processing "Next" button for ${userId}:`, error);
+        }
+    }
+
+    else if (interaction.customId === 'continue_to_final_log_btn') {
+        const finalLogButtonStartTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Building final modal for non-time metrics.`);
+        try {
+            const setupData = userExperimentSetupData.get(userId);
+            const otherMetrics = setupData?.logFlowOtherMetrics || [];
+            const settings = setupData?.logFlowSettings;
+
+            if (!settings) {
+                console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
+                await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Daily Data' again.", ephemeral: true });
+                return;
+            }
+
+            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Final Step: Notes & Other Metrics`);
+            const components = [];
+
+            // Add inputs ONLY for non-time metrics
+            otherMetrics.forEach(metric => {
+                let customId;
+                if (metric.label === settings.output.label) customId = 'log_output_value';
+                else if (metric.label === settings.input1.label) customId = 'log_input1_value';
+                else if (metric.label === settings.input2.label) customId = 'log_input2_value';
+                else if (metric.label === settings.input3.label) customId = 'log_input3_value';
+                
+                if (customId) {
+                    components.push(
+                        new ActionRowBuilder().addComponents(
+                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} ${metric.unit}`).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                        )
+                    );
+                }
+            });
+
+            // Always add the notes field
+            const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
+            let finalPlaceholder = 'What did you observe? Any questions or insights?';
+            if (settings.deeperProblem) {
+                finalPlaceholder = `What affected your goal today? → ${settings.deeperProblem.substring(0, 60)}`;
+            }
+            notesInput.setPlaceholder(finalPlaceholder);
+            components.push(new ActionRowBuilder().addComponents(notesInput));
+
+            modal.addComponents(components);
+            await interaction.showModal(modal);
+            console.log(`[${interaction.customId} SUCCESS ${interactionId}] Final modal shown to ${userId}.`);
+
+        } catch (error) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show final modal for ${userId}:`, error);
+        }
     }
 
     // --- Placeholder Handler for Streak Progress Button ---
@@ -4484,7 +4570,50 @@ client.on(Events.InteractionCreate, async interaction => {
 
   else if (interaction.isStringSelectMenu()) {
 
-    if (interaction.isStringSelectMenu() && interaction.customId === 'ai_outcome_label_select') {
+    if (interaction.customId.startsWith('log_time_select_')) {
+            const selectSubmitTime = performance.now();
+            const interactionId = interaction.id; // For logging
+            const userId = interaction.user.id;
+            const menuId = interaction.customId;
+            const selectedValue = interaction.values[0];
+
+            console.log(`[TimeLogSelect START ${interactionId}] User: ${userId} selected "${selectedValue}" for menu: ${menuId}.`);
+            try {
+                // We only need to acknowledge this interaction. The UI doesn't need to change yet.
+                await interaction.deferUpdate();
+
+                const setupData = userExperimentSetupData.get(userId);
+                if (!setupData) {
+                    console.error(`[TimeLogSelect CRITICAL ${interactionId}] Missing setup data for ${userId} on select menu interaction.`);
+                    // Cannot reply here as we just deferred. User will get an error on next button click.
+                    return;
+                }
+
+                // Store the selected value based on the custom ID of the select menu
+                switch (menuId) {
+                    case LOG_TIME_SELECT_H_ID:
+                        setupData.logTimeH = selectedValue;
+                        break;
+                    case LOG_TIME_SELECT_M_ID:
+                        setupData.logTimeM = selectedValue;
+                        break;
+                    case LOG_TIME_SELECT_AP_ID:
+                        setupData.logTimeAP = selectedValue;
+                        break;
+                    default:
+                        console.warn(`[TimeLogSelect WARN ${interactionId}] Unrecognized log_time_select_ menu ID: ${menuId}`);
+                        break;
+                }
+
+                userExperimentSetupData.set(userId, setupData);
+                console.log(`[TimeLogSelect END ${interactionId}] Stored time selection for ${userId}. Total time: ${(performance.now() - selectSubmitTime).toFixed(2)}ms`);
+
+            } catch (error) {
+                console.error(`[TimeLogSelect ERROR ${interactionId}] Error processing selection for ${menuId} for user ${userId}:`, error);
+            }
+        }
+
+    else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_outcome_label_select') {
       const selectMenuSubmitTime = performance.now();
       const interactionId = interaction.id; 
       const userId = interaction.user.id; 
@@ -4604,7 +4733,6 @@ client.on(Events.InteractionCreate, async interaction => {
       const processEndTime = performance.now();
       console.log(`[ai_outcome_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - selectMenuSubmitTime).toFixed(2)}ms`); // [cite: 1378]
     }
-  
     
     else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input1_label_select') {
       const input1LabelSelectSubmitTime = performance.now();
@@ -5306,49 +5434,76 @@ client.on(Events.InteractionCreate, async interaction => {
         const deferTime = performance.now();
         console.log(`[dailyLogModal_firebase] Deferral took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
 
-        // 2. Extract Submitted Values
-        const outputValue = interaction.fields.getTextInputValue('log_output_value')?.trim();
-        const input1Value = interaction.fields.getTextInputValue('log_input1_value')?.trim();
-        let input2Value = "";
-        try { input2Value = interaction.fields.getTextInputValue('log_input2_value')?.trim(); } catch { /* Field likely didn't exist */ }
-        let input3Value = "";
-        try { input3Value = interaction.fields.getTextInputValue('log_input3_value')?.trim(); } catch { /* Field likely didn't exist */ }
+        // 2. Get data from memory
+        const setupData = userExperimentSetupData.get(interaction.user.id);
+        const settings = setupData?.logFlowSettings;
+        const loggedTimeValues = setupData?.loggedTimeValues || {};
+
+        if (!settings) {
+            await interaction.editReply({ content: "❌ Error: Could not find the settings for this experiment log. Please try starting the log process again.", components: [] });
+            return;
+        }
+
+        // 3. Initialize payload variables
+        let payloadOutputValue;
+        const payloadInputValues = ["", "", ""];
         const notes = interaction.fields.getTextInputValue('log_notes')?.trim();
 
-        // 3. Basic Validation (Client-side check)
-        if (!outputValue || !input1Value || !notes) {
+        // 4. Consolidate values from modal fields and saved time values
+        // Process Output
+        if (settings.output && settings.output.label) {
+            if (loggedTimeValues.hasOwnProperty(settings.output.label)) {
+                payloadOutputValue = loggedTimeValues[settings.output.label];
+            } else {
+                try { payloadOutputValue = interaction.fields.getTextInputValue('log_output_value')?.trim(); } catch { /* was not in modal */ }
+            }
+        }
+
+        // Process Inputs
+        for (let i = 0; i < 3; i++) {
+            const inputConfig = settings[`input${i + 1}`];
+            if (inputConfig && inputConfig.label) {
+                if (loggedTimeValues.hasOwnProperty(inputConfig.label)) {
+                    payloadInputValues[i] = loggedTimeValues[inputConfig.label];
+                } else {
+                    try { payloadInputValues[i] = interaction.fields.getTextInputValue(`log_input${i + 1}_value`)?.trim(); } catch { /* was not in modal */ }
+                }
+            }
+        }
+
+        // 5. Basic Validation
+        if (!payloadOutputValue || !payloadInputValues[0] || !notes) {
             await interaction.editReply({ content: "❌ Missing required fields (Outcome, Habit 1, or Notes)." });
             return;
         }
-        // Add specific validation for numeric inputs if desired, though Firebase function also validates
-        if (isNaN(parseFloat(outputValue))) {
-            await interaction.editReply({ content: `❌ Value for Outcome must be a number. You entered: "${outputValue}"` });
-            return;
-        }
-        if (isNaN(parseFloat(input1Value))) {
-            await interaction.editReply({ content: `❌ Value for Input 1 must be a number. You entered: "${input1Value}"` });
-            return;
-        }
-        if (input2Value && isNaN(parseFloat(input2Value))) {
-            await interaction.editReply({ content: `❌ Value for Input 2 must be a number if provided. You entered: "${input2Value}"` });
-            return;
-        }
-        if (input3Value && isNaN(parseFloat(input3Value))) {
-            await interaction.editReply({ content: `❌ Value for Input 3 must be a number if provided. You entered: "${input3Value}"` });
+        if (isNaN(parseFloat(payloadOutputValue)) || (payloadInputValues[0] && isNaN(parseFloat(payloadInputValues[0])))) {
+            await interaction.editReply({ content: `❌ Values for Outcome and required Habits must be numbers.` });
             return;
         }
 
-
-        // 4. Structure Payload for Firebase 'submitLog' (HTTP) Function
+        // 6. Structure final payload
         const payload = {
-        outputValue,
-        inputValues: [input1Value, input2Value || "", input3Value || ""],
-        notes,
-        userTag: interaction.user.tag // <<< Add this line
+            outputValue: payloadOutputValue,
+            inputValues: payloadInputValues,
+            notes,
+            userTag: interaction.user.tag
         };
+        
+        // 7. Clean up temporary log flow data from memory
+        if (setupData) {
+            delete setupData.logFlowSettings;
+            delete setupData.logFlowTimeMetrics;
+            delete setupData.logFlowOtherMetrics;
+            delete setupData.loggedTimeValues;
+            delete setupData.timeLogIndex;
+            delete setupData.logTimeH;
+            delete setupData.logTimeM;
+            delete setupData.logTimeAP;
+            userExperimentSetupData.set(interaction.user.id, setupData);
+        }
+
         console.log('[dailyLogModal_firebase] Payload for submitLog (HTTP):', payload); // This log will now show the userTag
         
-        console.log('[dailyLogModal_firebase] Payload for submitLog (HTTP):', payload);
 
         const fbCallStartTime = performance.now();
         console.log(`[dailyLogModal_firebase] Calling submitLog (HTTP) for User: ${interaction.user.id}...`);

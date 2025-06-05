@@ -906,6 +906,24 @@ exports.updateWeeklySettings = onCall(async (request) => {
       logger.warn(`Validation failed for user ${userId} during /experiment settings: ${error.message}`);
       throw error;
     }
+
+     // +++ INSERT THIS NEW VALIDATION BLOCK HERE +++
+    const allLabels = [
+      parsedOutput.label,
+      parsedInput1.label,
+      parsedInput2.label,
+      parsedInput3.label
+    ].filter(label => label && label.trim() !== ""); // Get all non-empty labels
+
+    const uniqueLabels = new Set(allLabels);
+
+    if (uniqueLabels.size < allLabels.length) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Duplicate metric labels are not allowed. Please ensure each tracked habit and outcome has a unique name.'
+      );
+    }
+    // +++ END OF NEW VALIDATION BLOCK +++
   
     const weeklySettingsData = {
       deeperProblem: deeperProblem.trim(), // Store the deeper problem
@@ -3730,8 +3748,8 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
 
   // 3. Construct Prompt for LLM
   const promptText = `
-    Based on the user's "Deeper Wish" for their daily life: "${userWish}", your task is to generate 5 distinct and relevant potential "Outcome Metrics" that someone might track daily to see if they are making progress related to their wish.
-    It should be a **key state, feeling, or result** that helps the user know if they are making progress on their "Deeper Wish." The metric should be **simple to assess and record each day.**
+    Based on the user's "Deeper Wish" for their daily life: "${userWish}", your task is to generate 5 distinct and relevant "Outcome Metrics" the user could track daily to see if they are making progress related to their wish.
+    It should be a **key state, feeling, or result** that helps the user know if they are making progress on their "Deeper Wish." The metric should be **simple to assess and record as a postive number (>0, decimals included) each day.**
 
     Think in terms of things that are measurable by:
         * **Simple Rating Scales:** How did the user feel or perceive a state?
@@ -3739,13 +3757,23 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
         * **Simple Counts of Key Results or Events outside the user's control (or that the user has so much inner resistance to, that it is practically outside their direct control):** Is the user accumulating specific positive states (or avoiding negative states) that are easy to identify and count?
             * Examples: 'Mindful Moments', 'Food Cravings'.
 
-        Provide diverse labels that fit these simple measurement types for an **outcome**. Avoid suggesting labels that require complex tracking (like precise durations of subjective states) or are themselves actions/habits. The goal is a straightforward daily check-in on the outcome.
+        Provide diverse labels that fit these simple measurement types for an **outcome**. Avoid suggesting labels that require complex tracking (like precise durations of subjective states) or are themselves actions/habits. The goal is a 1-minute daily logging of the outcome metric.
+
+    For your reference: after you provide the labels, the user will choose a scale/units to measure the outcome by. Users will get scale/unit suggestions from this array:
+    { label: '0-10 rating', description: 'A numerical scale from 0 to 10.' },
+    { label: '1=Yes / 0=No', description: 'Yes/No with 1 for Yes, 0 for No.' },
+    { label: 'Tasks completed', description: 'Count of tasks finished.' },
+    { label: 'Days in a row', description: 'Number of consecutive days.' },
+    { label: 'AM', description: 'Use decimals, e.g., 9:30 = 9.5.' },
+    { label: 'PM', description: 'Use decimals, e.g., 4:15 = 4.25.' },
+    { label: '% growth', description: 'Percentage increase (no negative numbers).' },
+    { label: 'Compared to yesterday', description: '0=Much Worse, 5=Same, 10=Much Better.' }
 
     For each of the five suggestions, you MUST provide:
-    1.  A "label": A clear, concise name for the outcome metric they will track daily (e.g., 'Overall Mood', 'Productive Hours', 'Sleep Quality', 'Feeling of Connection', 'Stress Level'). Max 25 characters.
-    2.  A "briefExplanation": A short (10-15 words) explanation of the relevance to the user's wish.
+        1.  A "label": A clear, concise name for the outcome metric they will track daily (e.g., 'Overall Mood', 'Productive Hours', 'Sleep Quality', 'Feeling of Connection', 'Stress Level'). Max 25 characters.
+        2.  A "briefExplanation": A short (10-15 words) explanation of the relevance to the user's wish.
 
-    The suggestions should make sense, with 1 or 2 being more creative. Start the creative suggestions' "briefExplanations" with the word "More creative:"
+    The suggestions should fit the deeper wish, with 1 or 2 being more creative. Start the creative suggestions' "briefExplanations" with the phrase "More creative:"
     Return ONLY a valid JSON array containing 5 objects, where each object represents an outcome metric suggestion and strictly follows the structure:
     { "label": "Example Label", "briefExplanation": "Example explanation." }
 
