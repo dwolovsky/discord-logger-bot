@@ -836,61 +836,23 @@ async function callFirebaseFunction(functionName, data = {}, userId) {
 }
 
 /**
- * Sends a final summary DM and prompts the user to post publicly.
+ * Shows an ephemeral message asking the user if they want to post publicly.
+ * The summary DM is now sent *after* they make a choice.
  * @param {import('discord.js').Interaction} interaction - The interaction to reply to (usually Button or ModalSubmit)
  * @param {object} setupData - The data stored in userExperimentSetupData
- * @param {string} reminderSummary - Text describing the reminder setup ("Reminders skipped", "Reminders set for...")
- * @param {string[]} motivationalMessagesArray - Array of motivational messages
  */
-async function showPostToGroupPrompt(interaction, setupData, reminderSummary, motivationalMessagesArray) {
-  const userId = interaction.user.id; // Get userId for cleanup
-  const randomMotivationalMessage = motivationalMessagesArray[Math.floor(Math.random() * motivationalMessagesArray.length)];
-
-  // --- Build the Comprehensive DM Embed ---
-  const dmEmbed = new EmbedBuilder()
-      .setColor('#57F287') // Green for success
-      .setTitle('🎉 Experiment Setup Complete! 🎉')
-      .setDescription(`${randomMotivationalMessage}\n\nHere's the final summary of your new experiment. Good luck!`)
-      .addFields(
-          // Field 1: Deeper Problem (from setupData)
-          { name: '🎯 Deeper Goal / Problem / Theme', value: setupData.deeperProblem || 'Not specified' },
-          // Field 2: Initial Settings Summary (use the message from Firebase stored earlier)
-          // We need to extract the *core* settings part from the result message stored previously
-          // Or reconstruct it from rawPayload if simpler
-           { name: '📋 Initial Settings', value: `Outcome: "${setupData.outputLabel}"\nHabit 1: "${setupData.input1Label}"${setupData.input2Label ? `\nHabit 2: "${setupData.input2Label}"`:''}${setupData.input3Label ? `\nHabit 3: "${setupData.input3Label}"`:''}` },
-         // { name: '📋 Initial Settings', value: setupData.settingsMessage.split('\n\n')[1] || 'Could not parse settings summary.' }, // Example parsing, adjust as needed based on Firebase message format
-          // Field 3: Duration (from setupData)
-          { name: '🗓️ Experiment Duration', value: `${setupData.experimentDuration.replace('_', ' ')} (Stats report interval)` },
-          // Field 4: Reminders (passed as argument)
-          { name: '⏰ Reminders', value: reminderSummary }
-      )
-      .setFooter({ text: `User: ${interaction.user.tag}`})
-      .setTimestamp();
-  // --- End Embed Build ---
-
-  try {
-      // Send the DM
-      await interaction.user.send({ embeds: [dmEmbed] });
-      console.log(`[showPostToGroupPrompt ${interaction.id}] Sent final summary DM to ${interaction.user.tag}`);
-  } catch (dmError) {
-      console.error(`[showPostToGroupPrompt ${interaction.id}] Failed to send DM confirmation to ${interaction.user.tag}:`, dmError);
-      // Optionally try to inform user in the ephemeral message if DM fails
-      // Non-critical, proceed with ephemeral prompt
-  }
-
+async function showPostToGroupPrompt(interaction, setupData) {
   // --- Show Ephemeral "Post to group?" Buttons ---
   const postToGroupButtons = new ActionRowBuilder()
       .addComponents(
           new ButtonBuilder().setCustomId('post_exp_final_yes').setLabel('📣 Yes, Post It!').setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId('post_exp_final_no').setLabel('🤫 No, Keep Private').setStyle(ButtonStyle.Secondary)
       );
-
-  // Edit the reply from the previous step (reminder modal submit or skip button)
   try {
        // Check if we can editReply (it should be possible as the interaction was deferred/updated)
        if (interaction.replied || interaction.deferred) {
             await interaction.editReply({
-               content: `✨ Your experiment is fully configured! I've just DMed you the final summary.\n\n**Share your commitment with the #experiments channel?**`,
+               content: "✨ Your experiment is fully configured!\n\n**Share your commitment with the #experiments channel?**\n\n*(I'll send you a DM with your setup summary after you choose.)*",
                components: [postToGroupButtons],
                embeds: [] // Clear any previous ephemeral embeds
            });
@@ -898,18 +860,17 @@ async function showPostToGroupPrompt(interaction, setupData, reminderSummary, mo
        } else {
             // Fallback if somehow the interaction wasn't replied/deferred (less likely)
             await interaction.reply({
-                content: `✨ Your experiment is fully configured! I've just DMed you the final summary.\n\n**Share your commitment with the #experiments channel?**`,
+                content: "✨ Your experiment is fully configured!\n\n**Share your commitment with the #experiments channel?**\n\n*(I'll send you a DM with your setup summary after you choose.)*",
                 components: [postToGroupButtons],
                 flags: MessageFlags.Ephemeral
             });
-            console.log(`[showPostToGroupPrompt ${interaction.id}] Replied with post-to-group prompt (fallback).`);
+           console.log(`[showPostToGroupPrompt ${interaction.id}] Replied with post-to-group prompt (fallback).`);
        }
   } catch (promptError) {
        console.error(`[showPostToGroupPrompt ${interaction.id}] Error showing post-to-group prompt:`, promptError);
-       // Attempt a followup if editReply failed
        try {
            await interaction.followUp({
-               content: `✨ Experiment configured & summary DMed! Failed to show post prompt buttons.`,
+               content: "✨ Experiment configured! Failed to show post prompt buttons.",
                flags: MessageFlags.Ephemeral
            });
        } catch (followUpError) {
@@ -917,6 +878,42 @@ async function showPostToGroupPrompt(interaction, setupData, reminderSummary, mo
        }
   }
   // Note: userExperimentSetupData cleanup happens *after* the Yes/No buttons are handled.
+}
+
+/**
+ * Sends the final experiment summary DM to the user.
+ * @param {import('discord.js').Interaction} interaction - The interaction object.
+ * @param {object} setupData - The data stored in userExperimentSetupData.
+ */
+async function sendFinalSummaryDM(interaction, setupData) {
+    console.log(`[sendFinalSummaryDM ${interaction.id}] Preparing to send final summary DM to ${interaction.user.tag}`);
+    if (!setupData) {
+        console.error(`[sendFinalSummaryDM ${interaction.id}] setupData is missing.`);
+        return; // Can't send without data
+    }
+
+    const randomMotivationalMessage = experimentSetupMotivationalMessages[Math.floor(Math.random() * experimentSetupMotivationalMessages.length)];
+    const dmEmbed = new EmbedBuilder()
+      .setColor('#57F287') // Green for success
+      .setTitle('🎉 Experiment Setup Complete! 🎉')
+      .setDescription(`${randomMotivationalMessage}\n\nHere's the final summary of your new experiment. Good luck!`)
+      .addFields(
+          { name: '🎯 Deeper Goal / Problem / Theme', value: setupData.deeperProblem || 'Not specified' },
+          { name: '📋 Initial Settings', value: `Outcome: "${setupData.outputLabel}"\nHabit 1: "${setupData.input1Label}"${setupData.input2Label ? `\nHabit 2: "${setupData.input2Label}"`:''}${setupData.input3Label ? `\nHabit 3: "${setupData.input3Label}"`:''}` },
+          { name: '🗓️ Experiment Duration', value: `${setupData.experimentDuration.replace('_', ' ')} (Stats report interval)` },
+          { name: '⏰ Reminders', value: setupData.reminderSummary || 'Reminder status not recorded.' } // Use stored summary
+      )
+     .setFooter({ text: `User: ${interaction.user.tag}`})
+     .setTimestamp();
+
+    try {
+      await interaction.user.send({ embeds: [dmEmbed] });
+      console.log(`[sendFinalSummaryDM ${interaction.id}] Sent final summary DM to ${interaction.user.tag}`);
+    } catch (dmError) {
+      console.error(`[sendFinalSummaryDM ${interaction.id}] Failed to send DM confirmation to ${interaction.user.tag}:`, dmError);
+      // Re-throw the error so the calling button handler can be aware of the failure.
+      throw dmError;
+    }
 }
 
 
@@ -4378,22 +4375,19 @@ client.on(Events.InteractionCreate, async interaction => {
         const scheduleResult = await callFirebaseFunction('setExperimentSchedule', payload, userId);
 
         // Proposed replacement for the success/else block for CONFIRM_REMINDER_BTN_ID
-        if (scheduleResult && scheduleResult.success && scheduleResult.experimentId) { // Check for experimentId
-          const experimentId = scheduleResult.experimentId; // Capture experimentId
-          setupData.experimentId = experimentId; // Store it in setupData if needed by showPostToGroupPrompt
-          userExperimentSetupData.set(userId, setupData); // Update map
+        if (scheduleResult && scheduleResult.success && scheduleResult.experimentId) {
+          const experimentId = scheduleResult.experimentId;
+          setupData.experimentId = experimentId;
+          userExperimentSetupData.set(userId, setupData);
 
           console.log(`[${interaction.customId} FIREBASE_SUCCESS ${interactionId}] setExperimentSchedule successful for ${userId}. Experiment ID: ${experimentId}.`);
-          const reminderSummary = setupData.reminderFrequency === 'none'
-              ? "No reminders set (this is unexpected here)."
-              // Make sure formatHourForDisplay, startHour24, and endHour24 are defined in this scope
-              // or passed appropriately if this specific snippet is taken verbatim.
-              // For context, in my previous full response, formatHourForDisplay was defined
-              // within the CONFIRM_REMINDER_BTN_ID handler before this block.
-              // If they are not, this line will cause an error.
-              : `Reminders set for ${setupData.reminderFrequency.replace(/_/g, ' ')} between ${formatHourForDisplay(startHour24)} - ${formatHourForDisplay(endHour24)} (your local time approx, based on current time provided).`;
+          const reminderSummary = `Reminders set for ${setupData.reminderFrequency.replace(/_/g, ' ')} between ${formatHourForDisplay(startHour24)} - ${formatHourForDisplay(endHour24)} (your local time approx, based on current time provided).`;
+          
+          // Store the summary in setupData for the DM later
+          setupData.reminderSummary = reminderSummary;
+          userExperimentSetupData.set(userId, setupData);
 
-          await showPostToGroupPrompt(interaction, setupData, reminderSummary, experimentSetupMotivationalMessages);
+          await showPostToGroupPrompt(interaction, setupData); // Call the modified function
         } else {
           console.error(`[${interaction.customId} FIREBASE_FAIL ${interactionId}] setExperimentSchedule failed for ${userId} or experimentId missing. Result:`, scheduleResult);
           await interaction.editReply({
@@ -4457,11 +4451,15 @@ client.on(Events.InteractionCreate, async interaction => {
     console.log(`[skip_reminders_btn] Calling setExperimentSchedule for ${userId} with skipped reminders. Payload:`, payload);
     try {
       const scheduleResult = await callFirebaseFunction('setExperimentSchedule', payload, userId);
-
       if (scheduleResult && scheduleResult.success) {
         console.log(`[skip_reminders_btn] setExperimentSchedule successful for ${userId} (reminders skipped).`);
+        
+        // Store the reminder summary in setupData for the DM later
+        setupData.reminderSummary = "Reminders skipped as per your choice.";
+        userExperimentSetupData.set(userId, setupData);
+
         // Proceed to "Post to group?" prompt
-        await showPostToGroupPrompt(interaction, setupData, "Reminders skipped as per your choice.", experimentSetupMotivationalMessages);
+        await showPostToGroupPrompt(interaction, setupData);
       } else {
         console.error(`[skip_reminders_btn] setExperimentSchedule failed for ${userId} (reminders skipped). Result:`, scheduleResult);
         await interaction.editReply({ content: `⚠️ Could not finalize experiment (reminders skipped): ${scheduleResult ? scheduleResult.error : 'Unknown server error.'}. Your experiment settings and duration are saved.`, components: [] });
@@ -4474,39 +4472,43 @@ client.on(Events.InteractionCreate, async interaction => {
 
    // Button handlers for the FINAL "Post to group?"
    else if (interaction.isButton() && interaction.customId === 'post_exp_final_yes') {
-      await interaction.deferUpdate(); // Acknowledge button
+      await interaction.deferUpdate();
       const userId = interaction.user.id;
       const setupData = userExperimentSetupData.get(userId);
+      let dmFailed = false;
 
-      // Add guildId to the condition check
-      if (!setupData || !setupData.settingsMessage || !setupData.rawPayload || !setupData.guildId || !setupData.experimentDuration) {
+      if (!setupData || !setupData.rawPayload || !setupData.guildId || !setupData.experimentDuration) {
           await interaction.editReply({ content: "⚠️ Error: Could not retrieve complete experiment details or original server context to post. Your settings are saved.", components: [] });
-          userExperimentSetupData.delete(userId); // Cleanup
+          userExperimentSetupData.delete(userId);
           return;
       }
 
-      const experimentsChannelId = '1364283719296483329'; // Your hardcoded channel ID
-      let targetGuild;
-
+      // Send the summary DM first
       try {
-          targetGuild = await client.guilds.fetch(setupData.guildId); // Fetch guild using stored ID
+          await sendFinalSummaryDM(interaction, setupData);
+      } catch (dmError) {
+          console.warn(`[post_exp_final_yes] Failed to send summary DM, but proceeding with public post.`);
+          dmFailed = true;
+      }
+
+      const experimentsChannelId = '1364283719296483329';
+      let targetGuild;
+      try {
+          targetGuild = await client.guilds.fetch(setupData.guildId);
       } catch (guildFetchError) {
           console.error(`[post_exp_final_yes] Error fetching guild ${setupData.guildId}:`, guildFetchError);
           await interaction.editReply({ content: "⚠️ Error: Could not find the original server to post to. Your settings are saved.", components: [] });
-          userExperimentSetupData.delete(userId); // Cleanup
+          userExperimentSetupData.delete(userId);
           return;
       }
 
       const channel = targetGuild.channels.cache.get(experimentsChannelId);
-      // For more robustness, consider: const channel = await targetGuild.channels.fetch(experimentsChannelId).catch(() => null);
-
-
       if (channel && channel.isTextBased()) {
           try {
-              const { deeperProblem, outputSetting, inputSettings } = setupData.rawPayload; // [cite: 2262]
+              const { deeperProblem, outputSetting, inputSettings } = setupData.rawPayload;
               const postEmbed = new EmbedBuilder()
                   .setColor('#7289DA') // Blue
-                  .setTitle(`🚀 ${interaction.user.username} is starting a new experiment!`) // interaction.user.username is fine from DM
+                  .setTitle(`🚀 ${interaction.user.username} is starting a new experiment!`)
                   .setDescription(`**🎯 Deeper Goal / Problem / Theme:**\n${deeperProblem}`)
                   .addFields(
                       { name: '📊 Daily Outcome to Track', value: outputSetting || "Not specified" },
@@ -4514,32 +4516,57 @@ client.on(Events.InteractionCreate, async interaction => {
                   )
                   .setFooter({ text: `Let's support them! Duration: ${setupData.experimentDuration.replace('_', ' ')}` })
                   .setTimestamp();
-
-              if (inputSettings[1]) { // [cite: 2266]
+              if (inputSettings[1]) {
                   postEmbed.addFields({ name: '🛠️ Habit 2', value: inputSettings[1], inline: true });
               }
-              if (inputSettings[2]) { // [cite: 2267]
+              if (inputSettings[2]) {
                   postEmbed.addFields({ name: '🛠️ Habit 3', value: inputSettings[2], inline: true });
               }
 
               await channel.send({ embeds: [postEmbed] });
-              await interaction.editReply({ content: `✅ Shared to the #experiments channel in ${targetGuild.name}!`, components: [] }); // [cite: 2269]
+
+              const finalMessage = dmFailed
+                ? `✅ Shared to the #experiments channel! (I couldn't DM you the summary, you may have DMs disabled).`
+                : `✅ Shared to the #experiments channel in ${targetGuild.name}! I've also DMed you the summary.`;
+
+              await interaction.editReply({ content: finalMessage, components: [] });
           } catch (postError) {
-              console.error(`[post_exp_final_yes] Error posting to channel ${experimentsChannelId}:`, postError); // [cite: 2270]
-              await interaction.editReply({ content: "⚠️ Could not post to the #experiments channel. Please check my permissions there. Your settings are saved.", components: [] }); // [cite: 2271]
+              console.error(`[post_exp_final_yes] Error posting to channel ${experimentsChannelId}:`, postError);
+              await interaction.editReply({ content: "⚠️ Could not post to the #experiments channel. Please check my permissions there. Your settings are saved.", components: [] });
           }
       } else {
-          await interaction.editReply({ content: `⚠️ Could not find the #experiments channel in ${targetGuild.name}. Your settings are saved.`, components: [] }); // [cite: 2272]
+          await interaction.editReply({ content: `⚠️ Could not find the #experiments channel in ${targetGuild.name}. Your settings are saved.`, components: [] });
       }
-      userExperimentSetupData.delete(userId); // Clean up [cite: 2273]
+      userExperimentSetupData.delete(userId);
    }
    
    else if (interaction.isButton() && interaction.customId === 'post_exp_final_no') {
+      const userId = interaction.user.id;
+      const setupData = userExperimentSetupData.get(userId);
+      let dmFailed = false;
+
+      // Send the summary DM first
+      if (setupData) {
+          try {
+              await sendFinalSummaryDM(interaction, setupData);
+          } catch (dmError) {
+              console.warn(`[post_exp_final_no] Failed to send summary DM.`);
+              dmFailed = true;
+          }
+      } else {
+          console.warn(`[post_exp_final_no] Could not send summary DM because setupData was missing.`);
+          dmFailed = true; // Treat as a failure to DM
+      }
+      
+      const finalMessage = dmFailed
+          ? "👍 Got it! Your experiment is all set and kept private. (I couldn't DM you the summary, you may have DMs disabled)."
+          : "👍 Got it! Your experiment is all set and kept private. I've DMed you a summary. Good luck!";
+      
       await interaction.update({
-          content: "👍 Got it! Your experiment is all set and kept private. Good luck!",
+          content: finalMessage,
           components: []
       });
-      userExperimentSetupData.delete(interaction.user.id); // Clean up
+      userExperimentSetupData.delete(interaction.user.id);
    }
 
     // --- Handler for "Start New Experiment?" button (from delayed DM) ---
@@ -4846,7 +4873,7 @@ client.on(Events.InteractionCreate, async interaction => {
           console.log(`[ai_input1_label_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom habit label' for Input 1.`);
           setupData.dmFlowState = 'awaiting_input1_label_text'; // Fallback to existing state for manual text input
           userExperimentSetupData.set(userId, setupData);
-          const customLabelPrompt = `Please type your habit (or life priority) below\n\nE.g.\n● " Journaling"\n● "Mindful Walk"\n● "Exercise".\n\n(max 30 characters)`;
+          const customLabelPrompt = `Please type your habit (or life priority) below\n\nE.g.\n● "Journaling"\n● "Mindful Walk"\n● "Exercise".\n\n(max 30 characters)`;
           try {
             await interaction.editReply({
               content: customLabelPrompt,
@@ -5207,7 +5234,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
           console.log(`[${OUTCOME_UNIT_SELECT_ID} PREDEFINED_UNIT_SELECTED ${interactionId}] User ${userTagForLog} selected Outcome Unit: "${selectedValue}". State changed to '${setupData.dmFlowState}'.`);
           
-          const targetPromptMessage = `Perfect! Your Measurable Outcome is:\n\n**"${setupData.outcomeLabel}"** measured in **"${setupData.outcomeUnit}"**.\n\nWhat is your daily **Target Number** for this?\nPlease type the number below (e.g., 4, 7.5, 0, 1).`;
+          const targetPromptMessage = `Perfect! Your Measurable Outcome is:\n\n**"${setupData.outcomeLabel}"** measured in **"${setupData.outcomeUnit}"**.\n\nWhat is your daily **Target Number** for this?\nPlease type the number below\n(e.g.4, 7.5, 0, 1).`;
           
           try {
             await interaction.editReply({
