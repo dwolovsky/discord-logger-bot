@@ -168,25 +168,40 @@ function setupStatsNotificationListener(client) {
                             const metricDetails = statsReportData.calculatedMetricStats[metricKey];
                             let fieldValue = '';
                             if (metricDetails.status === 'skipped_insufficient_data') {
-                                fieldValue = `Average: N/A (Needs ${metricDetails.dataPoints !== undefined ? 5 : 'more'} data points)\nVaration %: N/A\nData Points: ${metricDetails.dataPoints !== undefined ? metricDetails.dataPoints : 'N/A'}`;
+                                fieldValue = `Average: N/A (Needs ${metricDetails.dataPoints !== undefined ? 5 : 'more'} data points)\nMedian: N/A\nVariation %: N/A\nData Points: ${metricDetails.dataPoints !== undefined ? metricDetails.dataPoints : 'N/A'}`;
                             } else {
-                                // --- START MODIFICATION ---
+                                // Average
                                 if (metricDetails.average !== undefined && !isNaN(metricDetails.average)) {
-                                    // Check if the unit matches any time of day keyword
                                     if (isTimeMetric(metricDetails.unit)) {
-                                         fieldValue += `Average: ${formatDecimalAsTime(metricDetails.average)}\n`;
+                                        fieldValue += `Average: ${formatDecimalAsTime(metricDetails.average)}\n`;
                                     } else {
                                         fieldValue += `Average: ${parseFloat(metricDetails.average).toFixed(2)}\n`;
                                     }
                                 } else {
-                                    fieldValue += `Average: N/A\n`;
+                                    fieldValue += 'Average: N/A\n';
                                 }
-                                // --- END MODIFICATION ---
+                                // Median
+                                if (metricDetails.median !== undefined && !isNaN(metricDetails.median)) {
+                                    if (isTimeMetric(metricDetails.unit)) {
+                                        fieldValue += `Median: ${formatDecimalAsTime(metricDetails.median)}\n`;
+                                    } else {
+                                        fieldValue += `Median: ${parseFloat(metricDetails.median).toFixed(2)}\n`;
+                                    }
+                                } else {
+                                    fieldValue += 'Median: N/A\n';
+                                }
 
-                                if (metricDetails.variationPercentage !== undefined && !isNaN(metricDetails.variationPercentage)) fieldValue += `Variation: ${parseFloat(metricDetails.variationPercentage).toFixed(2)}%\n`;
-                                else fieldValue += `Varation: N/A\n`;
-                                if (metricDetails.dataPoints !== undefined) fieldValue += `Data Points: ${metricDetails.dataPoints}\n`;
-                                else fieldValue += `Data Points: N/A\n`;
+                                // Variation and Data Points
+                                if (metricDetails.variationPercentage !== undefined && !isNaN(metricDetails.variationPercentage)) {
+                                    fieldValue += `Variation: ${parseFloat(metricDetails.variationPercentage).toFixed(2)}%\n`;
+                                } else {
+                                    fieldValue += 'Variation: N/A\n';
+                                }
+                                if (metricDetails.dataPoints !== undefined) {
+                                    fieldValue += `Data Points: ${metricDetails.dataPoints}`;
+                                } else {
+                                    fieldValue += 'Data Points: N/A';
+                                }
                             }
                             
                             if (fieldValue.trim() !== '') {
@@ -477,6 +492,7 @@ const userExperimentSetupData = new Map(); // To temporarily store data between 
  */
 function formatDecimalAsTime(decimalHours) {
     if (isNaN(decimalHours) || decimalHours === null) return 'N/A';
+    decimalHours = decimalHours % 24; // Handle values >= 24 from shifted calculations
     let hours = Math.floor(decimalHours) % 24;
     const minutesFraction = decimalHours - Math.floor(decimalHours);
     let minutes = Math.round(minutesFraction * 60);
@@ -518,7 +534,22 @@ async function sendNextTimeLogPrompt(interaction, userId) {
       .setFooter({ text: 'Make your selection, then click Next.' });
 
     const timeHourSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_H_ID).setPlaceholder('Select the HOUR').addOptions(Array.from({ length: 12 }, (_, i) => new StringSelectMenuOptionBuilder().setLabel(String(i + 1)).setValue(String(i + 1))));
-    const timeMinuteSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_M_ID).setPlaceholder('Select the MINUTE').addOptions(new StringSelectMenuOptionBuilder().setLabel(':00').setValue('00'), new StringSelectMenuOptionBuilder().setLabel(':15').setValue('15'), new StringSelectMenuOptionBuilder().setLabel(':30').setValue('30'), new StringSelectMenuOptionBuilder().setLabel(':45').setValue('45'));
+    const timeMinuteSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_M_ID).setPlaceholder('Select the MINUTE').addOptions(
+      new StringSelectMenuOptionBuilder().setLabel(':00').setValue('00'),
+      new StringSelectMenuOptionBuilder().setLabel(':05').setValue('05'),
+      new StringSelectMenuOptionBuilder().setLabel(':10').setValue('10'),
+      new StringSelectMenuOptionBuilder().setLabel(':15').setValue('15'),
+      new StringSelectMenuOptionBuilder().setLabel(':20').setValue('20'),
+      new StringSelectMenuOptionBuilder().setLabel(':25').setValue('25'),
+      new StringSelectMenuOptionBuilder().setLabel(':30').setValue('30'),
+      new StringSelectMenuOptionBuilder().setLabel(':35').setValue('35'),
+      new StringSelectMenuOptionBuilder().setLabel(':40').setValue('40'),
+      new StringSelectMenuOptionBuilder().setLabel(':45').setValue('45'),
+      new StringSelectMenuOptionBuilder().setLabel(':50').setValue('50'),
+      new StringSelectMenuOptionBuilder().setLabel(':55').setValue('55')
+    );
+    
+    
     const timeAmPmSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_AP_ID).setPlaceholder('Select AM or PM').addOptions(new StringSelectMenuOptionBuilder().setLabel('AM').setValue('AM'), new StringSelectMenuOptionBuilder().setLabel('PM').setValue('PM'));
     const nextButton = new ButtonBuilder().setCustomId(LOG_TIME_NEXT_BTN_ID).setLabel('Next →').setStyle(ButtonStyle.Primary);
 

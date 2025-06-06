@@ -1652,6 +1652,7 @@ function interpretFirebaseGroupKey(groupKeyString, input1Label, input2Label) {
 // ============== END OF STATS HELPER FUNCTIONS ==============
 
 // ============== INTERNAL HELPER FUNCTION for Stats Calculation ==============
+// ============== INTERNAL HELPER FUNCTION for Stats Calculation ==============
 /**
  * Core logic for calculating and storing period statistics.
  * This function is NOT directly callable via HTTPS, it's an internal helper.
@@ -1676,7 +1677,6 @@ async function _calculateAndStorePeriodStatsLogic(
 ) {
     const db = admin.firestore(); // Ensure db is initialized from admin
     logger.log(`[${callingFunction}] _calculateAndStorePeriodStatsLogic started for user: ${userId}, experiment ID: ${experimentId}`);
-
     // Step 1: Basic Input Validation (already somewhat done by callers, but good to have sanity checks)
     if (!userId || !userTag || !experimentId || !experimentSettingsTimestampInput || !experimentEndDateISOInput || !activeExperimentSettings) {
       logger.error(`[${callingFunction}] _calculateAndStorePeriodStatsLogic: Missing required parameters.`, {
@@ -1710,7 +1710,6 @@ async function _calculateAndStorePeriodStatsLogic(
       };
     }
     // Minor validation for input2/input3 structure can remain if desired, but less critical for internal calls if callers ensure valid settings.
-
     let settingsTimestampDate;
     let endDate;
     try {
@@ -1838,19 +1837,14 @@ async function _calculateAndStorePeriodStatsLogic(
     let missingMetricInLogCount = 0;
 
     fetchedLogs.forEach(log => {
-                // ================= Replacement Block Starts Here =================
-        // Ensure normalizeLabel and normalizeUnit are defined in the same file or imported.
-        // At the top of your functions index with stats.txt, or near normalizeLabel, add:
-        // const normalizeUnit = normalizeLabel; // If you're reusing for simplicity
-
         // --- Output Metric Matching ---
         if (log.output && typeof log.output.label === 'string' && typeof log.output.unit === 'string' &&
             activeExperimentSettings.output && typeof activeExperimentSettings.output.label === 'string' && typeof activeExperimentSettings.output.unit === 'string') {
 
             const normalizedLogOutputLabel = normalizeLabel(log.output.label);
-            const normalizedLogOutputUnit = normalizeUnit(log.output.unit); // Make sure normalizeUnit is defined
+            const normalizedLogOutputUnit = normalizeUnit(log.output.unit);
             const normalizedSettingsOutputLabel = normalizeLabel(activeExperimentSettings.output.label);
-            const normalizedSettingsOutputUnit = normalizeUnit(activeExperimentSettings.output.unit); // Make sure normalizeUnit is defined
+            const normalizedSettingsOutputUnit = normalizeUnit(activeExperimentSettings.output.unit);
 
             if (normalizedLogOutputLabel === normalizedSettingsOutputLabel &&
                 normalizedLogOutputUnit === normalizedSettingsOutputUnit) {
@@ -1870,8 +1864,7 @@ async function _calculateAndStorePeriodStatsLogic(
                 logger.info(`[${callingFunction}] Output label "${normalizedLogOutputLabel}" matched settings, but units differ. Log: "${log.output.unit}", Settings: "${activeExperimentSettings.output.unit}". Log ID: ${log.id}`);
             }
         } else {
-            // This 'else' means the log.output structure was incomplete or activeExperimentSettings.output was incomplete
-            missingMetricInLogCount++; // Count as missing if structure is invalid for robust matching
+            missingMetricInLogCount++;
             logger.warn(`[${callingFunction}] [calculateAndStorePeriodStats] Output metric in log ${log.id} or in settings was missing label/unit fields, or expected activeExperimentSettings.output was not found. Log output: ${JSON.stringify(log.output)}`);
         }
 
@@ -1886,19 +1879,19 @@ async function _calculateAndStorePeriodStatsLogic(
             if (inputSetting && typeof inputSetting.label === 'string' && inputSetting.label.trim() !== "" && typeof inputSetting.unit === 'string') {
                 const settingsOriginalLabel = inputSetting.label;
                 const normalizedSettingsLabel = normalizeLabel(settingsOriginalLabel);
-                const normalizedSettingsUnit = normalizeUnit(inputSetting.unit); // Make sure normalizeUnit is defined
+                const normalizedSettingsUnit = normalizeUnit(inputSetting.unit);
 
-                const foundInput = log.inputs && Array.isArray(log.inputs) ?
+                 const foundInput = log.inputs && Array.isArray(log.inputs) ?
                     log.inputs.find(inp =>
                         inp && typeof inp.label === 'string' && typeof inp.unit === 'string' &&
                         normalizeLabel(inp.label) === normalizedSettingsLabel &&
-                        normalizeUnit(inp.unit) === normalizedSettingsUnit // Make sure normalizeUnit is defined
+                         normalizeUnit(inp.unit) === normalizedSettingsUnit
                     )
                     : undefined;
 
                 if (foundInput) {
-                    const value = parseFloat(foundInput.value);
-                    if (!isNaN(value)) {
+                     const value = parseFloat(foundInput.value);
+                     if (!isNaN(value)) {
                         if (metricValues[settingsOriginalLabel]) {
                             metricValues[settingsOriginalLabel].push(value);
                         } else {
@@ -1909,48 +1902,70 @@ async function _calculateAndStorePeriodStatsLogic(
                         logger.warn(`[${callingFunction}] Non-numeric input value found in log ${log.id} for metric ${settingsOriginalLabel}. Value: ${foundInput.value}`);
                     }
                 } else {
-                    // Logic to check for label match with different unit and update missingMetricInLogCount
                     let labelMatchedWithDifferentUnit = false;
                     if (log.inputs && Array.isArray(log.inputs)) {
                         const labelMatchDifferentUnitCheck = log.inputs.find(inp =>
                             inp && typeof inp.label === 'string' && typeof inp.unit === 'string' &&
                             normalizeLabel(inp.label) === normalizedSettingsLabel &&
-                            normalizeUnit(inp.unit) !== normalizedSettingsUnit // Make sure normalizeUnit is defined
+                            normalizeUnit(inp.unit) !== normalizedSettingsUnit
                         );
                         if (labelMatchDifferentUnitCheck) {
                             logger.info(`[${callingFunction}] Input label "${normalizedSettingsLabel}" matched settings, but units differ. Log: "${labelMatchDifferentUnitCheck.unit}", Settings: "${inputSetting.unit}". Log ID: ${log.id}`);
                             labelMatchedWithDifferentUnit = true;
                         }
                     }
-                    // Only increment missingMetricInLogCount if no label match was found at all
                     if (!labelMatchedWithDifferentUnit) {
                         missingMetricInLogCount++;
-                        // You can keep or remove the more verbose log about the specific metric not being found
-                        // logger.info(`[${callingFunction}] Configured input metric ${settingsOriginalLabel} (normalized: ${normalizedSettingsLabel}/${normalizedSettingsUnit}) not found with matching unit in log ${log.id}.`);
                     }
                 }
             }
         });
-        // =================  Replacement Block Ends Here  =================
-    });
-    if (nonNumericEntriesCount > 0) {
-        logger.warn(`[${callingFunction}] [calculateAndStorePeriodStats] Found ${nonNumericEntriesCount} non-numeric entries across all logs for user ${userId}, experiment ${experimentId}. These were skipped.`);
-    }
-    if (missingMetricInLogCount > 0) {
-        logger.info(`[${callingFunction}] [calculateAndStorePeriodStats] A total of ${missingMetricInLogCount} instances of configured metrics were not found in individual logs for user ${userId}, experiment ${experimentId}.`);
-    }
-    Object.keys(metricValues).forEach(key => {
-        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Extracted ${metricValues[key].length} values for metric "${key}" for user ${userId}, experiment ${experimentId}`);
     });
 
-    // Step 4: Calculate Core Statistics (Code from original function, lines 427-441)
+    // ============== START: "Anchor & Shift" Transformation for Time-of-Day Metrics ==============
+    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Starting "Anchor & Shift" check for time-of-day metrics. User: ${userId}, Exp: ${experimentId}`);
+    const transformedMetricValues = JSON.parse(JSON.stringify(metricValues)); // Deep clone to avoid modifying original
+
+    // A list of keywords to identify time-of-day units, case-insensitive.
+    const TIME_OF_DAY_KEYWORDS = ['time of day', 'clock time', 'specific time', 'exact time', "o'clock", 'oclock', 'o clock', 'am/pm', 'a.m./p.m.', 'am', 'pm', 'a.m.', 'p.m.', 'am.', 'pm.'];
+
+    for (const labelKey in transformedMetricValues) {
+        // Check if this metric is a time-of-day metric by looking at the original settings
+        const metricSetting = pMetrics.find(m => m && m.label === labelKey);
+        const isTimeMetric = metricSetting && TIME_OF_DAY_KEYWORDS.includes(metricSetting.unit?.toLowerCase().trim());
+
+        if (isTimeMetric) {
+            const values = transformedMetricValues[labelKey];
+            if (values.length < 2) continue; // Not enough data to determine a range
+
+            const maxVal = Math.max(...values);
+            const minVal = Math.min(...values);
+
+            // The refined three-part heuristic
+            const isWideRange = (maxVal - minVal) > 12;
+            const hasEarlyVals = values.some(v => v < 6); // Check for values before 6 AM
+            const hasLateVals = values.some(v => v > 18); // Check for values after 6 PM
+
+            if (isWideRange && hasEarlyVals && hasLateVals) {
+                logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Midnight crossover DETECTED for metric "${labelKey}". Applying shift. Max: ${maxVal}, Min: ${minVal}.`);
+                // Apply the shift: add 24 to values that are likely from the morning after a midnight crossover.
+                // A simple threshold like 12 (noon) can be used as the split point.
+                const shiftedValues = values.map(v => (v < 12 ? v + 24 : v));
+                transformedMetricValues[labelKey] = shiftedValues;
+                logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Metric "${labelKey}" values transformed. Original: [${values.join(', ')}], Shifted: [${shiftedValues.join(', ')}]`);
+            }
+        }
+    }
+    // ============== END: "Anchor & Shift" Transformation ==============
+
+    // Step 4: Calculate Core Statistics
     logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Starting core statistics calculation for user ${userId}, experiment ${experimentId}.`);
     const calculatedMetricStats = {};
     const skippedMetrics = [];
     const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
-    for (const labelKey in metricValues) {
-        if (Object.prototype.hasOwnProperty.call(metricValues, labelKey)) {
-            const values = metricValues[labelKey];
+    for (const labelKey in transformedMetricValues) {
+        if (Object.prototype.hasOwnProperty.call(transformedMetricValues, labelKey)) {
+            const values = transformedMetricValues[labelKey];
             const dataPoints = values.length;
             const metricDetail = metricLabels[labelKey] || { label: labelKey, unit: "" };
             if (dataPoints < MINIMUM_DATAPOINTS_FOR_METRIC_STATS) {
@@ -1960,7 +1975,7 @@ async function _calculateAndStorePeriodStatsLogic(
                     unit: metricDetail.unit,
                     dataPoints: dataPoints,
                     reason: `Insufficient data points (minimum ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS} required).`
-                });
+                 });
                 calculatedMetricStats[labelKey] = {
                     label: metricDetail.label,
                     unit: metricDetail.unit,
@@ -1987,18 +2002,14 @@ async function _calculateAndStorePeriodStatsLogic(
             }
         }
     }
-    if (skippedMetrics.length > 0) {
-        logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Total skipped metrics due to insufficient data: ${skippedMetrics.length} for user ${userId}, experiment ${experimentId}. Details:`, skippedMetrics);
-    }
 
-    // Step 5: Calculate Correlations (Code from original function, lines 442-478)
+    // Step 5: Calculate Correlations
     logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Starting correlation calculations for user ${userId}, experiment ${experimentId}.`);
     const correlations = {};
     const MINIMUM_PAIRS_FOR_CORRELATION = 5;
     const outputMetricLabel = activeExperimentSettings.output.label;
-    const outputValues = metricValues[outputMetricLabel];
+    const outputValues = transformedMetricValues[outputMetricLabel];
     const outputStats = calculatedMetricStats[outputMetricLabel];
-
     if (!outputStats || outputStats.dataPoints < MINIMUM_PAIRS_FOR_CORRELATION) {
         logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Output metric "${outputMetricLabel}" has insufficient data (${outputStats ? outputStats.dataPoints : 0} points) for correlation. Skipping all correlations. User: ${userId}, Exp: ${experimentId}`);
     } else {
@@ -2011,57 +2022,51 @@ async function _calculateAndStorePeriodStatsLogic(
             if (inputSetting && typeof inputSetting.label === 'string' && inputSetting.label.trim() !== "") {
                 const inputLabel = inputSetting.label;
                 const inputStats = calculatedMetricStats[inputLabel];
-                const inputValues = metricValues[inputLabel];
+                const inputValues = transformedMetricValues[inputLabel];
 
                 if (!inputStats || inputStats.dataPoints < MINIMUM_PAIRS_FOR_CORRELATION) {
-                    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Input metric "${inputLabel}" has insufficient data (${inputStats ? inputStats.dataPoints : 0} points) for correlation with output. User: ${userId}, Exp: ${experimentId}`);
                     correlations[inputLabel] = {
                         label: inputLabel,
                         vsOutputLabel: outputMetricLabel,
                         coefficient: null,
-                        pValue: null,
+                         pValue: null,
                         interpretation: "Insufficient data for this input metric.",
                         n_pairs: inputStats ? inputStats.dataPoints : 0,
                         status: "skipped_insufficient_input_data"
                     };
                     continue;
                 }
-                let pairedInputValues = [];
-                let pairedOutputValues = [];
                 const n_pairs = Math.min(inputValues.length, outputValues.length);
                 if (n_pairs < MINIMUM_PAIRS_FOR_CORRELATION) {
-                    logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Insufficient PAIRS (${n_pairs}) for correlation between "${inputLabel}" and "${outputMetricLabel}" after aligning. User: ${userId}, Exp: ${experimentId}`);
                     correlations[inputLabel] = {
                         label: inputLabel,
                         vsOutputLabel: outputMetricLabel,
                         coefficient: null,
-                        pValue: null,
+                         pValue: null,
                         interpretation: `Insufficient aligned data pairs (${n_pairs}) for correlation.`,
                         n_pairs: n_pairs,
                         status: "skipped_insufficient_aligned_pairs"
-                    };
+                     };
                     continue;
                 }
-                pairedInputValues = inputValues.slice(0, n_pairs);
-                pairedOutputValues = outputValues.slice(0, n_pairs);
-                // NEW try...catch block for correlation (with p-value)
+                const pairedInputValues = inputValues.slice(0, n_pairs);
+                const pairedOutputValues = outputValues.slice(0, n_pairs);
                 try {
                     const coefficient = jStat.corrcoeff(pairedInputValues, pairedOutputValues);
-                    let pValue = null; // Initialize pValue
+                    let pValue = null;
 
-                    if (n_pairs > 2 && Math.abs(coefficient) < 1 && Math.abs(coefficient) > 1e-9) { // Added > 1e-9 to avoid issues with coeff near 0 for tStat
+                    if (n_pairs > 2 && Math.abs(coefficient) < 1 && Math.abs(coefficient) > 1e-9) {
                         const tStat = coefficient * Math.sqrt((n_pairs - 2) / (1 - (coefficient * coefficient)));
-                        // pValue for two-tailed test
-                        if (isFinite(tStat)) { // Check if tStat is a finite number
+                        if (isFinite(tStat)) {
                             pValue = 2 * (1 - jStat.studentt.cdf(Math.abs(tStat), n_pairs - 2));
                         } else {
-                            pValue = 1.0; // If tStat is not finite (e.g. coeff is exactly 1 or -1, or near 0 leading to issues)
-                            logger.warn(`[<span class="math-inline">\{callingFunction\}\] \[Correlation\] tStat was not finite for "</span>{inputLabel}" vs "${outputMetricLabel}". Coeff: ${coefficient}, N: ${n_pairs}. Setting pValue to 1.0.`);
+                            pValue = 1.0;
+                            logger.warn(`[${callingFunction}] [Correlation] tStat was not finite for "${inputLabel}" vs "${outputMetricLabel}". Coeff: ${coefficient}, N: ${n_pairs}. Setting pValue to 1.0.`);
                         }
                     } else if (Math.abs(coefficient) >= 1) {
-                        pValue = 0.0; // Perfect correlation, typically p-value is considered 0
+                        pValue = 0.0;
                     } else {
-                        pValue = 1.0; // Not enough pairs or coefficient is trivial, assume not significant
+                        pValue = 1.0;
                     }
 
 
@@ -2069,45 +2074,42 @@ async function _calculateAndStorePeriodStatsLogic(
                     const absCoeff = Math.abs(coefficient);
                     let strength = "";
 
-                    if (absCoeff >= 0.7) strength = "🟥very strong";
-                    else if (absCoeff >= 0.45) strength = "🟧strong";
-                    else if (absCoeff >= 0.3) strength = "🟨moderate";
-                    else if (absCoeff >= 0.15) strength = "🟩weak";
-                    else strength = "🟦no detectable";
+                    if (absCoeff >= 0.7) strength = "🟥 very strong";
+                    else if (absCoeff >= 0.45) strength = "🟧 strong";
+                    else if (absCoeff >= 0.3) strength = "🟨 moderate";
+                    else if (absCoeff >= 0.15) strength = "🟩 weak";
+                    else strength = "🟦 no detectable";
 
                     const direction = coefficient >= 0 ? "positive" : "negative";
 
                     const isSignificant = pValue !== null && pValue < 0.05;
-
-                    if (strength === "🟦no detectable") { 
+                    if (strength === "🟦 no detectable") {
                         interpretation = `There appears to be\n${strength} correlation between\n${inputLabel} and ${outputMetricLabel}.`;
                     } else if (isSignificant) {
                         interpretation = `You can be 95% confident that there is a\n${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.`;
                     } else {
-                        interpretation = `It appears there may be a\n${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}. Worth getting more data?`;
+                        interpretation = `It appears there may be a\n${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.\nWorth getting more data?`;
                     }
 
                     correlations[inputLabel] = {
                         label: inputLabel,
                         vsOutputLabel: outputMetricLabel,
                         coefficient: parseFloat(coefficient.toFixed(3)),
-                        pValue: pValue !== null && isFinite(pValue) ? parseFloat(pValue.toFixed(3)) : null, // Store p-value, ensure finite
+                        pValue: pValue !== null && isFinite(pValue) ? parseFloat(pValue.toFixed(3)) : null,
                         interpretation: interpretation,
                         n_pairs: n_pairs,
                         status: "calculated"
-                    };
-                    // Corrected logger string for HTML display in Firebase logs
-                    logger.log(`[<span class="math-inline">\{callingFunction\}\] \[Correlation\] For "</span>{inputLabel}" vs "<span class="math-inline">\{outputMetricLabel\}"\: Coeff\=</span>{coefficient.toFixed(3)}, PVal=<span class="math-inline">\{pValue \!\=\= null && isFinite\(pValue\) ? pValue\.toFixed\(3\) \: 'N/A'\}, N\=</span>{n_pairs}. User: ${userId}, Exp: ${experimentId}`);
-
+                     };
+                    logger.log(`[${callingFunction}] [Correlation] For "${inputLabel}" vs "${outputMetricLabel}": Coeff=${coefficient.toFixed(3)}, PVal=${pValue !== null && isFinite(pValue) ? pValue.toFixed(3) : 'N/A'}, N=${n_pairs}. User: ${userId}, Exp: ${experimentId}`);
                 } catch (corrError) {
-                    logger.error(`[<span class="math-inline">\{callingFunction\}\] \[calculateAndStorePeriodStats\] Error calculating correlation for "</span>{inputLabel}" vs "${outputMetricLabel}". User: ${userId}, Exp: ${experimentId}`, corrError);
-                    correlations[inputLabel] = { // Ensure this matches the structure above if an error occurs
+                    logger.error(`[${callingFunction}] [calculateAndStorePeriodStats] Error calculating correlation for "${inputLabel}" vs "${outputMetricLabel}". User: ${userId}, Exp: ${experimentId}`, corrError);
+                    correlations[inputLabel] = {
                         label: inputLabel,
                         vsOutputLabel: outputMetricLabel,
                         coefficient: null,
-                        pValue: null,
+                         pValue: null,
                         interpretation: "Error during calculation.",
-                        n_pairs: n_pairs, // n_pairs should be available here from before the try
+                        n_pairs: n_pairs,
                         status: "error_during_calculation",
                         error_message: corrError.message
                     };
@@ -2116,15 +2118,15 @@ async function _calculateAndStorePeriodStatsLogic(
         }
     }
 
-    // Step 6: Prepare Data Structures for Stratified Analysis (Code from original function, lines 479-493)
+    // Step 6: Prepare Data Structures for Stratified Analysis
     logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Preparing data for stratified analysis. User: ${userId}, Exp: ${experimentId}`);
     const stratifiedAnalysisPrep = {
         outputMetricLabel: activeExperimentSettings.output.label,
-        outputValues: metricValues[activeExperimentSettings.output.label] || [],
+        outputValues: transformedMetricValues[activeExperimentSettings.output.label] || [],
         outputStats: {},
         inputMedians: {}
     };
-    const outputMetricValuesForStrat = metricValues[activeExperimentSettings.output.label];
+    const outputMetricValuesForStrat = transformedMetricValues[activeExperimentSettings.output.label];
     if (outputMetricValuesForStrat && outputMetricValuesForStrat.length >= MINIMUM_DATAPOINTS_FOR_METRIC_STATS) {
         const outputQuartiles = calculateQuartiles(outputMetricValuesForStrat);
         stratifiedAnalysisPrep.outputStats = {
@@ -2154,19 +2156,15 @@ async function _calculateAndStorePeriodStatsLogic(
         }
     }
             logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Input medians for stratified prep: ${JSON.stringify(stratifiedAnalysisPrep.inputMedians)}. User: ${userId}, Exp: ${experimentId}`);
-
-            // ============== START: Pairwise Interaction Analysis Logic ==============
-            const MIN_DATAPOINTS_FOR_GROUP_ANALYSIS = 3; // Minimum data points needed in a group to report an average.
+    // ============== START: Pairwise Interaction Analysis Logic ==============
+            const MIN_DATAPOINTS_FOR_GROUP_ANALYSIS = 3;
             const IQR_MULTIPLIER = 1.5;
             const pairwiseInteractionResults = {};
-
-            // Get Overall Output Statistics for significance thresholds
             const overallOutputLabel = stratifiedAnalysisPrep.outputMetricLabel;
             const overallOutputStats = stratifiedAnalysisPrep.outputStats;
             let upperThreshold = null;
             let lowerThreshold = null;
             let thresholdsCalculated = false;
-
             if (overallOutputStats && typeof overallOutputStats.median === 'number' && typeof overallOutputStats.iqr === 'number' && overallOutputStats.iqr > 0) { // Added iqr > 0 check
                 upperThreshold = overallOutputStats.median + (IQR_MULTIPLIER * overallOutputStats.iqr);
                 lowerThreshold = overallOutputStats.median - (IQR_MULTIPLIER * overallOutputStats.iqr);
@@ -2208,28 +2206,26 @@ async function _calculateAndStorePeriodStatsLogic(
                             input1Label: labelA,
                             input2Label: labelB,
                             outputMetricLabel: overallOutputLabel,
-                            groups: {
+                                     groups: {
                                 'input1High_input2High': { outputAverage: null, count: 0 },
                                 'input1High_input2Low':  { outputAverage: null, count: 0 },
-                                'input1Low_input2High':  { outputAverage: null, count: 0 },
+                                 'input1Low_input2High':  { outputAverage: null, count: 0 },
                                 'input1Low_input2Low':   { outputAverage: null, count: 0 }
-                            },
-                            summary: "Combined analysis skipped. Insufficient data or configuration for this pair." // Default summary
+                             },
+                            summary: "Combined analysis skipped. Insufficient data or configuration for this pair."
                         };
-
                         if (typeof medianA !== 'number' || typeof medianB !== 'number') {
                             logger.warn(`[${callingFunction}] [PairwiseInteraction] Skipping pair "${labelA}" vs "${labelB}" due to missing median(s). Median A: ${medianA}, Median B: ${medianB}`);
                             pairwiseInteractionResults[pairKey].summary = `Combined analysis for ${labelA} & ${labelB} skipped: One or both input metrics lacked enough data to determine a median.`;
-                            continue; 
+                            continue;
                         }
 
-                        const valuesA = metricValues[labelA] || [];
-                        const valuesB = metricValues[labelB] || [];
-                        const outputValuesArray = metricValues[overallOutputLabel] || [];
+                        const valuesA = transformedMetricValues[labelA] || [];
+                        const valuesB = transformedMetricValues[labelB] || [];
+                        const outputValuesArray = transformedMetricValues[overallOutputLabel] || [];
                         
                         const numCommonDataPoints = Math.min(valuesA.length, valuesB.length, outputValuesArray.length);
                         logger.log(`[${callingFunction}] [PairwiseInteraction] Pair "${labelA}" vs "${labelB}": MedianA=${medianA}, MedianB=${medianB}. Common data points for A, B, Output: ${numCommonDataPoints}.`);
-                        
                         if (numCommonDataPoints < MIN_DATAPOINTS_FOR_GROUP_ANALYSIS) {
                             logger.warn(`[${callingFunction}] [PairwiseInteraction] Skipping pair "${labelA}" vs "${labelB}" due to insufficient common data points (${numCommonDataPoints}).`);
                             pairwiseInteractionResults[pairKey].summary = `Combined analysis for ${labelA} & ${labelB} skipped: Not enough days where ${labelA}, ${labelB}, and ${overallOutputLabel} were all logged (found ${numCommonDataPoints}, need ${MIN_DATAPOINTS_FOR_GROUP_ANALYSIS}).`;
@@ -2238,11 +2234,10 @@ async function _calculateAndStorePeriodStatsLogic(
 
                         const groupsData = { // Temporary structure to hold output values before averaging
                             'input1High_input2High': { outputs: [], outputAverage: null, count: 0 },
-                            'input1High_input2Low':  { outputs: [], outputAverage: null, count: 0 },
+                             'input1High_input2Low':  { outputs: [], outputAverage: null, count: 0 },
                             'input1Low_input2High':  { outputs: [], outputAverage: null, count: 0 },
                             'input1Low_input2Low':   { outputs: [], outputAverage: null, count: 0 }
-                        };
-
+                         };
                         for (let k_idx = 0; k_idx < numCommonDataPoints; k_idx++) {
                             const valA = valuesA[k_idx];
                             const valB = valuesB[k_idx];
@@ -2264,7 +2259,6 @@ async function _calculateAndStorePeriodStatsLogic(
                         let worstSignificantGroup = null;
                         let maxSigAvg = -Infinity;
                         let minSigAvg = Infinity;
-
                         for (const groupKey in groupsData) {
                             if (Object.prototype.hasOwnProperty.call(groupsData, groupKey)) {
                                 const group = groupsData[groupKey];
@@ -2276,11 +2270,10 @@ async function _calculateAndStorePeriodStatsLogic(
                                     pairwiseInteractionResults[pairKey].groups[groupKey] = { 
                                         outputAverage: group.outputAverage, 
                                         count: group.count 
-                                    };
-
-                                    if (thresholdsCalculated) { // Only check significance if thresholds are valid
+                                     };
+                                     if (thresholdsCalculated) { // Only check significance if thresholds are valid
                                         if (group.outputAverage > upperThreshold && group.outputAverage > maxSigAvg) {
-                                            maxSigAvg = group.outputAverage;
+                                             maxSigAvg = group.outputAverage;
                                             bestSignificantGroup = { key: groupKey, avg: group.outputAverage, count: group.count };
                                         }
                                         if (group.outputAverage < lowerThreshold && group.outputAverage < minSigAvg) {
@@ -2289,22 +2282,20 @@ async function _calculateAndStorePeriodStatsLogic(
                                         }
                                     }
                                 } else {
-                                     pairwiseInteractionResults[pairKey].groups[groupKey] = { 
+                                      pairwiseInteractionResults[pairKey].groups[groupKey] = { 
                                         outputAverage: null, 
                                         count: group.count 
-                                    };
+                                     };
                                 }
-                                // delete group.outputs; // No longer needed as groupsData is temporary for outputs array
                             }
                         }
                         
-                        let summaryMsg = "";
-                        if (!thresholdsCalculated) {
+                         let summaryMsg = "";
+                         if (!thresholdsCalculated) {
                             summaryMsg = `Combined analysis for ${labelA} & ${labelB}: Significance thresholds for Output (${overallOutputLabel}) could not be determined (e.g. output metric had too little variation or data). Basic group averages shown if data allows.`;
                         } else {
                             const foundSignificantInteractions = [];
                             if (bestSignificantGroup) {
-                                // Use the actual labels from inputASetting and inputBSetting for interpretFirebaseGroupKey
                                 const condition = interpretFirebaseGroupKey(bestSignificantGroup.key, inputASetting.label, inputBSetting.label);
                                 foundSignificantInteractions.push(`Avg ${overallOutputLabel} was significantly higher (${bestSignificantGroup.avg}) when ${condition} (n=${bestSignificantGroup.count}).`);
                             }
@@ -2325,11 +2316,10 @@ async function _calculateAndStorePeriodStatsLogic(
                 }
             } else {
                 logger.log(`[${callingFunction}] [PairwiseInteraction] Not enough configured input metrics (found ${configuredInputSettings.length}) to perform pairwise analysis. Minimum 2 required.`);
-                // No explicit summary needed here as no pairs will be added to pairwiseInteractionResults if this condition is met.
             }
             // ============== END: Pairwise Interaction Analysis Logic ==============
 
-    // Step 7: Assemble, Store, and Return Results (Code from original function, lines 494-504)
+    // Step 7: Assemble, Store, and Return Results
     logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Assembling final stats object for user ${userId}, experiment ${experimentId}.`);
     const finalStatsObject = {
         experimentId: experimentId,
@@ -2341,7 +2331,7 @@ async function _calculateAndStorePeriodStatsLogic(
         calculationTimestamp: FieldValue.serverTimestamp(),
         totalLogsInPeriodProcessed: totalLogsInPeriodProcessed,
         calculatedMetricStats: calculatedMetricStats,
-        skippedMetrics: skippedMetrics,
+         skippedMetrics: skippedMetrics,
         correlations: correlations,
         stratifiedAnalysisPrep: stratifiedAnalysisPrep,
         pairwiseInteractionResults: pairwiseInteractionResults,
