@@ -1214,36 +1214,40 @@ client.on(Events.MessageCreate, async message => {
 
       console.log(`[MessageCreate CUSTOM_OUTCOME_LABEL_RECEIVED ${interactionIdForLog}] User ${userTag} submitted custom outcome label: "${customLabelText}". Proceeding to ask for custom unit.`); // [cite: 285]
       
-      // ***** START: MODIFIED SECTION - TRANSITION TO OUTCOME UNIT DROPDOWN *****
-      setupData.dmFlowState = 'awaiting_outcome_unit_dropdown_selection'; // NEW STATE
-      userExperimentSetupData.set(userId, setupData);
 
-      const outcomeUnitSelectMenu = new StringSelectMenuBuilder()
-          .setCustomId(OUTCOME_UNIT_SELECT_ID) // Use your new constant
-          .setPlaceholder('How will you measure this outcome daily?');
-      
-      PREDEFINED_OUTCOME_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
-          outcomeUnitSelectMenu.addOptions(
-              new StringSelectMenuOptionBuilder()
-                  .setLabel(unitSuggestion.length > 100 ? unitSuggestion.substring(0, 97) + '...' : unitSuggestion)
-                  .setValue(unitSuggestion)
-          );
-      });
-      outcomeUnitSelectMenu.addOptions(
-          new StringSelectMenuOptionBuilder()
-              .setLabel("✏️ Enter my own custom unit...")
-              .setValue(CUSTOM_UNIT_OPTION_VALUE) // Use your new constant
-      );
+        setupData.dmFlowState = 'awaiting_outcome_unit_dropdown_selection'; // NEW STATE
+        userExperimentSetupData.set(userId, setupData);
 
-      const rowWithOutcomeUnitSelect = new ActionRowBuilder().addComponents(outcomeUnitSelectMenu);
-      const unitDropdownPromptMessage = `Great! Your Outcome is:\n\n**"${setupData.outcomeLabel}"**.\n\nHow will you measure this daily? Choose a numerical scale/unit from the list, or enter your own.`;
-      
-      await message.author.send({
-          content: unitDropdownPromptMessage,
-          components: [rowWithOutcomeUnitSelect]
-      });
-      console.log(`[MessageCreate CUSTOM_LABEL_OUTCOME_UNIT_DROPDOWN_SENT ${interactionIdForLog}] Prompted ${userTag} with outcome unit dropdown. State: ${setupData.dmFlowState}.`);
-      // ***** END: MODIFIED SECTION *****
+        const outcomeUnitSelectMenu = new StringSelectMenuBuilder()
+            .setCustomId(OUTCOME_UNIT_SELECT_ID) // Use your new constant
+            .setPlaceholder('How will you measure this outcome daily?');
+        
+        // CORRECTED LOOP: Access .label and .description properties of the object
+        PREDEFINED_OUTCOME_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
+            outcomeUnitSelectMenu.addOptions(
+                new StringSelectMenuOptionBuilder()
+                    .setLabel(unitSuggestion.label.substring(0, 100))
+                    .setValue(unitSuggestion.label) // Use label as the value
+                    .setDescription((unitSuggestion.description || '').substring(0, 100))
+            );
+        });
+
+        outcomeUnitSelectMenu.addOptions(
+            new StringSelectMenuOptionBuilder()
+                .setLabel("✏️ Enter my own custom unit...")
+                .setValue(CUSTOM_UNIT_OPTION_VALUE) // Use your new constant
+        );
+
+        const rowWithOutcomeUnitSelect = new ActionRowBuilder().addComponents(outcomeUnitSelectMenu);
+        const unitDropdownPromptMessage = `Great! Your Outcome is:\n\n**"${setupData.outcomeLabel}"**.\n\nHow will you measure this daily? Choose a numerical scale/unit from the list, or enter your own.`;
+        
+        await message.author.send({
+            content: unitDropdownPromptMessage,
+            components: [rowWithOutcomeUnitSelect]
+        });
+        
+        console.log(`[MessageCreate CUSTOM_LABEL_OUTCOME_UNIT_DROPDOWN_SENT ${interactionIdForLog}] Prompted ${userTag} with outcome unit dropdown. State: ${setupData.dmFlowState}.`);
+        // ***** END: CORRECTED SECTION *****
 
     } // End of awaiting_custom_outcome_label_text
 
@@ -2349,55 +2353,61 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // ===== START MODIFIED PRE-FETCH for /go =====
             (async () => {
-                const GO_CACHE_MAX_AGE_MS = 1 * 60 * 60 * 1000; // 1 hour for /go's own cache refresh
-                const userId = interaction.user.id; // Define userId for use in this scope
-                const userTag = interaction.user.tag; // Define userTag for use in this scope
-                const interactionId = interaction.id; // Define interactionId for use in this scope
+                const GO_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours for /go's own cache refresh
+                const userId = interaction.user.id;
+                const userTag = interaction.user.tag;
+                const interactionId = interaction.id;
 
                 try {
-                    const existingSetupData = userExperimentSetupData.get(userId);
+                    const existingSetupData = userExperimentSetupData.get(userId) || {};
                     const currentCachedTime = existingSetupData?.preFetchedWeeklySettingsTimestamp;
 
                     if (existingSetupData?.preFetchedWeeklySettings && currentCachedTime && (Date.now() - currentCachedTime < GO_CACHE_MAX_AGE_MS)) {
                         console.log(`[/go ASYNC_PREFETCH_USE_CACHE ${interactionId}] Using existing recent pre-fetched settings for ${userTag}.`);
                     } else {
-                        if (existingSetupData?.preFetchedWeeklySettings) { // Log if we are refreshing a stale cache
-                            console.log(`[/go ASYNC_PREFETCH_REFRESH_STALE ${interactionId}] Pre-fetched settings for ${userTag} are stale (older than ${GO_CACHE_MAX_AGE_MS / (60 * 1000)} mins). Refreshing.`);
-                        } else {
-                            console.log(`[/go ASYNC_PREFETCH_REFRESH_MISSING ${interactionId}] No recent pre-fetched settings for ${userTag}. Asynchronously pre-fetching.`);
-                        }
+                        console.log(`[/go ASYNC_PREFETCH_REFRESH ${interactionId}] No recent pre-fetched settings for ${userTag} or cache is stale. Asynchronously pre-fetching.`);
                         
                         const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
-                        // It's good practice to get the most current version of existingData before merging,
-                        // though for this specific pre-fetch, direct overwriting of prefetch fields is usually fine.
+                        
+                        // Use the most current version of setupData before modifying
                         const dataToStore = userExperimentSetupData.get(userId) || {}; 
 
                         if (settingsResult && settingsResult.settings) {
+                            // NEW: Check for time metrics here
+                            const settings = settingsResult.settings;
+                            const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
+                            // The TIME_OF_DAY_KEYWORDS constant is defined globally in your file
+                            const isTimeMetric = (unit) => {
+                                if (!unit) return false;
+                                const lowerUnit = unit.toLowerCase().trim();
+                                return TIME_OF_DAY_KEYWORDS.includes(lowerUnit);
+                            };
+                            const hasTimeMetrics = metrics.some(metric => isTimeMetric(metric.unit));
+
+                            // Store both the settings AND the time metrics flag
                             userExperimentSetupData.set(userId, {
-                                ...dataToStore, // Preserve other potential fields in setupData
+                                ...dataToStore,
                                 preFetchedWeeklySettings: settingsResult.settings,
+                                logFlowHasTimeMetrics: hasTimeMetrics, 
                                 preFetchedWeeklySettingsTimestamp: Date.now()
                             });
-                            console.log(`[/go ASYNC_PREFETCH_SUCCESS ${interactionId}] Successfully pre-fetched and cached new weekly settings for ${userTag}.`);
+                            console.log(`[/go ASYNC_PREFETCH_SUCCESS ${interactionId}] Successfully pre-fetched settings for ${userTag}. Has Time Metrics: ${hasTimeMetrics}`);
                         } else {
-                            console.log(`[/go ASYNC_PREFETCH_NO_DATA ${interactionId}] No weekly settings found during async pre-fetch for ${userTag}. Current cache (if any) for preFetched fields might effectively be cleared or remain stale if not overwritten.`);
-                            // If no settings are returned, we might want to explicitly clear any old preFetched settings
-                            // to ensure the "Log Daily Data" button then performs a fresh fetch.
-                            const currentData = userExperimentSetupData.get(userId) || {};
-                            delete currentData.preFetchedWeeklySettings;
-                            delete currentData.preFetchedWeeklySettingsTimestamp;
-                            userExperimentSetupData.set(userId, currentData);
-                            console.log(`[/go ASYNC_PREFETCH_NO_DATA_CLEARED_CACHE ${interactionId}] Cleared any potentially stale preFetched settings for ${userTag} due to empty fetch result.`);
+                            // If no settings are returned, clear any old preFetched settings and the flag
+                            delete dataToStore.preFetchedWeeklySettings;
+                            delete dataToStore.preFetchedWeeklySettingsTimestamp;
+                            delete dataToStore.logFlowHasTimeMetrics;
+                            userExperimentSetupData.set(userId, dataToStore);
+                            console.log(`[/go ASYNC_PREFETCH_NO_DATA ${interactionId}] No weekly settings found for ${userTag}. Cleared cache.`);
                         }
                     }
                 } catch (fetchError) {
                     console.error(`[/go ASYNC_PREFETCH_ERROR ${interactionId}] Error pre-fetching weekly settings for ${userTag}:`, fetchError.message);
-                    // On error, clear potentially stale pre-fetched data to force a fresh fetch later
                     const dataToClearOnError = userExperimentSetupData.get(userId) || {};
                     delete dataToClearOnError.preFetchedWeeklySettings;
                     delete dataToClearOnError.preFetchedWeeklySettingsTimestamp;
+                    delete dataToClearOnError.logFlowHasTimeMetrics;
                     userExperimentSetupData.set(userId, dataToClearOnError);
-                    console.log(`[/go ASYNC_PREFETCH_ERROR_CLEARED_CACHE ${interactionId}] Cleared any potentially stale preFetched settings for ${userTag} due to fetch error.`);
                 }
             })();
             // ===== END MODIFIED PRE-FETCH for /go =====
@@ -3367,6 +3377,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (setupData) { // setupData was retrieved and updated just above
                     delete setupData.preFetchedWeeklySettings;
                     delete setupData.preFetchedWeeklySettingsTimestamp;
+                    delete setupData.logFlowHasTimeMetrics;
                     userExperimentSetupData.set(userId, setupData); // Save the changes to setupData
                     console.log(`[confirm_metrics_proceed_btn CACHE_CLEARED ${interactionId}] Cleared pre-fetched weekly settings for user ${userTagForLog} after settings update (AI flow).`);
                 }
@@ -3593,64 +3604,110 @@ client.on(Events.InteractionCreate, async interaction => {
       // No processEndTime log here as the interaction is completed by showModal.
     }
 
-    // --- Handler for "Log Daily Data" Button (NEW, WITH SEQUENTIAL LOGIC) ---
+    // --- Handler for "Log Daily Data" Button (NEW, WITH CACHE-FIRST LOGIC) ---
     else if (interaction.customId === 'log_daily_progress_btn') {
       const logButtonStartTime = performance.now();
       const userId = interaction.user.id;
       const interactionId = interaction.id;
       console.log(`[log_daily_progress_btn START ${interactionId}] Button clicked by User: ${userId}`);
+
+      const setupData = userExperimentSetupData.get(userId) || {};
+      const hasTimeMetrics = setupData.logFlowHasTimeMetrics; // Check for the cached flag from /go
+      const cachedSettings = setupData.preFetchedWeeklySettings;
+
       try {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const deferTime = performance.now();
-        console.log(`[log_daily_progress_btn DEFERRED ${interactionId}] Deferral took: ${(deferTime - logButtonStartTime).toFixed(2)}ms`);
+        // FAST PATH 1: Cache exists and says NO time metrics. Show modal directly.
+        if (hasTimeMetrics === false && cachedSettings) {
+            console.log(`[log_daily_progress_btn CACHE_HIT_NO_TIME ${interactionId}] Fast path: Cache indicates no time metrics. Showing modal directly.`);
 
-        // Get settings and identify metric types
-        const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
-        if (!settingsResult || !settingsResult.settings) {
-          await interaction.editReply({ content: "🤔 You haven't set up your weekly experiment yet. Please use the 'Set Experiment' button first.", components: [] });
-          return;
+            // This logic is moved from the old 'show_standard_log_modal_btn' handler
+            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
+            const components = [cachedSettings.output, cachedSettings.input1, cachedSettings.input2, cachedSettings.input3]
+                .filter(metric => metric && metric.label)
+                .map(metric => {
+                    let customId;
+                    if (metric.label === cachedSettings.output.label) customId = 'log_output_value';
+                    else if (metric.label === cachedSettings.input1.label) customId = 'log_input1_value';
+                    else if (metric.label === cachedSettings.input2.label) customId = 'log_input2_value';
+                    else if (metric.label === cachedSettings.input3.label) customId = 'log_input3_value';
+
+                    return new ActionRowBuilder().addComponents(
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} ${metric.unit}`).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                    );
+                });
+            const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
+            let finalPlaceholder = 'What did you observe? Any questions or insights?';
+            if (cachedSettings.deeperProblem) {
+                finalPlaceholder = `What affected your goal today?\n→ ${cachedSettings.deeperProblem.substring(0, 60)}`;
+            }
+            notesInput.setPlaceholder(finalPlaceholder);
+            components.push(new ActionRowBuilder().addComponents(notesInput));
+            modal.addComponents(components);
+
+            // Store settings in logFlowSettings for the modal submission handler to use
+            setupData.logFlowSettings = cachedSettings;
+            userExperimentSetupData.set(userId, setupData);
+
+            await interaction.showModal(modal);
+            console.log(`[log_daily_progress_btn SUCCESS_FAST_PATH ${interactionId}] Standard modal shown directly to ${userId}.`);
+
+        } 
+        // FAST PATH 2: Cache exists and says YES there are time metrics. Defer and start sequence.
+        else if (hasTimeMetrics === true && cachedSettings) {
+            console.log(`[log_daily_progress_btn CACHE_HIT_TIME ${interactionId}] Fast path: Cache indicates time metrics. Deferring and starting sequence.`);
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+            const metrics = [cachedSettings.output, cachedSettings.input1, cachedSettings.input2, cachedSettings.input3].filter(Boolean);
+            const isTimeMetric = (unit) => TIME_OF_DAY_KEYWORDS.includes(unit?.toLowerCase().trim());
+
+            setupData.logFlowSettings = cachedSettings;
+            setupData.logFlowTimeMetrics = metrics.filter(metric => isTimeMetric(metric.unit));
+            setupData.logFlowOtherMetrics = metrics.filter(metric => !isTimeMetric(metric.unit));
+            setupData.timeLogIndex = 0;
+            setupData.loggedTimeValues = {};
+            userExperimentSetupData.set(userId, setupData);
+
+            await sendNextTimeLogPrompt(interaction, userId);
+
         }
+        // FALLBACK PATH: Cache is missing/stale. Revert to old robust behavior.
+        else {
+            console.log(`[log_daily_progress_btn FALLBACK_PATH ${interactionId}] Fallback: Cache is missing or stale. Deferring and fetching.`);
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        const settings = settingsResult.settings;
-        const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
+            const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
+            if (!settingsResult || !settingsResult.settings) {
+                await interaction.editReply({ content: "🤔 You haven't set up your weekly experiment yet. Please use the 'Set Experiment' button first.", components: [] });
+                return;
+            }
 
-        // Helper function to check against the keyword list
-        const isTimeMetric = (unit) => {
-            if (!unit) return false;
-            const lowerUnit = unit.toLowerCase().trim();
-            // Check if the trimmed, lowercased unit is an exact match for any keyword
-            return TIME_OF_DAY_KEYWORDS.includes(lowerUnit);
-        };
+            const settings = settingsResult.settings;
+            const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
+            const isTimeMetric = (unit) => TIME_OF_DAY_KEYWORDS.includes(unit?.toLowerCase().trim());
+            const timeMetrics = metrics.filter(metric => isTimeMetric(metric.unit));
 
-        const timeMetrics = metrics.filter(metric => isTimeMetric(metric.unit));
-        const otherMetrics = metrics.filter(metric => !isTimeMetric(metric.unit));
+            // Store settings in the cache for the next steps
+            setupData.logFlowSettings = settings;
+            setupData.logFlowTimeMetrics = timeMetrics;
+            setupData.logFlowOtherMetrics = metrics.filter(metric => !isTimeMetric(metric.unit));
+            setupData.timeLogIndex = 0;
+            setupData.loggedTimeValues = {};
+            userExperimentSetupData.set(userId, setupData);
 
-        // Store all necessary info for the duration of the logging flow
-        const setupData = userExperimentSetupData.get(userId) || {};
-        setupData.logFlowSettings = settings;
-        setupData.logFlowTimeMetrics = timeMetrics;
-        setupData.logFlowOtherMetrics = otherMetrics;
-        setupData.timeLogIndex = 0; // Initialize index for sequential logging
-        setupData.loggedTimeValues = {}; // Initialize object to store results
-        userExperimentSetupData.set(userId, setupData);
-
-        if (timeMetrics.length > 0) {
-          // --- TIME METRICS EXIST: START SEQUENTIAL FLOW ---
-          // The helper function will now handle showing the first prompt
-          await sendNextTimeLogPrompt(interaction, userId);
-        } else {
-          // --- NO TIME METRICS: SHOW A BUTTON TO OPEN THE STANDARD MODAL ---
-          // This prevents the "defer/showModal" conflict.
-          console.log(`[log_daily_progress_btn INFO ${interactionId}] No time metrics found. Prompting to open standard log form.`);
-          const openModalButton = new ButtonBuilder()
-            .setCustomId('show_standard_log_modal_btn') // This is a new custom ID we will handle next
-            .setLabel('✍️ Open Log Form')
-            .setStyle(ButtonStyle.Success);
-          
-          await interaction.editReply({
-            content: "Ready to log your daily metrics? Click the button below to open the form.",
-            components: [new ActionRowBuilder().addComponents(openModalButton)]
-          });
+            if (timeMetrics.length > 0) {
+                // Fetch revealed time metrics, start the sequence
+                await sendNextTimeLogPrompt(interaction, userId);
+            } else {
+                // Fetch revealed NO time metrics, show the intermediate button
+                const openModalButton = new ButtonBuilder()
+                    .setCustomId('show_standard_log_modal_btn')
+                    .setLabel('✍️ Open Log Form')
+                    .setStyle(ButtonStyle.Success);
+                await interaction.editReply({
+                    content: "Ready to log your daily metrics? Click the button below to open the form.",
+                    components: [new ActionRowBuilder().addComponents(openModalButton)]
+                });
+            }
         }
       } catch (error) {
         console.error(`[log_daily_progress_btn ERROR ${interactionId}] Error for User ${userId}:`, error);
@@ -3658,6 +3715,9 @@ client.on(Events.InteractionCreate, async interaction => {
         if (interaction.replied || interaction.deferred) {
           try { await interaction.editReply({ content: userErrorMessage, components: [], embeds: [] }); }
           catch (e) { console.error(`[log_daily_progress_btn] Fallback editReply failed:`, e); }
+        } else if (!interaction.responded) {
+          try { await interaction.reply({ content: userErrorMessage, flags: MessageFlags.Ephemeral }); }
+          catch (e) { console.error(`[log_daily_progress_btn] Fallback reply failed:`, e); }
         }
       }
     }
@@ -5892,12 +5952,13 @@ client.on(Events.InteractionCreate, async interaction => {
                 console.log(`[experiment_setup_modal SETUP_DATA_UPDATED ${interactionIdForLog}] Updated setupData for user ${flowUserId}.`);
                 // ======================= DATA STORAGE CHANGE END =========================
 
-                // ===== START: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE =====
-                if (setupData) { // Ensure setupData (which is existingSetupData or a new object) exists
+               // ===== START: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE =====
+                if (setupData) { 
                     delete setupData.preFetchedWeeklySettings;
                     delete setupData.preFetchedWeeklySettingsTimestamp;
-                    userExperimentSetupData.set(flowUserId, setupData); // Save the changes to setupData
-                    console.log(`[experiment_setup_modal CACHE_CLEARED ${interactionIdForLog}] Cleared pre-fetched weekly settings for user ${flowUserId} after settings update.`);
+                    delete setupData.logFlowHasTimeMetrics; // <-- ADD THIS LINE
+                    userExperimentSetupData.set(flowUserId, setupData); 
+                    console.log(`[experiment_setup_modal CACHE_CLEARED ${interactionIdForLog}] Cleared full pre-fetch cache for user ${flowUserId} after settings update.`);
                 }
                 // ===== END: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE =====
 
