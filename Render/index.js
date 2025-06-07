@@ -504,6 +504,40 @@ function formatDecimalAsTime(decimalHours) {
 }
 
 /**
+ * Parses a flexible time string (e.g., "8pm", "22:30", "8:30") into decimal hours.
+ * @param {string} timeStr - The time string to parse.
+ * @returns {number | null} The time as a decimal number (e.g., 20.5) or null if invalid.
+ */
+function parseTimeGoal(timeStr) {
+    if (!timeStr || typeof timeStr !== 'string') return null;
+
+    const lowerTimeStr = timeStr.toLowerCase().trim();
+    // Regex to capture hours, optional minutes, and optional am/pm
+    // Supports formats like: 8pm, 8 pm, 8:30pm, 8:30 pm, 22:30
+    const match = lowerTimeStr.match(/^(\d{1,2})[:\.]?(\d{2})?\s*(am|pm)?$/);
+
+    if (!match) return null;
+
+    let [, hours, minutes, period] = match;
+    let h = parseInt(hours, 10);
+    const m = minutes ? parseInt(minutes, 10) : 0;
+
+    if (isNaN(h) || isNaN(m) || h > 23 || m > 59) return null;
+
+    if (period) { // 12-hour format with am/pm
+        if (h > 12 || h === 0) return null; // e.g., "13pm" or "0am" is invalid in this context
+        if (period === 'pm' && h < 12) {
+            h += 12;
+        } else if (period === 'am' && h === 12) { // Midnight case "12am"
+            h = 0;
+        }
+    }
+    // For 24-hour format (no period), h is already correct.
+
+    return h + (m / 60);
+}
+
+/**
  * Manages the sequential flow for logging time-based metrics.
  * It either prompts for the next time metric or shows a button to open the final modal.
  * @param {import('discord.js').Interaction} interaction - The interaction to reply to or update.
@@ -6110,114 +6144,145 @@ client.on(Events.InteractionCreate, async interaction => {
     // --- END OF COMPLETE DAILY LOG MODAL SUBMISSION HANDLER ---
 
     // +++ NEW MODAL SUBMISSION HANDLER FOR EXPERIMENT SETUP +++
-    // --- START: REPLACE THIS SECTION in render index testing1.txt (The 'experiment_setup_modal' handler) ---
+    // --- START: REPLACE THIS SECTION in render index.txt (The 'experiment_setup_modal' handler) ---
     else if (interaction.isModalSubmit() && interaction.customId === 'experiment_setup_modal') {
         const modalSubmitStartTime = performance.now();
-        const interactionIdForLog = interaction.id; // For logging this specific modal submission event
-        const currentInteractionUser = interaction.user; // User who submitted THIS modal
+        const interactionIdForLog = interaction.id; 
+        const currentInteractionUser = interaction.user;
 
-        // ======================= MODIFICATION START (Already Correct in your paste) =======================
-        // RETRIEVE FLOW-WIDE IDs AND USERTAG FROM userExperimentSetupData
-        // These should have been reliably set by the 'set_update_experiment_btn' handler
         const setupData = userExperimentSetupData.get(currentInteractionUser.id);
-
         if (!setupData || !setupData.userId || !setupData.guildId || !setupData.userTag) {
             console.error(`[experiment_setup_modal CRITICAL_ERROR ${interactionIdForLog}] Core userId, guildId, or userTag missing from setupData for user ${currentInteractionUser.tag}. Flow likely started incorrectly or data lost.`);
             try {
                  if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({ content: "Error: Your setup session data is missing or incomplete. Please restart the setup process using the `/go` command, then click 'Set Experiment'.", ephemeral: true });
-                } else {
+                 } else {
                     await interaction.editReply({ content: "Error: Your setup session data is missing or incomplete. Please restart the setup process using the `/go` command, then click 'Set Experiment'.", components: [], embeds: [] });
-                }
+                 }
             } catch (replyError) {
                  console.error(`[experiment_setup_modal CRITICAL_ERROR_REPLY_FAIL ${interactionIdForLog}] Failed to send session data error reply:`, replyError);
             }
-            return; // Stop processing this submission
+            return; 
         }
 
-        const flowUserId = setupData.userId;         // Use this reliable ID for map keys and Firebase calls
-        const flowGuildId = setupData.guildId;       // Use this reliable ID when guild context is needed for storage/logic
-        const flowUserTag = setupData.userTag;       // Use this consistent tag
-        // ======================= MODIFICATION END =========================
-
-        // ======================= LOGGING CHANGE START =======================
-        // Use flowUserTag for logging consistently after retrieval
+        const flowUserId = setupData.userId;
+        const flowGuildId = setupData.guildId;
+        const flowUserTag = setupData.userTag;
         console.log(`[experiment_setup_modal START ${interactionIdForLog}] Modal submitted by ${currentInteractionUser.tag} (Flow User: ${flowUserTag}, Flow UID: ${flowUserId}, Flow GuildID: ${flowGuildId})`);
-        // ======================= LOGGING CHANGE END =========================
 
         try {
-            // --- Habit 1: Add deferReply --- // THIS LABEL IS MISLEADING, "Habit 1" ISN'T RELATED TO THIS DeferReply
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const deferTime = performance.now();
-            // ======================= LOGGING CHANGE START =======================
-            console.log(`[experiment_setup_modal DEFERRED ${interactionIdForLog}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`); // Changed interaction.id to interactionIdForLog
-            // ======================= LOGGING CHANGE END =========================
-            // --- End Habit 1 --- // THIS LABEL IS MISLEADING
-
+            console.log(`[experiment_setup_modal DEFERRED ${interactionIdForLog}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
+            
             const deeperProblem = interaction.fields.getTextInputValue('deeper_problem')?.trim();
-            const outputSettingStr = interaction.fields.getTextInputValue('output_setting')?.trim();
-            const input1SettingStr = interaction.fields.getTextInputValue('input1_setting')?.trim();
-            const input2SettingStr = interaction.fields.getTextInputValue('input2_setting')?.trim();
-            const input3SettingStr = interaction.fields.getTextInputValue('input3_setting')?.trim();
-            const getLabel = (settingStr, defaultLabel) => { if (!settingStr) return defaultLabel; const parts = settingStr.split(','); return parts.length > 2 ? parts[2].trim() : defaultLabel; };
-            // ======================= LOGGING CHANGE START =======================
-            console.log(`[experiment_setup_modal DATA ${interactionIdForLog}] Extracted values:`, { deeperProblem, outputSettingStr, input1SettingStr, input2SettingStr, input3SettingStr }); // Changed interaction.id to interactionIdForLog
-            // ======================= LOGGING CHANGE END =========================
+            const metricStrings = [
+                { raw: interaction.fields.getTextInputValue('output_setting')?.trim(), name: "Outcome", isOptional: false },
+                { raw: interaction.fields.getTextInputValue('input1_setting')?.trim(), name: "Habit 1", isOptional: false },
+                { raw: interaction.fields.getTextInputValue('input2_setting')?.trim(), name: "Habit 2", isOptional: true },
+                { raw: interaction.fields.getTextInputValue('input3_setting')?.trim(), name: "Habit 3", isOptional: true },
+            ];
 
-            // ======================= PAYLOAD CHANGE START =======================
+            const validationErrors = [];
+            const validatedMetrics = [];
+            const MAX_LABEL_LENGTH = 45;
+
+            for (const metric of metricStrings) {
+                const { raw, name, isOptional } = metric;
+
+                if (!raw && isOptional) {
+                    validatedMetrics.push({ name, raw: "" });
+                    continue;
+                }
+
+                if (!raw && !isOptional) {
+                    validationErrors.push(`**${name}:** This field is required.`);
+                    continue;
+                }
+
+                const parts = raw.split(',').map(p => p.trim());
+                if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+                    validationErrors.push(`**${name}:** Must be in "Goal, Unit, Label" format. You entered: "${raw}"`);
+                    continue;
+                }
+
+                let [goalStr, unit, label] = parts;
+                let goalValue = null;
+
+                if (label.length > MAX_LABEL_LENGTH) {
+                    validationErrors.push(`**${name} Label:** "${label}" is too long (max ${MAX_LABEL_LENGTH} chars).`);
+                }
+
+                const isTimeBased = TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
+
+                if (isTimeBased) {
+                    goalValue = parseTimeGoal(goalStr);
+                    if (goalValue === null) {
+                        validationErrors.push(`**${name} Goal:** "${goalStr}" is not a valid time format (e.g., "8pm", "20:30").`);
+                    }
+                } else {
+                    goalValue = parseFloat(goalStr);
+                    if (isNaN(goalValue)) {
+                        validationErrors.push(`**${name} Goal:** "${goalStr}" must be a number.`);
+                    } else if (goalValue < 0) {
+                        validationErrors.push(`**${name} Goal:** Must be 0 or a positive number.`);
+                    }
+                }
+                
+                if (validationErrors.length === 0) { // Only add if no errors for this metric so far
+                     validatedMetrics.push({ name, goal: goalValue, unit, label });
+                }
+            }
+
+            if (validationErrors.length > 0) {
+                console.warn(`[experiment_setup_modal VALIDATION_FAIL ${interactionIdForLog}] User ${flowUserTag} had validation errors.`);
+                const errorEmbed = new EmbedBuilder()
+                    .setColor('#ED4245') // Red
+                    .setTitle('Validation Error')
+                    .setDescription('Please correct the following issues and resubmit the form:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
+                await interaction.editReply({ embeds: [errorEmbed], components: [] });
+                return;
+            }
+
+            // If validation passed, reconstruct strings with parsed goals and call Firebase
+            const reconstructString = (metric) => {
+                if (!metric || metric.raw === "") return "";
+                return `${metric.goal}, ${metric.unit}, ${metric.label}`;
+            };
+            
             const payload = {
                 deeperProblem,
-                outputSetting: outputSettingStr,
-                inputSettings: [input1SettingStr, input2SettingStr || "", input3SettingStr || ""],
-                userTag: flowUserTag // USE flowUserTag HERE
+                outputSetting: reconstructString(validatedMetrics.find(m => m.name === "Outcome")),
+                inputSettings: [
+                    reconstructString(validatedMetrics.find(m => m.name === "Habit 1")),
+                    reconstructString(validatedMetrics.find(m => m.name === "Habit 2")),
+                    reconstructString(validatedMetrics.find(m => m.name === "Habit 3"))
+                ],
+                userTag: flowUserTag 
             };
-            // ======================= PAYLOAD CHANGE END =========================
-
-            const fbCallStartTime = performance.now();
-            // ======================= LOGGING/CALL CHANGE START =======================
-            console.log(`[experiment_setup_modal FIREBASE_CALL ${interactionIdForLog}] Calling updateWeeklySettings for user ID: ${flowUserId}...`); // Use flowUserId, changed interaction.id to interactionIdForLog
-            const result = await callFirebaseFunction('updateWeeklySettings', payload, flowUserId); // USE flowUserId HERE
-            // ======================= LOGGING/CALL CHANGE END =======================
-            const fbCallEndTime = performance.now();
-            // ======================= LOGGING CHANGE START =======================
-            console.log(`[experiment_setup_modal FIREBASE_RETURN ${interactionIdForLog}] updateWeeklySettings call took: ${(fbCallEndTime - fbCallStartTime).toFixed(2)}ms.`); // Changed interaction.id to interactionIdForLog
-            // ======================= LOGGING CHANGE END =========================
+            
+            console.log(`[experiment_setup_modal FIREBASE_CALL ${interactionIdForLog}] Calling updateWeeklySettings for user ID: ${flowUserId}...`);
+            const result = await callFirebaseFunction('updateWeeklySettings', payload, flowUserId);
 
             if (result && result.success === true && typeof result.message === 'string') {
-                // ======================= DATA STORAGE CHANGE START =======================
-                console.log(`[experiment_setup_modal FIREBASE_SUCCESS ${interactionIdForLog}] updateWeeklySettings successful for ${flowUserTag}.`); // Use flowUserTag
-
-                // setupData is already a reference to the object in userExperimentSetupData.get()
-                // Modify it directly.
+                console.log(`[experiment_setup_modal FIREBASE_SUCCESS ${interactionIdForLog}] updateWeeklySettings successful for ${flowUserTag}.`);
                 setupData.settingsMessage = result.message;
-                setupData.deeperProblem = payload.deeperProblem;
-                setupData.input1Label = getLabel(payload.inputSettings[0], "Input 1");
-                setupData.input2Label = getLabel(payload.inputSettings[1], null);
-                setupData.input3Label = getLabel(payload.inputSettings[2], null);
-                setupData.outputLabel = getLabel(payload.outputSetting, "Output");
                 setupData.rawPayload = payload;
-                // No need to set setupData.guildId = flowGuildId; it's already correctly in setupData from the start of the flow.
-                // To be absolutely sure the map has the latest version if setupData was a copy (though .get() for objects is usually a reference):
-                userExperimentSetupData.set(flowUserId, setupData); // Use flowUserId as key
-                console.log(`[experiment_setup_modal SETUP_DATA_UPDATED ${interactionIdForLog}] Updated setupData for user ${flowUserId}.`);
-                // ======================= DATA STORAGE CHANGE END =========================
+                userExperimentSetupData.set(flowUserId, setupData);
 
-               // ===== START: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE =====
                 if (setupData) { 
                     delete setupData.preFetchedWeeklySettings;
                     delete setupData.preFetchedWeeklySettingsTimestamp;
-                    delete setupData.logFlowHasTimeMetrics; // <-- ADD THIS LINE
-                    userExperimentSetupData.set(flowUserId, setupData); 
+                    delete setupData.logFlowHasTimeMetrics;
+                    userExperimentSetupData.set(flowUserId, setupData);
                     console.log(`[experiment_setup_modal CACHE_CLEARED ${interactionIdForLog}] Cleared full pre-fetch cache for user ${flowUserId} after settings update.`);
                 }
-                // ===== END: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE =====
 
                 const durationEmbed = new EmbedBuilder()
                     .setColor('#47d264')
                     .setTitle('Experiment Duration')
                     .setDescription('When do you want your stats delivered?')
                     .setTimestamp();
-
                 const durationSelect = new StringSelectMenuBuilder()
                     .setCustomId('experiment_duration_select')
                     .setPlaceholder('See your stats in...')
@@ -6227,63 +6292,37 @@ client.on(Events.InteractionCreate, async interaction => {
                         new StringSelectMenuOptionBuilder().setLabel('3 Weeks').setValue('3_weeks').setDescription('Report in 21 days.'),
                         new StringSelectMenuOptionBuilder().setLabel('4 Weeks').setValue('4_weeks').setDescription('Report in 28 days.')
                     );
-
                 const durationRow = new ActionRowBuilder().addComponents(durationSelect);
-
-                // ======================= LOGGING CHANGE START =======================
-                console.log(`[experiment_setup_modal EDIT_REPLY ${interactionIdForLog}] Attempting editReply with duration embed/select...`); // Changed interaction.id to interactionIdForLog
-                // ======================= LOGGING CHANGE END =========================
                 await interaction.editReply({
                     content: '',
                     embeds: [durationEmbed],
                     components: [durationRow]
                 });
-                // ======================= LOGGING CHANGE START =======================
-                console.log(`[experiment_setup_modal EDIT_REPLY_SUCCESS ${interactionIdForLog}] Edited reply with duration selection.`); // Changed interaction.id to interactionIdForLog
-                // ======================= LOGGING CHANGE END =========================
+                console.log(`[experiment_setup_modal EDIT_REPLY_SUCCESS ${interactionIdForLog}] Edited reply with duration selection.`);
             } else {
-                // ======================= ERROR HANDLING CHANGE START =======================
-                console.error(`[experiment_setup_modal FIREBASE_FAIL ${interactionIdForLog}] updateWeeklySettings failed or returned invalid data for ${flowUserTag}. Result:`, result); // Use flowUserTag
-                await interaction.editReply({ content: `❌ Error saving your experiment settings: ${result?.error || 'Unknown server error.'}. Please try again or contact support.`, components: [], embeds: [] });
-                // ======================= ERROR HANDLING CHANGE END =========================
+                console.error(`[experiment_setup_modal FIREBASE_FAIL ${interactionIdForLog}] updateWeeklySettings failed for ${flowUserTag}. Result:`, result);
+                await interaction.editReply({ content: `❌ Error saving your experiment settings: ${result?.error || 'Unknown server error.'}. Please review your inputs for formatting errors and try again.`, components: [], embeds: [] });
             }
 
         } catch (error) {
             const errorTime = performance.now();
-            // ======================= ERROR HANDLING/LOGGING CHANGE START =======================
-            console.error(`[experiment_setup_modal CATCH_BLOCK_ERROR ${interactionIdForLog}] Error at ${errorTime.toFixed(2)}ms:`, error); // Use interactionIdForLog
+            console.error(`[experiment_setup_modal CATCH_BLOCK_ERROR ${interactionIdForLog}] Error at ${errorTime.toFixed(2)}ms:`, error);
             let userErrorMessage = '❌ An unexpected error occurred. Please try again.';
-            if (error.message?.includes('Firebase Error') || error.message?.includes('authentication failed')) {
+            if (error.message?.includes('Firebase Error')) {
                 userErrorMessage = `❌ ${error.message}`;
-            } else if (error instanceof TypeError && error.message.toLowerCase().includes("cannot read properties of null")) {
-                 userErrorMessage = "❌ A session error occurred (data might be missing). Please try submitting again or restart with /go.";
-                 console.error(`[experiment_setup_modal CATCH_BLOCK_TYPE_ERROR ${interactionIdForLog}] Captured TypeError related to interaction/data object state.`);
             }
-
             if (interaction.deferred || interaction.replied) {
                 try {
                     await interaction.editReply({ content: userErrorMessage, components: [], embeds: [] });
-                    console.log(`[experiment_setup_modal CATCH_BLOCK_ERROR_EDIT_REPLY_SUCCESS ${interactionIdForLog}] Sent error editReply.`);
                 } catch (editError) {
                     console.error(`[experiment_setup_modal CATCH_BLOCK_ERROR_EDIT_REPLY_FAIL ${interactionIdForLog}] Failed to send error editReply:`, editError);
                 }
-            } else {
-                 console.warn(`[experiment_setup_modal CATCH_BLOCK_ERROR_NO_REPLY_POSSIBLE ${interactionIdForLog}] Interaction not deferred/replied. Error: ${error.message}`);
-                 try {
-                    if (!interaction.replied) {
-                        await interaction.reply({ content: userErrorMessage, ephemeral: true });
-                    }
-                 } catch (replyError){
-                    console.error(`[experiment_setup_modal CATCH_BLOCK_ERROR_REPLY_FAIL ${interactionIdForLog}] Failed to send error reply:`, replyError);
-                 }
             }
-            // ======================= ERROR HANDLING/LOGGING CHANGE END =======================
         }
         const modalProcessEndTime = performance.now();
-        // ======================= LOGGING CHANGE START =======================
-        console.log(`[experiment_setup_modal END ${interactionIdForLog}] Processing finished for User: ${flowUserTag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`); // Use flowUserTag, interactionIdForLog
-        // ======================= LOGGING CHANGE END =========================
-    } // End of if (interaction.customId === 'experiment_setup_modal')
+        console.log(`[experiment_setup_modal END ${interactionIdForLog}] Processing finished for User: ${flowUserTag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`);
+    } // --- END: REPLACE THIS SECTION ---
+    
    }
 
       console.log(`--- InteractionCreate END [${interactionId}] ---\n`);
