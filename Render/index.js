@@ -3059,71 +3059,64 @@ client.on(Events.InteractionCreate, async interaction => {
     else if (interaction.customId === AI_ASSISTED_SETUP_BTN_ID) {
       // DIAGNOSTIC LOG - VERY FIRST LINE in this handler
       console.log(`[${AI_ASSISTED_SETUP_BTN_ID} ENTERED_HANDLER ${interaction.id}] Handler entered for user ${interaction.user.tag}.`);
-
       const aiSetupStartTime = performance.now();
       const userId = interaction.user.id;
       const userTag = interaction.user.tag;
       console.log(`[${interaction.customId} START ${interaction.id}] Clicked by ${userTag}. Initiating AI Assisted setup. Time: ${aiSetupStartTime.toFixed(2)}ms`);
 
       try {
+        const dmChannel = await interaction.user.createDM();
+
+        const goToDmsButton = new ButtonBuilder()
+          .setLabel('➡️ Continue in DMs')
+          .setStyle(ButtonStyle.Link)
+          .setURL(`https://discord.com/channels/@me/${dmChannel.id}`);
+
+        const actionRow = new ActionRowBuilder().addComponents(goToDmsButton);
+
         await interaction.update({
-            content: "🤖 Roger that! I'll slide into your DMs to start the AI Wish-to-Experiment Guide. Check your messages!",
+            content: "🤖 Click the button below\nto continue in the DMs!",
             embeds: [],
-            components: []
+            components: [actionRow]
         });
+
         const updateTime = performance.now();
         console.log(`[${interaction.customId} UPDATED_REPLY ${interaction.id}] Acknowledged button for ${userTag}. Took: ${(updateTime - aiSetupStartTime).toFixed(2)}ms`);
-
         // New logic to correctly determine guildId and initialize/reset state
-    const currentSetupData = userExperimentSetupData.get(userId) || {};
-    const guildIdToUse = currentSetupData.guildId || process.env.GUILD_ID; // Prioritize already stored guildId (from DM flow), fallback to ENV
+        const currentSetupData = userExperimentSetupData.get(userId) || {};
+        const guildIdToUse = currentSetupData.guildId || process.env.GUILD_ID; // Prioritize already stored guildId (from DM flow), fallback to ENV
 
-    if (!guildIdToUse) {
-        console.error(`[${AI_ASSISTED_SETUP_BTN_ID} CRITICAL ${interaction.id}] guildId could not be determined for user ${userTag}. currentSetupData.guildId was ${currentSetupData.guildId}, process.env.GUILD_ID was ${process.env.GUILD_ID}`);
-        // Since interaction.update() was just called, use editReply for the error message.
-        await interaction.editReply({ content: "Critical error: Server context is missing for AI setup. Please try starting from `/go` in the server.", components: [], embeds: [] });
-        return; // Stop further execution in this handler
-    }
+        if (!guildIdToUse) {
+            console.error(`[${AI_ASSISTED_SETUP_BTN_ID} CRITICAL ${interaction.id}] guildId could not be determined for user ${userTag}. currentSetupData.guildId was ${currentSetupData.guildId}, process.env.GUILD_ID was ${process.env.GUILD_ID}`);
+            await interaction.editReply({ content: "Critical error: Server context is missing for AI setup. Please try starting from `/go` in the server.", components: [], embeds: [] });
+            return; // Stop further execution in this handler
+        }
 
         userExperimentSetupData.set(userId, {
-            // Preserve essential IDs. userId and userTag are from the current interaction.
-            // guildId and interactionId (for this specific interaction) are explicitly set.
             userId: userId,
-            userTag: userTag, // From current interaction
-            guildId: guildIdToUse, // Correctly determined guildId
-            interactionId: interaction.id, // ID of this button click
-
-            // Reset fields specific to the AI-assisted experiment definition flow
+            userTag: userTag,
+            guildId: guildIdToUse,
+            interactionId: interaction.id,
             dmFlowState: 'awaiting_wish',
-            deeperWish: null, // This is the field your MessageCreate handler for 'awaiting_wish' uses [cite: 1380]
-            deeperProblem: null, // Also set from the wish [cite: 1380]
-            aiGeneratedOutcomeLabelSuggestions: null, // Clear any previous suggestions
+            deeperWish: null,
+            deeperProblem: null,
+            aiGeneratedOutcomeLabelSuggestions: null,
             outcomeLabel: null,
             outcomeUnit: null,
             outcomeGoal: null,
-            currentInputIndex: 1, // Start by defining Input 1
-            inputs: [], // Reset any previously defined inputs
-            aiGeneratedInputLabelSuggestions: null, // Clear previous suggestions for habits
-            currentInputDefinition: null, // Clear any partially defined habit
-            aiGeneratedUnitSuggestionsForCurrentItem: null, // Clear previous unit suggestions
-
-            // Preserve other general fields from currentSetupData if they exist and are not meant to be reset by THIS flow.
-            // For example, if 'preFetchedWeeklySettings' was set by a preceding step, you might want to keep it.
-            // However, be cautious. If this button signals a "fresh start" for AI setup, extensive resets are good.
-            // Let's assume 'start_new_experiment_prompt_btn' sets 'preFetchedWeeklySettings' if needed.
-            // Any other fields from `currentSetupData` that are NOT specific to an active setup flow can be spread if desired:
-            // ...Object.fromEntries(Object.entries(currentSetupData).filter(([key]) => ![/*list of keys to always reset*/].includes(key))),
-            // For now, the explicit list above ensures key flow variables are reset.
+            currentInputIndex: 1,
+            inputs: [],
+            aiGeneratedInputLabelSuggestions: null,
+            currentInputDefinition: null,
+            aiGeneratedUnitSuggestionsForCurrentItem: null,
         });
         console.log(`[${interaction.customId} STATE_INIT ${interaction.id}] Initialized DM flow state for ${userTag}: awaiting_wish.`);
 
-        const dmChannel = await interaction.user.createDM();
         await dmChannel.send({
-            content: "Welcome to the Wish-to-Experiment Guide! ✨\n\nThe biggest changes start with a simple wish.\n\nWhat's **1 thing** you wish was different in your daily life right now?\n\n**Examples:**\n● 'I wish I had more energy'\n● 'I wish I was less stressed'\n● 'I wish I has better relationships'\n\nType your wish below!\n\n(You'll be able to review and edit everything at the end. Type 'cancel' any time to stop this setup)."
+            content: "Welcome to the Wish-to-Experiment Guide! ✨\n\n\nThe biggest changes start with a simple wish.\n\n\nWhat's **1 thing** you wish was different in your daily life right now?\n\n**Examples:**\n● 'I wish I had more energy'\n● 'I wish I was less stressed'\n● 'I wish I has better relationships'\n\nType your wish below!\n\n(You'll be able to review and edit everything at the end. Type 'cancel' any time to stop this setup)."
         });
         const dmSentTime = performance.now();
         console.log(`[${interaction.customId} DM_SENT ${interaction.id}] Sent 'awaiting_wish' DM to ${userTag}. Took: ${(dmSentTime - updateTime).toFixed(2)}ms`);
-
       } catch (error) {
         const errorTime = performance.now();
         console.error(`[${interaction.customId} ERROR ${interaction.id}] Error initiating AI assisted setup for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
@@ -3147,8 +3140,7 @@ client.on(Events.InteractionCreate, async interaction => {
         }
         userExperimentSetupData.delete(userId);
       }
-      // No processEndTime log here as main interaction ends with DM, further steps are new interactions/messages.
-    } 
+    }
     
 
     else if (interaction.isButton() && interaction.customId === 'add_another_habit_yes_btn') {
@@ -6322,7 +6314,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const modalProcessEndTime = performance.now();
         console.log(`[experiment_setup_modal END ${interactionIdForLog}] Processing finished for User: ${flowUserTag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`);
     } // --- END: REPLACE THIS SECTION ---
-    
+
    }
 
       console.log(`--- InteractionCreate END [${interactionId}] ---\n`);
