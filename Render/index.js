@@ -1703,7 +1703,7 @@ client.on(Events.MessageCreate, async message => {
       console.log(`[MessageCreate PROCESS_INPUT1_LABELS_START ${interactionIdForLog}] State changed to '${setupData.dmFlowState}'. Getting Input 1 label suggestions.`);
       
       const habitThinkingMessage = await message.author.send(
-        `✅ **Outcome Metric Confirmed!**\n> 📍 Label: **${setupData.outcomeLabel}**\n> 📏 Unit/Scale: **${setupData.outcomeUnit}**\n> 🔢 Daily Target: **${setupData.outcomeGoal}**\n\nGreat! Now, let's define your first **Daily Habit**.\n\n🧠 I'll brainstorm some potential Daily Habits for you. This might take a moment...`
+        `✅ **Outcome Metric Confirmed!**\n\n**${setupData.outcomeGoal} ${setupData.outcomeLabel} **${setupData.outcomeUnit}**\n\nGreat! Now, let's define your first **Daily Habit**.\n\n🧠 I'll brainstorm some potential Daily Habits for you. This might take a moment...`
       );
 
       try {
@@ -4292,7 +4292,7 @@ client.on(Events.InteractionCreate, async interaction => {
             setupData.dmFlowState = 'processing_input1_label_suggestions';
             userExperimentSetupData.set(userId, setupData);
 
-            await interaction.editReply({ content: `✅ **Outcome Metric Confirmed!**\n> ${setupData.outcomeLabel}: Target at **${setupData.outcomeUnit} ${formatDecimalAsTime(decimalTime)}**\n\n🧠 Now, let's define your first **Daily Habit**. I'll brainstorm some ideas...`, components: [], embeds: [] });
+            await interaction.editReply({ content: `✅ **Outcome Metric Confirmed!**\n> ${formatDecimalAsTime(decimalTime)} ${setupData.outcomeLabel} ${setupData.outcomeUnit}\n\n🧠 Now, let's define your first **Daily Habit**. I'll brainstorm some ideas...`, components: [], embeds: [] });
             
             try {
                 const habitSuggestionsResult = await callFirebaseFunction('generateInputLabelSuggestions', { userWish: setupData.deeperWish, outcomeMetric: { label: setupData.outcomeLabel, unit: setupData.outcomeUnit, goal: setupData.outcomeGoal }, definedInputs: [] }, userId);
@@ -5725,7 +5725,7 @@ client.on(Events.InteractionCreate, async interaction => {
           const { content, embeds, components } = step.prompt(setupData);
 
           // Update the message with the new prompt, which now includes the back button
-          await interaction.update({
+          await interaction.editReply({
               content,
               embeds: embeds || [],
               components: components || []
