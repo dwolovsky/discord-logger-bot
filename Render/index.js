@@ -3063,7 +3063,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const { content, components } = step.prompt(setupData);
 
             // 7. Update the message to show the previous step's prompt
-            await interaction.update({ content, components });
+            await interaction.editReply({ content, components });
 
         } catch (error) {
             console.error(`[Dynamic Back Button ERROR ${interactionId}]`, error);
@@ -5291,7 +5291,7 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = 'awaiting_custom_outcome_label_text'; // New state 
           userExperimentSetupData.set(userId, setupData); // [cite: 1344]
         
-          await interaction.update({
+          await interaction.editReply({
               content: `Ok, please type your custom label below\n\nE.g.\n● "Optimism Score"\n● "Faith in myself"\n● "Productivity Level"`,
               components: [] // This removes the select menu from the message
           });
@@ -5409,7 +5409,7 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = 'awaiting_input1_label_text';
           userExperimentSetupData.set(userId, setupData);
           const customLabelPrompt = `Please type your habit (or life priority) below\n\nE.g.\n● "Journaling"\n● "Mindful Walk"\n● "Exercise".\n\n(max 30 characters)`;
-          await interaction.update({ content: customLabelPrompt, components: [] });
+          await interaction.editReply({ content: customLabelPrompt, components: [] });
           console.log(`[ai_input1_label_select CUSTOM_LABEL_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom Input 1 label text.`);
           return;
 
@@ -5484,7 +5484,7 @@ client.on(Events.InteractionCreate, async interaction => {
           const customLabelPrompt = `Please type your habit below\n\nE.g.\n\n● "Journaling"\n● "Mindful Walk"\n● "Exercise"\n\n(max 30 characters)`;
 
           // This single call correctly updates the DM, replacing the dropdown with the new prompt.
-          await interaction.update({
+          await interaction.editReply({
               content: customLabelPrompt,
               components: [] // This removes the select menu from the message
           });
@@ -5595,7 +5595,7 @@ client.on(Events.InteractionCreate, async interaction => {
           const customLabelPrompt = `You chose to enter your own custom label for your 3rd Daily Habit.\n\nPlease type your custom label in a new message below\n(max 30 characters).`;
 
           // This single call correctly updates the DM, replacing the dropdown with the new prompt.
-          await interaction.update({
+          await interaction.editReply({
               content: customLabelPrompt,
               components: [] // Removes the select menu
           });
@@ -5787,7 +5787,7 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = `awaiting_input${inputIndex}_custom_unit_text`;
           userExperimentSetupData.set(userId, setupData);
           const customUnitPrompt = `Okay, you want to enter a custom unit for your Habit ${inputIndex}: **"${currentHabitLabel}"**.\n\nPlease type your custom Unit/Scale below (e.g., "minutes", "reps", "0-5 scale").\nMax 15 characters.`;
-          await interaction.update({ content: customUnitPrompt, components: [] });
+          await interaction.editReply({ content: customUnitPrompt, components: [] });
           console.log(`[${interaction.customId} CUSTOM_UNIT_PROMPT_SENT ${interactionId}] Prompted for custom Input ${inputIndex} unit text.`);
           return;
 
@@ -5806,7 +5806,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
               const step = dmFlowConfig[nextState];
               const { content, embeds, components } = step.prompt(setupData);
-              await interaction.update({ content, embeds: embeds || [], components: components || [] });
+              await interaction.editReply({ content, embeds: embeds || [], components: components || [] });
               console.log(`[${interaction.customId} PROMPT_SENT ${interactionId}] Sent prompt for '${nextState}'.`);
 
           } else {
