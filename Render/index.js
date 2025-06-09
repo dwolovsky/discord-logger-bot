@@ -1101,7 +1101,7 @@ client.on(Events.MessageCreate, async message => {
     console.log(`[MessageCreate AWAITING_WISH_RECEIVED ${interactionIdForLog}] User ${userTag} submitted Deeper Wish: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
 
     // Ask the first follow-up question
-    await message.author.send("Got it. To help me suggest the best experiment, I have 3 quick questions for you.\n\nFirst: **What are the biggest blockers that get in the way of you making progress on that wish?**");
+    await message.author.send("Got it. To help me suggest the best experiment, I have 3 quick questions for you.\n\n**1. What are the biggest blockers\nthat get in the way of you\nmaking progress on that wish?**");
     console.log(`[MessageCreate ASK_BLOCKERS ${interactionIdForLog}] Prompted ${userTag} for blockers.`);
   }
 
@@ -1125,7 +1125,7 @@ client.on(Events.MessageCreate, async message => {
       console.log(`[MessageCreate AWAITING_BLOCKERS_RECEIVED ${interactionIdForLog}] User ${userTag} submitted blockers: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
       
       // Ask the second follow-up question
-      await message.author.send("That's helpful, thank you.\n\nNext: **What is one positive habit you already do consistently?**\n\n*(It can be totally unrelated to this wish, like making coffee every morning or walking the dog.)*");
+      await message.author.send("That's helpful, thank you.\n\n**Next:**\nWhat are 1 or more positive habits\nyou already do consistently?\n\n*(They can be totally unrelated to this wish,\nlike smiling every morning\nor walking the dog.)*");
       console.log(`[MessageCreate ASK_POSITIVE_HABITS ${interactionIdForLog}] Prompted ${userTag} for positive habits.`);
     }
 
@@ -1149,7 +1149,7 @@ client.on(Events.MessageCreate, async message => {
       console.log(`[MessageCreate AWAITING_POSITIVE_HABITS_RECEIVED ${interactionIdForLog}] User ${userTag} submitted positive habits: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
       
       // Ask the final follow-up question
-      await message.author.send("Excellent, that's a great foundation to build on.\n\nLast question: **If this experiment is a success, what's the first small, positive change you'll notice in your daily life?**\n\n*(Be specific! For example, if your wish is 'more energy,' a change might be 'not needing a nap at 2 PM'.)*");
+      await message.author.send("**Last question:**\nIf this experiment is a success,\nwhat's the first small, positive change\nyou'll notice in your daily life?**\n\n*(Be specific now! For example,\nif your wish is 'more energy,'\na small change might be\n'not needing a nap at 2 PM'.)*");
       console.log(`[MessageCreate ASK_VISION ${interactionIdForLog}] Prompted ${userTag} for their vision of success.`);
     }
 
