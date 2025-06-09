@@ -2605,7 +2605,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             await interaction.editReply({
               embeds: [goHubEmbed], // Send the embed
-              components: [row1, row2],
+              components: [row1], //, row2 removed
             });
             console.log(`[/go] Hub displayed successfully for ${interaction.user.tag}.`);
 
