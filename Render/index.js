@@ -1304,7 +1304,7 @@ client.on(Events.MessageCreate, async message => {
     console.log(`[MessageCreate AWAITING_WISH_RECEIVED ${interactionIdForLog}] User ${userTag} submitted Deeper Wish: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
 
     // Ask the first follow-up question
-    await message.author.send("Now let's break it down into\n**1 measurable outcome.**\n\nI have 3 quick questions for you.\n\n**1. What are the biggest blockers**\npreventing progress on that wish?");
+    await message.author.send("Now let's break it down into\n**1 measurable outcome.**\n\nTo do that, please answer 3 quick questions.\n\n1. What are the biggest blockers** preventing progress on that wish?");
     console.log(`[MessageCreate ASK_BLOCKERS ${interactionIdForLog}] Prompted ${userTag} for blockers.`);
   }
 
