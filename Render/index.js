@@ -689,7 +689,6 @@ const STREAK_MILESTONE_ROLE_NAMES = [
 // Predefined Unit Suggestions with Labels and Descriptions
 const PREDEFINED_OUTCOME_UNIT_SUGGESTIONS = [
     { label: '0-10 rating', description: 'A numerical scale from 0 to 10.' },
-    { label: '1=Yes / 0=No', description: 'Yes/No with 1 for Yes, 0 for No.' },
     { label: 'Time of Day', description: 'At / Before / After a specific time.' },
     { label: 'Tasks completed', description: 'Count of tasks finished.' },
     { label: 'Days in a row', description: 'Number of consecutive days.' },
@@ -699,7 +698,6 @@ const PREDEFINED_OUTCOME_UNIT_SUGGESTIONS = [
 
 const PREDEFINED_HABIT_UNIT_SUGGESTIONS = [
     { label: 'Repetitions', description: 'e.g., Number of push-ups, times you did X.' },
-    { label: '1=Yes / 0=No', description: 'Yes/No with 1 for Yes, 0 for No.' },
     { label: 'Time of Day', description: 'At / Before / After a specific time.' },
     { label: 'Minutes', description: 'Duration in minutes.' },
     { label: 'Hours', description: 'Duration in hours (can use decimals).' },
@@ -1105,7 +1103,7 @@ client.on(Events.MessageCreate, async message => {
     console.log(`[MessageCreate AWAITING_WISH_RECEIVED ${interactionIdForLog}] User ${userTag} submitted Deeper Wish: "${messageContent}". State changed to 'processing_wish'.`); //
 
     // ---- MODIFICATION: Send the "thinking" message and store it ----
-    const thinkingMessage = await message.author.send(`Thanks for sharing your Wish:\n"${setupData.deeperWish}"\n\n🧠 Now, let's transform that wish into a measurable outcome.\n\nI'll brainstorm some potential outcomes you could track.\n\nThis might take a moment...`); //
+    const thinkingMessage = await message.author.send(`**${setupData.deeperWish}**\n\nNow let's transform it into\na **measurable outcome.**\n\n\nBrainstorming...1 sec`); //
     // ---- END MODIFICATION ----
 
     // --- Prepare to call Firebase Function for LLM Task (Outcome Label Suggestions) ---
@@ -1130,8 +1128,14 @@ client.on(Events.MessageCreate, async message => {
         
         const outcomeLabelSelectMenu = new StringSelectMenuBuilder()
           .setCustomId('ai_outcome_label_select') // [cite: 1406]
-          .setPlaceholder('Select an Outcome or choose to enter your own.'); // [cite: 1406]
-        llmResult.suggestions.forEach((suggestion, index) => {
+          .setPlaceholder('Which of these would help?'); // [cite: 1406]
+          outcomeLabelSelectMenu.addOptions(
+            new StringSelectMenuOptionBuilder()
+              .setLabel("✏️ Enter my own...") // [cite: 1409]
+              .setValue('custom_outcome_label') // [cite: 1409]
+              .setDescription("Choose this to type your own outcome metric label.") // [cite: 1409]
+          );
+          llmResult.suggestions.forEach((suggestion, index) => {
           outcomeLabelSelectMenu.addOptions(
             new StringSelectMenuOptionBuilder()
               .setLabel(suggestion.label.substring(0, 100)) // [cite: 1407]
@@ -1139,12 +1143,7 @@ client.on(Events.MessageCreate, async message => {
               .setDescription((suggestion.briefExplanation || 'AI Suggested Label').substring(0, 100)) // [cite: 1407, 1408]
           );
         });
-        outcomeLabelSelectMenu.addOptions(
-          new StringSelectMenuOptionBuilder()
-            .setLabel("✏️ Enter my own custom label...") // [cite: 1409]
-            .setValue('custom_outcome_label') // [cite: 1409]
-            .setDescription("Choose this to type your own outcome metric label.") // [cite: 1409]
-        );
+        
         const rowWithLabelSelect = new ActionRowBuilder().addComponents(outcomeLabelSelectMenu); // [cite: 1410]
         let introMessage = `Okay, here are some ideas for a **Measurable Outcome** to support your wish:\n\n**"${setupData.deeperWish}"**.\n\nSelect one from the dropdown,\n\nOr choose "✏️ Enter my own..." to tweak any of them\n\n(It may take a moment to load after you choose...)\n\n\n`; // [cite: 1410]
 
@@ -1194,7 +1193,7 @@ client.on(Events.MessageCreate, async message => {
     else if (setupData.dmFlowState === 'processing_wish') {
       // User sent another message while wish was being processed.
       // Tell them to wait or handle appropriately.
-      await message.author.send("I'm still thinking about your wish! I'll send the examples as soon as they're ready. 😊");
+      await message.author.send("I'm still thinking about your wish!\n\nI'll send the examples as soon as they're ready. 😊");
       console.log(`[MessageCreate PROCESSING_WISH_INTERRUPT ${interactionIdForLog}] User ${userTag} sent message while wish was processing.`);
     }
 
@@ -1228,7 +1227,11 @@ client.on(Events.MessageCreate, async message => {
       const outcomeUnitSelectMenu = new StringSelectMenuBuilder()
           .setCustomId(OUTCOME_UNIT_SELECT_ID)
           .setPlaceholder('How will you measure this outcome daily?');
-      
+      outcomeUnitSelectMenu.addOptions(
+          new StringSelectMenuOptionBuilder()
+              .setLabel("✏️ Enter my own custom unit...")
+              .setValue(CUSTOM_UNIT_OPTION_VALUE)
+      );
       PREDEFINED_OUTCOME_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
           outcomeUnitSelectMenu.addOptions(
               new StringSelectMenuOptionBuilder()
@@ -1237,11 +1240,6 @@ client.on(Events.MessageCreate, async message => {
                   .setDescription(unitSuggestion.description.length > 100 ? unitSuggestion.description.substring(0,97) + '...' : unitSuggestion.description) // Use .description
           );
       });
-      outcomeUnitSelectMenu.addOptions(
-          new StringSelectMenuOptionBuilder()
-              .setLabel("✏️ Enter my own custom unit...")
-              .setValue(CUSTOM_UNIT_OPTION_VALUE)
-      );
       const rowWithOutcomeUnitSelect = new ActionRowBuilder().addComponents(outcomeUnitSelectMenu);
       const unitDropdownPromptMessage = `Got it. Your outcome metric is labeled: **"${setupData.outcomeLabel}"**.\n\n` +
                                       `Now, how will you **Measure** this outcome daily? This is its **Unit**.\n` +
@@ -1293,9 +1291,14 @@ client.on(Events.MessageCreate, async message => {
 
         const outcomeUnitSelectMenu = new StringSelectMenuBuilder()
             .setCustomId(OUTCOME_UNIT_SELECT_ID) // Use your new constant
-            .setPlaceholder('How will you measure this outcome daily?');
+            .setPlaceholder('How can you measure this outcome daily?');
         
         // CORRECTED LOOP: Access .label and .description properties of the object
+        outcomeUnitSelectMenu.addOptions(
+            new StringSelectMenuOptionBuilder()
+                .setLabel("✏️ Enter my own custom unit...")
+                .setValue(CUSTOM_UNIT_OPTION_VALUE) // Use your new constant
+        );
         PREDEFINED_OUTCOME_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
             outcomeUnitSelectMenu.addOptions(
                 new StringSelectMenuOptionBuilder()
@@ -1304,12 +1307,6 @@ client.on(Events.MessageCreate, async message => {
                     .setDescription((unitSuggestion.description || '').substring(0, 100))
             );
         });
-
-        outcomeUnitSelectMenu.addOptions(
-            new StringSelectMenuOptionBuilder()
-                .setLabel("✏️ Enter my own custom unit...")
-                .setValue(CUSTOM_UNIT_OPTION_VALUE) // Use your new constant
-        );
 
         const rowWithOutcomeUnitSelect = new ActionRowBuilder().addComponents(outcomeUnitSelectMenu);
         const unitDropdownPromptMessage = `Great! Your Outcome is:\n\n**"${setupData.outcomeLabel}"**.\n\nHow will you measure this daily? Choose a numerical scale/unit from the list, or enter your own.`;
@@ -1452,7 +1449,13 @@ client.on(Events.MessageCreate, async message => {
           const habitLabelSelectMenu = new StringSelectMenuBuilder()
             .setCustomId('ai_input1_label_select') //
             .setPlaceholder('Select a Habit or enter your own.'); //
-          habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
+            habitLabelSelectMenu.addOptions(
+              new StringSelectMenuOptionBuilder()
+                .setLabel("✏️ Enter my own custom habit label...") //
+                .setValue('custom_input1_label') //
+                .setDescription("Choose this to type your own habit label.") //
+            );
+            habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
             habitLabelSelectMenu.addOptions(
               new StringSelectMenuOptionBuilder()
                 .setLabel(suggestion.label.substring(0, 100)) //
@@ -1460,12 +1463,7 @@ client.on(Events.MessageCreate, async message => {
                 .setDescription((suggestion.briefExplanation || 'AI Suggested Habit').substring(0, 100)) //
             );
           });
-          habitLabelSelectMenu.addOptions(
-            new StringSelectMenuOptionBuilder()
-              .setLabel("✏️ Enter my own custom habit label...") //
-              .setValue('custom_input1_label') //
-              .setDescription("Choose this to type your own habit label.") //
-          );
+          
           const rowWithHabitLabelSelect = new ActionRowBuilder().addComponents(habitLabelSelectMenu); //
 
           // ---- MODIFICATION: Edit the "thinking about habits" message ----
@@ -1554,6 +1552,11 @@ client.on(Events.MessageCreate, async message => {
           .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // Dynamic ID e.g., input_unit_select_1
           .setPlaceholder('How will you measure this habit daily?');
       
+      habitUnitSelectMenu.addOptions(
+          new StringSelectMenuOptionBuilder()
+              .setLabel("✏️ Enter my own custom unit...")
+              .setValue(CUSTOM_UNIT_OPTION_VALUE)
+      );
       PREDEFINED_HABIT_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
           habitUnitSelectMenu.addOptions(
               new StringSelectMenuOptionBuilder()
@@ -1562,11 +1565,7 @@ client.on(Events.MessageCreate, async message => {
                   .setDescription(unitSuggestion.description.length > 100 ? unitSuggestion.description.substring(0,97) + '...' : unitSuggestion.description)
           );
       });
-      habitUnitSelectMenu.addOptions(
-          new StringSelectMenuOptionBuilder()
-              .setLabel("✏️ Enter my own custom unit...")
-              .setValue(CUSTOM_UNIT_OPTION_VALUE)
-      );
+      
       const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
       const unitDropdownPromptMessage = `Okay, your first Daily Habit is: **"${input1Label}"**.\n\n` +
                                       `How will you measure this daily? This is its **Unit**.\n` +
@@ -1622,7 +1621,11 @@ client.on(Events.MessageCreate, async message => {
       const habitUnitSelectMenu = new StringSelectMenuBuilder()
           .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // Dynamic ID e.g., input_unit_select_2
           .setPlaceholder('How will you measure this habit daily?');
-
+      habitUnitSelectMenu.addOptions(
+                new StringSelectMenuOptionBuilder()
+                    .setLabel("✏️ Enter my own custom unit...")
+                    .setValue(CUSTOM_UNIT_OPTION_VALUE)
+            );
       PREDEFINED_HABIT_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
           habitUnitSelectMenu.addOptions(
               new StringSelectMenuOptionBuilder()
@@ -1631,11 +1634,7 @@ client.on(Events.MessageCreate, async message => {
                   .setDescription(unitSuggestion.description.length > 100 ? unitSuggestion.description.substring(0,97) + '...' : unitSuggestion.description)
           );
       });
-      habitUnitSelectMenu.addOptions(
-          new StringSelectMenuOptionBuilder()
-              .setLabel("✏️ Enter my own custom unit...")
-              .setValue(CUSTOM_UNIT_OPTION_VALUE)
-      );
+      
       const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
       const unitDropdownPromptMessage = `Okay, your second Daily Habit is: **"${input2Label}"**.\n\n` +
                                       `How will you measure this daily? This is its **Unit**.\n` +
@@ -1696,7 +1695,12 @@ client.on(Events.MessageCreate, async message => {
       const habitUnitSelectMenu = new StringSelectMenuBuilder()
           .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // This will be 'input_unit_select_3'
           .setPlaceholder('How will you measure this habit daily?');
-      
+      habitUnitSelectMenu.addOptions(
+          new StringSelectMenuOptionBuilder()
+              .setLabel("✏️ Enter my own custom unit...")
+              .setValue(CUSTOM_UNIT_OPTION_VALUE) // Your constant for this option
+      );
+
       // Assumes PREDEFINED_HABIT_UNIT_SUGGESTIONS is an array of objects: { label: string, description?: string }
       PREDEFINED_HABIT_UNIT_SUGGESTIONS.forEach(unitObj => {
           const option = new StringSelectMenuOptionBuilder()
@@ -1707,11 +1711,6 @@ client.on(Events.MessageCreate, async message => {
           }
           habitUnitSelectMenu.addOptions(option);
       });
-      habitUnitSelectMenu.addOptions(
-          new StringSelectMenuOptionBuilder()
-              .setLabel("✏️ Enter my own custom unit...")
-              .setValue(CUSTOM_UNIT_OPTION_VALUE) // Your constant for this option
-      );
 
       const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
       // input3Label is the custom label typed by the user earlier in this 'awaiting_input3_label_text' block
@@ -2493,7 +2492,7 @@ client.on(Events.InteractionCreate, async interaction => {
               .addFields(
                   { name: '🔬 Set Experiment', value: 'Define your goals and metrics.', inline: true },
                   { name: '✍️ Log Daily Data', value: 'Record your metrics and notes.', inline: true },
-                  { name: '🔥 Streak Stats', value: 'View your streak and the leaderboard.', inline: true },
+                  //{ name: '🔥 Streak Stats', value: 'View your streak and the leaderboard.', inline: true },
                   { name: '💡 AI Insights', value: 'Get AI-powered analysis of your data.', inline: true }
               )
 
@@ -2508,11 +2507,13 @@ client.on(Events.InteractionCreate, async interaction => {
               .setLabel('✍️ Log Daily Data')
               .setStyle(ButtonStyle.Success);
 
-            const streakCenterButton = new ButtonBuilder()
+           /*
+              const streakCenterButton = new ButtonBuilder()
               .setCustomId('streak_center_btn')
               .setLabel('🔥 Streak Progress')
               .setStyle(ButtonStyle.Secondary)
               .setDisabled(true); // Disabled for now
+           */
 
             const insightsButton = new ButtonBuilder()
               .setCustomId('ai_insights_btn')
@@ -3113,8 +3114,9 @@ client.on(Events.InteractionCreate, async interaction => {
         console.log(`[${interaction.customId} STATE_INIT ${interaction.id}] Initialized DM flow state for ${userTag}: awaiting_wish.`);
 
         await dmChannel.send({
-            content: "Welcome to the Wish-to-Experiment Guide! ✨\n\n\nThe biggest changes start with a simple wish.\n\n\nWhat's **1 thing** you wish was different in your daily life right now?\n\n**Examples:**\n● 'I wish I had more energy'\n● 'I wish I was less stressed'\n● 'I wish I has better relationships'\n\nType your wish below!\n\n(You'll be able to review and edit everything at the end. Type 'cancel' any time to stop this setup)."
-        });
+            content: "The biggest changes start with a simple wish ✨\n\n\nWhat's **1 thing** you wish was different in your daily life right now?\n\n**Examples:**\n● 'I wish I had more energy'\n● 'I wish I was less stressed'\n● 'I wish I has better relationships'\n\nTap 💬 (bottom right) and type your wish!"
+          //REMOVED \n\n(You'll be able to review and edit everything at the end. Type 'cancel' any time to stop this setup).
+          });
         const dmSentTime = performance.now();
         console.log(`[${interaction.customId} DM_SENT ${interaction.id}] Sent 'awaiting_wish' DM to ${userTag}. Took: ${(dmSentTime - updateTime).toFixed(2)}ms`);
       } catch (error) {
@@ -3224,7 +3226,12 @@ client.on(Events.InteractionCreate, async interaction => {
               const habitLabelSelectMenu = new StringSelectMenuBuilder()
                 .setCustomId(`ai_input${nextInputNumber}_label_select`) // Dynamic Custom ID
                 .setPlaceholder(`Select a Label for Habit ${nextInputNumber} or enter your own.`);
-
+              habitLabelSelectMenu.addOptions(
+                new StringSelectMenuOptionBuilder()
+                  .setLabel(`✏️ Enter my own custom label for Habit ${nextInputNumber}...`)
+                  .setValue(`custom_input${nextInputNumber}_label`) // Dynamic value
+                  .setDescription("Choose this to type your own habit label.")
+              );
               habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
                 habitLabelSelectMenu.addOptions(
                   new StringSelectMenuOptionBuilder()
@@ -3233,12 +3240,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setDescription((suggestion.briefExplanation || 'AI Suggested Habit').substring(0, 100))
                 );
               });
-              habitLabelSelectMenu.addOptions(
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(`✏️ Enter my own custom label for Habit ${nextInputNumber}...`)
-                  .setValue(`custom_input${nextInputNumber}_label`) // Dynamic value
-                  .setDescription("Choose this to type your own habit label.")
-              );
+              
               const rowWithHabitLabelSelect = new ActionRowBuilder().addComponents(habitLabelSelectMenu);
               
               // Send a new message in DM for the dropdown
@@ -3985,7 +3987,7 @@ client.on(Events.InteractionCreate, async interaction => {
               userExperimentSetupData.set(userId, setupData);
               const habitLabelSelectMenu = new StringSelectMenuBuilder().setCustomId('ai_input1_label_select').setPlaceholder('Select a Habit or enter your own.');
               habitSuggestionsResult.suggestions.forEach((suggestion, index) => { habitLabelSelectMenu.addOptions(new StringSelectMenuOptionBuilder().setLabel(suggestion.label.substring(0, 100)).setValue(`ai_input1_label_suggestion_${index}`).setDescription((suggestion.briefExplanation || 'AI Suggested Habit').substring(0, 100))); });
-              habitLabelSelectMenu.addOptions(new StringSelectMenuOptionBuilder().setLabel("✏️ Enter my own custom habit label...").setValue('custom_input1_label').setDescription("Choose this to type your own habit label."));
+              habitLabelSelectMenu.addOptions(new StringSelectMenuOptionBuilder().setLabel("✏️ Enter my own custom habit...").setValue('custom_input1_label').setDescription("Choose this to type your own habit."));
               await interaction.user.send({ content: `Based on your goal, here are some ideas for your **1st Daily Habit**.\n\nSelect one, or choose "✏️ Enter my own..." to type a different one.`, components: [new ActionRowBuilder().addComponents(habitLabelSelectMenu)] });
           } else {
               setupData.dmFlowState = 'awaiting_input1_label_text';
@@ -4807,8 +4809,8 @@ client.on(Events.InteractionCreate, async interaction => {
         //    (Reusing the embed and buttons from 'set_update_experiment_btn' handler)
         const choiceEmbed = new EmbedBuilder()
           .setColor('#7F00FF')
-          .setTitle('🔬 How would you like to set up your new experiment?')
-          .setDescription("Choose your preferred method:\n\n✨ **AI Assisted (Beginner):** I'll guide you step-by-step, starting with a wish and helping you define your experiment with AI examples.\n\n✍️ **Manual Setup (Advanced):** You'll fill out a form with all your experiment details directly.");
+          .setTitle('🔬 Want some AI help?')
+         // .setDescription("Choose your preferred method:\n\n✨ **AI Assisted (Beginner):** I'll guide you step-by-step, starting with a wish and helping you define your experiment with AI examples.\n\n✍️ **Manual Setup (Advanced):** You'll fill out a form with all your experiment details directly.");
 
         const aiButton = new ButtonBuilder()
           .setCustomId(AI_ASSISTED_SETUP_BTN_ID) // Existing ID
@@ -4999,6 +5001,12 @@ client.on(Events.InteractionCreate, async interaction => {
               .setCustomId(OUTCOME_UNIT_SELECT_ID) 
               .setPlaceholder('How will you measure this outcome daily?'); // [cite: 1358]
           
+              outcomeUnitSelectMenu.addOptions(
+              new StringSelectMenuOptionBuilder()
+                  .setLabel("✏️ Enter my own custom unit...")
+                  .setValue(CUSTOM_UNIT_OPTION_VALUE) 
+          ); // [cite: 1360]
+
           PREDEFINED_OUTCOME_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
               outcomeUnitSelectMenu.addOptions(
                   new StringSelectMenuOptionBuilder()
@@ -5007,12 +5015,6 @@ client.on(Events.InteractionCreate, async interaction => {
                       .setDescription((unitSuggestion.description || '').substring(0, 100)) // CORRECTED & Added description
               );
           }); 
-          
-          outcomeUnitSelectMenu.addOptions(
-              new StringSelectMenuOptionBuilder()
-                  .setLabel("✏️ Enter my own custom unit...")
-                  .setValue(CUSTOM_UNIT_OPTION_VALUE) 
-          ); // [cite: 1360]
           
           const rowWithOutcomeUnitSelect = new ActionRowBuilder().addComponents(outcomeUnitSelectMenu); // [cite: 1361]
           const unitDropdownPromptMessage = `Great! The Outcome you're tracking is\n\n**"${setupData.outcomeLabel}"**.\n\nHow will you measure this daily? Choose a numerical scale/unit from the list, or enter your own.`; // [cite: 1362]
@@ -5122,6 +5124,11 @@ client.on(Events.InteractionCreate, async interaction => {
             .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // Dynamic ID
             .setPlaceholder('How will you measure this habit daily?');
         
+         habitUnitSelectMenu.addOptions(
+            new StringSelectMenuOptionBuilder()
+                .setLabel("✏️ Enter my own custom unit...")
+                .setValue(CUSTOM_UNIT_OPTION_VALUE)
+        );
         PREDEFINED_HABIT_UNIT_SUGGESTIONS.forEach(unitSuggestion => { // unitSuggestion is an OBJECT here
             habitUnitSelectMenu.addOptions(
                 new StringSelectMenuOptionBuilder()
@@ -5129,13 +5136,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setValue(unitSuggestion.label) // CORRECTED - using label as value
                     .setDescription((unitSuggestion.description || '').substring(0, 100)) // CORRECTED & Added description
             );
-        });
-        
-        habitUnitSelectMenu.addOptions(
-            new StringSelectMenuOptionBuilder()
-                .setLabel("✏️ Enter my own custom unit...")
-                .setValue(CUSTOM_UNIT_OPTION_VALUE)
-        );
+        });  
         
         const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
         const unitDropdownPromptMessage = `Okay, habit ${setupData.currentInputIndex} is "**${chosenHabitLabel}**".\n\nHow will you measure this? Choose a numerical scale/unit or enter your own.`;
@@ -5235,6 +5236,12 @@ client.on(Events.InteractionCreate, async interaction => {
             .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // Will be 'input_unit_select_2'
             .setPlaceholder('How will you measure this habit daily?');
         
+
+        habitUnitSelectMenu.addOptions(
+            new StringSelectMenuOptionBuilder()
+                .setLabel("✏️ Enter my own custom unit...")
+                .setValue(CUSTOM_UNIT_OPTION_VALUE)
+        );
         PREDEFINED_HABIT_UNIT_SUGGESTIONS.forEach(unitObj => { // unitObj is an OBJECT here
             const option = new StringSelectMenuOptionBuilder()
                 .setLabel(unitObj.label.substring(0, 100)) // CORRECTED
@@ -5244,13 +5251,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             habitUnitSelectMenu.addOptions(option);
         });
-        
-        habitUnitSelectMenu.addOptions(
-            new StringSelectMenuOptionBuilder()
-                .setLabel("✏️ Enter my own custom unit...")
-                .setValue(CUSTOM_UNIT_OPTION_VALUE)
-        );
-        
+                
         const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
         const unitDropdownPromptMessage = `Okay, habit ${setupData.currentInputIndex} is "**${chosenHabitLabel}**".\n\nHow will you measure this? Choose a numerical scale/unit or enter your own.`;
         // ***** END: CORRECTED SECTION *****
@@ -5346,6 +5347,12 @@ client.on(Events.InteractionCreate, async interaction => {
             .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // Will be 'input_unit_select_3'
             .setPlaceholder('How will you measure this habit daily?');
         
+
+        habitUnitSelectMenu.addOptions(
+            new StringSelectMenuOptionBuilder()
+                .setLabel("✏️ Enter my own custom unit...")
+                .setValue(CUSTOM_UNIT_OPTION_VALUE)
+        );
         PREDEFINED_HABIT_UNIT_SUGGESTIONS.forEach(unitObj => { // unitObj is an OBJECT here
             const option = new StringSelectMenuOptionBuilder()
                 .setLabel(unitObj.label.substring(0, 100)) // CORRECTED
@@ -5355,13 +5362,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             habitUnitSelectMenu.addOptions(option);
         });
-        
-        habitUnitSelectMenu.addOptions(
-            new StringSelectMenuOptionBuilder()
-                .setLabel("✏️ Enter my own custom unit...")
-                .setValue(CUSTOM_UNIT_OPTION_VALUE)
-        );
-        
+                      
         const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
         const unitDropdownPromptMessage = `Okay, habit ${setupData.currentInputIndex} is "**${chosenHabitLabel}**".\n\nHow will you measure this? Choose a numerical scale/unit or enter your own.`;
         // ***** END: CORRECTED SECTION *****
