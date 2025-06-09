@@ -5054,7 +5054,7 @@ client.on(Events.InteractionCreate, async interaction => {
           ? "👍 Got it! Your experiment is all set and kept private. (I couldn't DM you the summary, you may have DMs disabled)."
           : "👍 Got it! Your experiment is all set and kept private. I've DMed you a summary. Good luck!";
       
-      await interaction.update({
+      await interaction.editReply({
           content: finalMessage,
           components: []
       });
@@ -5440,7 +5440,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const step = dmFlowConfig[setupData.dmFlowState];
         const { content, components } = step.prompt(setupData);
         
-        await interaction.update({ content, components });
+        await interaction.editReply({ content, components });
         console.log(`[ai_input1_label_select UNIT_DROPDOWN_SENT ${interactionId}] Prompted ${userTagForLog} with habit unit dropdown for Input 1.`);
 
       } catch (error) {
@@ -5821,12 +5821,12 @@ client.on(Events.InteractionCreate, async interaction => {
                   const timeMinuteSelect = new StringSelectMenuBuilder().setCustomId(EXP_SETUP_INPUT_M_ID).setPlaceholder('Select the Target MINUTE').addOptions(new StringSelectMenuOptionBuilder().setLabel(':00').setValue('00'), new StringSelectMenuOptionBuilder().setLabel(':15').setValue('15'), new StringSelectMenuOptionBuilder().setLabel(':30').setValue('30'), new StringSelectMenuOptionBuilder().setLabel(':45').setValue('45'));
                   const timeAmPmSelect = new StringSelectMenuBuilder().setCustomId(EXP_SETUP_INPUT_AP_ID).setPlaceholder('Select AM or PM').addOptions(new StringSelectMenuOptionBuilder().setLabel('AM').setValue('AM'), new StringSelectMenuOptionBuilder().setLabel('PM').setValue('PM'));
                   const confirmButton = new ButtonBuilder().setCustomId(CONFIRM_INPUT_TARGET_TIME_BTN_ID).setLabel('Confirm Target Time').setStyle(ButtonStyle.Success);
-                  await interaction.update({ content: `**${currentHabitLabel}** **${selectedValue}**. Please set the target time below.`, embeds: [timeEmbed], components: [new ActionRowBuilder().addComponents(timeHourSelect), new ActionRowBuilder().addComponents(timeMinuteSelect), new ActionRowBuilder().addComponents(timeAmPmSelect), new ActionRowBuilder().addComponents(confirmButton)] });
+                  await interaction.editReply({ content: `**${currentHabitLabel}** **${selectedValue}**. Please set the target time below.`, embeds: [timeEmbed], components: [new ActionRowBuilder().addComponents(timeHourSelect), new ActionRowBuilder().addComponents(timeMinuteSelect), new ActionRowBuilder().addComponents(timeAmPmSelect), new ActionRowBuilder().addComponents(confirmButton)] });
               } else {
                   setupData.dmFlowState = `awaiting_input${inputIndex}_target_number`;
                   userExperimentSetupData.set(userId, setupData);
                   const targetPromptMessage = `Perfect!\nFor your habit **"${currentHabitLabel}"** (measured in **"${selectedValue}"**):\n\nWhat is your daily **Target Number**?\nPlease type the number below (e.g., 30, 1, 0, 5.5).`;
-                  await interaction.update({ content: targetPromptMessage, components: [] });
+                  await interaction.editReply({ content: targetPromptMessage, components: [] });
               }
               console.log(`[${interaction.customId} PREDEFINED_UNIT_SELECTED_FALLBACK ${interactionId}] Used old logic to send target prompt for Input ${inputIndex}.`);
           }
