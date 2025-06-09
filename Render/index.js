@@ -2567,13 +2567,13 @@ client.on(Events.InteractionCreate, async interaction => {
             // --- Create an Embed for the Go Hub message ---
             const goHubEmbed = new EmbedBuilder()
               .setColor('#7F00FF') // A nice vibrant purple, change as you like
-              .setTitle('🚀 Your Go Hub 🚀')
+              .setTitle('⚡ Go Hub 🚀')
               .setDescription('Welcome to your experiment control panel')
               .addFields(
-                  { name: '🔬 Set Experiment', value: 'Define your goals and metrics.', inline: true },
-                  { name: '✍️ Log Daily Data', value: 'Record your metrics and notes.', inline: true },
+                  { name: '🔬 Set Experiment', value: 'Define your goals & metrics.', inline: true },
+                  { name: '✍️ Daily Log', value: 'Log your metrics & notes.', inline: true },
                   //{ name: '🔥 Streak Stats', value: 'View your streak and the leaderboard.', inline: true },
-                  { name: '💡 AI Insights', value: 'Get AI-powered analysis of your data.', inline: true }
+                  //{ name: '💡 AI Insights', value: 'Get AI-powered analysis of your data.', inline: true }
               )
 
             // --- Build the Go Hub buttons ---
@@ -2584,7 +2584,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             const logProgressButton = new ButtonBuilder()
               .setCustomId('log_daily_progress_btn')
-              .setLabel('✍️ Log Daily Data')
+              .setLabel('✍️ Daily Log')
               .setStyle(ButtonStyle.Success);
 
            /*
@@ -2593,14 +2593,14 @@ client.on(Events.InteractionCreate, async interaction => {
               .setLabel('🔥 Streak Progress')
               .setStyle(ButtonStyle.Secondary)
               .setDisabled(true); // Disabled for now
-           */
-
+        
             const insightsButton = new ButtonBuilder()
               .setCustomId('ai_insights_btn')
               .setLabel('💡 AI Insights')
               .setStyle(ButtonStyle.Secondary);
+            */
 
-            const row1 = new ActionRowBuilder().addComponents(setExperimentButton, logProgressButton, insightsButton);
+            const row1 = new ActionRowBuilder().addComponents(setExperimentButton, logProgressButton);
             // const row2 = new ActionRowBuilder().addComponents(streakCenterButton, insightsButton);
 
             await interaction.editReply({
