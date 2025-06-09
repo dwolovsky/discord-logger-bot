@@ -5917,7 +5917,10 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         // 5. Basic Validation
-        if (!payloadOutputValue || !payloadInputValues[0] || !notes) {
+        // This check is now more specific to allow the number 0 as a valid input.
+        if (payloadOutputValue === undefined || payloadOutputValue === null || 
+           (payloadInputValues[0] === undefined || payloadInputValues[0] === null || payloadInputValues[0] === "") || 
+           !notes) {
             await interaction.editReply({ content: "❌ Missing required fields (Outcome, Habit 1, or Notes)." });
             return;
         }
