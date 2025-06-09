@@ -3763,12 +3763,14 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
   }
   const userId = request.auth.uid;
 
-  if (!request.data || !request.data.userWish || typeof request.data.userWish !== 'string' || request.data.userWish.trim() === '') {
-    logger.warn(`[generateOutcomeLabelSuggestions] Invalid argument: userWish missing or empty for user ${userId}.`);
-    throw new HttpsError('invalid-argument', 'The function must be called with a non-empty "userWish".');
+  // NEW: Destructure and validate all new context fields
+  const { userWish, userBlockers, userPositiveHabits, userVision } = request.data;
+  if (!userWish || !userBlockers || !userPositiveHabits || !userVision) {
+    logger.warn(`[generateOutcomeLabelSuggestions] Invalid argument: Missing one or more context fields for user ${userId}.`);
+    throw new HttpsError('invalid-argument', 'The function must be called with userWish, userBlockers, userPositiveHabits, and userVision.');
   }
-  const userWish = request.data.userWish.trim();
-  logger.info(`[generateOutcomeLabelSuggestions] Processing request for user: <span class="math-inline">\{userId\}, wish\: "</span>{userWish}"`);
+  
+  logger.info(`[generateOutcomeLabelSuggestions] Processing request for user: ${userId}, with full context.`);
 
   // 2. Check if Gemini Client is available
   if (!genAI) {
@@ -3776,63 +3778,74 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
     throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
   }
 
-  // 3. Construct Prompt for LLM
+  // 3. Construct NEW Prompt for LLM using all context
   const promptText = `
-    Based on the user's "Deeper Wish" for their daily life: "${userWish}", your task is to generate 5 distinct and relevant "Outcome Metrics" the user could track daily to see if they are making progress related to their wish.
-    It should be a **key state, feeling, or result** that helps the user know if they are making progress on their "Deeper Wish." The metric should be **simple to assess and record as a non-negative number (>=0, decimals included) each day.** The goal is a 1-minute daily logging of the outcome metric.
+    Based on the following context from a user who wants to run a self-experiment, your task is to generate 5 distinct and relevant "Outcome Metrics".
+    The metric should be a key state, feeling, or result that is simple to assess and record as a non-negative number each day.
 
-    For your reference: after you provide the labels, the user will choose a scale/units to measure the outcome by. Users will get scale/unit suggestions from this array:
-    { label: '0-10 rating', description: 'A numerical scale from 0 to 10.' },
-    { label: '1=Yes / 0=No', description: 'Yes/No with 1 for Yes, 0 for No.' },
-    { label: 'Time of Day', description: 'Log a specific time using H:M AM/PM dropdowns.' },
-    { label: 'Tasks completed', description: 'Count of tasks finished.' },
-    { label: 'Days in a row', description: 'Number of consecutive days.' },
-    { label: '% growth', description: 'Percentage increase (no negative numbers).' },
-    { label: 'Compared to yesterday', description: '0=Much Worse, 5=Same, 10=Much Better.' }
+    To guide your thinking, know that after you suggest labels, the user will measure them using simple scales like these:
+    - An 'out of 10' rating (e.g., for self-confidence, satisfaction, mood).
+    - A specific 'Time of Day' (e.g., for tracking mealtimes, bedtimes).
+    - A '% growth' (e.g., for tracking strength gains, no negative #s).
+    - A 'Compared to yesterday' rating (0=worse, 5=same, 10=better).
 
-    Provide diverse labels that easily fit these simple measurement types for an **outcome**. Avoid suggesting labels that require complex tracking (like precise durations of subjective states). Outcomes should also not be actions/habits themselves. The outcome is a result of doing certain habits.
+    Therefore, your suggested labels should be for feelings, states, or simple results that fit these measurement types. Avoid suggesting complex actions as outcomes. And DO NOT suggest these units as outcomes themselves.
+
+    USER CONTEXT:
+    - Deeper Wish: "${userWish}"
+    - Biggest Blockers: "${userBlockers}"
+    - Existing Positive Habit: "${userPositiveHabits}"
+    - Vision of Success (first noticeable change): "${userVision}"
+
+    Your suggestions should be directly inspired by this context. For example:
+    - The metric should directly measure the "Vision of Success".
+    - It should be the inverse of a "Blocker" (e.g., if blocker is 'procrastination', a metric could be 'Sense of Accomplishment').
+    - It might be related to the feeling the "Existing Positive Habit" provides.
+
+    For more context: after you provide the outcome labels, the user will choose a scale/units to measure the outcome by. Users will get scale/unit suggestions from this array (or they can enter their own):
+    { label: 'out of 10', description: 'E.g. for self-confidence, satisfaction, mood. 0-10 scale.' },
+    { label: 'Time of Day', description: 'E.g. for tracking mealtimes, bedtimes, etc.' },
+    { label: '% growth', description: 'E.g. for tracking strength gains, income, or followers (no negative #s).' },
+    { label: 'Compared to yesterday', description: '0=much Worse, 5=same, 10=much Better.' }
 
     For each of the five suggestions, you MUST provide:
-        1.  A "label": A clear, concise name for the outcome metric they will track daily (e.g., 'Overall Mood', 'Productive Hours', 'Sleep Quality', 'Feeling of Connection', 'Stress Level'). Max 25 characters.
-        2.  A "briefExplanation": A short (10-15 words) explanation of the relevance to the user's wish.
+    1.  A "label": A clear, concise name for the outcome metric (e.g., 'Morning Calmness', 'Productive Focus', 'Feeling of Connection'). Max 25 characters.
+    2.  A "briefExplanation": A short (10-15 words) explanation of its relevance to the user's context.
 
-    The suggestions should fit the deeper wish, with 1 or 2 being more creative. Start the creative suggestions' "briefExplanations" with the phrase "More creative:"
-    Return ONLY a valid JSON array containing 5 objects, where each object represents an outcome metric suggestion and strictly follows the structure:
+    The suggestions should be diverse, with 1 or 2 being more creative interpretations of the user's context. Start the "briefExplanation" for these creative suggestions with "A different angle:".
+
+    Return ONLY a valid JSON array containing 5 objects, where each object strictly follows the structure:
     { "label": "Example Label", "briefExplanation": "Example explanation." }
 
-    Your entire response should be a JSON array: [suggestion1, suggestion2, suggestion3, suggestion4, suggestion5]
-    Do not include any other text or explanation outside of this JSON array. Ensure each label is 25 characters or less.
+    Your entire response must be only the JSON array. Do not include any other text.
   `;
 
-  logger.info(`[generateOutcomeLabelSuggestions] Sending prompt to Gemini for user ${userId}.`);
+  logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
 
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{text: promptText}] }],
         generationConfig: {
-            ...GEMINI_CONFIG, // Your global Gemini config [cite: 967]
+            ...GEMINI_CONFIG,
             temperature: 0.85, 
             responseMimeType: "application/json",
         },
     });
-
     const response = await generationResult.response;
     const responseText = response.text()?.trim();
 
     if (!responseText) {
-        logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user <span class="math-inline">\{userId\}, wish\: "</span>{userWish}".`);
+        logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
         throw new HttpsError('internal', 'AI failed to generate suggestions (empty response).');
     }
-
-    logger.info(`[generateOutcomeLabelSuggestions] Received raw response from Gemini for user ${userId}. Length: ${responseText.length}.`);
 
     let suggestions;
     try {
         suggestions = JSON.parse(responseText);
     } catch (parseError) {
-        logger.error(`[generateOutcomeLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: <span class="math-inline">\{parseError\.message\}\. Raw response\: "</span>{responseText}"`);
-        throw new HttpsError('internal', `AI returned an invalid format. Could not parse suggestions. Details: ${parseError.message}`);
+        logger.error(`[generateOutcomeLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}"`);
+        throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
     }
 
     if (!Array.isArray(suggestions) || suggestions.length !== 5) {
@@ -3840,6 +3853,7 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
         throw new HttpsError('internal', 'AI did not return five outcome suggestions as expected.');
     }
 
+    // Basic validation of the array contents
     for (const suggestion of suggestions) {
         if (!suggestion.label || !suggestion.briefExplanation ||
             typeof suggestion.label !== 'string' || suggestion.label.length > 45 ||
@@ -3853,13 +3867,13 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
     return { success: true, suggestions: suggestions };
 
   } catch (error) {
-    logger.error(`[generateOutcomeLabelSuggestions] Error during Gemini API call or processing for user <span class="math-inline">\{userId\}, wish "</span>{userWish}":`, error);
+    logger.error(`[generateOutcomeLabelSuggestions] Error during Gemini API call or processing for user ${userId}:`, error);
     if (error instanceof HttpsError) {
         throw error;
     }
     if (error.message && error.message.toLowerCase().includes('safety')) {
-        logger.warn(`[generateOutcomeLabelSuggestions] Gemini content generation blocked due to safety settings for user <span class="math-inline">\{userId\}, wish "</span>{userWish}".`);
-        throw new HttpsError('resource-exhausted', "The AI couldn't generate suggestions for this wish due to content restrictions. Please try rephrasing your wish or try a different one.");
+        logger.warn(`[generateOutcomeLabelSuggestions] Gemini content generation blocked due to safety settings for user ${userId}.`);
+        throw new HttpsError('resource-exhausted', "The AI couldn't generate suggestions due to content restrictions. Please try rephrasing your answers.");
     }
     throw new HttpsError('internal', `Failed to generate AI suggestions due to a server error. Details: ${error.message}`);
   }
