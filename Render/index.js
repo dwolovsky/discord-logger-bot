@@ -558,7 +558,7 @@ const dmFlowConfig = {
             .setCustomId('back_to:awaiting_outcome_unit_dropdown_selection')
             .setLabel('⬅️ Back')
             .setStyle(ButtonStyle.Secondary);
-        const content = `**${setupData.outcomeLabel},\n${setupData.outcomeUnit}**.\n\nWhat's your daily **Target Number/Amount** for this?\n\nPlease type the number below\n(0 and up, decimals ok ✅)`;
+        const content = `**↳ ${setupData.outcomeLabel},\n${setupData.outcomeUnit}**.\n\nNow what's your daily **Target Number/Amount** for this?\n\nPlease type the number below\n(0 and up, decimals work ✅)`;
         const components = [new ActionRowBuilder().addComponents(backButton)];
         return { content, components };
     },
@@ -613,7 +613,7 @@ const dmFlowConfig = {
       const rowWithHabitLabelSelect = new ActionRowBuilder().addComponents(habitLabelSelectMenu);
       const rowWithBack = new ActionRowBuilder().addComponents(backButton);
       
-      const content = `Deeper Wish: ${setupData.deeperWish}\n\nOutcome Metric: ${setupData.outcomeLabel}\n\nHere are some ideas for your **1st Daily Habit** to improve that outcome metric.`;
+      const content = `Great! ⚡ Now here are some ideas\nfor your 1st daily habit\nto support your Outcome Metric:\n\n${setupData.outcomeLabel} ${setupData.outcomeUnit}`;
       const components = [rowWithHabitLabelSelect, rowWithBack];
       return { content, components };
     },
@@ -1124,7 +1124,7 @@ async function showPostToGroupPrompt(interaction, setupData) {
        // Check if we can editReply (it should be possible as the interaction was deferred/updated)
        if (interaction.replied || interaction.deferred) {
             await interaction.editReply({
-               content: "✨ Your experiment is fully configured!\n\n**Share your commitment with the #experiments channel?**\n\n*(I'll send you a DM with your setup summary after you choose.)*",
+               content: "✨ Your experiment is fully configured!\n\nShare your commitment with the #experiments channel?\n\n*(I'll send you a DM with your setup summary after you choose.)*",
                components: [postToGroupButtons],
                embeds: [] // Clear any previous ephemeral embeds
            });
@@ -1132,7 +1132,7 @@ async function showPostToGroupPrompt(interaction, setupData) {
        } else {
             // Fallback if somehow the interaction wasn't replied/deferred (less likely)
             await interaction.reply({
-                content: "✨ Your experiment is fully configured!\n\n**Share your commitment with the #experiments channel?**\n\n*(I'll send you a DM with your setup summary after you choose.)*",
+                content: "✨ Your experiment is fully configured!\n\nShare your commitment with the #experiments channel?\n\n*(I'll send you a DM with your setup summary after you choose.)*",
                 components: [postToGroupButtons],
                 flags: MessageFlags.Ephemeral
             });
@@ -1328,7 +1328,7 @@ client.on(Events.MessageCreate, async message => {
       console.log(`[MessageCreate AWAITING_BLOCKERS_RECEIVED ${interactionIdForLog}] User ${userTag} submitted blockers: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
       
       // Ask the second follow-up question
-      await message.author.send("**Next Q:**\nWhat are 1 or more positive habits\nyou already do/did consistently?\n\n*(They can be relevant or not\nlike smiling every morning\nor walking the dog.)*");
+      await message.author.send("**Next Question:**What are 1 or more positive habits\nyou already do consistently?\n\nThey can be related to this wish or not, like *smiling every morning* or *walking the dog.*");
       console.log(`[MessageCreate ASK_POSITIVE_HABITS ${interactionIdForLog}] Prompted ${userTag} for positive habits.`);
     }
 
@@ -1352,7 +1352,7 @@ client.on(Events.MessageCreate, async message => {
       console.log(`[MessageCreate AWAITING_POSITIVE_HABITS_RECEIVED ${interactionIdForLog}] User ${userTag} submitted positive habits: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
       
       // Ask the final follow-up question
-      await message.author.send("**If your wish came true,**\nwhat's the first small, positive change you'd notice in your daily life?\n\nBe specific now! For example,\n*If Wish = 'More energy'\nSmall change = 'Not needing naps'.*");
+      await message.author.send("**Last one:** If your wish came true,\nwhat's the first small, positive change you'd notice in your daily life?\n\nBe specific now! For example:\n**Wish** = 'More energy'\n**Small Change** = 'Not needing naps'");
       console.log(`[MessageCreate ASK_VISION ${interactionIdForLog}] Prompted ${userTag} for their vision of success.`);
     }
 
@@ -1703,7 +1703,7 @@ client.on(Events.MessageCreate, async message => {
       console.log(`[MessageCreate PROCESS_INPUT1_LABELS_START ${interactionIdForLog}] State changed to '${setupData.dmFlowState}'. Getting Input 1 label suggestions.`);
       
       const habitThinkingMessage = await message.author.send(
-        `✅ **Outcome Metric Confirmed!**\n\n**${setupData.outcomeGoal} ${setupData.outcomeLabel} **${setupData.outcomeUnit}**\n\nGreat! Now, let's define your first **Daily Habit**.\n\n🧠 I'll brainstorm some potential Daily Habits for you. This might take a moment...`
+        `✅ **Outcome Metric Confirmed!**\n\n**${setupData.outcomeGoal} ${setupData.outcomeLabel} **${setupData.outcomeUnit}**\n\nGreat! Now, let's define your first **Daily Habit**.\n\n🧠 I'll brainstorm some potential Daily Habits for you. This might take a moment...\n\n...`
       );
 
       try {
@@ -1826,8 +1826,8 @@ client.on(Events.MessageCreate, async message => {
       });
       
       const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
-      const unitDropdownPromptMessage = `Okay, your first Daily Habit is:\n**"${input1Label}"**.\n\n` +
-                                      `How will you measure this daily? This is its **Unit**.`;
+      const unitDropdownPromptMessage = `Okay, your 1st Daily Habit is:\n**"${input1Label}"**.\n\n` +
+                                      `How will you measure this daily?\nThis is its **Unit/Scale**.`;
 
       await message.author.send({
           content: unitDropdownPromptMessage,
@@ -1894,8 +1894,8 @@ client.on(Events.MessageCreate, async message => {
       });
       
       const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
-      const unitDropdownPromptMessage = `Okay, your first Daily Habit is:\n**"${input2Label}"**.\n\n` +
-                                      `How will you measure this daily? This is its **Unit**.`;
+      const unitDropdownPromptMessage = `Okay, your 2nd Daily Habit is:\n**"${input2Label}"**.\n\n` +
+                                      `How will you measure this daily?\nThis is its **Unit/Scale**.`;
 
       await message.author.send({
           content: unitDropdownPromptMessage,
@@ -1971,7 +1971,7 @@ client.on(Events.MessageCreate, async message => {
 
       const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
       // input3Label is the custom label typed by the user earlier in this 'awaiting_input3_label_text' block
-      const unitDropdownPromptMessage = `Okay, your third Daily Habit is: **"${input3Label}"**.\n\nHow will you measure this daily? This is its **Unit**.`;
+      const unitDropdownPromptMessage = `Okay, your 3rd Daily Habit is: **"${input3Label}"**.\n\nHow will you measure this daily?.`;
       
       await message.author.send({
           content: unitDropdownPromptMessage,
@@ -2045,11 +2045,7 @@ client.on(Events.MessageCreate, async message => {
 
       console.log(`[MessageCreate INPUT1_CUSTOM_UNIT_VALID ${interactionIdForLog}] User ${userTag} confirmed custom unit for Input 1: "${customInput1Unit}" for label "${input1Label}". Combo length: ${combinedLength}. State changed to '${setupData.dmFlowState}'.`);
 
-      const targetPromptMessage = `Perfect! For your first daily habit:
-      📍 Label: **${input1Label}**
-      📏 Unit/Scale: **${customInput1Unit}**
-
-      What is your daily **Target #**?\n\nPlease type the number below\n(0 and up, decimals ok ✅).`;
+      const targetPromptMessage = `Perfect! Your first daily habit is\n\n**${input1Label}** **${customInput1Unit}**.\n\nWhat is your daily **Target amount**?\n\nPlease type the number below\n(0 and up, decimals ok ✅).`;
 
       await message.author.send(targetPromptMessage);
       console.log(`[MessageCreate INPUT1_CUSTOM_UNIT_TARGET_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for Input 1 target number.`);
@@ -2118,11 +2114,7 @@ client.on(Events.MessageCreate, async message => {
 
       console.log(`[MessageCreate INPUT2_CUSTOM_UNIT_VALID ${interactionIdForLog}] User ${userTag} confirmed custom unit for Input 2: "${customInput2Unit}" for label "${input2Label}". Combo length: ${combinedLength}. State changed to '${setupData.dmFlowState}'.`);
 
-      const targetPromptMessage = `Great! For your second daily habit:
-      📍 Label: **${input2Label}**
-      📏 Unit/Scale: **${customInput2Unit}**
-
-      What is your daily **Target #**?\n\nPlease type the number below\n(0 and up, decimals ok ✅).`;
+      const targetPromptMessage = `Great! Your second daily habit is\n\n**${input2Label}** **${customInput2Unit}**.\n\nWhat is your daily **Target amount**?\n\nPlease type the number below\n(0 and up, decimals ok ✅).`;
 
       await message.author.send(targetPromptMessage);
       console.log(`[MessageCreate INPUT2_CUSTOM_UNIT_TARGET_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for Input 2 target number.`);
@@ -2267,9 +2259,9 @@ client.on(Events.MessageCreate, async message => {
 
       const confirmationAndNextPrompt = new EmbedBuilder()
         .setColor('#57F287') // Green
-        .setTitle('Daily Habit 1 Confirmed!')
+        .setTitle(' Habit 1 Confirmed!')
         .setDescription(
-            `**${setupData.inputs[0].goal} ${setupData.inputs[0].label} ${setupData.inputs[0].unit}\n`
+            "**${setupData.inputs[0].goal} ${setupData.inputs[0].label} ${setupData.inputs[0].unit}"
         )
         .addFields({ name: '\u200B', value: "Would you like to add another daily habit to test (up to 3 total)?"});
 
@@ -2361,9 +2353,9 @@ client.on(Events.MessageCreate, async message => {
         .setColor('#57F287') // Green
         .setTitle('Daily Habit 2 Confirmed!')
         .setDescription(
-            `**${setupData.inputs[1].goal} ${setupData.inputs[1].label} ${setupData.inputs[1].unit}\n`
+            `**${setupData.inputs[1].goal} ${setupData.inputs[1].label} ${setupData.inputs[1].unit}**`
         )
-        .addFields({ name: '\u200B', value: "Would you like to add a 3rd (and final) daily habit to test?"});
+        .addFields({ name: '\u200B', value: "Would you like to add a 3rd (and final) habit to test?"});
 
       const addHabitButtons = new ActionRowBuilder()
         .addComponents(
@@ -2448,8 +2440,8 @@ client.on(Events.MessageCreate, async message => {
         const formattedOutcomeGoal = isOutcomeTime ? formatDecimalAsTime(setupData.outcomeGoal) : setupData.outcomeGoal;
 
         let summaryDescription = `**🌠 Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
-                                `**📊 Daily Outcome to Track:**\n\`${formattedOutcomeGoal}, ${setupData.outcomeUnit}, ${setupData.outcomeLabel}\`\n\n` +
-                                `**🛠️ Daily Habits to Test:**\n`;
+                                "**📊 Daily Outcome to Track:**\n\"${formattedOutcomeGoal}, ${setupData.outcomeUnit}, ${setupData.outcomeLabel}\"\n\n" +
+                                "**🛠️ Daily Habits to Test:**\n";
 
         // Then, conditionally format each input goal within the loop
         setupData.inputs.forEach((input, index) => {
@@ -2458,7 +2450,7 @@ client.on(Events.MessageCreate, async message => {
                 const isInputTime = TIME_OF_DAY_KEYWORDS.includes(input.unit.toLowerCase().trim());
                 const formattedInputGoal = isInputTime ? formatDecimalAsTime(input.goal) : input.goal;
 
-                summaryDescription += `${index + 1}. \`${formattedInputGoal}, ${input.unit}, ${input.label}\`\n`;
+                summaryDescription += "${index + 1}. \"${formattedInputGoal}, ${input.unit}, ${input.label}\"\n";
             }
         });
 
@@ -3493,7 +3485,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         setupData.currentInputIndex = currentNumberOfInputs + 1;
         const nextInputNumber = setupData.currentInputIndex;
-        const ordinal = nextInputNumber === 2 ? "second" : "third";
+        const ordinal = nextInputNumber === 2 ? "2nd" : "3rd";
 
         setupData.dmFlowState = `processing_input${nextInputNumber}_label_suggestions`;
         userExperimentSetupData.set(userId, setupData); // Save state before async
@@ -3555,7 +3547,7 @@ client.on(Events.InteractionCreate, async interaction => {
               
               // Send a new message in DM for the dropdown
               await interaction.user.send({
-                content: `Okay, here are some ideas for your **${ordinal} Daily Habit**.\n\nChoose "✏️ Enter my own..." to tweak anything or type a different one.`,
+                content: `Okay, here are some ideas for your **${ordinal} Daily Habit**.\n\nChoose from the list or tap "✏️ Enter my own..."`,
                 components: [rowWithHabitLabelSelect]
               });
               console.log(`[add_another_habit_yes_btn INPUT${nextInputNumber}_LABEL_DROPDOWN_SENT ${interactionId}] Displayed AI habit label suggestions dropdown to ${userTagForLog} for Input ${nextInputNumber} via new DM. State: ${setupData.dmFlowState}.`);
@@ -3771,13 +3763,12 @@ client.on(Events.InteractionCreate, async interaction => {
           const durationEmbed = new EmbedBuilder()
               .setColor('#47d264')
               .setTitle('🔬 Experiment Metrics Confirmed & Saved!')
-              .setDescription(`Your Deeper Goal and daily metrics have been saved.\n\nNext, let's set your **experiment duration**. This determines when your first comprehensive stats report will be delivered.`)
-              .setFooter({text: "Select how long this experiment phase should last."})
+              .setDescription("Your Deeper Wish and daily metrics have been saved.\n\nNow, when do you want your first comprehensive stats report?")
               .setTimestamp();
 
           const durationSelect = new StringSelectMenuBuilder()
               .setCustomId('experiment_duration_select') // Existing handler for this ID
-              .setPlaceholder('See your first big stats report in...')
+              .setPlaceholder('Get your 1st stats report in...')
               .addOptions(
                   new StringSelectMenuOptionBuilder().setLabel('1 Week').setValue('1_week').setDescription('Report in 7 days.'),
                   new StringSelectMenuOptionBuilder().setLabel('2 Weeks').setValue('2_weeks').setDescription('Report in 14 days.'),
@@ -4341,7 +4332,7 @@ client.on(Events.InteractionCreate, async interaction => {
           } else {
             setupData.dmFlowState = 'awaiting_add_another_habit_choice';
             userExperimentSetupData.set(userId, setupData);
-            const confirmationAndNextPrompt = new EmbedBuilder().setColor('#57F287').setTitle(`Daily Habit ${inputIndex} Confirmed!`).setDescription(`**${formatDecimalAsTime(definedHabit.goal)} ${definedHabit.label} ${definedHabit.unit}**`).addFields({ name: '\u200B', value: "Would you like to add another daily habit to track?"});
+            const confirmationAndNextPrompt = new EmbedBuilder().setColor('#57F287').setTitle(`Habit ${inputIndex} Confirmed!`).setDescription("**${formatDecimalAsTime(definedHabit.goal)} ${definedHabit.label} ${definedHabit.unit}**").addFields({ name: '\u200B', value: "Would you like to add another habit to test?"});
             const addHabitButtons = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('add_another_habit_yes_btn').setLabel('➕ Yes, Add Another').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('add_another_habit_no_btn').setLabel('✅ No, Finish Setup').setStyle(ButtonStyle.Primary));
             await interaction.editReply({ embeds: [confirmationAndNextPrompt], components: [addHabitButtons] });
           }
@@ -4568,8 +4559,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const timeEmbed = new EmbedBuilder()
         .setColor('#72418c') // Purple
         .setTitle('⏰ Reminder Setup - Step 1 of 2')
-        .setDescription('Please select your **current local time** to get reminders accurately.')
-        .setFooter({ text: 'Make selections for your current time below, then click Next.' });
+        .setDescription('Please set your **CURRENT LOCAL TIME** to tune the reminders.');
 
       // --- Build Step 1 Components (Time Selects + New "Next" Button) ---
       const timeHourSelect = new StringSelectMenuBuilder()
@@ -4688,10 +4678,10 @@ client.on(Events.InteractionCreate, async interaction => {
         const reminderEmbedStep2 = new EmbedBuilder()
           .setColor('#47d264') // Greenish
           .setTitle('⏰ Reminder Setup - Step 2 of 2')
-          .setDescription(`Your current time is noted as approximately **${reconstructedTime}**. Now, set your **daily reminder window** (when reminders are allowed) and their **frequency**.\nThen click "Confirm All".`)
+          .setDescription(`Current time approximately **${reconstructedTime}**.\n\nNow, set your **daily reminder window** and **frequency**.`)
           .addFields(
-            { name: 'Reminder Window (e.g., 9 AM - 5 PM)', value: 'Reminders will only be sent between these hours in your local time.', inline: false },
-            { name: 'Frequency', value: 'How often you receive reminders within that window.', inline: false }
+            { name: '**Reminder Window** (e.g., 9 AM - 5 PM)', value: 'Reminders will only be sent between these hours.', inline: false },
+            { name: '**Frequency**', value: 'How often you receive reminders within that window.', inline: false }
           )
           .setFooter({ text: 'Make selections below, then click Confirm All.' });
 
