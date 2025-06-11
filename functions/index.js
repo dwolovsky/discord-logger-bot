@@ -127,7 +127,7 @@ const defaultReminderMessages = [
 
 // Gen 2 Imports
 const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { jStat } = require("jstat");
 const { onSchedule } = require("firebase-functions/v2/scheduler"); 
 const { logger, config } = require("firebase-functions"); // MODIFIED: Added 'config'
@@ -361,9 +361,10 @@ exports.submitLog = onRequest( // Renaming back to submitLog for simplicity, ens
           response.status(400).json({ success: false, error: 'Missing required log data fields (inputValues[3], outputValue, notes).', code: 'invalid-payload-structure'});
           return;
         }
+        // Note: The previous change added note validation in analyzeAndSummarizeLogNotes,
+        // but it's good to keep basic check here for prompt feedback to user
         if (typeof notes !== 'string' || notes.trim() === '') {
           logger.warn("submitLog (HTTP): Notes cannot be empty.", { userId });
-          // Send 400 Bad Request
           response.status(400).json({ success: false, error: 'Notes cannot be empty.', code: 'empty-notes' });
           return;
         }
@@ -374,79 +375,76 @@ exports.submitLog = onRequest( // Renaming back to submitLog for simplicity, ens
   
         if (!userSettingsSnap.exists || !userSettingsSnap.data()?.weeklySettings) {
           logger.warn(`submitLog (HTTP): User ${userId} submitted log, but weeklySettings not found.`);
-          // Send 412 Precondition Failed (or 400 Bad Request)
           response.status(412).json({ success: false, error: 'Please set your weekly goals using /exp before logging.', code: 'no-weekly-settings' });
           return;
         }
         const settings = userSettingsSnap.data().weeklySettings;
-  
         // Helper to check if a setting object is validly configured
         const isConfigured = (setting) => setting && typeof setting.label === 'string' && setting.label.trim() !== "" && typeof setting.unit === 'string' && setting.goal !== null && !isNaN(parseFloat(setting.goal));
-  
         // --- Validate Overall Settings Structure ---
         if (!isConfigured(settings.input1) || !isConfigured(settings.output)) {
           logger.error(`submitLog (HTTP): User ${userId} has invalid/incomplete required weeklySettings (Input 1 or Output):`, settings);
-          // Send 500 Internal Server Error (as settings seem corrupted server-side)
           response.status(500).json({ success: false, error: 'Your core weekly settings (Input 1 or Output) appear corrupted or incomplete. Please run /exp again.', code: 'corrupted-settings' });
           return;
         }
   
         // --- Validate and Parse Logged Values ---
         const parsedAndLoggedInputs = [];
-  
         // Process Input 1 (Required)
         if (inputValues[0] === null || String(inputValues[0]).trim() === '') {
-          response.status(400).json({ success: false, error: `Value for Input 1 (${settings.input1.label}) is required.`, code: 'missing-input1'}); return;
+          response.status(400).json({ success: false, error: `Value for Input 1 (${settings.input1.label}) is required.`, code: 'missing-input1'});
+          return;
         }
         const parsedVal1 = parseFloat(inputValues[0]);
         if (isNaN(parsedVal1)) {
-          response.status(400).json({ success: false, error: `Value for Input 1 (${settings.input1.label}) must be a number. You entered: "${inputValues[0]}"`, code: 'nan-input1'}); return;
+          response.status(400).json({ success: false, error: `Value for Input 1 (${settings.input1.label}) must be a number. You entered: "${inputValues[0]}"`, code: 'nan-input1'});
+          return;
         }
         // Include goal for potential analysis later
         parsedAndLoggedInputs.push({ label: settings.input1.label, unit: settings.input1.unit, value: parsedVal1, goal: settings.input1.goal });
-  
         // Process Input 2 (Required if configured)
         if (isConfigured(settings.input2)) { // Check if setting exists
             if (inputValues[1] === null || String(inputValues[1]).trim() === '') {
-            // This error should ideally be caught by Discord's modal validation due to the frontend change.
-            // However, having a server-side check is good practice.
-            response.status(400).json({ success: false, error: `Value for Input 2 (${settings.input2.label}) is required because it was configured in /exp. You cannot leave it blank.`, code: 'missing-configured-input2'}); return;
+            response.status(400).json({ success: false, error: `Value for Input 2 (${settings.input2.label}) is required because it was configured in /exp. You cannot leave it blank.`, code: 'missing-configured-input2'});
+            return;
             }
             const parsedVal2 = parseFloat(inputValues[1]);
             if (isNaN(parsedVal2)) {
-            response.status(400).json({ success: false, error: `Value for Input 2 (${settings.input2.label}) must be a number. You entered: "${inputValues[1]}"`, code: 'nan-input2'}); return;
+            response.status(400).json({ success: false, error: `Value for Input 2 (${settings.input2.label}) must be a number. You entered: "${inputValues[1]}"`, code: 'nan-input2'});
+            return;
             }
             parsedAndLoggedInputs.push({ label: settings.input2.label, unit: settings.input2.unit, value: parsedVal2, goal: settings.input2.goal });
         }
-
   
         // Process Input 3 (Required if configured)
         if (isConfigured(settings.input3)) { // Check if setting exists
             if (inputValues[2] === null || String(inputValues[2]).trim() === '') {
-            // This error should ideally be caught by Discord's modal validation.
-            response.status(400).json({ success: false, error: `Value for Input 3 (${settings.input3.label}) is required because it was configured in /exp. You cannot leave it blank.`, code: 'missing-configured-input3'}); return;
+            response.status(400).json({ success: false, error: `Value for Input 3 (${settings.input3.label}) is required because it was configured in /exp. You cannot leave it blank.`, code: 'missing-configured-input3'});
+            return;
             }
             const parsedVal3 = parseFloat(inputValues[2]);
             if (isNaN(parsedVal3)) {
-            response.status(400).json({ success: false, error: `Value for Input 3 (${settings.input3.label}) must be a number. You entered: "${inputValues[2]}"`, code: 'nan-input3'}); return;
+            response.status(400).json({ success: false, error: `Value for Input 3 (${settings.input3.label}) must be a number. You entered: "${inputValues[2]}"`, code: 'nan-input3'});
+            return;
             }
             parsedAndLoggedInputs.push({ label: settings.input3.label, unit: settings.input3.unit, value: parsedVal3, goal: settings.input3.goal });
         }
         // If not configured, this block is skipped.
-  
         // Validate and Parse Outcome Value (Required)
         if (outputValue === null || String(outputValue).trim() === '') {
-            response.status(400).json({ success: false, error: `Value for Outcome (${settings.output.label}) is required and cannot be empty.`, code: 'missing-output'}); return;
+            response.status(400).json({ success: false, error: `Value for Outcome (${settings.output.label}) is required and cannot be empty.`, code: 'missing-output'});
+            return;
         }
         const parsedOutputValue = parseFloat(outputValue);
         if (isNaN(parsedOutputValue)) {
-          response.status(400).json({ success: false, error: `Value for Outcome (${settings.output.label}) must be a number. You entered: "${outputValue}"`, code: 'nan-output'}); return;
+          response.status(400).json({ success: false, error: `Value for Outcome (${settings.output.label}) must be a number. You entered: "${outputValue}"`, code: 'nan-output'});
+          return;
         }
         // Add specific outcome validation if needed (e.g., must be >= 0)
         // Example: if (parsedOutputValue < 0 && settings.output.label.toLowerCase() === 'satisfaction') {
-        //   response.status(400).json({ success: false, error: `Value for Satisfaction must be 0 or greater.`, code: 'invalid-satisfaction'}); return;
+        //   response.status(400).json({ success: false, error: `Value for Satisfaction must be 0 or greater.`, code: 'invalid-satisfaction'});
+        //   return;
         // }
-  
   
         // --- Prepare Firestore Log Document Data ---
         const logEntry = {
@@ -462,16 +460,24 @@ exports.submitLog = onRequest( // Renaming back to submitLog for simplicity, ens
             goal: settings.output.goal // Include goal
           },
           notes: notes.trim(),
-          deeperProblem: settings.deeperProblem || "Not set at time of logging" // Include context
+          deeperProblem: settings.deeperProblem || "Not set at time of logging", // Include context
+          _triggerAnalysis: false, // NEW: Flag to trigger AI analysis via onUpdate
+          analysisStatus: 'pending', // NEW: Initial status for analysis
         };
-  
         // --- Write Log Entry to Firestore ---
         const writeResult = await db.collection('logs').add(logEntry);
         logger.info(`submitLog (HTTP): Successfully submitted log ${writeResult.id} for user ${userId}.`);
+
+        // --- Trigger AI Analysis Asynchronously (via Firestore update) ---
+        // We update the document *after* it's created to trigger an onUpdate function
+        await db.collection('logs').doc(writeResult.id).update({
+            _triggerAnalysis: true,
+            analysisStatus: 'triggered'
+        });
+        logger.log(`submitLog (HTTP): Triggered AI analysis for log ${writeResult.id} by setting _triggerAnalysis to true.`);
   
         // --- Send Success Response ---
         response.status(200).json({ success: true, logId: writeResult.id });
-  
       } catch (error) {
         logger.error("submitLog (HTTP): Error during internal logic/Firestore operation for user:", userId, error);
         // Ensure a response is sent for internal errors during logic processing
@@ -777,6 +783,69 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     return null; // Firestore triggers don't need to return data to the client
 });
 
+// --- NEW ---
+/**
+ * Firestore trigger that listens for new log documents being created or updated
+ * with `_triggerAnalysis: true` and calls `analyzeAndSummarizeLogNotes`.
+ */
+exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (event) => {
+    const snap = event.data;
+    if (!snap) {
+        logger.error("No data associated with the event for onLogUpdateTriggerAnalysis.");
+        return null;
+    }
+
+    const logId = event.params.logId;
+    const oldData = event.data.before.data();
+    const newData = event.data.after.data();
+
+    // Check if _triggerAnalysis was just set to true
+    if (newData._triggerAnalysis === true && oldData._triggerAnalysis !== true) {
+        logger.log(`[onLogUpdateTriggerAnalysis] Triggered for log ${logId}. _triggerAnalysis flag detected.`);
+
+        const userId = newData.userId;
+        const userTag = newData.userTag;
+
+        if (!userId || !userTag) {
+            logger.error(`[onLogUpdateTriggerAnalysis] Missing userId or userTag in log ${logId}. Cannot trigger analysis.`);
+            // Update log to mark as failed analysis
+            await event.data.after.ref.update({
+                analysisStatus: 'failed_missing_user_info',
+                _triggerAnalysis: FieldValue.delete() // Clear flag to prevent re-trigger
+            });
+            return null;
+        }
+
+        try {
+            // Call the analyzeAndSummarizeLogNotes callable function
+            // We need to construct a Callable function instance to invoke it
+            const analyzeFunc = admin.app().functions().httpsCallable('analyzeAndSummarizeLogNotes');
+            await analyzeFunc({ logId, userId, userTag });
+
+            logger.log(`[onLogUpdateTriggerAnalysis] Successfully called analyzeAndSummarizeLogNotes for log ${logId}.`);
+            // Update log to mark as analysis requested (the callable function will update user doc)
+            await event.data.after.ref.update({
+                analysisStatus: 'requested',
+                _triggerAnalysis: FieldValue.delete() // Clear flag
+            });
+
+        } catch (error) {
+            logger.error(`[onLogUpdateTriggerAnalysis] Error calling analyzeAndSummarizeLogNotes for log ${logId}:`, error);
+            // Update log to mark as failed analysis
+            await event.data.after.ref.update({
+                analysisStatus: `failed: ${error.message || 'unknown error'}`,
+                _triggerAnalysis: FieldValue.delete() // Clear flag
+            });
+        }
+    } else {
+        // If _triggerAnalysis flag is not being set to true, do nothing
+        logger.debug(`[onLogUpdateTriggerAnalysis] Log ${logId} updated, but _triggerAnalysis flag not detected or already processed. No action.`);
+    }
+
+    return null;
+});
+// --- END NEW ---
+
 // Place this revised helper function above updateWeeklySettings in functions/index.js
 /**
  * Parses a single priority string "Goal,Unit,Label" into an object.
@@ -1050,20 +1119,22 @@ exports.clearPendingUserActions = onCall(async (request) => {
   
     try {
       // 4. Prepare data to remove pending fields
-      // We use FieldValue.delete() to remove the fields from the document.
-      // This list should match all "pending" fields set by onLogCreatedUpdateStreak.
+      // This list should match all "pending" fields set by onLogCreatedUpdateStreak AND analyzeAndSummarizeLogNotes.
       const updatesToClear = {
         [STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE]: FieldValue.delete(),
         [STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE]: FieldValue.delete(),
         [STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE]: FieldValue.delete(),
         [STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP]: FieldValue.delete(),
-        [STREAK_CONFIG.FIELDS.PENDING_PUBLIC_MESSAGE]: FieldValue.delete()
+        [STREAK_CONFIG.FIELDS.PENDING_PUBLIC_MESSAGE]: FieldValue.delete(),
+        // NEW: AI-specific pending flags
+        aiLogAcknowledgment: FieldValue.delete(),
+        aiLogComfortMessage: FieldValue.delete(),
+        aiLogPublicPostSuggestion: FieldValue.delete(),
+        pendingLogAIResponseForDM: FieldValue.delete(),
       };
-  
       // 5. Update the user document
       await userRef.update(updatesToClear);
-      logger.log(`Successfully cleared pending actions for user ${userId}.`);
-  
+      logger.log(`Successfully cleared pending actions (including AI-related) for user ${userId}.`);
       return { success: true, message: "Pending actions cleared." };
   
     } catch (error) {
@@ -3561,7 +3632,6 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
   logger.info(`[fetchOrGenerateAiInsights] Processing request for user: ${userId} (${userTagForLog}), targetExperimentId: ${targetExperimentId}`);
 
   const db = admin.firestore();
-
   try {
     // 2. Data Fetching
     const targetExperimentStatsDocRef = db.collection('users').doc(userId).collection('experimentStats').doc(targetExperimentId);
@@ -3578,34 +3648,17 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     const userDocSnap = await userDocRef.get();
 
     if (!userDocSnap.exists || !userDocSnap.data()?.experimentCurrentSchedule) {
-      logger.warn(`[fetchOrGenerateAiInsights] User document or experimentCurrentSchedule not found for user ${userId}.`);
-      // This could mean the user hasn't set up any experiments or there's a data consistency issue.
-      // For caching logic, this is important. If it's missing, we might always regenerate, or handle as an error.
-      // For now, let's assume if this is missing, we cannot reliably check cache freshness against global stats, so we might lean towards generation.
-      // However, the primary caching key is aiInsightGeneratedAt on the experiment itself.
-      // The global stats timestamp is more for invalidating if *other* things have changed globally for the user.
-      // Let's proceed but log a warning. The core caching logic below will primarily rely on fields within targetExperimentStatsData.
       logger.warn(`[fetchOrGenerateAiInsights] User document or experimentCurrentSchedule not found for user ${userId}. Proceeding, but global stats timestamp for cache invalidation might be unavailable.`);
     }
     const experimentCurrentSchedule = userDocSnap.data()?.experimentCurrentSchedule;
-    const latestGlobalStatsTimestamp = experimentCurrentSchedule?.statsCalculationTimestamp; // This is a Firestore Timestamp
+    const latestGlobalStatsTimestamp = experimentCurrentSchedule?.statsCalculationTimestamp;
 
     // 3. Caching Logic Implementation
     const cachedInsightText = targetExperimentStatsData.aiInsightText;
     const cachedInsightGeneratedAt = targetExperimentStatsData.aiInsightGeneratedAt; // This is a Firestore Timestamp
 
-    // Condition to Serve Cache:
-    // Serve cache if it exists AND (either no global stats timestamp is available OR the cache is newer than or same as global stats)
-    // The primary check is simply if cachedInsightText and cachedInsightGeneratedAt exist.
-    // The comparison to latestGlobalStatsTimestamp is a secondary check for invalidation if global stats processing has occurred.
-    // If latestGlobalStatsTimestamp is undefined (e.g. experimentCurrentSchedule missing), we can't use it for invalidation.
-    // In such a case, if cachedInsightText exists, we might serve it, or decide to always regenerate if global context is critical.
-    // For MVP, let's simplify: if cache exists and was generated, and if global stats timestamp exists, compare them.
-    // If global stats timestamp doesn't exist, but cache does, we can serve it.
-    // If no cache exists, we generate.
-
     if (cachedInsightText && cachedInsightGeneratedAt) {
-        let serveCache = true; // Assume we serve cache if it exists
+        let serveCache = true;
         if (latestGlobalStatsTimestamp) { // Only if global timestamp exists, compare
             if (cachedInsightGeneratedAt.toMillis() < latestGlobalStatsTimestamp.toMillis()) {
                 serveCache = false; // Cache is stale relative to global stats update
@@ -3621,7 +3674,6 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     // 4. If Generating New Insights (Cache Miss or Stale)
     logger.log(`[fetchOrGenerateAiInsights] Generating new insight for experiment ${targetExperimentId} for user ${userId}.`);
-
     if (!genAI) {
         logger.error("[fetchOrGenerateAiInsights] Gemini AI client (genAI) is not initialized. Cannot generate insights.");
         throw new HttpsError('internal', "The AI insights service is currently unavailable. Please try again later. (AI client not ready)");
@@ -3632,7 +3684,6 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     const deeperProblem = activeSettings?.deeperProblem || "Not specified";
     const experimentEndDateISO = targetExperimentStatsData.experimentEndDateISO || "Unknown"; // ISO String
     const totalLogsProcessed = targetExperimentStatsData.totalLogsInPeriodProcessed || 0;
-    // const experimentIdForPrompt = targetExperimentStatsData.experimentId || targetExperimentId; // Removed as per user request
     const expSettingsTimestamp = targetExperimentStatsData.experimentSettingsTimestamp || "Unknown"; // ISO String
 
     const calculatedMetrics = targetExperimentStatsData.calculatedMetricStats || {};
@@ -3650,7 +3701,6 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     let experimentNotesSummary = "No notes were found for this experiment period.";
     const experimentStartDateForNotes = targetExperimentStatsData.experimentSettingsTimestamp ? new Date(targetExperimentStatsData.experimentSettingsTimestamp) : null;
     const experimentEndDateForNotes = targetExperimentStatsData.experimentEndDateISO ? new Date(targetExperimentStatsData.experimentEndDateISO) : null;
-
     if (experimentStartDateForNotes && experimentEndDateForNotes && experimentStartDateForNotes < experimentEndDateForNotes) {
         try {
             const logsQuery = db.collection('logs')
@@ -3720,7 +3770,6 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     // Enhanced logging:
     logger.error(`[fetchOrGenerateAiInsights] Gemini API call failed for experiment ${targetExperimentId}. Full Error Object:`, JSON.stringify(geminiError, Object.getOwnPropertyNames(geminiError)));
     logger.error(`[fetchOrGenerateAiInsights] Gemini API call failed. Error Message: ${geminiError.message}, Status: ${geminiError.status}, Details: ${JSON.stringify(geminiError.details)}`);
-
     if (geminiError.message && geminiError.message.includes('SAFETY')) {
         logger.warn(`[fetchOrGenerateAiInsights] Gemini content generation blocked due to safety settings for exp ${targetExperimentId}.`);
         return { success: false, message: "The AI couldn't generate insights for this data due to content restrictions. Please review your notes if they contain sensitive topics.", source: "generation_failed_safety" };
@@ -3742,7 +3791,6 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     // 4d. Return New Insight
     return { success: true, insightsText: newInsightsText, source: "generated" };
-
   } catch (error) {
     // Outer Try-Catch for the entire function logic
     logger.error(`[fetchOrGenerateAiInsights] Critical error for user ${userId}, experiment ${targetExperimentId}:`, error);
@@ -3757,6 +3805,175 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     });
   }
 });
+
+// --- NEW ---
+/**
+ * Analyzes a user's log notes using Gemini and stores AI-generated summaries
+ * and public post suggestions in the user's document for the bot to fetch.
+ * This function is intended to be called asynchronously by the `submitLog` HTTP function.
+ *
+ * Expected request.data: { logId: string, userId: string, userTag: string }
+ * Note: This function doesn't require direct authentication (as it's called internally by submitLog),
+ * but it validates the inputs.
+ */
+exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
+    logger.log("[analyzeAndSummarizeLogNotes] Function triggered. Request data:", request.data);
+
+    const { logId, userId, userTag } = request.data;
+
+    // Basic validation of inputs
+    if (!logId || !userId || !userTag) {
+        logger.warn("[analyzeAndSummarizeLogNotes] Invalid arguments: logId, userId, or userTag missing.");
+        throw new HttpsError('invalid-argument', 'Missing required parameters: logId, userId, userTag.');
+    }
+
+    const db = admin.firestore();
+
+    try {
+        // 1. Fetch the full log document including notes
+        const logDocRef = db.collection('logs').doc(logId);
+        const logSnap = await logDocRef.get();
+
+        if (!logSnap.exists) {
+            logger.warn(`[analyzeAndSummarizeLogNotes] Log document ${logId} not found for analysis.`);
+            throw new HttpsError('not-found', `Log document ${logId} not found.`);
+        }
+
+        const logData = logSnap.data();
+        const notes = logData.notes?.trim() || "";
+        const deeperProblem = logData.deeperProblem?.trim() || "Not specified.";
+        const outputMetric = logData.output || {};
+        const inputs = logData.inputs || [];
+
+        // If notes are empty, we don't need AI analysis
+        if (!notes) {
+            logger.log(`[analyzeAndSummarizeLogNotes] Log ${logId} has no notes. Skipping AI analysis.`);
+            await db.collection('users').doc(userId).update({
+                pendingLogAIResponseForDM: FieldValue.delete(),
+                pendingLogPostSuggestion: FieldValue.delete(),
+                aiLogAcknowledgment: FieldValue.delete(),
+                aiLogComfortMessage: FieldValue.delete(),
+            });
+            return { success: true, message: "No notes to analyze." };
+        }
+
+        // 2. Check if Gemini AI client is available
+        if (!genAI) {
+            logger.error("[analyzeAndSummarizeLogNotes] Gemini AI client not initialized. Cannot analyze notes.");
+            throw new HttpsError('internal', "AI service is unavailable. (AI client not ready)");
+        }
+
+        // 3. Construct the AI prompt
+        const inputLabels = inputs.filter(i => i.label).map(i => `'${i.label}'`).join(', ') || 'no specific habits';
+
+        // NEW CATEGORIES for AI analysis
+        const categories = [
+            "Wins/Successes", "Challenges/Struggles", "Questions", "Insights/Learnings",
+            "Emotional State", "Unexpected Outcomes", "Future Intentions/Plans",
+            "External Factors affecting the day"
+        ].join(', ');
+
+        const prompt = `
+            You are a "self-science" AI assistant, analyzing a user's daily log notes to provide concise feedback and a public sharing suggestion.
+            Your tone is empathetic, supportive, and realistic but encouraging, focusing on the user's experience within their experiment.
+
+            **User's Context:**
+            - Deeper Wish: "${deeperProblem}"
+            - Main Outcome Metric: "${outputMetric.label || 'N/A'}" (Goal: ${outputMetric.goal || 'N/A'} ${outputMetric.unit || 'N/A'})
+            - Daily Habits: ${inputLabels}
+
+            **User's Daily Log Notes:**
+            "${notes}"
+
+            **Your Task:**
+            1.  **Acknowledge Experience (25-50 characters):** Based on the notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme. It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
+            2.  **Comfort/Support Message (50-100 characters):** Provide a short, positive, and uplifting message that normalizes their experience or gently encourages them. Try to encourage a growth mindset and realistic optimism.
+            3.  **Public Post Suggestion (80-150 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group. This should be from *their perspective* (first-person), positive, and encourage connection or shared experience. It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon. Examples:
+                * "Just had a breakthrough with [Habit] today! Feeling so [emotion]. Anyone else finding [insight] helpful?"
+                * "Navigating some [challenge] but still hitting [Outcome]! Anyone have similar experiences they could share?"
+                * "My experiment's revealing [small insight]. Anyone else finding anything interesting?"
+
+            Return your response ONLY as a JSON object with the following structure:
+            {
+                "acknowledgment": "It sounds like you [acknowledgment].",
+                "comfortMessage": "Remember, [supportive message].",
+                "publicPostSuggestion": "Just had a breakthrough with [Habit] today! Feeling so [emotion]. Anyone else finding [insight] helpful?"
+            }
+            Do not include any other text, instructions, or markdown outside the JSON object.
+        `;
+
+        logger.info(`[analyzeAndSummarizeLogNotes] Sending prompt to Gemini for log ${logId}.`);
+
+        // 4. Call Gemini
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Use a lighter, faster model
+        const generationResult = await model.generateContent({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+                ...GEMINI_CONFIG,
+                temperature: 0.7, // Adjust for more direct, less creative responses
+                responseMimeType: "application/json",
+            },
+        });
+
+        const response = await generationResult.response;
+        const responseText = response.text()?.trim();
+
+        if (!responseText) {
+            logger.warn(`[analyzeAndSummarizeLogNotes] Gemini returned an empty response for log ${logId}.`);
+            throw new HttpsError('internal', 'AI generated an empty response.');
+        }
+
+        let aiResult;
+        try {
+            aiResult = JSON.parse(responseText);
+        } catch (parseError) {
+            logger.error(`[analyzeAndSummarizeLogNotes] Failed to parse Gemini JSON response for log ${logId}. Raw: "${responseText}". Error:`, parseError);
+            throw new HttpsError('internal', `AI returned invalid format: ${parseError.message}`);
+        }
+
+        // Basic validation of AI response structure
+        if (!aiResult.acknowledgment || !aiResult.comfortMessage || !aiResult.publicPostSuggestion) {
+            logger.error(`[analyzeAndSummarizeLogNotes] AI response missing required fields for log ${logId}. Result:`, aiResult);
+            throw new HttpsError('internal', 'AI response missing required fields.');
+        }
+
+        // 5. Store AI analysis results in the user's document
+        await db.collection('users').doc(userId).update({
+            aiLogAcknowledgment: aiResult.acknowledgment,
+            aiLogComfortMessage: aiResult.comfortMessage,
+            aiLogPublicPostSuggestion: aiResult.publicPostSuggestion,
+            pendingLogAIResponseForDM: true, // Flag for the bot to send the DM
+            lastLogAnalysisTimestamp: FieldValue.serverTimestamp(),
+        });
+        logger.log(`[analyzeAndSummarizeLogNotes] Successfully stored AI analysis for log ${logId} in user ${userId}'s document.`);
+
+        return { success: true, message: "Log notes analyzed and results stored." };
+
+    } catch (error) {
+        logger.error(`[analyzeAndSummarizeLogNotes] Error processing log ${logId} for user ${userId}:`, error);
+
+        // Attempt to clear pending flags and store error message to prevent retries
+        await db.collection('users').doc(userId).update({
+            pendingLogAIResponseForDM: FieldValue.delete(),
+            aiLogAcknowledgment: FieldValue.delete(),
+            aiLogComfortMessage: FieldValue.delete(),
+            aiLogPublicPostSuggestion: FieldValue.delete(),
+            lastLogAnalysisError: error.message,
+            lastLogAnalysisTimestamp: FieldValue.serverTimestamp(),
+        }).catch(updateErr => {
+            logger.error(`[analyzeAndSummarizeLogNotes] Failed to update user doc with analysis error for ${userId}:`, updateErr);
+        });
+
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        if (error.message && error.message.toLowerCase().includes('safety')) {
+            throw new HttpsError('resource-exhausted', "AI couldn't analyze notes due to content restrictions. Please try rephrasing.");
+        }
+        throw new HttpsError('internal', `Failed to analyze log notes: ${error.message}`);
+    }
+});
+// --- END NEW ---
 
 /**
  * Takes a user's "Deeper Wish" and generates five potential outcome metric labels

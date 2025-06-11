@@ -5188,6 +5188,251 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     // Make sure this is placed before the final 'else' for unrecognized interactions
 
+// --- NEW ---
+    else if (interaction.isButton() && interaction.customId === 'ai_show_share_prompt_btn') {
+      const showSharePromptClickTime = performance.now();
+      const interactionId = interaction.id;
+      const userId = interaction.user.id;
+      const userTagForLog = interaction.user.tag;
+      logger.log(`[ai_show_share_prompt_btn START ${interactionId}] Clicked by ${userTagForLog}. Preparing to show AI public post suggestion.`);
+
+      try {
+        await interaction.deferUpdate(); // Acknowledge the button click immediately
+        const deferTime = performance.now();
+        logger.log(`[ai_show_share_prompt_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - showSharePromptClickTime).toFixed(2)}ms`);
+
+        // Fetch the AI-generated public post suggestion from userExperimentSetupData
+        const setupData = userExperimentSetupData.get(userId);
+        const aiPublicPostSuggestion = setupData?.aiLogPublicPostSuggestion;
+
+        if (!aiPublicPostSuggestion || typeof aiPublicPostSuggestion !== 'string' || aiPublicPostSuggestion.trim() === "") {
+            logger.warn(`[ai_show_share_prompt_btn WARN ${interactionId}] AI public post suggestion missing or invalid for user ${userId}.`);
+            await interaction.editReply({
+                content: "I'm sorry, I couldn't find the sharing suggestion right now. Please try logging again if you'd like to see it.",
+                components: [] // Clear buttons
+            });
+            return;
+        }
+
+        // Disable the original buttons in the first DM
+        const disabledRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('ai_show_share_prompt_btn')
+                .setLabel('📣 Yes, Show Me!')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(true),
+            new ButtonBuilder()
+                .setCustomId('ai_no_share_prompt_btn')
+                .setLabel('🤫 No, Thanks')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(true)
+        );
+        await interaction.editReply({ components: [disabledRow] }); // Update the current message (the first DM)
+
+        // Construct the second DM message
+        const publicPostMessage = `Share Your Self-Science Journey? 📣\n\nWould you like to share a message like this with the community in #experiments?\n\n> ${aiPublicPostSuggestion}\n\nOr, type your own message directly in #experiments.\n\nDo nothing, and this log remains private. This offer will expire in 1 minute.`;
+
+        const postToGroupButton = new ButtonBuilder()
+            .setCustomId('post_ai_log_summary_btn') // New Custom ID for posting
+            .setLabel('🚀 Post to #experiments')
+            .setStyle(ButtonStyle.Success);
+
+        const newDmButtonRow = new ActionRowBuilder().addComponents(postToGroupButton);
+
+        // Send the second DM message
+        const secondDmMessage = await interaction.user.send({
+            content: publicPostMessage,
+            components: [newDmButtonRow]
+        });
+        logger.log(`[ai_show_share_prompt_btn SENT_SECOND_DM ${interactionId}] Sent AI public post suggestion DM to ${userTagForLog} (Message ID: ${secondDmMessage.id}).`);
+
+        // Set a timeout to disable the "Post to Group" button
+        const timeoutDuration = 60 * 1000; // 1 minute
+        setTimeout(async () => {
+            try {
+                const fetchedSecondDmMessage = await secondDmMessage.channel.messages.fetch(secondDmMessage.id);
+                if (fetchedSecondDmMessage.components.length > 0 && fetchedSecondDmMessage.components[0].components[0].customId === 'post_ai_log_summary_btn' && !fetchedSecondDmMessage.components[0].components[0].disabled) {
+                    const disabledPostRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('post_ai_log_summary_btn')
+                            .setLabel('🚀 Post to #experiments')
+                            .setStyle(ButtonStyle.Success)
+                            .setDisabled(true)
+                    );
+                    await fetchedSecondDmMessage.edit({ components: [disabledPostRow] });
+                    logger.log(`[ai_show_share_prompt_btn DISABLED_POST_BUTTON ${interactionId}] Disabled 'Post to #experiments' button for ${userTagForLog} due to timeout.`);
+                }
+            } catch (timeoutError) {
+                logger.error(`[ai_show_share_prompt_btn ERROR_DISABLING_POST_BUTTON ${interactionId}] Error disabling 'Post to #experiments' button for ${userTagForLog}:`, timeoutError);
+            }
+        }, timeoutDuration);
+
+      } catch (error) {
+        logger.error(`[ai_show_share_prompt_btn ERROR ${interactionId}] Error processing button for ${userTagForLog}:`, error);
+        // Fallback if initial deferUpdate or editReply failed
+        try {
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: "Sorry, I couldn't show the sharing suggestion. Please try again.", ephemeral: true });
+            } else {
+                await interaction.followUp({ content: "Sorry, I couldn't show the sharing suggestion. Please try again.", ephemeral: true });
+            }
+        } catch (fallbackError) {
+            logger.error(`[ai_show_share_prompt_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
+        }
+      }
+      logger.log(`[ai_show_share_prompt_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - showSharePromptClickTime).toFixed(2)}ms`);
+    }
+
+    else if (interaction.isButton() && interaction.customId === 'ai_no_share_prompt_btn') {
+      const noSharePromptClickTime = performance.now();
+      const interactionId = interaction.id;
+      const userId = interaction.user.id;
+      const userTagForLog = interaction.user.tag;
+      logger.log(`[ai_no_share_prompt_btn START ${interactionId}] Clicked by ${userTagForLog}. Declining AI public post suggestion.`);
+
+      try {
+        await interaction.deferUpdate(); // Acknowledge the button click immediately
+        const deferTime = performance.now();
+        logger.log(`[ai_no_share_prompt_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - noSharePromptClickTime).toFixed(2)}ms`);
+
+        // Disable the buttons in the first DM
+        const disabledRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('ai_show_share_prompt_btn')
+                .setLabel('📣 Yes, Show Me!')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(true),
+            new ButtonBuilder()
+                .setCustomId('ai_no_share_prompt_btn')
+                .setLabel('🤫 No, Thanks')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(true)
+        );
+        await interaction.editReply({ components: [disabledRow] }); // Update the current message (the first DM)
+
+        // Send a confirmation message to the user in DMs
+        await interaction.user.send("👍 Got it! Your log notes remain private. No one in the group will see them.");
+        logger.log(`[ai_no_share_prompt_btn CONFIRMED ${interactionId}] Confirmed decline to ${userTagForLog}.`);
+
+        // Optional: Clear AI data from userExperimentSetupData if it's no longer needed
+        const setupData = userExperimentSetupData.get(userId);
+        if (setupData) {
+            delete setupData.aiLogPublicPostSuggestion;
+            // Clear other AI-related flags if needed, e.g., in functions/index.js (clearPendingUserActions)
+            userExperimentSetupData.set(userId, setupData);
+        }
+
+      } catch (error) {
+        logger.error(`[ai_no_share_prompt_btn ERROR ${interactionId}] Error processing button for ${userTagForLog}:`, error);
+        try {
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: "Sorry, I couldn't process that. Please try again.", ephemeral: true });
+            } else {
+                await interaction.followUp({ content: "Sorry, I couldn't process that. Please try again.", ephemeral: true });
+            }
+        } catch (fallbackError) {
+            logger.error(`[ai_no_share_prompt_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
+        }
+      }
+      logger.log(`[ai_no_share_prompt_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - noSharePromptClickTime).toFixed(2)}ms`);
+    }
+    // --- END NEW ---
+
+    // --- NEW ---
+    else if (interaction.isButton() && interaction.customId === 'post_ai_log_summary_btn') {
+      const postPublicClickTime = performance.now();
+      const interactionId = interaction.id;
+      const userId = interaction.user.id;
+      const userTagForLog = interaction.user.tag; // This will capture "username#discriminator" if available, or just "username"
+      logger.log(`[post_ai_log_summary_btn START ${interactionId}] Clicked by ${userTagForLog}. Attempting to post AI-suggested summary to group.`);
+
+      try {
+        await interaction.deferUpdate(); // Acknowledge the button click immediately
+        const deferTime = performance.now();
+        logger.log(`[post_ai_log_summary_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - postPublicClickTime).toFixed(2)}ms`);
+
+        // Disable the button in the second DM
+        const disabledRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('post_ai_log_summary_btn')
+                .setLabel('🚀 Post to group')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(true)
+        );
+        await interaction.editReply({ components: [disabledRow] }); // Update the current message (the second DM)
+
+        // Retrieve the AI-suggested public post message from userExperimentSetupData
+        const setupData = userExperimentSetupData.get(userId);
+        const aiPublicPostSuggestion = setupData?.aiLogPublicPostSuggestion;
+
+        if (!aiPublicPostSuggestion || typeof aiPublicPostSuggestion !== 'string' || aiPublicPostSuggestion.trim() === "") {
+            logger.warn(`[post_ai_log_summary_btn WARN ${interactionId}] AI public post suggestion missing or invalid for user ${userId}. Cannot post.`);
+            await interaction.followUp({ content: "I'm sorry, I couldn't find the message to post. Please try logging again if you'd like to share.", ephemeral: true });
+            return;
+        }
+
+        // Define the target public channel ID (e.g., #main channel)
+        // You should define this constant at the top of render index.txt or fetch from .env
+        const EXPERIMENTS_CHANNEL_ID = '1363161131723526437'; 
+
+        const targetGuildId = setupData?.guildId; // Ensure guildId was stored when flow started
+
+        if (!targetGuildId) {
+            logger.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Guild ID not found in setupData for user ${userId}. Cannot post to public channel.`);
+            await interaction.followUp({ content: "I couldn't identify which server to post to. Please try logging from the server you want to share in.", ephemeral: true });
+            return;
+        }
+
+        const targetGuild = client.guilds.cache.get(targetGuildId);
+        if (!targetGuild) {
+            logger.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Target guild ${targetGuildId} not found in bot's cache for user ${userId}.`);
+            await interaction.followUp({ content: "I couldn't find the server to post your message. Make sure I'm in the server you want to share in.", ephemeral: true });
+            return;
+        }
+
+        const publicChannel = targetGuild.channels.cache.get(EXPERIMENTS_CHANNEL_ID);
+        if (!publicChannel || !publicChannel.isTextBased()) {
+            logger.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Public channel ${EXPERIMENTS_CHANNEL_ID} not found or is not a text channel in guild ${targetGuildId}.`);
+            await interaction.followUp({ content: `I couldn't find the <#${EXPERIMENTS_CHANNEL_ID}> channel or it's not a text channel in this server. Please ensure it exists and I have permission to post there.`, ephemeral: true });
+            return;
+        }
+
+        // Construct the message to post to the public channel
+        // Use member.displayName for a cleaner look in the public channel if available, otherwise user.username
+        const member = await targetGuild.members.fetch(userId).catch(() => null);
+        const displayUserName = member?.displayName || interaction.user.username;
+        const messageToPost = `From **${displayUserName}**: ${aiPublicPostSuggestion}`;
+
+        // Post the message to the public channel
+        await publicChannel.send(messageToPost);
+        logger.log(`[post_ai_log_summary_btn PUBLIC_POST_SUCCESS ${interactionId}] Successfully posted AI-suggested message to <#${EXPERIMENTS_CHANNEL_ID}> for ${userTagForLog}.`);
+
+        // Inform the user in their DM that it was posted
+        await interaction.followUp({ content: `✅ Your message has been posted to <#${EXPERIMENTS_CHANNEL_ID}>!`, ephemeral: true });
+
+        // Clean up AI-related data from userExperimentSetupData after successful post
+        if (setupData) {
+            delete setupData.aiLogPublicPostSuggestion;
+            // Additional cleanup needed for other AI flags in Firestore via clearPendingUserActions
+            userExperimentSetupData.set(userId, setupData);
+        }
+
+      } catch (error) {
+        logger.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Error during public post for ${userTagForLog}:`, error);
+        try {
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: "Sorry, I couldn't post your message to the group. Please check my permissions or try again.", ephemeral: true });
+            } else {
+                await interaction.followUp({ content: "Sorry, I couldn't post your message to the group. Please check my permissions or try again.", ephemeral: true });
+            }
+        } catch (fallbackError) {
+            logger.error(`[post_ai_log_summary_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
+        }
+      }
+      logger.log(`[post_ai_log_summary_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - postPublicClickTime).toFixed(2)}ms`);
+    }
+    // --- END NEW ---
+
 
   } // End of "if (interaction.isButton())" block
 
@@ -6044,7 +6289,7 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_firebase') {
 
       const modalSubmitStartTime = performance.now();
-      console.log(`[dailyLogModal_firebase] Submission received by User: ${interaction.user.tag}, InteractionID: ${interaction.id}`);
+      logger.log(`[dailyLogModal_firebase] Submission received by User: ${interaction.user.tag}, InteractionID: ${interaction.id}`); // Corrected: Using logger
       let userData = null; // To store fetched user data for final message/actions
       let actionErrors = []; // Keep track of errors during actions
 
@@ -6052,13 +6297,11 @@ client.on(Events.InteractionCreate, async interaction => {
         // 1. Defer Reply
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const deferTime = performance.now();
-        console.log(`[dailyLogModal_firebase] Deferral took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
-
+        logger.log(`[dailyLogModal_firebase] Deferral took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`); // Corrected: Using logger
         // 2. Get data from memory
         const setupData = userExperimentSetupData.get(interaction.user.id);
         const settings = setupData?.logFlowSettings;
         const loggedTimeValues = setupData?.loggedTimeValues || {};
-
         if (!settings) {
             await interaction.editReply({ content: "❌ Error: Could not find the settings for this experiment log. Please try starting the log process again.", components: [] });
             return;
@@ -6093,8 +6336,8 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // 5. Basic Validation
         // This check is now more specific to allow the number 0 as a valid input.
-        if (payloadOutputValue === undefined || payloadOutputValue === null || 
-           (payloadInputValues[0] === undefined || payloadInputValues[0] === null || payloadInputValues[0] === "") || 
+        if (payloadOutputValue === undefined || payloadOutputValue === null ||
+           (payloadInputValues[0] === undefined || payloadInputValues[0] === null || payloadInputValues[0] === "") ||
            !notes) {
             await interaction.editReply({ content: "❌ Missing required fields (Outcome, Habit 1, or Notes)." });
             return;
@@ -6111,7 +6354,6 @@ client.on(Events.InteractionCreate, async interaction => {
             notes,
             userTag: interaction.user.tag
         };
-        
         // 7. Clean up temporary log flow data from memory
         if (setupData) {
             delete setupData.logFlowSettings;
@@ -6125,11 +6367,12 @@ client.on(Events.InteractionCreate, async interaction => {
             userExperimentSetupData.set(interaction.user.id, setupData);
         }
 
-        console.log('[dailyLogModal_firebase] Payload for submitLog (HTTP):', payload); // This log will now show the userTag
-        
+        logger.log('[dailyLogModal_firebase] Payload for submitLog (HTTP):', payload);
+        // This log will now show the userTag
+
 
         const fbCallStartTime = performance.now();
-        console.log(`[dailyLogModal_firebase] Calling submitLog (HTTP) for User: ${interaction.user.id}...`);
+        logger.log(`[dailyLogModal_firebase] Calling submitLog (HTTP) for User: ${interaction.user.id}...`);
 
         let submitResult;
         let httpResponseOk = false;
@@ -6153,60 +6396,59 @@ client.on(Events.InteractionCreate, async interaction => {
             httpResponseOk = apiResponse.ok;
             submitResult = await apiResponse.json();
         } catch (fetchError) {
-            console.error('[dailyLogModal_firebase] Fetch error calling submitLog (HTTP):', fetchError);
+            logger.error('[dailyLogModal_firebase] Fetch error calling submitLog (HTTP):', fetchError); // Corrected: Using logger
             submitResult = { success: false, error: `Network or parsing error calling log service: ${fetchError.message}`, code: 'fetch-error' };
             httpResponseOk = false;
         }
 
         const fbCallEndTime = performance.now();
-        console.log(`[dailyLogModal_firebase] submitLog (HTTP) call took: ${(fbCallEndTime - fbCallStartTime).toFixed(2)}ms. Ok: ${httpResponseOk}, Result:`, submitResult);
-
+        logger.log(`[dailyLogModal_firebase] submitLog (HTTP) call took: ${(fbCallEndTime - fbCallStartTime).toFixed(2)}ms. Ok: ${httpResponseOk}, Result:`, submitResult); // Corrected: Using logger
         if (!httpResponseOk || !submitResult || submitResult.success !== true) {
-            const errorMessage = submitResult?.error || (httpResponseOk ? 'Log service returned failure.' : `Failed to reach log service (Status: ${submitResult?.status || 'N/A'}).`); // submitResult might not have status
-            const errorCode = submitResult?.code || (httpResponseOk ? 'service-failure' : 'network-failure');
-            console.error(`[dailyLogModal_firebase] submitLog (HTTP) indicated failure. Code: ${errorCode}, Message: ${errorMessage}`, submitResult);
+            const errorMessage = submitResult?.error ||
+                (httpResponseOk ? 'Log service returned failure.' : `Failed to reach log service (Status: ${submitResult?.status || 'N/A'}).`);
+            // submitResult might not have status
+            const errorCode = submitResult?.code ||
+                (httpResponseOk ? 'service-failure' : 'network-failure');
+            logger.error(`[dailyLogModal_firebase] submitLog (HTTP) indicated failure. Code: ${errorCode}, Message: ${errorMessage}`, submitResult); // Corrected: Using logger
             await interaction.editReply({ content: `❌ Error saving log: ${errorMessage}` });
             return;
         }
 
-        // Log successfully saved, now fetch updated user data
-        console.log(`[dailyLogModal_firebase] Log ${submitResult.logId} saved. Fetching user data for bot...`);
+        // Log successfully saved, now fetch updated user data and AI analysis
+        logger.log(`[dailyLogModal_firebase] Log ${submitResult.logId} saved. Fetching user data for bot...`); // Corrected: Using logger
 
         // >>>>> START: TEMPORARY DELAY FOR TESTING PUBLIC MESSAGE TIMING <<<<<
-        console.log('[dailyLogModal_firebase] Introducing TEMPORARY 3-second delay before fetching user data...');
-        await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for 3 seconds
-        console.log('[dailyLogModal_firebase] TEMPORARY delay finished.');
+        // logger.log('[dailyLogModal_firebase] Introducing TEMPORARY 3-second delay before fetching user data...'); // Corrected: Using logger
+        // await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for 3 seconds
+        // logger.log('[dailyLogModal_firebase] TEMPORARY delay finished.'); // Corrected: Using logger
         // >>>>> END: TEMPORARY DELAY FOR TESTING PUBLIC MESSAGE TIMING <<<<<
 
         const fetchUserDataStartTime = performance.now();
         const userDataResult = await callFirebaseFunction('getUserDataForBot', {}, interaction.user.id);
         const fetchUserDataEndTime = performance.now();
-        console.log(`[dailyLogModal_firebase] getUserDataForBot call took: ${(fetchUserDataEndTime - fetchUserDataStartTime).toFixed(2)}ms.`);
-
+        logger.log(`[dailyLogModal_firebase] getUserDataForBot call took: ${(fetchUserDataEndTime - fetchUserDataStartTime).toFixed(2)}ms.`); // Corrected: Using logger
         if (!userDataResult || userDataResult.success !== true || !userDataResult.userData) {
-          console.error('[dailyLogModal_firebase] Failed to fetch user data after log submission:', userDataResult);
+          logger.error('[dailyLogModal_firebase] Failed to fetch user data after log submission:', userDataResult); // Corrected: Using logger
           await interaction.editReply({ content: `✅ Log saved (ID: ${submitResult.logId})! However, there was an issue fetching updated streak/role info. It should update shortly.` });
           return;
         }
         userData = userDataResult.userData;
-        console.log('[dailyLogModal_firebase] Fetched User Data:', JSON.stringify(userData, null, 2));
-
+        logger.log('[dailyLogModal_firebase] Fetched User Data:', JSON.stringify(userData, null, 2)); // Corrected: Using logger
         const guild = interaction.guild;
         const member = interaction.member || await guild?.members.fetch(interaction.user.id).catch(err => {
-            console.error(`[dailyLogModal_firebase] Failed to fetch member ${interaction.user.id}:`, err);
+            logger.error(`[dailyLogModal_firebase] Failed to fetch member ${interaction.user.id}:`, err); // Corrected: Using logger
             return null;
         });
-
         // --- Process Pending Actions ---
         // This section is where all pending actions (DMs, Roles, Public Messages) are handled.
 
-        // 7a. Pending DM Message
+        // 7a. Pending DM Message (from Streak/Milestones)
         if (userData.pendingDmMessage && typeof userData.pendingDmMessage === 'string' && userData.pendingDmMessage.trim() !== "") {
-          console.log(`[dailyLogModal_firebase] Sending pending DM to ${interaction.user.tag}: "${userData.pendingDmMessage}"`);
+          logger.log(`[dailyLogModal_firebase] Sending pending DM (streak/milestone) to ${interaction.user.tag}: "${userData.pendingDmMessage}"`); // Corrected: Using logger
           try {
             await interaction.user.send(userData.pendingDmMessage);
           } catch (dmError) {
-            console.error(`[dailyLogModal_firebase] Failed to send pending DM to ${interaction.user.tag}:`, dmError);
+            logger.error(`[dailyLogModal_firebase] Failed to send pending DM (streak/milestone) to ${interaction.user.tag}:`, dmError); // Corrected: Using logger
             actionErrors.push("Failed to send DM with streak/milestone updates.");
             if (dmError.code === 50007) {
               actionErrors.push("Note: I couldn't DM you. Please check server privacy settings if you want DMs.");
@@ -6219,27 +6461,27 @@ client.on(Events.InteractionCreate, async interaction => {
             // 7b. Pending Freeze Role Update
             if (userData.pendingFreezeRoleUpdate && typeof userData.pendingFreezeRoleUpdate === 'string' && userData.pendingFreezeRoleUpdate.trim() !== "") {
               const targetFreezeRoleName = userData.pendingFreezeRoleUpdate;
-              console.log(`[dailyLogModal_firebase] Processing freeze role update for ${member.user.tag} to: ${targetFreezeRoleName}`);
+              logger.log(`[dailyLogModal_firebase] Processing freeze role update for ${member.user.tag} to: ${targetFreezeRoleName}`); // Corrected: Using logger
               try {
                   const targetRole = await ensureRole(guild, targetFreezeRoleName, null);
                   const currentFreezeRoles = member.roles.cache.filter(role => role.name.startsWith(FREEZE_ROLE_BASENAME) && role.name !== targetFreezeRoleName);
                   if (currentFreezeRoles.size > 0) {
                       await member.roles.remove(currentFreezeRoles);
-                      console.log(`[dailyLogModal_firebase] Removed ${currentFreezeRoles.size} old freeze roles from ${member.user.tag}.`);
+                      logger.log(`[dailyLogModal_firebase] Removed ${currentFreezeRoles.size} old freeze roles from ${member.user.tag}.`); // Corrected: Using logger
                   }
                   if (!member.roles.cache.has(targetRole.id)) {
                       await member.roles.add(targetRole);
-                      console.log(`[dailyLogModal_firebase] Added freeze role "${targetFreezeRoleName}" to ${member.user.tag}.`);
+                      logger.log(`[dailyLogModal_firebase] Added freeze role "${targetFreezeRoleName}" to ${member.user.tag}.`); // Corrected: Using logger
                   }
               } catch (freezeRoleError) {
-                  console.error(`[dailyLogModal_firebase] Error updating freeze role for ${member.user.tag}:`, freezeRoleError);
+                  logger.error(`[dailyLogModal_firebase] Error updating freeze role for ${member.user.tag}:`, freezeRoleError); // Corrected: Using logger
                   actionErrors.push(`Failed to update freeze role to ${targetFreezeRoleName}.`);
               }
             }
 
             // 7c. Pending Role Cleanup / Regular Role Update
             if (userData.pendingRoleCleanup === true || (userData.pendingRoleUpdate && userData.pendingRoleUpdate.name)) {
-                console.log(`[dailyLogModal_firebase] Processing role cleanup/update for ${member.user.tag}. Cleanup: ${userData.pendingRoleCleanup}, NewRole: ${userData.pendingRoleUpdate ? userData.pendingRoleUpdate.name : 'None'}`);
+                logger.log(`[dailyLogModal_firebase] Processing role cleanup/update for ${member.user.tag}. Cleanup: ${userData.pendingRoleCleanup}, NewRole: ${userData.pendingRoleUpdate ? userData.pendingRoleUpdate.name : 'None'}`); // Corrected: Using logger
                 try {
                     let rolesToRemove = [];
                     if (userData.pendingRoleCleanup === true) {
@@ -6249,143 +6491,161 @@ client.on(Events.InteractionCreate, async interaction => {
                             }
                         });
                         if (rolesToRemove.length > 0) {
-                          console.log(`[dailyLogModal_firebase] Identified roles to remove for cleanup:`, rolesToRemove.map(r => r.name));
+                          logger.log(`[dailyLogModal_firebase] Identified roles to remove for cleanup:`, rolesToRemove.map(r => r.name)); // Corrected: Using logger
                           await member.roles.remove(rolesToRemove);
-                          console.log(`[dailyLogModal_firebase] Performed role cleanup for ${member.user.tag}.`);
+                          logger.log(`[dailyLogModal_firebase] Performed role cleanup for ${member.user.tag}.`); // Corrected: Using logger
                         }
                     }
 
                     if (userData.pendingRoleUpdate && userData.pendingRoleUpdate.name) {
                         const newRoleInfo = userData.pendingRoleUpdate; // { name, color, days }
-                        console.log(`[dailyLogModal_firebase] Assigning new role: ${newRoleInfo.name}`);
+                        logger.log(`[dailyLogModal_firebase] Assigning new role: ${newRoleInfo.name}`); // Corrected: Using logger
                         const newRole = await ensureRole(guild, newRoleInfo.name, newRoleInfo.color);
                         if (!member.roles.cache.has(newRole.id)) {
                           await member.roles.add(newRole);
-                          console.log(`[dailyLogModal_firebase] Added role "${newRole.name}" to ${member.user.tag}.`);
+                          logger.log(`[dailyLogModal_firebase] Added role "${newRole.name}" to ${member.user.tag}.`); // Corrected: Using logger
                         }
                     }
                 } catch (roleError) {
-                    console.error(`[dailyLogModal_firebase] Error during role cleanup/update for ${member.user.tag}:`, roleError);
+                    logger.error(`[dailyLogModal_firebase] Error during role cleanup/update for ${member.user.tag}:`, roleError); // Corrected: Using logger
                     actionErrors.push("Failed to update your streak role.");
                 }
             }
 
             // This replaces any old, direct channel.send messages for milestones/extensions.
             if (userData.pendingPublicMessage && typeof userData.pendingPublicMessage === 'string' && userData.pendingPublicMessage.trim() !== "") {
-                console.log(`[dailyLogModal_firebase] Attempting to send public message to channel ${interaction.channelId}: "${userData.pendingPublicMessage}"`);
+                logger.log(`[dailyLogModal_firebase] Attempting to send public message to channel ${interaction.channelId}: "${userData.pendingPublicMessage}"`); // Corrected: Using logger
                 try {
                     // Send to the channel where the /log command was initiated
                     await interaction.channel.send(userData.pendingPublicMessage);
-                    console.log(`[dailyLogModal_firebase] Successfully sent public message for user ${interaction.user.tag}.`);
+                    logger.log(`[dailyLogModal_firebase] Successfully sent public message for user ${interaction.user.tag}.`); // Corrected: Using logger
                 } catch (publicMsgError) {
-                    console.error(`[dailyLogModal_firebase] Failed to send pending public message for user ${interaction.user.tag}:`, publicMsgError);
+                    logger.error(`[dailyLogModal_firebase] Failed to send pending public message for user ${interaction.user.tag}:`, publicMsgError); // Corrected: Using logger
                     actionErrors.push("Failed to post public announcement to the channel.");
                 }
             } else if (userData.pendingPublicMessage) {
                 // Log if we have a message but it's not a sendable string (e.g. null, empty after trim)
-                console.log(`[dailyLogModal_firebase] Had a pendingPublicMessage but it was not a valid string to send. Content: "${userData.pendingPublicMessage}"`);
+                logger.log(`[dailyLogModal_firebase] Had a pendingPublicMessage but it was not a valid string to send. Content: "${userData.pendingPublicMessage}"`); // Corrected: Using logger
             }
 
         } else { // End of if (guild && member)
-            console.warn(`[dailyLogModal_firebase] Guild or Member object not available for user ${interaction.user.id}. Skipping public messages and role updates.`);
+            logger.warn(`[dailyLogModal_firebase] Guild or Member object not available for user ${interaction.user.id}. Skipping public messages and role updates.`); // Corrected: Using logger
             if (userData.pendingPublicMessage || userData.pendingFreezeRoleUpdate || userData.pendingRoleCleanup || userData.pendingRoleUpdate) {
                 actionErrors.push("Could not perform role updates or public announcements (guild/member data unavailable).");
             }
         }
 
-        // 8. Clear Pending Actions in Firebase (CRITICAL: Call this LAST)
-        console.log(`[dailyLogModal_firebase] Calling clearPendingUserActions for ${interaction.user.id}...`);
+        // 8. Clear Pending Actions in Firebase (CRITICAL: Call this LAST, only non-AI flags)
+        logger.log(`[dailyLogModal_firebase] Calling clearPendingUserActions (non-AI flags) for ${interaction.user.id}...`); // Corrected: Using logger
         try {
           await callFirebaseFunction('clearPendingUserActions', {}, interaction.user.id);
-          console.log(`[dailyLogModal_firebase] Successfully cleared pending actions for ${interaction.user.id}.`);
+          logger.log(`[dailyLogModal_firebase] Successfully cleared non-AI pending actions for ${interaction.user.id}.`); // Corrected: Using logger
         } catch (clearError) {
-          console.error(`[dailyLogModal_firebase] FAILED to clear pending actions for ${interaction.user.id}:`, clearError);
+          logger.error(`[dailyLogModal_firebase] FAILED to clear non-AI pending actions for ${interaction.user.id}:`, clearError); // Corrected: Using logger
           actionErrors.push("Critical: Failed to clear pending server actions (may retry on next log).");
         }
 
         // 9. Construct Final Ephemeral Confirmation Message
         const randomMessage = inspirationalMessages[Math.floor(Math.random() * inspirationalMessages.length)];
         // Include streak info in the ephemeral confirmation for immediate feedback
-        let finalMessage = `✅ Log saved!\n\n${randomMessage}\n\n🔥 Current Streak: ${userData.currentStreak || 0} days\n🧊 Freezes: ${userData.freezesRemaining || 0}`;
+        let finalEphemeralMessage = `✅ Log saved!\n\n${randomMessage}\n\n🔥 Current Streak: ${userData.currentStreak || 0} days\n🧊 Freezes: ${userData.freezesRemaining || 0}`;
 
         if (actionErrors.length > 0) {
-          finalMessage += `\n\n⚠️ **Note:**\n- ${actionErrors.join('\n- ')}`;
+          finalEphemeralMessage += `\n\n⚠️ **Note:**\n- ${actionErrors.join('\n- ')}`;
         }
 
         // 10. Edit the Original Deferred Reply with the final ephemeral message
-        await interaction.editReply({ content: finalMessage });
+        // AND Inform user about AI analysis for notes
+        let aiAnalysisStatusMessage = "";
+        let newDmMessageContent = "";
+        let newDmButtonRow = null;
 
-        // 11. Send Non-Ephemeral DM with Log Summary (as before)
-        let logSummarySettings = null;
-        try {
-            const settingsResultForDM = await callFirebaseFunction('getWeeklySettings', {}, interaction.user.id);
-            if (settingsResultForDM && settingsResultForDM.settings) {
-                logSummarySettings = settingsResultForDM.settings;
-            }
-        } catch (settingsError) {
-            console.error('[dailyLogModal_firebase] Error fetching settings for DM summary:', settingsError);
+        if (userData.pendingLogAIResponseForDM && userData.aiLogAcknowledgment && userData.aiLogComfortMessage && userData.aiLogPublicPostSuggestion) {
+            aiAnalysisStatusMessage = "\n\n🧠 Analyzing your notes for insights..."; // This is the initial message in ephemeral reply
+            newDmMessageContent = `Your Daily Reflection from AI! ✨\n\n${userData.aiLogAcknowledgment} ${userData.aiLogComfortMessage}`;
+            newDmButtonRow = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('ai_show_share_prompt_btn') // New button to show sharing prompt
+                        .setLabel('📣 Yes, Show Me!')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('ai_no_share_prompt_btn') // New button to decline sharing prompt
+                        .setLabel('🤫 No, Thanks')
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            
+            // Store AI analysis data in setupData for later use by button handlers
+            // This is crucial to avoid refetching from Firestore on button clicks
+            userExperimentSetupData.set(interaction.user.id, {
+                ...setupData, // Keep existing setup data if any
+                aiLogPublicPostSuggestion: userData.aiLogPublicPostSuggestion,
+                // Add any other relevant AI-generated data here if needed by subsequent steps
+            });
+            logger.log(`[dailyLogModal_firebase] Stored AI log analysis data in userExperimentSetupData for ${interaction.user.id}.`); // Corrected: Using logger
+
+        } else {
+            aiAnalysisStatusMessage = "\n\n(AI analysis for notes not available or failed.)"; // Fallback if AI data is missing
+            logger.warn(`[dailyLogModal_firebase] AI log analysis data missing for user ${interaction.user.id}. Not sending AI DM prompt. Data:`, {
+                pendingLogAIResponseForDM: userData.pendingLogAIResponseForDM,
+                aiLogAcknowledgment: userData.aiLogAcknowledgment,
+                aiLogComfortMessage: userData.aiLogComfortMessage,
+                aiLogPublicPostSuggestion: userData.aiLogPublicPostSuggestion,
+            }); // Corrected: Using logger
         }
         
-        const now = new Date();
-        const unixTimestamp = Math.floor(now.getTime() / 1000);
-        let dmContent = `**✅ Your Log Summary** (<t:${unixTimestamp}:F>)\n\n`;
-        if (logSummarySettings && typeof logSummarySettings === 'object') {
-            if (logSummarySettings.deeperProblem) {
-                dmContent += `🎯 **Deeper Goal / Problem / Theme:** ${logSummarySettings.deeperProblem}\n\n`;
-            }
+        await interaction.editReply({ 
+            content: finalEphemeralMessage + aiAnalysisStatusMessage, 
+            components: [] 
+        });
 
-            // Format Output Metric
-            const outputSetting = logSummarySettings.output;
-            const outputLabel = outputSetting?.label || 'Output';
-            const outputUnit = outputSetting?.unit || '';
-            const isOutputTime = TIME_OF_DAY_KEYWORDS.includes(outputUnit.toLowerCase().trim());
-            const formattedOutputValue = (payload.outputValue !== undefined && isOutputTime)
-                ? formatDecimalAsTime(parseFloat(payload.outputValue))
-                : payload.outputValue;
-            dmContent += `📊 **${outputLabel}**: ${formattedOutputValue} ${outputUnit}\n`.trimEnd() + '\n';
+        // 11. Send First AI-generated DM (if applicable)
+        if (newDmMessageContent && newDmButtonRow) {
+            try {
+                const dmMessage = await interaction.user.send({ 
+                    content: newDmMessageContent + "\n\nI've also got a thought about sharing your journey. Would you like to see it?", 
+                    components: [newDmButtonRow] 
+                });
+                logger.log(`[dailyLogModal_firebase] Sent first AI log analysis DM to ${interaction.user.tag} (Message ID: ${dmMessage.id}).`); // Corrected: Using logger
 
-            // Format Input Metrics
-            const inputSettingsArray = [logSummarySettings.input1, logSummarySettings.input2, logSummarySettings.input3];
-            for (let i = 0; i < payload.inputValues.length; i++) {
-                const currentInputSetting = inputSettingsArray[i];
-                const inputValue = payload.inputValues[i];
-                if ((currentInputSetting?.label) || (inputValue && inputValue.trim() !== "")) {
-                    const label = currentInputSetting?.label || `Input ${i + 1}`;
-                    const unit = currentInputSetting?.unit || '';
-                    const isInputTime = TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
-                    
-                    const formattedInputValue = (inputValue && isInputTime) 
-                        ? formatDecimalAsTime(parseFloat(inputValue)) 
-                        : (inputValue || "*Not logged*");
+                // Set timeout to disable buttons
+                // Store message ID and interaction user ID to re-fetch and disable buttons
+                const timeoutDuration = 60 * 1000; // 1 minute
+                setTimeout(async () => {
+                    try {
+                        const fetchedDmMessage = await dmMessage.channel.messages.fetch(dmMessage.id);
+                        if (fetchedDmMessage.components.length > 0 && fetchedDmMessage.components[0].components[0].customId === 'ai_show_share_prompt_btn' && !fetchedDmMessage.components[0].components[0].disabled) {
+                            const disabledRow = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('ai_show_share_prompt_btn')
+                                    .setLabel('📣 Yes, Show Me!')
+                                    .setStyle(ButtonStyle.Primary)
+                                    .setDisabled(true),
+                                new ButtonBuilder()
+                                    .setCustomId('ai_no_share_prompt_btn')
+                                    .setLabel('🤫 No, Thanks')
+                                    .setStyle(ButtonStyle.Secondary)
+                                    .setDisabled(true)
+                            );
+                            await fetchedDmMessage.edit({ components: [disabledRow] });
+                            logger.log(`[dailyLogModal_firebase] Disabled buttons in AI log analysis DM for ${interaction.user.tag} due to timeout.`); // Corrected: Using logger
+                        }
+                    } catch (timeoutError) {
+                        logger.error(`[dailyLogModal_firebase] Error disabling AI log analysis DM buttons for ${interaction.user.tag}:`, timeoutError); // Corrected: Using logger
+                    }
+                }, timeoutDuration);
 
-                    dmContent += `🛠️ **${label}**: ${formattedInputValue} ${unit}`.trimEnd() + '\n';
-                }
-            }
-        } else {
-            // Fallback for when settings aren't available (no change needed here)
-            dmContent += `Outcome: ${payload.outputValue || '*Not logged*'}\n`;
-            dmContent += `Habit 1: ${payload.inputValues[0] || '*Not logged*'}\n`;
-            if (payload.inputValues[1]) dmContent += `Habit 2: ${payload.inputValues[1]}\n`;
-            if (payload.inputValues[2]) dmContent += `Habit 3: ${payload.inputValues[2]}\n`;
-        }
-        dmContent += `\n💭 **Notes:**\n${payload.notes || '*No notes*'}`;
-        try {
-            await interaction.user.send({ content: dmContent });
-            console.log(`[dailyLogModal_firebase] Sent log summary DM to ${interaction.user.tag}`);
-        } catch (dmError) {
-            console.error(`[dailyLogModal_firebase] Failed to send log summary DM to ${interaction.user.tag}:`, dmError);
-            if (interaction.channel && dmError.code === 50007) {
-                try {
-                    await interaction.followUp({ content: "I tried to DM you a copy of your log, but your DMs are closed for this server or with me.", flags: MessageFlags.Ephemeral });
-                } catch (followUpError) {
-                    console.error('[dailyLogModal_firebase] Failed to send DM failure follow-up:', followUpError);
+            } catch (dmError) {
+                logger.error(`[dailyLogModal_firebase] Failed to send first AI log analysis DM to ${interaction.user.tag}:`, dmError); // Corrected: Using logger
+                if (dmError.code === 50007) {
+                    await interaction.followUp({ content: "I tried to DM you an AI analysis of your log, but your DMs are closed for this server or with me. Please enable DMs to receive these insights!", flags: MessageFlags.Ephemeral });
                 }
             }
         }
 
       } catch (error) { // Catch for the main try block
         const errorTime = performance.now();
-        console.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error);
+        logger.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error); // Corrected: Using logger
         let userErrorMessage = '❌ An unexpected error occurred while saving or processing your log. Please try again.';
         if (error.message) {
           if (error.message.includes('Firebase Error') || error.message.includes('authentication failed') || error.message.includes('connection not ready')) {
@@ -6397,15 +6657,15 @@ client.on(Events.InteractionCreate, async interaction => {
         if (interaction.deferred || interaction.replied) { // Check if deferred or already replied (e.g. initial defer was successful)
           try {
             await interaction.editReply({ content: userErrorMessage });
-          } catch (editError) { console.error('[dailyLogModal_firebase] Failed to send main error via editReply:', editError); }
+          } catch (editError) { logger.error('[dailyLogModal_firebase] Failed to send main error via editReply:', editError); } // Corrected: Using logger
         } else { // If not even deferred (e.g. defer failed)
           try { await interaction.reply({ content: userErrorMessage, flags: MessageFlags.Ephemeral }); }
-          catch (replyError) { console.error('[dailyLogModal_firebase] Failed to send main error via reply:', replyError); }
+          catch (replyError) { logger.error('[dailyLogModal_firebase] Failed to send main error via reply:', replyError); } // Corrected: Using logger
         }
       } // End main try-catch block
 
       const modalProcessEndTime = performance.now();
-      console.log(`[experiment_setup_modal END ${interactionId}] Processing finished for User: ${interaction.user.tag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`);
+      logger.log(`[experiment_setup_modal END ${interaction.id}] Processing finished for User: ${interaction.user.tag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`); // Corrected: Using logger
     }
     // --- END OF COMPLETE DAILY LOG MODAL SUBMISSION HANDLER ---
 
