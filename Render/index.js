@@ -292,11 +292,13 @@ function setupStatsNotificationListener(client) {
               // ============== END: PAIRWISE INTERACTION ANALYSIS SECTION ==============
                         const actionRow = new ActionRowBuilder()
                             .addComponents(
-                                 new ButtonBuilder()
+                                 /*
+                                new ButtonBuilder()
                                     .setCustomId(`compare_exp_stats_btn_${statsReportData.experimentId}`) // Ensure experimentId is correctly used
                                     .setLabel('Compare with Recent Experiments')
                                     .setStyle(ButtonStyle.Primary),
-                                new ButtonBuilder() // New button for AI Insights
+                                */
+                                    new ButtonBuilder() // New button for AI Insights
                                     .setCustomId(`get_ai_insights_btn_${statsReportData.experimentId}`)
                                     .setLabel('💡 Get AI Insights')
                                     .setStyle(ButtonStyle.Success) // Or ButtonStyle.Primary as per your preference
@@ -4988,21 +4990,45 @@ client.on(Events.InteractionCreate, async interaction => {
       if (channel && channel.isTextBased()) {
           try {
               const { deeperProblem, outputSetting, inputSettings } = setupData.rawPayload;
+
+              // Helper function to format metric strings for display
+              const formatMetricForDisplay = (metricString) => {
+                  if (!metricString || typeof metricString !== 'string') return "Not specified";
+                  const parts = metricString.split(',').map(p => p.trim());
+                  if (parts.length !== 3) return metricString; // Return as is if format is wrong
+
+                  const [goalStr, unit, label] = parts;
+
+                  // Check if the unit indicates a time-based metric
+                  const isTime = TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
+
+                  if (isTime) {
+                      const goal = parseFloat(goalStr);
+                      if (!isNaN(goal)) {
+                          // Format the decimal goal as a time string and reconstruct
+                          return `${formatDecimalAsTime(goal)}, ${unit}, ${label}`;
+                      }
+                  }
+                  // If not a time metric or goal is not a number, return the original string
+                  return metricString;
+              };
+
               const postEmbed = new EmbedBuilder()
                   .setColor('#7289DA') // Blue
                   .setTitle(`🚀 ${interaction.user.username} is starting a new experiment!`)
-                  .setDescription(`**🎯 Deeper Goal / Problem / Theme:**\n${deeperProblem}`)
+                  .setDescription(`**🎯 Deeper Wish:**\n${deeperProblem}`)
                   .addFields(
-                      { name: '📊 Daily Outcome to Track', value: outputSetting || "Not specified" },
-                      { name: '🛠️ Habit 1', value: inputSettings[0] || "Not specified" }
+                      { name: '📊 Daily Outcome to Track', value: formatMetricForDisplay(outputSetting) },
+                      { name: '🛠️ Habit 1', value: formatMetricForDisplay(inputSettings[0]) }
                   )
                   .setFooter({ text: `Let's support them! Duration: ${setupData.experimentDuration.replace('_', ' ')}` })
                   .setTimestamp();
+
               if (inputSettings[1]) {
-                  postEmbed.addFields({ name: '🛠️ Habit 2', value: inputSettings[1], inline: true });
+                  postEmbed.addFields({ name: '🛠️ Habit 2', value: formatMetricForDisplay(inputSettings[1]), inline: true });
               }
               if (inputSettings[2]) {
-                  postEmbed.addFields({ name: '🛠️ Habit 3', value: inputSettings[2], inline: true });
+                  postEmbed.addFields({ name: '🛠️ Habit 3', value: formatMetricForDisplay(inputSettings[2]), inline: true });
               }
 
               await channel.send({ embeds: [postEmbed] });
