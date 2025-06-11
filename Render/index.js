@@ -6333,21 +6333,36 @@ client.on(Events.InteractionCreate, async interaction => {
             if (logSummarySettings.deeperProblem) {
                 dmContent += `🎯 **Deeper Goal / Problem / Theme:** ${logSummarySettings.deeperProblem}\n\n`;
             }
-            const outputLabel = logSummarySettings.output?.label || 'Output';
-            const outputUnit = logSummarySettings.output?.unit || '';
-            dmContent += `📊 **${outputLabel}**: ${payload.outputValue} ${outputUnit}\n`.trimEnd() + '\n';
-            
+
+            // Format Output Metric
+            const outputSetting = logSummarySettings.output;
+            const outputLabel = outputSetting?.label || 'Output';
+            const outputUnit = outputSetting?.unit || '';
+            const isOutputTime = TIME_OF_DAY_KEYWORDS.includes(outputUnit.toLowerCase().trim());
+            const formattedOutputValue = (payload.outputValue !== undefined && isOutputTime)
+                ? formatDecimalAsTime(parseFloat(payload.outputValue))
+                : payload.outputValue;
+            dmContent += `📊 **${outputLabel}**: ${formattedOutputValue} ${outputUnit}\n`.trimEnd() + '\n';
+
+            // Format Input Metrics
             const inputSettingsArray = [logSummarySettings.input1, logSummarySettings.input2, logSummarySettings.input3];
             for (let i = 0; i < payload.inputValues.length; i++) {
                 const currentInputSetting = inputSettingsArray[i];
                 const inputValue = payload.inputValues[i];
-                if ((currentInputSetting && currentInputSetting.label && currentInputSetting.label.trim() !== "") || (inputValue && inputValue.trim() !== "")) {
+                if ((currentInputSetting?.label) || (inputValue && inputValue.trim() !== "")) {
                     const label = currentInputSetting?.label || `Input ${i + 1}`;
                     const unit = currentInputSetting?.unit || '';
-                    dmContent += `🛠️ **${label}**: ${inputValue || "*Not logged*"} ${unit}`.trimEnd() + '\n';
+                    const isInputTime = TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
+                    
+                    const formattedInputValue = (inputValue && isInputTime) 
+                        ? formatDecimalAsTime(parseFloat(inputValue)) 
+                        : (inputValue || "*Not logged*");
+
+                    dmContent += `🛠️ **${label}**: ${formattedInputValue} ${unit}`.trimEnd() + '\n';
                 }
             }
         } else {
+            // Fallback for when settings aren't available (no change needed here)
             dmContent += `Outcome: ${payload.outputValue || '*Not logged*'}\n`;
             dmContent += `Habit 1: ${payload.inputValues[0] || '*Not logged*'}\n`;
             if (payload.inputValues[1]) dmContent += `Habit 2: ${payload.inputValues[1]}\n`;

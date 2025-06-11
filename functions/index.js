@@ -3095,12 +3095,12 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
     const now = new Date();
     const currentUTCHour = now.getUTCHours();
     const currentUTCMinute = now.getUTCMinutes();
-    const currentUTCDayOfYear = getDayOfYear(now); // [cite: 824]
+    const currentUTCDayOfYear = getDayOfYear(now);
 
     try {
         const usersSnapshot = await db.collection('users').get();
         if (usersSnapshot.empty) {
-            logger.log("sendScheduledReminders: No users found."); // [cite: 826]
+            logger.log("sendScheduledReminders: No users found.");
             return null;
         }
 
@@ -3111,14 +3111,14 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
 
             if (userData.experimentCurrentSchedule &&
                 typeof userData.experimentCurrentSchedule === 'object' &&
-                userData.experimentCurrentSchedule.remindersSkipped === false && // [cite: 827]
+                userData.experimentCurrentSchedule.remindersSkipped === false &&
                 userData.experimentCurrentSchedule.reminderFrequency &&
-                userData.experimentCurrentSchedule.reminderFrequency !== 'none' && // [cite: 827]
+                userData.experimentCurrentSchedule.reminderFrequency !== 'none' &&
                 userData.experimentCurrentSchedule.experimentEndTimestamp &&
                 typeof userData.experimentCurrentSchedule.experimentEndTimestamp.toDate === 'function' &&
-                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() > now) { // [cite: 827]
+                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() > now) {
 
-                const schedule = userData.experimentCurrentSchedule; // [cite: 827]
+                const schedule = userData.experimentCurrentSchedule;
                 
             if (typeof schedule !== 'object' || schedule === null) {
                             logger.error(`sendScheduledReminders: User ${userId} experimentCurrentSchedule (variable 'schedule') was not a valid object for destructuring. Value:`, schedule);
@@ -3127,18 +3127,17 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
 
                 // --- Step 2: Initialize Daily Tracking Variables ---
                 const {
-                    reminderWindowStartUTC, // [cite: 828]
-                    reminderWindowEndUTC, // [cite: 828]
-                    reminderFrequency, // [cite: 828]
-                    lastReminderSentDayOfYearUTC, // [cite: 828]
-                    remindersSentOnLastDay, // [cite: 829]
-                    firstHalfReminderSentForDay: storedFirstHalfSent, // For Step 2 & 3
-                    secondHalfReminderSentForDay: storedSecondHalfSent, // For Step 2 & 3
-                    lastReminderSentEpochDayUTC // [cite: 835]
+                    reminderWindowStartUTC,
+                    reminderWindowEndUTC,
+                    reminderFrequency,
+                    lastReminderSentDayOfYearUTC,
+                    remindersSentOnLastDay,
+                    firstHalfReminderSentForDay: storedFirstHalfSent,
+                    secondHalfReminderSentForDay: storedSecondHalfSent,
+                    lastReminderSentEpochDayUTC
                 } = schedule;
-
-                if (typeof reminderWindowStartUTC !== 'number' || typeof reminderWindowEndUTC !== 'number') { // [cite: 830]
-                    logger.warn(`sendScheduledReminders: User ${userId} has incomplete UTC reminder window settings. Skipping.`); // [cite: 830]
+                if (typeof reminderWindowStartUTC !== 'number' || typeof reminderWindowEndUTC !== 'number') {
+                    logger.warn(`sendScheduledReminders: User ${userId} has incomplete UTC reminder window settings. Skipping.`);
                     return; // to next userDoc
                 }
 
@@ -3147,7 +3146,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 let secondHalfFlagForToday; // Tracks if a reminder has been sent/allocated to second half *today*
 
                 if (lastReminderSentDayOfYearUTC === currentUTCDayOfYear) {
-                    actualRemindersSentToday = remindersSentOnLastDay || 0; // [cite: 833]
+                    actualRemindersSentToday = remindersSentOnLastDay || 0;
                     firstHalfFlagForToday = storedFirstHalfSent || false;
                     secondHalfFlagForToday = storedSecondHalfSent || false;
                 } else {
@@ -3157,37 +3156,37 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 }
                 // --- End Step 2 Initialization ---
 
-                const maxRemindersToday = determineMaxReminders(reminderFrequency); // [cite: 831]
+                const maxRemindersToday = determineMaxReminders(reminderFrequency);
 
                 // 1. Limit Check
-                if (actualRemindersSentToday >= maxRemindersToday) { // [cite: 834]
+                if (actualRemindersSentToday >= maxRemindersToday) {
                     return; // Daily limit met
                 }
 
                 // 2. "Every other day" logic
-                if (reminderFrequency === 'every_other_day') { // [cite: 834]
-                    const currentEpochDayUTC = Math.floor(now.getTime() / (1000 * 60 * 60 * 24)); // [cite: 834]
-                    const lastSentEpochDay = lastReminderSentEpochDayUTC; // From destructuring [cite: 835]
+                if (reminderFrequency === 'every_other_day') {
+                    const currentEpochDayUTC = Math.floor(now.getTime() / (1000 * 60 * 60 * 24));
+                    const lastSentEpochDay = lastReminderSentEpochDayUTC;
 
                     if (typeof lastSentEpochDay === 'number') {
-                        if (currentEpochDayUTC === lastSentEpochDay) { // [cite: 836]
+                        if (currentEpochDayUTC === lastSentEpochDay) {
                             return; // Already sent on this epoch day
                         }
-                        if (currentEpochDayUTC - lastSentEpochDay < 2) { // [cite: 837]
+                        if (currentEpochDayUTC - lastSentEpochDay < 2) {
                             return; // Sent on the immediately preceding epoch day, so skip today
                         }
                     }
                 }
 
                 // 3. Magic Minute Window Hit Check
-                let magicMinuteHit = false; // [cite: 838]
-                for (const targetMin of MMW_TARGET_MINUTES) { // [cite: 839]
-                    if (currentUTCMinute >= (targetMin - MMW_FLEXIBILITY) && currentUTCMinute <= (targetMin + MMW_FLEXIBILITY)) { // [cite: 839]
-                        magicMinuteHit = true; // [cite: 839]
+                let magicMinuteHit = false;
+                for (const targetMin of MMW_TARGET_MINUTES) {
+                    if (currentUTCMinute >= (targetMin - MMW_FLEXIBILITY) && currentUTCMinute <= (targetMin + MMW_FLEXIBILITY)) {
+                        magicMinuteHit = true;
                         break;
                     }
                 }
-                if (!magicMinuteHit) { // [cite: 841]
+                if (!magicMinuteHit) {
                     return; // Not a magic minute time
                 }
 
@@ -3203,7 +3202,6 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
 
                 // --- Step 3: Core Eligibility Logic based on Halves ---
                 let sendThisReminder = false;
-
                 if (maxRemindersToday === 1) {
                     // Deterministically pick a target half for the day
                     const targetHalfForSingle = ((currentUTCDayOfYear + parseInt(userId.slice(-1), 16)) % 2 === 0) ? 'first_half' : 'second_half';
@@ -3218,10 +3216,10 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     } else if (firstHalfFlagForToday && secondHalfFlagForToday) {
                         // Both halves have had their guaranteed reminder, send any remaining ones
                         if (actualRemindersSentToday < maxRemindersToday) {
-                             sendThisReminder = true;
+                            sendThisReminder = true;
                         }
                     } else if ( (currentHalf === 'first_half' && firstHalfFlagForToday && !secondHalfFlagForToday && (maxRemindersToday - actualRemindersSentToday > 1 )) ||
-                                (currentHalf === 'second_half' && secondHalfFlagForToday && !firstHalfFlagForToday && (maxRemindersToday - actualRemindersSentToday > 1 )) ) {
+                                (currentHalf === 'second_half' && secondHalfFlagForDay && !firstHalfFlagForToday && (maxRemindersToday - actualRemindersSentToday > 1 )) ) {
                         // Current half is done, other half is not, and we have enough reminders left to fill both and then some.
                         // This allows filling up more than the guaranteed 1 per half if maxReminders is > 2
                         if (actualRemindersSentToday < maxRemindersToday) {
@@ -3238,16 +3236,44 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     // logger.log(`User ${userId}, Freq: ${reminderFrequency}, SentToday: ${actualRemindersSentToday}/${maxRemindersToday}, CH: ${currentHalf}, FHDone: ${firstHalfFlagForToday}, SHDone: ${secondHalfFlagForToday}. No send.`);
                     return; // Conditions not met to send
                 }
-                // --- End Step 3 Core Logic ---
 
                 logger.log(`sendScheduledReminders: User ${userId} PASSED ALL CHECKS. Attempting send. Freq: ${reminderFrequency}, SentToday(before): ${actualRemindersSentToday}/${maxRemindersToday}, CurrentHalf: ${currentHalf}, 1stHalfSent: ${firstHalfFlagForToday}, 2ndHalfSent: ${secondHalfFlagForToday}. Time: ${currentUTCHour}:${String(currentUTCMinute).padStart(2,'0')}`);
-                
+
+                // ========================================================================
+                // NEW CODE START: Fetch last 2 log notes for AI context
+                // ========================================================================
+                let recentLogNotes = "";
+                try {
+                    const logsQuery = db.collection('logs')
+                        .where('userId', '==', userId)
+                        .orderBy('timestamp', 'desc')
+                        .limit(2); // Fetch last 2 logs
+                    const logsSnapshot = await logsQuery.get();
+
+                    const notesArray = [];
+                    logsSnapshot.forEach(doc => {
+                        const log = doc.data();
+                        if (log.notes && typeof log.notes === 'string' && log.notes.trim() !== "") {
+                            notesArray.push(log.notes.trim());
+                        }
+                    });
+
+                    if (notesArray.length > 0) {
+                        recentLogNotes = "Here are your recent notes:\n" + notesArray.map((note, index) => `- Log ${notesArray.length - index}: "${note}"`).join("\n");
+                    }
+                    logger.info(`[sendScheduledReminders - Notes Fetch] User ${userId}: Fetched ${notesArray.length} recent log notes for AI context.`);
+                } catch (notesFetchError) {
+                    logger.error(`[sendScheduledReminders - Notes Fetch] User ${userId}: Failed to fetch recent log notes:`, notesFetchError);
+                    recentLogNotes = "Could not retrieve your recent notes due to an error.";
+                }
+                // ========================================================================
+                // NEW CODE END
+                // ========================================================================
 
                 // --- AI Personalization Step 1: Access settings & prepare input data ---
-                let inputsForAI = []; // Initialize as an empty array
+                let inputsForAI = [];
                 const scheduledSettings = schedule.scheduledExperimentSettings;
-
-                if (genAI && scheduledSettings) { // Only proceed if AI client and settings are available [cite: 39, 44, 849]
+                if (genAI && scheduledSettings) { // Only proceed if AI client and settings are available
                     if (scheduledSettings.input1 && scheduledSettings.input1.label?.trim()) {
                         inputsForAI.push({ 
                             label: scheduledSettings.input1.label, 
@@ -3281,15 +3307,13 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 // --- End AI Personalization Step 1 ---
 
                 // --- AI Personalization Step 2: Construct LLM Prompt Text with Time Context ---
-                let aiPromptText = ""; 
-
+                let aiPromptText = "";
                 if (genAI && scheduledSettings && inputsForAI.length > 0) {
                     let timeContextForPrompt = "It's currently a general time for the user.";
-                    const userInitialUTCOffsetHours = schedule.initialUTCOffsetHours; // [cite: 420, 421]
+                    const userInitialUTCOffsetHours = schedule.initialUTCOffsetHours;
 
                     if (typeof userInitialUTCOffsetHours === 'number') {
                         const userLocalHour = (currentUTCHour - userInitialUTCOffsetHours + 24) % 24;
-                        
                         let localTimeOfDayCategory = "";
                         if (userLocalHour >= 5 && userLocalHour < 12) localTimeOfDayCategory = "morning";
                         else if (userLocalHour >= 12 && userLocalHour < 17) localTimeOfDayCategory = "afternoon";
@@ -3318,11 +3342,10 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         const formatHourForPrompt = (hour24) => {
                             const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
                             const period = hour24 < 12 || hour24 === 24 ? 'AM' : 'PM';
-                             if (hour24 === 0) return '12AM (Midnight)';
+                            if (hour24 === 0) return '12AM (Midnight)';
                              if (hour24 === 12) return '12PM (Noon)';
                             return `${hour12}${period}`;
                         };
-
                         timeContextForPrompt = `It's currently ${localTimeOfDayCategory} for the user (around ${formatHourForPrompt(userLocalHour)} local time), ` +
                                                `and they are ${positionInWindow} (local window: ${formatHourForPrompt(localWindowStart)} - ${formatHourForPrompt(localWindowEnd)}).`;
                     }
@@ -3339,7 +3362,6 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     }
 
                     let experimentProgressContext = "";
-                    //const schedule = userData.experimentCurrentSchedule; // Assuming 'schedule' is already defined
                     const experimentSetAtDate = schedule.experimentSetAt?.toDate();
                     const experimentEndDateDate = schedule.experimentEndTimestamp?.toDate();
                     const nowForProgress = new Date();
@@ -3365,62 +3387,56 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         }
                     }
 
-                    // Using your edited prompt structure and adding time context and instructions
+                    // ========================================================================
+                    // MODIFIED PROMPT TEXT START: Added recentLogNotes to AI context
+                    // ========================================================================
                     aiPromptText = `
-                    You are generating a short, personalized reminder message for a user doing self-experiments.
-                    The message should be 1-3 sentences and under 150 characters.
-                    The tone must be positive and funny. It should grab attention and trigger curiosity.
+                        You are generating a short, personalized reminder message for a user doing self-experiments. The message should be 1-3 sentences and under 150 characters. The tone must be positive and funny. It should grab attention and trigger curiosity, like a scroll-stopping post.
 
-                    CONTEXT:
-                    Time: ${timeContextForPrompt}
-                    ${experimentProgressContext ? `Progress: ${experimentProgressContext}` : ""}
+                        CONTEXT:
+                        Time: ${timeContextForPrompt}
+                        ${experimentProgressContext ? `Progress: ${experimentProgressContext}` : ""}
 
-                    The user's current daily Habits include:
-                    ${exampleActionsForPrompt}
+                        The user's current daily Habits include:
+                        ${exampleActionsForPrompt}
 
-                    Your main goal is to encourage the user to find intrinsic joy, curiosity, or immediate, small rewards while performing ${actionReferenceInstruction}.
-                    Focus on the experience of the action itself.
-                    DO NOT mention their larger, overall goals (deeperProblem) or their progress on main outcome metrics.
-                    DO NOT use phrases like "achieve your goals" or "make progress."
+                        Recent User Notes:
+                        ${recentLogNotes || 'No recent notes available to incorporate.'}
 
-                    IMPORTANT TIME CONSIDERATIONS:
-                    - Subtly tailor the message to reflect the time context provided above. Avoid cliches about the time of day.
-                    - If any of the user's actions (e.g., "${inputsForAI.map(i => i.label).join('/')}") seem strongly tied to a specific time of day (e.g., 'Morning Wakeup', 'Bedtime Routine'), ONLY mention them if the user's current local time of day is appropriate. Otherwise, focus on their other, more general actions or frame the reminder generally about doing something rewarding in their day without mentioning the time-specific action.
+                        Your main goal is to get the user's attention (get them to read the message), and then encourage the user to find intrinsic joy, curiosity, or immediate, small rewards while performing ${actionReferenceInstruction}. Focus on the experience of the action itself. DO NOT use phrases like "achieve your goals" or "make progress."
 
-                    Creatively reference their specific actions. Vary whether you mention one, or multiple of their listed actions.
-                    You can draw inspiration about the message essence from these examples, but generate something novel, varied, and funny if possible:
-                    - "What if this ends up being your favorite part of today?"
-                    - "There's a tiny reward hiding in this activity. Can you find it?"
-                    - "This isn't self-discipline. It's self-discovery."
-                    - "Forget the big goals. Make this moment just a little more rewarding."
+                        IMPORTANT CONSIDERATIONS:
+                        - Subtly tailor the message to reflect the time context provided above. Avoid cliches about the time of day.
+                        - If any of the user's actions (e.g., "${inputsForAI.map(i => i.label).join('/')}") seem strongly tied to a specific time of day (e.g., 'Morning Wakeup', 'Bedtime Routine'), ONLY mention them if the user's current local time of day is appropriate. Otherwise, focus on their other, more general actions or frame the reminder generally about doing something rewarding in their day without mentioning the time-specific action.
+                        - Creatively reference their specific actions. Vary whether you mention one, or multiple of their listed actions.
+                        - IMPORTANT: Subtly incorporate themes, feelings, questions, struggles, or wins, from their "Recent User Notes" if relevant and if it makes the reminder more empathetic or encouraging. For example, if notes mention "feeling tired," you could suggest a habit might "spark some energy, since you mentioned feeling tired in your last notes." If notes mention a small win, you could affirm the value of small positive steps and congratulate them on their win.
 
-                    Generate only the reminder message text. 1-3 sentences and under 150 characters.
+                        Generate only the reminder message text. 1-3 sentences and under 150 characters.
                     `;
-                    logger.info(`[sendScheduledReminders - AI Step 2 REV] User ${userId}: Constructed AI Prompt (Time-Aware):\n${aiPromptText}`);
+                    // ========================================================================
+                    // MODIFIED PROMPT TEXT END
+                    // ========================================================================
 
+                    logger.info(`[sendScheduledReminders - AI Step 2 REV] User ${userId}: Constructed AI Prompt (Time-Aware):\n${aiPromptText}`);
                 } else if (inputsForAI.length === 0 && genAI && scheduledSettings) {
                     // logger.info(`[sendScheduledReminders - AI Step 2 REV] User ${userId}: No inputsForAI, skipping AI prompt construction.`);
                 }
                 // --- End AI Personalization Step 2 with Time Context ---
 
                 // --- AI Personalization Step 3: Make LLM API Call & Handle Response ---
-                let finalReminderMessage = ""; // Will hold the message to be sent
-                let usedAiMessage = false;     // Flag to track if AI message was successfully used
+                let finalReminderMessage = "";
+                let usedAiMessage = false;
 
                 // Condition to attempt AI generation: genAI client is ready, and we have a prompt
                 if (genAI && aiPromptText && aiPromptText.trim() !== "") {
-                    // logger.info(`[sendScheduledReminders - AI Step 3] User ${userId}: Attempting AI message generation.`); // Optional: can be verbose
+                    // logger.info(`[sendScheduledReminders - AI Step 3] User ${userId}: Attempting AI message generation.`);
                     try {
-                        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Or "gemini-1.5-pro"
+                        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                         const generationResult = await model.generateContent({
                             contents: [{ role: "user", parts: [{text: aiPromptText}] }],
                             generationConfig: { 
-                                ...GEMINI_CONFIG, // Spread global config [cite: 46]
-                                temperature: 0.95, // Override temperature as requested
-                                // Candidate count can be managed here if needed, but default is 1
-                                // maxOutputTokens can also be set if the <200 char in prompt isn't strict enough
-                                // For a 200 char message, ~50-70 tokens should be more than enough.
-                                // Let's use the prompt for char limit first.
+                                ...GEMINI_CONFIG,
+                                temperature: 0.95,
                             }, 
                         });
                         const response = await generationResult.response;
@@ -3453,8 +3469,8 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     if (currentScheduledSettings) {
                         const activeInputLabelsForFallback = [];
                         if (currentScheduledSettings.input1?.label?.trim()) activeInputLabelsForFallback.push(currentScheduledSettings.input1.label);
-                        if (currentScheduledSettings.input2?.label?.trim()) activeInputLabelsForFallback.push(currentScheduledSettings.input2.label);
-                        if (currentScheduledSettings.input3?.label?.trim()) activeInputLabelsForFallback.push(currentScheduledSettings.input3.label);
+                        if (currentScheduledSettings.input2?.label?.trim()) activeInputLabelsForFallback.push(currentSettings.input2.label);
+                        if (currentScheduledSettings.input3?.label?.trim()) activeInputLabelsForFallback.push(currentSettings.input3.label);
                         
                         if (activeInputLabelsForFallback.length > 0) {
                             const randomInputLabel = activeInputLabelsForFallback[Math.floor(Math.random() * activeInputLabelsForFallback.length)];
@@ -3465,7 +3481,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 }
                 // --- End AI Personalization Step 3 ---
 
-                const reminderDocId = db.collection('pendingReminderDMs').doc().id; // [cite: 855]
+                const reminderDocId = db.collection('pendingReminderDMs').doc().id;
                 
                 // --- Step 4: Update Tracking Fields in Firestore Payload ---
                 const updatePayload = {
@@ -3479,7 +3495,6 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 // So, if currentHalf is 'first_half', it correctly sets 'experimentCurrentSchedule.firstHalfReminderSentForDay' to true.
                 // If currentHalf is 'second_half', it correctly sets 'experimentCurrentSchedule.secondHalfReminderSentForDay' to true.
                 // If one was already true from a previous run *today*, it remains true.
-
                 if (lastReminderSentDayOfYearUTC !== currentUTCDayOfYear) {
                     // If it's the first reminder of a new day, explicitly ensure both flags are set according to current send,
                     // and the other is reset (or remains false if not this half).
@@ -3488,34 +3503,32 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 }
 
 
-                if (reminderFrequency === 'every_other_day') { // [cite: 856]
-                    updatePayload['experimentCurrentSchedule.lastReminderSentEpochDayUTC'] = Math.floor(now.getTime() / (1000 * 60 * 60 * 24)); // [cite: 856]
+                if (reminderFrequency === 'every_other_day') {
+                    updatePayload['experimentCurrentSchedule.lastReminderSentEpochDayUTC'] = Math.floor(now.getTime() / (1000 * 60 * 60 * 24));
                 }
                 // --- End Step 4 Payload ---
 
-                const reminderPromise = db.collection('pendingReminderDMs').doc(reminderDocId).set({ // [cite: 857]
+                const reminderPromise = db.collection('pendingReminderDMs').doc(reminderDocId).set({
                     userId: userId,
-                    userTag: userData.userTag || `User_${userId}`, // [cite: 857]
+                    userTag: userData.userTag || `User_${userId}`,
                     messageToSend: finalReminderMessage, 
-                    experimentId: schedule.experimentId || null, // [cite: 858]
-                    status: 'pending', // [cite: 858]
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(), // [cite: 858]
+                    experimentId: schedule.experimentId || null,
+                    status: 'pending',
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 }).then(() => {
-                    logger.log(`sendScheduledReminders: Created pendingReminderDM ${reminderDocId} for user ${userId}.`); // [cite: 859]
-                    return userDoc.ref.update(updatePayload); // [cite: 859]
+                    logger.log(`sendScheduledReminders: Created pendingReminderDM ${reminderDocId} for user ${userId}.`);
+                    return userDoc.ref.update(updatePayload);
                 }).catch(err => {
-                    logger.error(`sendScheduledReminders: Failed to write pendingReminderDM or update user doc for ${userId}`, err); // [cite: 859]
+                    logger.error(`sendScheduledReminders: Failed to write pendingReminderDM or update user doc for ${userId}`, err);
                 });
-                reminderPromises.push(reminderPromise); // [cite: 860]
+                reminderPromises.push(reminderPromise);
             }
         });
-
-        await Promise.all(reminderPromises); // [cite: 861, 862]
-        logger.log(`sendScheduledReminders: Processing complete. Dispatched ${reminderPromises.length} potential reminders.`); // [cite: 862]
+        await Promise.all(reminderPromises);
+        logger.log(`sendScheduledReminders: Processing complete. Dispatched ${reminderPromises.length} potential reminders.`);
         return null;
-
     } catch (error) {
-        logger.error("sendScheduledReminders: Overall error in scheduled function:", error); // [cite: 863, 864]
+        logger.error("sendScheduledReminders: Overall error in scheduled function:", error);
         return null;
     }
 });
