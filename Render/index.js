@@ -475,6 +475,60 @@ function setupReminderDMsListener(client) {
   console.log("Firestore listener for 'pendingReminderDMs' is active.");
 }
 
+// ADD this entire new function to render/index.js.
+
+/**
+ * Listens for documents in the 'pendingPublicMessages' collection and posts them to the specified channel.
+ * @param {import('discord.js').Client} client - The Discord client instance.
+ */
+function setupPublicMessageListener(client) {
+    if (!dbAdmin) {
+        console.warn("Firebase Admin SDK not initialized. Public message listener will NOT run.");
+        return;
+    }
+
+    console.log("Setting up Firestore listener for 'pendingPublicMessages'...");
+
+    const publicMessagesRef = dbAdmin.collection('pendingPublicMessages');
+    publicMessagesRef.where('status', '==', 'pending').onSnapshot(snapshot => {
+        if (snapshot.empty) {
+            return;
+        }
+
+        snapshot.docChanges().forEach(async (change) => {
+            if (change.type === 'added') {
+                const data = change.doc.data();
+                const docId = change.doc.id;
+                const { message, channelId, userId } = data;
+
+                console.log(`[PublicMessageListener] Detected pending public message for user ${userId} in channel ${channelId}.`);
+
+                try {
+                    const channel = await client.channels.fetch(channelId);
+                    if (channel && channel.isTextBased()) {
+                        await channel.send(message);
+                        console.log(`[PublicMessageListener] Successfully sent public message to channel ${channelId}.`);
+                        // Mark as processed by deleting the document
+                        await change.doc.ref.delete();
+                    } else {
+                        console.warn(`[PublicMessageListener] Channel ${channelId} not found or is not a text channel. Deleting job.`);
+                        await change.doc.ref.delete(); // Delete to prevent retries
+                    }
+                } catch (error) {
+                    console.error(`[PublicMessageListener] Error processing public message ${docId}:`, error);
+                    // Update status to 'error' instead of deleting to allow for manual review
+                    await change.doc.ref.update({ status: 'error', errorMessage: error.message });
+                }
+            }
+        });
+    }, err => {
+        console.error("[PublicMessageListener] Error in 'pendingPublicMessages' listener:", err);
+    });
+
+    console.log("Firestore listener for 'pendingPublicMessages' is active.");
+}
+
+/*
 function setupAIResponseListener(client) {
   if (!dbAdmin) {
     console.warn("Firebase Admin SDK not initialized. AI Response listener will NOT run.");
@@ -566,7 +620,7 @@ function setupAIResponseListener(client) {
   });
   console.log("Firestore listener for 'pendingAIDMResponses' is active.");
 }
-
+*/
 
 const { performance } = require('node:perf_hooks'); // Add this line
 const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
@@ -1341,7 +1395,8 @@ client.once(Events.ClientReady, () => {
   if (admin.apps.length && typeof dbAdmin !== 'undefined' && dbAdmin !== null) {
     setupStatsNotificationListener(client);
     setupReminderDMsListener(client); // <<< ADD THIS LINE TO CALL THE NEW LISTENER
-    setupAIResponseListener(client);
+//    setupAIResponseListener(client);
+    setupPublicMessageListener(client);
   } else {
     console.warn("Firebase Admin SDK (dbAdmin) is not properly initialized. Listeners for stats and reminders will NOT be started. Please check your Firebase Admin setup at the top of the file.");
   }
@@ -6350,312 +6405,113 @@ client.on(Events.InteractionCreate, async interaction => {
    // Handle modal submission
   else if (interaction.isModalSubmit()) {
   // +++ COMPLETE MODAL SUBMISSION HANDLER FOR DAILY LOG (FIREBASE) +++
+    // REPLACE the 'dailyLogModal_firebase' handler in render/index.js with this definitive, simpler version.
+
     if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_firebase') {
+        const modalSubmitStartTime = performance.now();
+        console.log(`[dailyLogModal_firebase] Submission received by User: ${interaction.user.tag}, InteractionID: ${interaction.id}`);
 
-      const modalSubmitStartTime = performance.now();
-      console.log(`[dailyLogModal_firebase] Submission received by User: ${interaction.user.tag}, InteractionID: ${interaction.id}`); // Corrected: Using console
-      let userData = null; // To store fetched user data for final message/actions
-      let actionErrors = []; // Keep track of errors during actions
+        try {
+            // 1. Defer Reply
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            const deferTime = performance.now();
+            console.log(`[dailyLogModal_firebase] Deferral took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
+            
+            // 2. Get data from memory and modal
+            const setupData = userExperimentSetupData.get(interaction.user.id);
+            const settings = setupData?.logFlowSettings;
+            const loggedTimeValues = setupData?.loggedTimeValues || {};
 
-      try {
-        // 1. Defer Reply
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const deferTime = performance.now();
-        console.log(`[dailyLogModal_firebase] Deferral took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`); // Corrected: Using console
-        // 2. Get data from memory
-        const setupData = userExperimentSetupData.get(interaction.user.id);
-        const settings = setupData?.logFlowSettings;
-        const loggedTimeValues = setupData?.loggedTimeValues || {};
-        if (!settings) {
-            await interaction.editReply({ content: "❌ Error: Could not find the settings for this experiment log. Please try starting the log process again.", components: [] });
-            return;
-        }
-
-        // 3. Initialize payload variables
-        let payloadOutputValue;
-        const payloadInputValues = ["", "", ""];
-        const notes = interaction.fields.getTextInputValue('log_notes')?.trim();
-
-        // 4. Consolidate values from modal fields and saved time values
-        // Process Output
-        if (settings.output && settings.output.label) {
-            if (loggedTimeValues.hasOwnProperty(settings.output.label)) {
-                payloadOutputValue = loggedTimeValues[settings.output.label];
-            } else {
-                try { payloadOutputValue = interaction.fields.getTextInputValue('log_output_value')?.trim(); } catch { /* was not in modal */ }
+            if (!settings) {
+                await interaction.editReply({ content: "❌ Error: Could not find the settings for this experiment log. Please try starting the log process again.", components: [] });
+                return;
             }
-        }
 
-        // Process Inputs
-        for (let i = 0; i < 3; i++) {
-            const inputConfig = settings[`input${i + 1}`];
-            if (inputConfig && inputConfig.label) {
-                if (loggedTimeValues.hasOwnProperty(inputConfig.label)) {
-                    payloadInputValues[i] = loggedTimeValues[inputConfig.label];
+            // 3. Consolidate and validate values
+            let payloadOutputValue;
+            const payloadInputValues = ["", "", ""];
+            const notes = interaction.fields.getTextInputValue('log_notes')?.trim();
+            
+            if (settings.output && settings.output.label) {
+                if (loggedTimeValues.hasOwnProperty(settings.output.label)) {
+                    payloadOutputValue = loggedTimeValues[settings.output.label];
                 } else {
-                    try { payloadInputValues[i] = interaction.fields.getTextInputValue(`log_input${i + 1}_value`)?.trim(); } catch { /* was not in modal */ }
+                    try { payloadOutputValue = interaction.fields.getTextInputValue('log_output_value')?.trim(); } catch { /* was not in modal */ }
                 }
             }
-        }
-
-        // 5. Basic Validation
-        // This check is now more specific to allow the number 0 as a valid input.
-        if (payloadOutputValue === undefined || payloadOutputValue === null ||
-           (payloadInputValues[0] === undefined || payloadInputValues[0] === null || payloadInputValues[0] === "") ||
-           !notes) {
-            await interaction.editReply({ content: "❌ Missing required fields (Outcome, Habit 1, or Notes)." });
-            return;
-        }
-        if (isNaN(parseFloat(payloadOutputValue)) || (payloadInputValues[0] && isNaN(parseFloat(payloadInputValues[0])))) {
-            await interaction.editReply({ content: `❌ Values for Outcome and required Habits must be numbers.` });
-            return;
-        }
-
-        // 6. Structure final payload
-        const payload = {
-            outputValue: payloadOutputValue,
-            inputValues: payloadInputValues,
-            notes,
-            userTag: interaction.user.tag
-        };
-        // 7. Clean up temporary log flow data from memory
-        if (setupData) {
-            delete setupData.logFlowSettings;
-            delete setupData.logFlowTimeMetrics;
-            delete setupData.logFlowOtherMetrics;
-            delete setupData.loggedTimeValues;
-            delete setupData.timeLogIndex;
-            delete setupData.logTimeH;
-            delete setupData.logTimeM;
-            delete setupData.logTimeAP;
-            userExperimentSetupData.set(interaction.user.id, setupData);
-        }
-
-        console.log('[dailyLogModal_firebase] Payload for submitLog (HTTP):', payload);
-        // This log will now show the userTag
-
-
-        const fbCallStartTime = performance.now();
-        console.log(`[dailyLogModal_firebase] Calling submitLog (HTTP) for User: ${interaction.user.id}...`);
-
-        let submitResult;
-        let httpResponseOk = false;
-        try {
-            await authenticateFirebaseUser(interaction.user.id);
-            const currentUser = firebaseAuth.currentUser;
-            if (!currentUser) {
-                throw new Error("Bot client could not get current Firebase user after auth. Cannot get ID token.");
+            for (let i = 0; i < 3; i++) {
+                const inputConfig = settings[`input${i + 1}`];
+                if (inputConfig && inputConfig.label) {
+                    if (loggedTimeValues.hasOwnProperty(inputConfig.label)) {
+                        payloadInputValues[i] = loggedTimeValues[inputConfig.label];
+                    } else {
+                        try { payloadInputValues[i] = interaction.fields.getTextInputValue(`log_input${i + 1}_value`)?.trim(); } catch { /* was not in modal */ }
+                    }
+                }
             }
-            const idToken = await getIdToken(currentUser);
-            const submitLogHttpUrl = "https://us-central1-self-science-bot.cloudfunctions.net/submitLog"; // Ensure this is your correct URL
 
-            const apiResponse = await fetch(submitLogHttpUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${idToken}`
-                },
-                body: JSON.stringify(payload)
+            if (payloadOutputValue === undefined || payloadOutputValue === null || (payloadInputValues[0] === undefined || payloadInputValues[0] === null || payloadInputValues[0] === "") || !notes) {
+                await interaction.editReply({ content: "❌ Missing required fields (Outcome, Habit 1, or Notes)." });
+                return;
+            }
+
+            // 4. Call the synchronous Firebase Function with all data, including channelId
+            const payload = {
+                outputValue: payloadOutputValue,
+                inputValues: payloadInputValues,
+                notes,
+                userTag: interaction.user.tag,
+                channelId: interaction.channel.id // Add channelId to the payload
+            };
+
+            console.log(`[dailyLogModal_firebase] Calling submitAndAnalyzeLog for User: ${interaction.user.id}`);
+            const result = await callFirebaseFunction('submitAndAnalyzeLog', payload, interaction.user.id);
+
+            if (!result || !result.success) {
+                throw new Error(result?.error || "Failed to submit log and get AI analysis.");
+            }
+
+            console.log(`[dailyLogModal_firebase] Log ${result.logId} saved. AI Response received.`);
+
+            // 5. Construct and send the final ephemeral reply
+            let finalEphemeralMessage = `✅ **Log Saved!**\n\n`;
+            const components = [];
+
+            if (result.aiResponse) {
+                finalEphemeralMessage += `> ${result.aiResponse.acknowledgment} ${result.aiResponse.comfortMessage}`;
+                // Store suggestion in memory for the button handler
+                const currentSetupData = userExperimentSetupData.get(interaction.user.id) || {};
+                userExperimentSetupData.set(interaction.user.id, {
+                    ...currentSetupData,
+                    aiLogPublicPostSuggestion: result.aiResponse.publicPostSuggestion,
+                });
+
+                // Add the "Show me" button
+                const showShareButton = new ButtonBuilder()
+                    .setCustomId('ai_show_share_prompt_btn')
+                    .setLabel('📣 Yes, Show Me!')
+                    .setStyle(ButtonStyle.Primary);
+                components.push(new ActionRowBuilder().addComponents(showShareButton));
+            } else {
+                finalEphemeralMessage += "Your log and notes have been recorded successfully.";
+            }
+            
+            await interaction.editReply({ 
+                content: finalEphemeralMessage, 
+                components: components 
             });
-            httpResponseOk = apiResponse.ok;
-            submitResult = await apiResponse.json();
-        } catch (fetchError) {
-            console.error('[dailyLogModal_firebase] Fetch error calling submitLog (HTTP):', fetchError); // Corrected: Using console
-            submitResult = { success: false, error: `Network or parsing error calling log service: ${fetchError.message}`, code: 'fetch-error' };
-            httpResponseOk = false;
-        }
 
-        const fbCallEndTime = performance.now();
-        console.log(`[dailyLogModal_firebase] submitLog (HTTP) call took: ${(fbCallEndTime - fbCallStartTime).toFixed(2)}ms. Ok: ${httpResponseOk}, Result:`, submitResult); // Corrected: Using console
-        if (!httpResponseOk || !submitResult || submitResult.success !== true) {
-            const errorMessage = submitResult?.error ||
-                (httpResponseOk ? 'Log service returned failure.' : `Failed to reach log service (Status: ${submitResult?.status || 'N/A'}).`);
-            // submitResult might not have status
-            const errorCode = submitResult?.code ||
-                (httpResponseOk ? 'service-failure' : 'network-failure');
-            console.error(`[dailyLogModal_firebase] submitLog (HTTP) indicated failure. Code: ${errorCode}, Message: ${errorMessage}`, submitResult); // Corrected: Using console
-            await interaction.editReply({ content: `❌ Error saving log: ${errorMessage}` });
-            return;
-        }
-
-        // Log successfully saved, now fetch updated user data and AI analysis
-        console.log(`[dailyLogModal_firebase] Log ${submitResult.logId} saved. Fetching user data for bot...`); // Corrected: Using console
-
-        // >>>>> START: TEMPORARY DELAY FOR TESTING PUBLIC MESSAGE TIMING <<<<<
-        // console.log('[dailyLogModal_firebase] Introducing TEMPORARY 3-second delay before fetching user data...'); // Corrected: Using console
-        // await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for 3 seconds
-        // console.log('[dailyLogModal_firebase] TEMPORARY delay finished.'); // Corrected: Using console
-        // >>>>> END: TEMPORARY DELAY FOR TESTING PUBLIC MESSAGE TIMING <<<<<
-
-        const fetchUserDataStartTime = performance.now();
-        const userDataResult = await callFirebaseFunction('getUserDataForBot', {}, interaction.user.id);
-        const fetchUserDataEndTime = performance.now();
-        console.log(`[dailyLogModal_firebase] getUserDataForBot call took: ${(fetchUserDataEndTime - fetchUserDataStartTime).toFixed(2)}ms.`); // Corrected: Using console
-        if (!userDataResult || userDataResult.success !== true || !userDataResult.userData) {
-          console.error('[dailyLogModal_firebase] Failed to fetch user data after log submission:', userDataResult); // Corrected: Using console
-          await interaction.editReply({ content: `✅ Log saved (ID: ${submitResult.logId})! However, there was an issue fetching updated streak/role info. It should update shortly.` });
-          return;
-        }
-        userData = userDataResult.userData;
-        console.log('[dailyLogModal_firebase] Fetched User Data:', JSON.stringify(userData, null, 2)); // Corrected: Using console
-        const guild = interaction.guild;
-        const member = interaction.member || await guild?.members.fetch(interaction.user.id).catch(err => {
-            console.error(`[dailyLogModal_firebase] Failed to fetch member ${interaction.user.id}:`, err); // Corrected: Using console
-            return null;
-        });
-        // --- Process Pending Actions ---
-        // This section is where all pending actions (DMs, Roles, Public Messages) are handled.
-
-        // 7a. Pending DM Message (from Streak/Milestones)
-        if (userData.pendingDmMessage && typeof userData.pendingDmMessage === 'string' && userData.pendingDmMessage.trim() !== "") {
-          console.log(`[dailyLogModal_firebase] Sending pending DM (streak/milestone) to ${interaction.user.tag}: "${userData.pendingDmMessage}"`); // Corrected: Using console
-          try {
-            await interaction.user.send(userData.pendingDmMessage);
-          } catch (dmError) {
-            console.error(`[dailyLogModal_firebase] Failed to send pending DM (streak/milestone) to ${interaction.user.tag}:`, dmError); // Corrected: Using console
-            actionErrors.push("Failed to send DM with streak/milestone updates.");
-            if (dmError.code === 50007) {
-              actionErrors.push("Note: I couldn't DM you. Please check server privacy settings if you want DMs.");
-            }
-          }
-        }
-
-        // Only proceed with role/public channel messages if guild and member objects are available
-        if (guild && member) {
-            // 7b. Pending Freeze Role Update
-            if (userData.pendingFreezeRoleUpdate && typeof userData.pendingFreezeRoleUpdate === 'string' && userData.pendingFreezeRoleUpdate.trim() !== "") {
-              const targetFreezeRoleName = userData.pendingFreezeRoleUpdate;
-              console.log(`[dailyLogModal_firebase] Processing freeze role update for ${member.user.tag} to: ${targetFreezeRoleName}`); // Corrected: Using console
-              try {
-                  const targetRole = await ensureRole(guild, targetFreezeRoleName, null);
-                  const currentFreezeRoles = member.roles.cache.filter(role => role.name.startsWith(FREEZE_ROLE_BASENAME) && role.name !== targetFreezeRoleName);
-                  if (currentFreezeRoles.size > 0) {
-                      await member.roles.remove(currentFreezeRoles);
-                      console.log(`[dailyLogModal_firebase] Removed ${currentFreezeRoles.size} old freeze roles from ${member.user.tag}.`); // Corrected: Using console
-                  }
-                  if (!member.roles.cache.has(targetRole.id)) {
-                      await member.roles.add(targetRole);
-                      console.log(`[dailyLogModal_firebase] Added freeze role "${targetFreezeRoleName}" to ${member.user.tag}.`); // Corrected: Using console
-                  }
-              } catch (freezeRoleError) {
-                  console.error(`[dailyLogModal_firebase] Error updating freeze role for ${member.user.tag}:`, freezeRoleError); // Corrected: Using console
-                  actionErrors.push(`Failed to update freeze role to ${targetFreezeRoleName}.`);
-              }
-            }
-
-            // 7c. Pending Role Cleanup / Regular Role Update
-            if (userData.pendingRoleCleanup === true || (userData.pendingRoleUpdate && userData.pendingRoleUpdate.name)) {
-                console.log(`[dailyLogModal_firebase] Processing role cleanup/update for ${member.user.tag}. Cleanup: ${userData.pendingRoleCleanup}, NewRole: ${userData.pendingRoleUpdate ? userData.pendingRoleUpdate.name : 'None'}`); // Corrected: Using console
-                try {
-                    let rolesToRemove = [];
-                    if (userData.pendingRoleCleanup === true) {
-                        member.roles.cache.forEach(role => {
-                            if (STREAK_MILESTONE_ROLE_NAMES.includes(role.name) && role.name !== 'Originator') { // Do not remove Originator during cleanup
-                                rolesToRemove.push(role);
-                            }
-                        });
-                        if (rolesToRemove.length > 0) {
-                          console.log(`[dailyLogModal_firebase] Identified roles to remove for cleanup:`, rolesToRemove.map(r => r.name)); // Corrected: Using console
-                          await member.roles.remove(rolesToRemove);
-                          console.log(`[dailyLogModal_firebase] Performed role cleanup for ${member.user.tag}.`); // Corrected: Using console
-                        }
-                    }
-
-                    if (userData.pendingRoleUpdate && userData.pendingRoleUpdate.name) {
-                        const newRoleInfo = userData.pendingRoleUpdate; // { name, color, days }
-                        console.log(`[dailyLogModal_firebase] Assigning new role: ${newRoleInfo.name}`); // Corrected: Using console
-                        const newRole = await ensureRole(guild, newRoleInfo.name, newRoleInfo.color);
-                        if (!member.roles.cache.has(newRole.id)) {
-                          await member.roles.add(newRole);
-                          console.log(`[dailyLogModal_firebase] Added role "${newRole.name}" to ${member.user.tag}.`); // Corrected: Using console
-                        }
-                    }
-                } catch (roleError) {
-                    console.error(`[dailyLogModal_firebase] Error during role cleanup/update for ${member.user.tag}:`, roleError); // Corrected: Using console
-                    actionErrors.push("Failed to update your streak role.");
-                }
-            }
-
-            // This replaces any old, direct channel.send messages for milestones/extensions.
-            if (userData.pendingPublicMessage && typeof userData.pendingPublicMessage === 'string' && userData.pendingPublicMessage.trim() !== "") {
-                console.log(`[dailyLogModal_firebase] Attempting to send public message to channel ${interaction.channelId}: "${userData.pendingPublicMessage}"`); // Corrected: Using console
-                try {
-                    // Send to the channel where the /log command was initiated
-                    await interaction.channel.send(userData.pendingPublicMessage);
-                    console.log(`[dailyLogModal_firebase] Successfully sent public message for user ${interaction.user.tag}.`); // Corrected: Using console
-                } catch (publicMsgError) {
-                    console.error(`[dailyLogModal_firebase] Failed to send pending public message for user ${interaction.user.tag}:`, publicMsgError); // Corrected: Using console
-                    actionErrors.push("Failed to post public announcement to the channel.");
-                }
-            } else if (userData.pendingPublicMessage) {
-                // Log if we have a message but it's not a sendable string (e.g. null, empty after trim)
-                console.log(`[dailyLogModal_firebase] Had a pendingPublicMessage but it was not a valid string to send. Content: "${userData.pendingPublicMessage}"`); // Corrected: Using console
-            }
-
-        } else { // End of if (guild && member)
-            console.warn(`[dailyLogModal_firebase] Guild or Member object not available for user ${interaction.user.id}. Skipping public messages and role updates.`); // Corrected: Using console
-            if (userData.pendingPublicMessage || userData.pendingFreezeRoleUpdate || userData.pendingRoleCleanup || userData.pendingRoleUpdate) {
-                actionErrors.push("Could not perform role updates or public announcements (guild/member data unavailable).");
+        } catch (error) {
+            const errorTime = performance.now();
+            console.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error);
+            const userErrorMessage = `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`;
+            if (interaction.deferred || interaction.replied) {
+                try { await interaction.editReply({ content: userErrorMessage, components: [] }); }
+                catch (e) { console.error('[dailyLogModal_firebase] Failed to send error via editReply:', e); }
             }
         }
-
-        // In render index.txt, inside the dailyLogModal_firebase handler
-
-// ===== START: REPLACE THIS SECTION in your dailyLogModal_firebase handler =====
-
-        // 8. Clear Pending Actions in Firebase (non-AI flags)
-        console.log(`[dailyLogModal_firebase] Calling clearPendingUserActions (non-AI flags) for ${interaction.user.id}...`);
-        try {
-          // This call now only clears streak/role related flags.
-          await callFirebaseFunction('clearPendingUserActions', {}, interaction.user.id);
-          console.log(`[dailyLogModal_firebase] Successfully cleared non-AI pending actions for ${interaction.user.id}.`);
-        } catch (clearError) {
-          console.error(`[dailyLogModal_firebase] FAILED to clear non-AI pending actions for ${interaction.user.id}:`, clearError);
-          actionErrors.push("Critical: Failed to clear pending server actions (may retry on next log).");
-        }
-
-        // 9. Construct Final Ephemeral Confirmation Message
-        const randomMessage = inspirationalMessages[Math.floor(Math.random() * inspirationalMessages.length)];
-        // Include streak info in the ephemeral confirmation for immediate feedback
-        let finalEphemeralMessage = `✅ Log saved!\n\n${randomMessage}\n\n🔥 Current Streak: ${userData.currentStreak || 0} days\n🧊 Freezes: ${userData.freezesRemaining || 0}`;
-
-        if (actionErrors.length > 0) {
-          finalEphemeralMessage += `\n\n⚠️ **Note:**\n- ${actionErrors.join('\n- ')}`;
-        }
-
-        // 10. Edit the Original Deferred Reply with the final message.
-        // The AI analysis will be sent in a separate, new DM by a listener when it's ready.
-        await interaction.editReply({ 
-            content: finalEphemeralMessage, 
-            components: [] 
-        });
-
-
-      } catch (error) { // Catch for the main try block
-        const errorTime = performance.now();
-        console.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error);
-        
-        let userErrorMessage = '❌ An unexpected error occurred while saving or processing your log. Please try again.';
-        if (error.message) {
-          if (error.message.includes('Firebase Error') || error.message.includes('authentication failed') || error.message.includes('connection not ready')) {
-              userErrorMessage = `❌ ${error.message}`;
-          } else if (error.message.includes('Please set your weekly goals')) { 
-              userErrorMessage = `❌ ${error.message} Use /exp first.`;
-          }
-        }
-        if (interaction.deferred || interaction.replied) {
-          try {
-            await interaction.editReply({ content: userErrorMessage });
-          } catch (editError) { console.error('[dailyLogModal_firebase] Failed to send main error via editReply:', editError); }
-        } else { 
-          try { await interaction.reply({ content: userErrorMessage, flags: MessageFlags.Ephemeral }); }
-          catch (replyError) { console.error('[dailyLogModal_firebase] Failed to send main error via reply:', replyError); }
-        }
-      } // End main try-catch block
-
-
-      const modalProcessEndTime = performance.now();
-      console.log(`[experiment_setup_modal END ${interaction.id}] Processing finished for User: ${interaction.user.tag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`); // Corrected: Using console
+        const modalProcessEndTime = performance.now();
+        console.log(`[dailyLogModal_firebase END ${interaction.id}] Processing finished. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`);
     }
     // --- END OF COMPLETE DAILY LOG MODAL SUBMISSION HANDLER ---
 

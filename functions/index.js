@@ -309,188 +309,11 @@ exports.getFirebaseAuthToken = onCall(async (request) => {
   }
 });
 
-exports.submitLog = onRequest( // Renaming back to submitLog for simplicity, ensure URL is updated later
-    { cors: true }, // Allows requests from any origin. Required for web clients, good for bot too.
-    async (request, response) => {
-      // 1. Check Method
-      if (request.method !== 'POST') {
-        logger.warn(`submitLog (HTTP): Method ${request.method} not allowed.`);
-        response.status(405).json({ success: false, error: 'Method Not Allowed', code: 'method-not-allowed' });
-        return;
-      }
-  
-      // 2. Check Authorization Header and Verify Firebase ID Token
-      const authorizationHeader = request.headers.authorization;
-      if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
-        logger.warn("submitLog (HTTP): Called without or with malformed Bearer token.");
-        response.status(401).json({ success: false, error: 'Unauthorized - No token provided or malformed.', code: 'no-bearer-token' });
-        return;
-      }
-  
-      const idToken = authorizationHeader.split('Bearer ')[1];
-      let decodedToken;
-      try {
-        decodedToken = await admin.auth().verifyIdToken(idToken);
-        // logger.info("submitLog (HTTP): Successfully verified ID token for UID:", decodedToken.uid); // Optional: log on success
-      } catch (error) {
-        logger.error("submitLog (HTTP): Error verifying Firebase ID token:", {
-          errorMessage: error.message,
-          errorCode: error.code,
-          tokenPresent: !!idToken,
-        });
-        // Provide a generic error message but log specifics
-        response.status(401).json({ success: false, error: 'Unauthorized - Invalid or expired token.', code: 'invalid-token' });
-        return;
-      }
-  
-      // 3. Extract User Info and Payload
-      const userId = decodedToken.uid;
-      const userTag = decodedToken.name || `User_${userId}`; // Use 'name' claim if available in token
-      const { inputValues, outputValue, notes, userTag: receivedUserTag } = request.body; // Data from request.body
-  
-      logger.info(`submitLog (HTTP): Processing request for user: ${userId} (${userTag})`);
-      logger.debug("submitLog (HTTP): Received payload:", request.body);
-  
-      // 4. Your Adapted Core Logic (from original onCall function)
-      const db = admin.firestore();
-      try {
-        // --- Basic Payload Validation ---
-        if (!Array.isArray(inputValues) || inputValues.length !== 3 || outputValue == null || notes == null) {
-          logger.warn("submitLog (HTTP): Invalid payload structure.", { userId });
-          // Send 400 Bad Request
-          response.status(400).json({ success: false, error: 'Missing required log data fields (inputValues[3], outputValue, notes).', code: 'invalid-payload-structure'});
-          return;
-        }
-        // Note: The previous change added note validation in analyzeAndSummarizeLogNotes,
-        // but it's good to keep basic check here for prompt feedback to user
-        if (typeof notes !== 'string' || notes.trim() === '') {
-          logger.warn("submitLog (HTTP): Notes cannot be empty.", { userId });
-          response.status(400).json({ success: false, error: 'Notes cannot be empty.', code: 'empty-notes' });
-          return;
-        }
-  
-        // --- Fetch User's Weekly Settings ---
-        const userSettingsRef = db.collection('users').doc(userId);
-        const userSettingsSnap = await userSettingsRef.get();
-  
-        if (!userSettingsSnap.exists || !userSettingsSnap.data()?.weeklySettings) {
-          logger.warn(`submitLog (HTTP): User ${userId} submitted log, but weeklySettings not found.`);
-          response.status(412).json({ success: false, error: 'Please set your weekly goals using /exp before logging.', code: 'no-weekly-settings' });
-          return;
-        }
-        const settings = userSettingsSnap.data().weeklySettings;
-        // Helper to check if a setting object is validly configured
-        const isConfigured = (setting) => setting && typeof setting.label === 'string' && setting.label.trim() !== "" && typeof setting.unit === 'string' && setting.goal !== null && !isNaN(parseFloat(setting.goal));
-        // --- Validate Overall Settings Structure ---
-        if (!isConfigured(settings.input1) || !isConfigured(settings.output)) {
-          logger.error(`submitLog (HTTP): User ${userId} has invalid/incomplete required weeklySettings (Input 1 or Output):`, settings);
-          response.status(500).json({ success: false, error: 'Your core weekly settings (Input 1 or Output) appear corrupted or incomplete. Please run /exp again.', code: 'corrupted-settings' });
-          return;
-        }
-  
-        // --- Validate and Parse Logged Values ---
-        const parsedAndLoggedInputs = [];
-        // Process Input 1 (Required)
-        if (inputValues[0] === null || String(inputValues[0]).trim() === '') {
-          response.status(400).json({ success: false, error: `Value for Input 1 (${settings.input1.label}) is required.`, code: 'missing-input1'});
-          return;
-        }
-        const parsedVal1 = parseFloat(inputValues[0]);
-        if (isNaN(parsedVal1)) {
-          response.status(400).json({ success: false, error: `Value for Input 1 (${settings.input1.label}) must be a number. You entered: "${inputValues[0]}"`, code: 'nan-input1'});
-          return;
-        }
-        // Include goal for potential analysis later
-        parsedAndLoggedInputs.push({ label: settings.input1.label, unit: settings.input1.unit, value: parsedVal1, goal: settings.input1.goal });
-        // Process Input 2 (Required if configured)
-        if (isConfigured(settings.input2)) { // Check if setting exists
-            if (inputValues[1] === null || String(inputValues[1]).trim() === '') {
-            response.status(400).json({ success: false, error: `Value for Input 2 (${settings.input2.label}) is required because it was configured in /exp. You cannot leave it blank.`, code: 'missing-configured-input2'});
-            return;
-            }
-            const parsedVal2 = parseFloat(inputValues[1]);
-            if (isNaN(parsedVal2)) {
-            response.status(400).json({ success: false, error: `Value for Input 2 (${settings.input2.label}) must be a number. You entered: "${inputValues[1]}"`, code: 'nan-input2'});
-            return;
-            }
-            parsedAndLoggedInputs.push({ label: settings.input2.label, unit: settings.input2.unit, value: parsedVal2, goal: settings.input2.goal });
-        }
-  
-        // Process Input 3 (Required if configured)
-        if (isConfigured(settings.input3)) { // Check if setting exists
-            if (inputValues[2] === null || String(inputValues[2]).trim() === '') {
-            response.status(400).json({ success: false, error: `Value for Input 3 (${settings.input3.label}) is required because it was configured in /exp. You cannot leave it blank.`, code: 'missing-configured-input3'});
-            return;
-            }
-            const parsedVal3 = parseFloat(inputValues[2]);
-            if (isNaN(parsedVal3)) {
-            response.status(400).json({ success: false, error: `Value for Input 3 (${settings.input3.label}) must be a number. You entered: "${inputValues[2]}"`, code: 'nan-input3'});
-            return;
-            }
-            parsedAndLoggedInputs.push({ label: settings.input3.label, unit: settings.input3.unit, value: parsedVal3, goal: settings.input3.goal });
-        }
-        // If not configured, this block is skipped.
-        // Validate and Parse Outcome Value (Required)
-        if (outputValue === null || String(outputValue).trim() === '') {
-            response.status(400).json({ success: false, error: `Value for Outcome (${settings.output.label}) is required and cannot be empty.`, code: 'missing-output'});
-            return;
-        }
-        const parsedOutputValue = parseFloat(outputValue);
-        if (isNaN(parsedOutputValue)) {
-          response.status(400).json({ success: false, error: `Value for Outcome (${settings.output.label}) must be a number. You entered: "${outputValue}"`, code: 'nan-output'});
-          return;
-        }
-        // Add specific outcome validation if needed (e.g., must be >= 0)
-        // Example: if (parsedOutputValue < 0 && settings.output.label.toLowerCase() === 'satisfaction') {
-        //   response.status(400).json({ success: false, error: `Value for Satisfaction must be 0 or greater.`, code: 'invalid-satisfaction'});
-        //   return;
-        // }
-  
-        // --- Prepare Firestore Log Document Data ---
-        const logEntry = {
-          userId: userId,
-          userTag: receivedUserTag || userTag, // Use tag derived from token
-          timestamp: FieldValue.serverTimestamp(), // Ensure FieldValue is imported
-          logDate: new Date().toISOString().split('T')[0],
-          inputs: parsedAndLoggedInputs, // Contains successfully parsed AND logged inputs including goals
-          output: {
-            label: settings.output.label,
-            unit: settings.output.unit,
-            value: parsedOutputValue,
-            goal: settings.output.goal // Include goal
-          },
-          notes: notes.trim(),
-          deeperProblem: settings.deeperProblem || "Not set at time of logging", // Include context
-          _triggerAnalysis: false, // NEW: Flag to trigger AI analysis via onUpdate
-          analysisStatus: 'pending', // NEW: Initial status for analysis
-        };
-        // --- Write Log Entry to Firestore ---
-        const writeResult = await db.collection('logs').add(logEntry);
-        logger.info(`submitLog (HTTP): Successfully submitted log ${writeResult.id} for user ${userId}.`);
-
-        // --- Trigger AI Analysis Asynchronously (via Firestore update) ---
-        // We update the document *after* it's created to trigger an onUpdate function
-        await db.collection('logs').doc(writeResult.id).update({
-            _triggerAnalysis: true,
-            analysisStatus: 'triggered'
-        });
-        logger.log(`submitLog (HTTP): Triggered AI analysis for log ${writeResult.id} by setting _triggerAnalysis to true.`);
-  
-        // --- Send Success Response ---
-        response.status(200).json({ success: true, logId: writeResult.id });
-      } catch (error) {
-        logger.error("submitLog (HTTP): Error during internal logic/Firestore operation for user:", userId, error);
-        // Ensure a response is sent for internal errors during logic processing
-        if (!response.headersSent) {
-          response.status(500).json({ success: false, error: 'Failed to save log entry due to an internal server error.', code: 'internal-server-error-logic' });
-        }
-      }
-    }
-  );
-
 /**
  * Calculates and updates the user's streak data.
  */
+// REPLACE the existing onLogCreatedUpdateStreak function in functions/index.js with this new version.
+
 exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (event) => {
     const snap = event.data;
     if (!snap) {
@@ -500,47 +323,33 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     const logData = snap.data();
     const logId = event.params.logId;
     const userId = logData.userId;
-    //const userTagForMessage = logData.userTag || `User_${userId}`; // For public message
-    // NEW LOGIC for displayNameForMessage:
+    const channelId = logData.channelId; // Get the channelId from the log document
+
     let displayNameForMessage;
-    const storedUserTag = logData.userTag; // This should be "username#discriminator" or similar
+    const storedUserTag = logData.userTag;
 
     if (storedUserTag && storedUserTag.includes('#')) {
         const usernamePart = storedUserTag.substring(0, storedUserTag.lastIndexOf('#'));
-        if (usernamePart && usernamePart.trim() !== "") { // Ensure username part is not empty or just whitespace
-            displayNameForMessage = usernamePart; // Primary: username
-        } else {
-            displayNameForMessage = storedUserTag; // Fallback: full tag if username part is empty (e.g., tag was just "#1234")
-        }
-    } else if (storedUserTag && storedUserTag.trim() !== "") {
-        // If no '#', it might be a new unique username or just a name stored previously. Use it as is.
-        displayNameForMessage = storedUserTag;
+        displayNameForMessage = (usernamePart && usernamePart.trim() !== "") ? usernamePart : storedUserTag;
     } else {
-        displayNameForMessage = `User_${userId}`; // Deepest fallback: User_USERID
+        displayNameForMessage = storedUserTag || `User_${userId}`;
     }
-    // END NEW LOGIC
-
 
     const logTimestamp = (logData.timestamp && typeof logData.timestamp.toDate === 'function')
                          ? logData.timestamp.toDate() : null;
 
     if (!userId || !logTimestamp) {
-        logger.error("Log document missing valid userId or timestamp for onLogCreatedUpdateStreak.", {
-            logId: logId,
-            userIdReceived: userId,
-            logTimestampValid: !!logTimestamp,
-            logData: JSON.stringify(logData)
-          });
+        logger.error("Log document missing valid userId or timestamp.", { logId });
         return;
     }
 
     logger.log(`Streak trigger started for user ${userId} (tag: ${displayNameForMessage}) due to log ${logId}`);
     const userRef = admin.firestore().collection('users').doc(userId);
+    const db = admin.firestore(); // For writing to the new collection
 
     try {
-        await admin.firestore().runTransaction(async (transaction) => {
+        await db.runTransaction(async (transaction) => {
             const userDoc = await transaction.get(userRef);
-            const isNewUser = !userDoc.exists;
             let currentData = { streak: 0, longest: 0, freezes: 0, lastLog: null, userTag: displayNameForMessage };
             let previousStreak = 0;
 
@@ -555,232 +364,118 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                              ? userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP].toDate() : null,
                     userTag: userData[STREAK_CONFIG.FIELDS.USER_TAG] || displayNameForMessage
                 };
-                logger.log(`User ${userId} found. Current streak data:`, currentData);
-            } else {
-                logger.log(`User document ${userId} not found. Initializing streak data.`);
             }
 
-            let newState = {
-                newStreak: 1,
-                freezesRemaining: currentData.freezes,
-                usedFreeze: false,
-                streakBroken: false,
-                streakContinued: false // True if streak advanced (new day 1, or incremented)
-            };
+            let newState = { newStreak: 1, freezesRemaining: currentData.freezes, usedFreeze: false, streakBroken: false, streakContinued: false };
 
             if (currentData.lastLog instanceof Date && !isNaN(currentData.lastLog)) {
-                const hoursSinceLastLog = Math.abs(logTimestamp.getTime() - currentData.lastLog.getTime()) / (1000 * 60 * 60);
+                const hoursSinceLastLog = Math.abs(logTimestamp.getTime() - currentData.lastLog.getTime()) / 3600000;
                 logger.log(`Hours since last log for ${userId}: ${hoursSinceLastLog.toFixed(2)}`);
 
                 if (hoursSinceLastLog < STREAK_CONFIG.TIMING_RULES.SAME_DAY_HOURS) {
                     newState.newStreak = currentData.streak;
-                    newState.streakContinued = false; // Not a new streak day
-                    logger.log(`Log within ${STREAK_CONFIG.TIMING_RULES.SAME_DAY_HOURS} hours for ${userId}, keeping streak at ${newState.newStreak}.`);
+                    newState.streakContinued = false;
                 } else if (hoursSinceLastLog <= STREAK_CONFIG.TIMING_RULES.MAX_CONSECUTIVE_HOURS) {
                     newState.newStreak = currentData.streak + 1;
                     newState.streakContinued = true;
-                    logger.log(`Consecutive log for ${userId} (${hoursSinceLastLog.toFixed(2)} hrs), new streak: ${newState.newStreak}`);
                 } else {
-                   const daysToFreeze = Math.max(0, Math.ceil((hoursSinceLastLog - STREAK_CONFIG.TIMING_RULES.MAX_CONSECUTIVE_HOURS) / 24) + (hoursSinceLastLog > STREAK_CONFIG.TIMING_RULES.MAX_CONSECUTIVE_HOURS ? 0 : -1) );
-                   logger.log(`Gap detected for ${userId} (${hoursSinceLastLog.toFixed(2)} hrs). Days needing freeze: ${daysToFreeze}, Freezes available: ${currentData.freezes}`);
-
-                   if (STREAK_CONFIG.FREEZES.AUTO_APPLY && daysToFreeze > 0 && currentData.freezes >= daysToFreeze) {
-                       newState.newStreak = currentData.streak + 1;
-                       newState.freezesRemaining = currentData.freezes - daysToFreeze;
-                       newState.usedFreeze = true;
-                       newState.streakContinued = true;
-                       logger.log(`Used ${daysToFreeze} freeze(s) for ${userId}. Remaining: ${newState.freezesRemaining}. New streak: ${newState.newStreak}`);
-                   } else {
-                       newState.newStreak = 1;
-                       newState.streakBroken = true; // Explicitly mark as broken
-                       newState.streakContinued = true; // Started a new streak day 1
-                       logger.log(`Streak reset for ${userId}. New streak: ${newState.newStreak}. Freezes remaining: ${newState.freezesRemaining}`);
-                   }
+                    const daysToFreeze = Math.max(0, Math.ceil((hoursSinceLastLog - STREAK_CONFIG.TIMING_RULES.MAX_CONSECUTIVE_HOURS) / 24));
+                    if (STREAK_CONFIG.FREEZES.AUTO_APPLY && daysToFreeze > 0 && currentData.freezes >= daysToFreeze) {
+                        newState.newStreak = currentData.streak + 1;
+                        newState.freezesRemaining = currentData.freezes - daysToFreeze;
+                        newState.usedFreeze = true;
+                        newState.streakContinued = true;
+                    } else {
+                        newState.newStreak = 1;
+                        newState.streakBroken = true;
+                        newState.streakContinued = true;
+                    }
                 }
-            } else { // First log ever
+            } else {
                 newState.newStreak = 1;
                 newState.streakContinued = true;
-                logger.log(`First log for user ${userId}. New streak: ${newState.newStreak}`);
             }
 
-            // --- Prepare data for Firestore update ---
             const updateData = {
                 [STREAK_CONFIG.FIELDS.CURRENT_STREAK]: newState.newStreak,
                 [STREAK_CONFIG.FIELDS.LONGEST_STREAK]: Math.max(currentData.longest, newState.newStreak),
                 [STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP]: logData.timestamp,
                 [STREAK_CONFIG.FIELDS.FREEZES_REMAINING]: newState.freezesRemaining,
-                [STREAK_CONFIG.FIELDS.USER_TAG]: logData.userTag || currentData.userTag, // Persist userTag
-                // Always update the freeze role based on the new count
+                [STREAK_CONFIG.FIELDS.USER_TAG]: logData.userTag || currentData.userTag,
                 [STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE]: `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${newState.freezesRemaining}`
             };
 
-            // --- Milestone, DM, Public Message, and Role Cleanup Logic ---
-        let roleInfo = null;
-        let dmMessageText = null;
-        let tempPublicMessage = null;
-        let needsRoleCleanupForPublicMessage = false;
+            let roleInfo = null;
+            let dmMessageText = null;
+            let tempPublicMessage = null;
 
-        // ***** START OF MODIFIED LOGIC FOR DAY 1 WELCOME *****
-        const isTrueFirstDay = (isNewUser || previousStreak === 0) && newState.newStreak === 1 && !newState.streakBroken;
-
-        if (isTrueFirstDay) {
-            logger.log(`[onLogCreatedUpdateStreak] User ${userId} is on their TRUE Day 1. Preparing welcome messages.`);
-            dmMessageText = `🎉 Welcome to your habit tracking journey, ${displayNameForMessage}! ` +
-                            `You've just logged Day 1 of your streak for the first time (or first time in a while). That's awesome! ` +
-                            `Keep it up! You've also earned the 'Level 1' role. 🔥`;
-
-            tempPublicMessage = `🎉 Please welcome @${displayNameForMessage} to their habit tracking journey! ` +
-                                `They've just logged Day 1! Show some support! 🚀`;
-
-            // Assign 'Originator' role
-            const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
-            if (firstRole) {
-                roleInfo = { name: firstRole.name, color: firstRole.color, days: firstRole.days };
-            }
-            // No role cleanup needed for a true first day, as they have no prior streak roles.
-            needsRoleCleanupForPublicMessage = false;
-
-        } else if (newState.streakBroken && newState.newStreak === 1) {
-            // This is the existing streak reset logic
-            dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
-            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', displayNameForMessage);
-            needsRoleCleanupForPublicMessage = true;
-            const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
-            if (firstRole) {
-                roleInfo = { name: firstRole.name, color: firstRole.color, days: firstRole.days };
-                logger.log(`Streak reset: Assigning default role ${firstRole.name} and flagging role cleanup.`);
-            }
-        } else {
-            // Existing logic for continued streaks, milestone roles, and streak extensions
-            if ((newState.newStreak > previousStreak) || (previousStreak === 0 && newState.newStreak === 1)) { // Catches regular first day if not caught by isTrueFirstDay
+            const isTrueFirstDay = (!userDoc.exists || previousStreak === 0) && newState.newStreak === 1 && !newState.streakBroken;
+            
+            if (isTrueFirstDay) {
+                dmMessageText = `🎉 Welcome to your habit tracking journey, ${displayNameForMessage}! You've just logged Day 1. Keep it up! You've also earned the 'Level 1' role. 🔥`;
+                tempPublicMessage = `🎉 Please welcome @${displayNameForMessage} to their habit tracking journey! They've just logged Day 1! Show some support! 🚀`;
+                roleInfo = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
+                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = FieldValue.delete();
+            } else if (newState.streakBroken) {
+                dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
+                tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', displayNameForMessage);
+                roleInfo = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
+                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true; // Flag for role cleanup
+            } else if (newState.newStreak > previousStreak) {
                 const milestoneRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === newState.newStreak);
                 if (milestoneRole) {
-                    roleInfo = { name: milestoneRole.name, color: milestoneRole.color, days: milestoneRole.days };
-                    if (!dmMessageText) { // Avoid overwriting Day 1 welcome or reset DM
-                       dmMessageText = STREAK_CONFIG.MESSAGES.DM.ROLE_ACHIEVEMENT.replace('${roleName}', roleInfo.name);
-                    }
-                    logger.log(`User ${userId} hit role milestone: ${roleInfo.name} at ${newState.newStreak} days.`);
-                    // Public message for role achievement (if not a streak break and not Day 1 welcome)
-                    if (roleInfo.days > 1 && !newState.streakBroken && !isTrueFirstDay) {
+                    roleInfo = milestoneRole;
+                    dmMessageText = STREAK_CONFIG.MESSAGES.DM.ROLE_ACHIEVEMENT.replace('${roleName}', roleInfo.name);
+                    if (roleInfo.days > 1) {
                          tempPublicMessage = `🎉 Big congrats to ${displayNameForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
                     }
+                } else {
+                    tempPublicMessage = `🥳 ${displayNameForMessage} just extended their daily logging streak to ${newState.newStreak} days! Keep it up!`;
                 }
             }
-            // Streak extension public message (if no specific role milestone and not Day 1 welcome)
-            if (!tempPublicMessage && newState.streakContinued && newState.newStreak > previousStreak && !newState.streakBroken && !roleInfo && !isTrueFirstDay) {
-                tempPublicMessage = `🥳 ${displayNameForMessage} just extended their daily logging streak to ${newState.newStreak} days! Keep it up!`;
+
+            if ((newState.newStreak > previousStreak || (previousStreak === 0 && newState.newStreak > 0)) && STREAK_CONFIG.MILESTONES.FREEZE_AWARD_DAYS.includes(newState.newStreak) && !newState.usedFreeze) {
+                if (updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING] < (STREAK_CONFIG.FREEZES.MAX || 5)) {
+                    updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]++;
+                    updateData[STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE] = `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]}`;
+                    const freezeAwardMsg = STREAK_CONFIG.MESSAGES.DM.FREEZE_AWARD.replace('${streak}', newState.newStreak);
+                    dmMessageText = dmMessageText ? `${dmMessageText}\n\n${freezeAwardMsg}` : freezeAwardMsg;
+                }
             }
-        }
-        // ***** END OF MODIFIED LOGIC FOR DAY 1 WELCOME *****
-
-        // --- Freeze Award Logic ---
-        // This should trigger if the streak has increased or just started, and it's a freeze award day,
-        // and a freeze wasn't just used to save the streak.
-        if ((newState.newStreak > previousStreak || (previousStreak === 0 && newState.newStreak > 0)) &&
-            STREAK_CONFIG.MILESTONES.FREEZE_AWARD_DAYS.includes(newState.newStreak) &&
-            !newState.usedFreeze) {
-            const maxFreezes = STREAK_CONFIG.FREEZES.MAX || 5;
-            // Check current freezes BEFORE awarding a new one.
-            // newState.freezesRemaining at this point reflects freezes *after* any potential use to save the streak.
-            // We need to compare based on the count *before* awarding this new one.
-            // The updateData for FREEZES_REMAINING will directly use the final newState.freezesRemaining.
-
-            if (updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING] < maxFreezes) { // Check against the already prepared updateData
-                updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]++; // Award freeze directly in updateData
-                
-                // Update the PENDING_FREEZE_ROLE_UPDATE again with the new count
-                updateData[STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE] = `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]}`;
-                logger.log(`Awarded freeze to ${userId} at streak ${newState.newStreak}. New total: ${updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]}`);
-
-                const freezeAwardMsg = STREAK_CONFIG.MESSAGES.DM.FREEZE_AWARD.replace('${streak}', newState.newStreak);
-                dmMessageText = dmMessageText ? `${dmMessageText}\n\n${freezeAwardMsg}` : freezeAwardMsg;
-            } else {
-                logger.log(`User ${userId} hit freeze award day ${newState.newStreak}, but already has max freezes (${maxFreezes}). Current in updateData: ${updateData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING]}`);
+            
+            // --- NEW: Write public message to its own collection ---
+            if (tempPublicMessage && channelId) {
+                const publicMessageRef = db.collection('pendingPublicMessages').doc(); // Create new doc with auto-ID
+                transaction.set(publicMessageRef, {
+                    message: tempPublicMessage,
+                    channelId: channelId,
+                    userId: userId,
+                    createdAt: FieldValue.serverTimestamp(),
+                    status: 'pending'
+                });
+                logger.log(`Queued public message for user ${userId} in channel ${channelId}.`);
+            } else if (tempPublicMessage && !channelId) {
+                logger.warn(`Generated public message for log ${logId} but no channelId was present in the log document.`);
             }
-        }
 
-        // --- Your DEBUG LOGS (keep them here) ---
-        logger.log(`[onLogCreatedUpdateStreak DEBUG] For User: ${userId} - previousStreak: ${previousStreak}, newState.newStreak: ${newState.newStreak}, streakContinued (calc'd in func): ${newState.streakContinued}, streakBroken: ${newState.streakBroken}`);
-        const debugMilestoneRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === newState.newStreak);
-        logger.log("[onLogCreatedUpdateStreak DEBUG] debugMilestoneRole found (based on newState.newStreak):", debugMilestoneRole);
-        logger.log("[onLogCreatedUpdateStreak DEBUG] roleInfo before final assignment logic:", roleInfo);
-        // --- End DEBUG LOGS ---
-
-        // --- Determine PENDING_PUBLIC_MESSAGE ---
-        if (newState.streakBroken && newState.newStreak === 1) {
-            tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', displayNameForMessage);
-            needsRoleCleanupForPublicMessage = true; // A streak reset to 1 always implies role cleanup for public view
-            logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Streak Reset. Message: "${tempPublicMessage}"`);
-        } else if (roleInfo && roleInfo.days > 0 && !newState.streakBroken) {
-            // This is a role milestone achievement (and not part of a streak break scenario)
-            tempPublicMessage = `🎉 Big congrats to ${displayNameForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
-            logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Role Milestone. Message: "${tempPublicMessage}"`);
-        } else if (newState.streakContinued && newState.newStreak > previousStreak && !newState.streakBroken && !roleInfo) {
-            tempPublicMessage = `🥳 ${displayNameForMessage} just extended their daily logging streak to ${newState.newStreak} days! Keep it up!`;
-            logger.log(`[onLogCreatedUpdateStreak] Condition for Public Message: Streak Extension. Message: "${tempPublicMessage}"`);
-        } else {
-            logger.log(`[onLogCreatedUpdateStreak] No specific public message condition met. Streak: ${newState.newStreak}, Broken: ${newState.streakBroken}, Continued: ${newState.streakContinued}, RoleInfo: ${roleInfo ? roleInfo.name : 'None'}`);
-        }
-
-        // --- Prepare data for Firestore update (add/modify these in your existing updateData object) ---
-
-        // PENDING_DM_MESSAGE (Your existing logic for this should be fine, typically set based on dmMessageText)
-        if (dmMessageText) { // dmMessageText is from your earlier logic for DMs
-            updateData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] = dmMessageText;
-        } else {
-            updateData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] = FieldValue.delete();
-        }
-
-        // PENDING_ROLE_UPDATE (This needs to carefully consider streak breaks vs. regular milestones)
-        if (newState.streakBroken && newState.newStreak === 1) {
-            const firstRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
-            if (firstRole) {
-                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = { name: firstRole.name, color: firstRole.color, days: firstRole.days };
-                logger.log(`[onLogCreatedUpdateStreak] Streak broken to 1 day. Ensuring PENDING_ROLE_UPDATE is set for ${firstRole.name}.`);
-            } else {
-                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = FieldValue.delete(); // Should not happen if Originator exists
+            // --- Update User Document ---
+            // Note: PENDING_PUBLIC_MESSAGE and PENDING_ROLE_CLEANUP (for public messages) are removed from this updateData object
+            updateData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] = dmMessageText ? dmMessageText : FieldValue.delete();
+            updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = roleInfo ? roleInfo : FieldValue.delete();
+            if (newState.streakBroken) {
+                 updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true;
+            } else if (isTrueFirstDay) {
+                 updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = FieldValue.delete();
             }
-        } else if (roleInfo) { // A non-break role milestone was hit
-            updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = roleInfo;
-        } else { // No specific role change for this event (e.g., simple streak extension without milestone)
-            updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = FieldValue.delete();
-        }
 
-        // PENDING_PUBLIC_MESSAGE (Using the tempPublicMessage determined above)
-        if (tempPublicMessage) {
-            updateData[STREAK_CONFIG.FIELDS.PENDING_PUBLIC_MESSAGE] = tempPublicMessage;
-        } else {
-            updateData[STREAK_CONFIG.FIELDS.PENDING_PUBLIC_MESSAGE] = FieldValue.delete();
-        }
-
-        // PENDING_ROLE_CLEANUP (Using needsRoleCleanupForPublicMessage determined above)
-        if (needsRoleCleanupForPublicMessage) {
-            updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true;
-        } else {
-            updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = FieldValue.delete();
-        }
-
-        // PENDING_FREEZE_ROLE_UPDATE (This should already be in your updateData from earlier logic, based on final newState.freezesRemaining)
-        // Example: updateData[STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE] = `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${newState.freezesRemaining}`;
-        // Ensure this line exists and is correct based on the final freeze count.
-
-        // <<<< END OF THE NEW LOGIC BLOCK >>>>
-        
-
-        // Filter out undefined values (FieldValue.delete() handles actual removal)
-        // Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]); // Not strictly needed if using FieldValue.delete()
-
-        logger.log(`Updating user ${userId} Firestore doc with:`, JSON.parse(JSON.stringify(updateData)));
-        transaction.set(userRef, updateData, { merge: true });
-        }); // Transaction complete
+            transaction.set(userRef, updateData, { merge: true });
+        });
 
         logger.log(`Successfully processed streak & milestone update for user ${userId}.`);
-
     } catch (error) {
         logger.error(`Error running transaction for user ${userId} streak/milestone update:`, error);
-        // Consider more robust error handling for triggers if needed.
     }
-    return null; // Firestore triggers don't need to return data to the client
+    return null;
 });
 
 // In functions/index.js
@@ -788,13 +483,14 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
 /**
  * Firestore trigger that listens for new log documents being created or updated
  * with `_triggerAnalysis: true` and calls the internal analysis logic.
- */
+ *
 exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (event) => {
     const snap = event.data;
     if (!snap) {
         logger.error("No data associated with the event for onLogUpdateTriggerAnalysis.");
         return null;
     }
+
 
     const logId = event.params.logId;
     const oldData = snap.before.data();
@@ -842,6 +538,8 @@ exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (ev
 
     return null;
 });
+
+*/
 
 // Place this revised helper function above updateWeeklySettings in functions/index.js
 /**
@@ -1287,7 +985,134 @@ exports.getLeaderboard = onCall(async (request) => {
     }
   });
 
-  // In functions/index.js
+
+  // REPLACE the submitAndAnalyzeLog function in functions/index.js with this new version.
+
+/**
+ * Saves a user's log and immediately triggers AI analysis, returning the result synchronously.
+ * This is an onCall function.
+ * Expected request.data: { inputValues, outputValue, notes, userTag, channelId }
+ */
+exports.submitAndAnalyzeLog = onCall(async (request) => {
+    // 1. Authentication
+    if (!request.auth) {
+        logger.warn("submitAndAnalyzeLog called without authentication.");
+        throw new HttpsError('unauthenticated', 'You must be logged in to submit a log.');
+    }
+    const userId = request.auth.uid;
+    const userTagFromAuth = request.auth.token?.name || `User_${userId}`;
+    
+    // Destructure all expected data, including the new channelId
+    const { inputValues, outputValue, notes, userTag: receivedUserTag, channelId } = request.data;
+    const userTagForLog = receivedUserTag || userTagFromAuth;
+
+    logger.info(`submitAndAnalyzeLog: Processing request for user: ${userId} (${userTagForLog})`);
+
+    // 2. Core Logic (Adapted from the old `submitLog` HTTP function)
+    const db = admin.firestore();
+    try {
+        // --- Basic Payload Validation ---
+        if (!channelId) {
+            throw new HttpsError('invalid-argument', 'Missing required channelId.');
+        }
+        if (!Array.isArray(inputValues) || inputValues.length !== 3 || outputValue == null || notes == null) {
+            throw new HttpsError('invalid-argument', 'Missing required log data fields (inputValues[3], outputValue, notes).');
+        }
+        if (typeof notes !== 'string' || notes.trim() === '') {
+            throw new HttpsError('invalid-argument', 'Notes cannot be empty.');
+        }
+
+        // --- Fetch User's Weekly Settings ---
+        const userSettingsRef = db.collection('users').doc(userId);
+        const userSettingsSnap = await userSettingsRef.get();
+
+        if (!userSettingsSnap.exists || !userSettingsSnap.data()?.weeklySettings) {
+            throw new HttpsError('failed-precondition', 'Please set your weekly goals using /go before logging.');
+        }
+        const settings = userSettingsSnap.data().weeklySettings;
+
+        // --- Helper for validation ---
+        const isConfigured = (setting) => setting && typeof setting.label === 'string' && setting.label.trim() !== "" && typeof setting.unit === 'string' && setting.goal !== null && !isNaN(parseFloat(setting.goal));
+        
+        if (!isConfigured(settings.input1) || !isConfigured(settings.output)) {
+            logger.error(`submitLog (HTTP): User ${userId} has invalid/incomplete required weeklySettings (Input 1 or Output):`, settings);
+            throw new HttpsError('internal', 'Your core weekly settings (Input 1 or Output) appear corrupted or incomplete. Please run /exp again.');
+        }
+
+        // --- Validate and Parse Logged Values ---
+        const parsedAndLoggedInputs = [];
+        if (inputValues[0] === null || String(inputValues[0]).trim() === '') { throw new HttpsError('invalid-argument', `Value for Input 1 (${settings.input1.label}) is required.`); }
+        const parsedVal1 = parseFloat(inputValues[0]);
+        if (isNaN(parsedVal1)) { throw new HttpsError('invalid-argument', `Value for Input 1 (${settings.input1.label}) must be a number. You entered: "${inputValues[0]}"`);}
+        parsedAndLoggedInputs.push({ label: settings.input1.label, unit: settings.input1.unit, value: parsedVal1, goal: settings.input1.goal });
+        
+        if (isConfigured(settings.input2)) {
+            if (inputValues[1] === null || String(inputValues[1]).trim() === '') { throw new HttpsError('invalid-argument', `Value for Input 2 (${settings.input2.label}) is required because it was configured in /exp. You cannot leave it blank.`); }
+            const parsedVal2 = parseFloat(inputValues[1]);
+            if (isNaN(parsedVal2)) { throw new HttpsError('invalid-argument', `Value for Input 2 (${settings.input2.label}) must be a number. You entered: "${inputValues[1]}"`); }
+            parsedAndLoggedInputs.push({ label: settings.input2.label, unit: settings.input2.unit, value: parsedVal2, goal: settings.input2.goal });
+        }
+  
+        if (isConfigured(settings.input3)) {
+            if (inputValues[2] === null || String(inputValues[2]).trim() === '') { throw new HttpsError('invalid-argument', `Value for Input 3 (${settings.input3.label}) is required because it was configured in /exp. You cannot leave it blank.`); }
+            const parsedVal3 = parseFloat(inputValues[2]);
+            if (isNaN(parsedVal3)) { throw new HttpsError('invalid-argument', `Value for Input 3 (${settings.input3.label}) must be a number. You entered: "${inputValues[2]}"`); }
+            parsedAndLoggedInputs.push({ label: settings.input3.label, unit: settings.input3.unit, value: parsedVal3, goal: settings.input3.goal });
+        }
+
+        if (outputValue === null || String(outputValue).trim() === '') { throw new HttpsError('invalid-argument', `Value for Outcome (${settings.output.label}) is required and cannot be empty.`); }
+        const parsedOutputValue = parseFloat(outputValue);
+        if (isNaN(parsedOutputValue)) { throw new HttpsError('invalid-argument', `Value for Outcome (${settings.output.label}) must be a number. You entered: "${outputValue}"`); }
+  
+        // --- Prepare Firestore Log Document Data ---
+        const logEntry = {
+          userId: userId,
+          userTag: userTagForLog,
+          channelId: channelId, // <-- The only new line in this object
+          timestamp: FieldValue.serverTimestamp(),
+          logDate: new Date().toISOString().split('T')[0],
+          inputs: parsedAndLoggedInputs,
+          output: {
+            label: settings.output.label,
+            unit: settings.output.unit,
+            value: parsedOutputValue,
+            goal: settings.output.goal
+          },
+          notes: notes.trim(),
+          deeperProblem: settings.deeperProblem || "Not set at time of logging",
+        };
+
+        // --- Write Log Entry to Firestore ---
+        const writeResult = await db.collection('logs').add(logEntry);
+        const logId = writeResult.id;
+        logger.info(`submitAndAnalyzeLog: Successfully submitted log ${logId} for user ${userId}.`);
+
+        // 3. Immediately Trigger AI Analysis
+        let aiResponse = null;
+        if (notes.trim()) {
+            try {
+                aiResponse = await _analyzeAndSummarizeNotesLogic(logId, userId, userTagForLog);
+            } catch (aiError) {
+                logger.error(`submitAndAnalyzeLog: _analyzeAndSummarizeNotesLogic failed for log ${logId}. Error:`, aiError);
+                aiResponse = null; 
+            }
+        }
+
+        // 4. Return the combined result to the bot
+        return {
+            success: true,
+            logId: logId,
+            aiResponse: aiResponse
+        };
+
+    } catch (error) {
+        logger.error("submitAndAnalyzeLog: Error during log submission for user:", userId, error);
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        throw new HttpsError('internal', 'Failed to save log entry due to an internal server error.', error.message);
+    }
+});
 
 /**
  * Retrieves necessary user data fields for the bot after a log submission.
@@ -3941,7 +3766,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
  * This is the onCall wrapper for the internal logic.
  *
  * Expected request.data: { logId: string, userId: string, userTag: string }
- */
+
 exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
     logger.log("[analyzeAndSummarizeLogNotes] Function triggered. Request data:", request.data);
 
@@ -3970,6 +3795,7 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
         throw new HttpsError('internal', `Failed to analyze log notes: ${error.message}`);
     }
 });
+*/
 
 /**
  * Takes a user's "Deeper Wish" and generates five potential outcome metric labels
