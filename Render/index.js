@@ -475,6 +475,98 @@ function setupReminderDMsListener(client) {
   console.log("Firestore listener for 'pendingReminderDMs' is active.");
 }
 
+function setupAIResponseListener(client) {
+  if (!dbAdmin) {
+    console.warn("Firebase Admin SDK not initialized. AI Response listener will NOT run.");
+    return;
+  }
+
+  console.log("Setting up Firestore listener for 'pendingAIDMResponses'...");
+
+  const aiResponsesRef = dbAdmin.collection('pendingAIDMResponses');
+  aiResponsesRef.where('status', '==', 'ready').onSnapshot(snapshot => {
+    if (snapshot.empty) {
+      return;
+    }
+
+    snapshot.docChanges().forEach(async (change) => {
+      if (change.type === 'added') {
+        const responseData = change.doc.data();
+        const { userId, userTag, acknowledgment, comfortMessage, publicPostSuggestion } = responseData;
+        const docId = change.doc.id;
+
+        console.log(`[AIResponseListener] Detected 'ready' AI response for user ${userId}. Doc ID: ${docId}`);
+
+        try {
+          const discordUser = await client.users.fetch(userId);
+          if (discordUser) {
+            const newDmMessageContent = `Your Daily Reflection from AI! ✨\n\n${acknowledgment} ${comfortMessage}`;
+            const newDmButtonRow = new ActionRowBuilder()
+              .addComponents(
+                new ButtonBuilder()
+                  .setCustomId('ai_show_share_prompt_btn')
+                  .setLabel('📣 Yes, Show Me!')
+                  .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                  .setCustomId('ai_no_share_prompt_btn')
+                  .setLabel('🤫 No, Thanks')
+                  .setStyle(ButtonStyle.Secondary)
+              );
+
+            // Store suggestion in memory for the button handlers to use
+            const setupData = userExperimentSetupData.get(userId) || {};
+            userExperimentSetupData.set(userId, {
+                ...setupData,
+                aiLogPublicPostSuggestion: publicPostSuggestion,
+            });
+
+            // Send the DM
+            const dmMessage = await discordUser.send({
+                content: newDmMessageContent + "\n\nI've also got a thought about sharing your journey. Would you like to see it?",
+                components: [newDmButtonRow]
+            });
+            console.log(`[AIResponseListener] Sent AI response DM to ${userTag}.`);
+
+            // Set a timeout to disable the buttons after 1 minute
+            setTimeout(async () => {
+              try {
+                const fetchedDmMessage = await dmMessage.channel.messages.fetch(dmMessage.id);
+                 if (fetchedDmMessage.components.length > 0 && !fetchedDmMessage.components[0].components[0].disabled) {
+                    const disabledRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('ai_show_share_prompt_btn')
+                            .setLabel('📣 Yes, Show Me!')
+                            .setStyle(ButtonStyle.Primary)
+                            .setDisabled(true),
+                        new ButtonBuilder()
+                            .setCustomId('ai_no_share_prompt_btn')
+                            .setLabel('🤫 No, Thanks')
+                            .setStyle(ButtonStyle.Secondary)
+                            .setDisabled(true)
+                    );
+                    await fetchedDmMessage.edit({ components: [disabledRow] });
+                    console.log(`[AIResponseListener] Disabled buttons in AI DM for ${userTag} due to timeout.`);
+                 }
+              } catch (timeoutError) {
+                  console.error(`[AIResponseListener] Error disabling buttons for ${userTag}:`, timeoutError);
+              }
+            }, 60 * 1000); // 1 minute
+
+            // Mark the response as processed in Firestore
+            await change.doc.ref.update({ status: 'processed_by_bot', processedAt: admin.firestore.FieldValue.serverTimestamp() });
+          }
+        } catch (error) {
+          console.error(`[AIResponseListener] Error processing AI response ${docId}:`, error);
+          await change.doc.ref.update({ status: 'error_processing_in_bot', errorMessage: error.message });
+        }
+      }
+    });
+  }, err => {
+    console.error("[AIResponseListener] Error in 'pendingAIDMResponses' listener:", err);
+  });
+  console.log("Firestore listener for 'pendingAIDMResponses' is active.");
+}
+
 
 const { performance } = require('node:perf_hooks'); // Add this line
 const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
@@ -1249,6 +1341,7 @@ client.once(Events.ClientReady, () => {
   if (admin.apps.length && typeof dbAdmin !== 'undefined' && dbAdmin !== null) {
     setupStatsNotificationListener(client);
     setupReminderDMsListener(client); // <<< ADD THIS LINE TO CALL THE NEW LISTENER
+    setupAIResponseListener(client);
   } else {
     console.warn("Firebase Admin SDK (dbAdmin) is not properly initialized. Listeners for stats and reminders will NOT be started. Please check your Firebase Admin setup at the top of the file.");
   }
@@ -6535,13 +6628,18 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         }
 
-        // 8. Clear Pending Actions in Firebase (CRITICAL: Call this LAST, only non-AI flags)
-        console.log(`[dailyLogModal_firebase] Calling clearPendingUserActions (non-AI flags) for ${interaction.user.id}...`); // Corrected: Using console
+        // In render index.txt, inside the dailyLogModal_firebase handler
+
+// ===== START: REPLACE THIS SECTION in your dailyLogModal_firebase handler =====
+
+        // 8. Clear Pending Actions in Firebase (non-AI flags)
+        console.log(`[dailyLogModal_firebase] Calling clearPendingUserActions (non-AI flags) for ${interaction.user.id}...`);
         try {
+          // This call now only clears streak/role related flags.
           await callFirebaseFunction('clearPendingUserActions', {}, interaction.user.id);
-          console.log(`[dailyLogModal_firebase] Successfully cleared non-AI pending actions for ${interaction.user.id}.`); // Corrected: Using console
+          console.log(`[dailyLogModal_firebase] Successfully cleared non-AI pending actions for ${interaction.user.id}.`);
         } catch (clearError) {
-          console.error(`[dailyLogModal_firebase] FAILED to clear non-AI pending actions for ${interaction.user.id}:`, clearError); // Corrected: Using console
+          console.error(`[dailyLogModal_firebase] FAILED to clear non-AI pending actions for ${interaction.user.id}:`, clearError);
           actionErrors.push("Critical: Failed to clear pending server actions (may retry on next log).");
         }
 
@@ -6554,115 +6652,36 @@ client.on(Events.InteractionCreate, async interaction => {
           finalEphemeralMessage += `\n\n⚠️ **Note:**\n- ${actionErrors.join('\n- ')}`;
         }
 
-        // 10. Edit the Original Deferred Reply with the final ephemeral message
-        // AND Inform user about AI analysis for notes
-        let aiAnalysisStatusMessage = "";
-        let newDmMessageContent = "";
-        let newDmButtonRow = null;
-
-        if (userData.pendingLogAIResponseForDM && userData.aiLogAcknowledgment && userData.aiLogComfortMessage && userData.aiLogPublicPostSuggestion) {
-            aiAnalysisStatusMessage = "\n\n🧠 Analyzing your notes for insights..."; // This is the initial message in ephemeral reply
-            newDmMessageContent = `Your Daily Reflection from AI! ✨\n\n${userData.aiLogAcknowledgment} ${userData.aiLogComfortMessage}`;
-            newDmButtonRow = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('ai_show_share_prompt_btn') // New button to show sharing prompt
-                        .setLabel('📣 Yes, Show Me!')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId('ai_no_share_prompt_btn') // New button to decline sharing prompt
-                        .setLabel('🤫 No, Thanks')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-            
-            // Store AI analysis data in setupData for later use by button handlers
-            // This is crucial to avoid refetching from Firestore on button clicks
-            userExperimentSetupData.set(interaction.user.id, {
-                ...setupData, // Keep existing setup data if any
-                aiLogPublicPostSuggestion: userData.aiLogPublicPostSuggestion,
-                // Add any other relevant AI-generated data here if needed by subsequent steps
-            });
-            console.log(`[dailyLogModal_firebase] Stored AI log analysis data in userExperimentSetupData for ${interaction.user.id}.`); // Corrected: Using console
-
-        } else {
-            aiAnalysisStatusMessage = "\n\n(AI analysis for notes not available or failed.)"; // Fallback if AI data is missing
-            console.warn(`[dailyLogModal_firebase] AI log analysis data missing for user ${interaction.user.id}. Not sending AI DM prompt. Data:`, {
-                pendingLogAIResponseForDM: userData.pendingLogAIResponseForDM,
-                aiLogAcknowledgment: userData.aiLogAcknowledgment,
-                aiLogComfortMessage: userData.aiLogComfortMessage,
-                aiLogPublicPostSuggestion: userData.aiLogPublicPostSuggestion,
-            }); // Corrected: Using console
-        }
-        
+        // 10. Edit the Original Deferred Reply with the final message.
+        // The AI analysis will be sent in a separate, new DM by a listener when it's ready.
         await interaction.editReply({ 
-            content: finalEphemeralMessage + aiAnalysisStatusMessage, 
+            content: finalEphemeralMessage, 
             components: [] 
         });
 
-        // 11. Send First AI-generated DM (if applicable)
-        if (newDmMessageContent && newDmButtonRow) {
-            try {
-                const dmMessage = await interaction.user.send({ 
-                    content: newDmMessageContent + "\n\nI've also got a thought about sharing your journey. Would you like to see it?", 
-                    components: [newDmButtonRow] 
-                });
-                console.log(`[dailyLogModal_firebase] Sent first AI log analysis DM to ${interaction.user.tag} (Message ID: ${dmMessage.id}).`); // Corrected: Using console
-
-                // Set timeout to disable buttons
-                // Store message ID and interaction user ID to re-fetch and disable buttons
-                const timeoutDuration = 60 * 1000; // 1 minute
-                setTimeout(async () => {
-                    try {
-                        const fetchedDmMessage = await dmMessage.channel.messages.fetch(dmMessage.id);
-                        if (fetchedDmMessage.components.length > 0 && fetchedDmMessage.components[0].components[0].customId === 'ai_show_share_prompt_btn' && !fetchedDmMessage.components[0].components[0].disabled) {
-                            const disabledRow = new ActionRowBuilder().addComponents(
-                                new ButtonBuilder()
-                                    .setCustomId('ai_show_share_prompt_btn')
-                                    .setLabel('📣 Yes, Show Me!')
-                                    .setStyle(ButtonStyle.Primary)
-                                    .setDisabled(true),
-                                new ButtonBuilder()
-                                    .setCustomId('ai_no_share_prompt_btn')
-                                    .setLabel('🤫 No, Thanks')
-                                    .setStyle(ButtonStyle.Secondary)
-                                    .setDisabled(true)
-                            );
-                            await fetchedDmMessage.edit({ components: [disabledRow] });
-                            console.log(`[dailyLogModal_firebase] Disabled buttons in AI log analysis DM for ${interaction.user.tag} due to timeout.`); // Corrected: Using console
-                        }
-                    } catch (timeoutError) {
-                        console.error(`[dailyLogModal_firebase] Error disabling AI log analysis DM buttons for ${interaction.user.tag}:`, timeoutError); // Corrected: Using console
-                    }
-                }, timeoutDuration);
-
-            } catch (dmError) {
-                console.error(`[dailyLogModal_firebase] Failed to send first AI log analysis DM to ${interaction.user.tag}:`, dmError); // Corrected: Using console
-                if (dmError.code === 50007) {
-                    await interaction.followUp({ content: "I tried to DM you an AI analysis of your log, but your DMs are closed for this server or with me. Please enable DMs to receive these insights!", flags: MessageFlags.Ephemeral });
-                }
-            }
-        }
 
       } catch (error) { // Catch for the main try block
         const errorTime = performance.now();
-        console.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error); // Corrected: Using console
+        console.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error);
+        
         let userErrorMessage = '❌ An unexpected error occurred while saving or processing your log. Please try again.';
         if (error.message) {
           if (error.message.includes('Firebase Error') || error.message.includes('authentication failed') || error.message.includes('connection not ready')) {
               userErrorMessage = `❌ ${error.message}`;
-          } else if (error.message.includes('Please set your weekly goals')) { // This might be from an old error path, Firebase function handles it now
+          } else if (error.message.includes('Please set your weekly goals')) { 
               userErrorMessage = `❌ ${error.message} Use /exp first.`;
           }
         }
-        if (interaction.deferred || interaction.replied) { // Check if deferred or already replied (e.g. initial defer was successful)
+        if (interaction.deferred || interaction.replied) {
           try {
             await interaction.editReply({ content: userErrorMessage });
-          } catch (editError) { console.error('[dailyLogModal_firebase] Failed to send main error via editReply:', editError); } // Corrected: Using console
-        } else { // If not even deferred (e.g. defer failed)
+          } catch (editError) { console.error('[dailyLogModal_firebase] Failed to send main error via editReply:', editError); }
+        } else { 
           try { await interaction.reply({ content: userErrorMessage, flags: MessageFlags.Ephemeral }); }
-          catch (replyError) { console.error('[dailyLogModal_firebase] Failed to send main error via reply:', replyError); } // Corrected: Using console
+          catch (replyError) { console.error('[dailyLogModal_firebase] Failed to send main error via reply:', replyError); }
         }
       } // End main try-catch block
+
 
       const modalProcessEndTime = performance.now();
       console.log(`[experiment_setup_modal END ${interaction.id}] Processing finished for User: ${interaction.user.tag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`); // Corrected: Using console

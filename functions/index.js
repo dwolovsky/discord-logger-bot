@@ -3806,15 +3806,14 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
   }
 });
 
-// --- NEW ---
+// In functions index.txt
+
 /**
- * Analyzes a user's log notes using Gemini and stores AI-generated summaries
- * and public post suggestions in the user's document for the bot to fetch.
- * This function is intended to be called asynchronously by the `submitLog` HTTP function.
+ * Analyzes a user's log notes using Gemini and creates a document in a 
+ * dedicated collection for the bot to pick up and send as a DM.
+ * This function is intended to be called asynchronously.
  *
  * Expected request.data: { logId: string, userId: string, userTag: string }
- * Note: This function doesn't require direct authentication (as it's called internally by submitLog),
- * but it validates the inputs.
  */
 exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
     logger.log("[analyzeAndSummarizeLogNotes] Function triggered. Request data:", request.data);
@@ -3848,12 +3847,7 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
         // If notes are empty, we don't need AI analysis
         if (!notes) {
             logger.log(`[analyzeAndSummarizeLogNotes] Log ${logId} has no notes. Skipping AI analysis.`);
-            await db.collection('users').doc(userId).update({
-                pendingLogAIResponseForDM: FieldValue.delete(),
-                pendingLogPostSuggestion: FieldValue.delete(),
-                aiLogAcknowledgment: FieldValue.delete(),
-                aiLogComfortMessage: FieldValue.delete(),
-            });
+            // No need to create a pending DM if there are no notes
             return { success: true, message: "No notes to analyze." };
         }
 
@@ -3865,13 +3859,6 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
 
         // 3. Construct the AI prompt
         const inputLabels = inputs.filter(i => i.label).map(i => `'${i.label}'`).join(', ') || 'no specific habits';
-
-        // NEW CATEGORIES for AI analysis
-        const categories = [
-            "Wins/Successes", "Challenges/Struggles", "Questions", "Insights/Learnings",
-            "Emotional State", "Unexpected Outcomes", "Future Intentions/Plans",
-            "External Factors affecting the day"
-        ].join(', ');
 
         const prompt = `
             You are a "self-science" AI assistant, analyzing a user's daily log notes to provide concise feedback and a public sharing suggestion.
@@ -3888,7 +3875,8 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
             **Your Task:**
             1.  **Acknowledge Experience (25-50 characters):** Based on the notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme. It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
             2.  **Comfort/Support Message (50-100 characters):** Provide a short, positive, and uplifting message that normalizes their experience or gently encourages them. Try to encourage a growth mindset and realistic optimism.
-            3.  **Public Post Suggestion (80-150 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group. This should be from *their perspective* (first-person), positive, and encourage connection or shared experience. It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon. Examples:
+            3.  **Public Post Suggestion (80-150 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group. This should be from *their perspective* (first-person), positive, and encourage connection or shared experience. It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
+            Examples:
                 * "Just had a breakthrough with [Habit] today! Feeling so [emotion]. Anyone else finding [insight] helpful?"
                 * "Navigating some [challenge] but still hitting [Outcome]! Anyone have similar experiences they could share?"
                 * "My experiment's revealing [small insight]. Anyone else finding anything interesting?"
@@ -3914,7 +3902,6 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
                 responseMimeType: "application/json",
             },
         });
-
         const response = await generationResult.response;
         const responseText = response.text()?.trim();
 
@@ -3928,7 +3915,7 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
             aiResult = JSON.parse(responseText);
         } catch (parseError) {
             logger.error(`[analyzeAndSummarizeLogNotes] Failed to parse Gemini JSON response for log ${logId}. Raw: "${responseText}". Error:`, parseError);
-            throw new HttpsError('internal', `AI returned invalid format: ${parseError.message}`);
+            throw new HttpsError('internal', `AI returned an invalid format: ${parseError.message}`);
         }
 
         // Basic validation of AI response structure
@@ -3937,32 +3924,23 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
             throw new HttpsError('internal', 'AI response missing required fields.');
         }
 
-        // 5. Store AI analysis results in the user's document
-        await db.collection('users').doc(userId).update({
-            aiLogAcknowledgment: aiResult.acknowledgment,
-            aiLogComfortMessage: aiResult.comfortMessage,
-            aiLogPublicPostSuggestion: aiResult.publicPostSuggestion,
-            pendingLogAIResponseForDM: true, // Flag for the bot to send the DM
-            lastLogAnalysisTimestamp: FieldValue.serverTimestamp(),
+        // 5. Create a document in the 'pendingAIDMResponses' collection
+        const aiResponseDocRef = db.collection('pendingAIDMResponses').doc(logId); // Use logId for a unique doc ID
+        await aiResponseDocRef.set({
+            userId: userId,
+            userTag: userTag,
+            status: 'ready',
+            createdAt: FieldValue.serverTimestamp(),
+            acknowledgment: aiResult.acknowledgment,
+            comfortMessage: aiResult.comfortMessage,
+            publicPostSuggestion: aiResult.publicPostSuggestion
         });
-        logger.log(`[analyzeAndSummarizeLogNotes] Successfully stored AI analysis for log ${logId} in user ${userId}'s document.`);
 
-        return { success: true, message: "Log notes analyzed and results stored." };
+        logger.log(`[analyzeAndSummarizeLogNotes] Successfully created pendingAIDMResponse ${logId} for user ${userId}.`);
+        return { success: true, message: "AI response created and queued for delivery." };
 
     } catch (error) {
         logger.error(`[analyzeAndSummarizeLogNotes] Error processing log ${logId} for user ${userId}:`, error);
-
-        // Attempt to clear pending flags and store error message to prevent retries
-        await db.collection('users').doc(userId).update({
-            pendingLogAIResponseForDM: FieldValue.delete(),
-            aiLogAcknowledgment: FieldValue.delete(),
-            aiLogComfortMessage: FieldValue.delete(),
-            aiLogPublicPostSuggestion: FieldValue.delete(),
-            lastLogAnalysisError: error.message,
-            lastLogAnalysisTimestamp: FieldValue.serverTimestamp(),
-        }).catch(updateErr => {
-            logger.error(`[analyzeAndSummarizeLogNotes] Failed to update user doc with analysis error for ${userId}:`, updateErr);
-        });
 
         if (error instanceof HttpsError) {
             throw error;
@@ -3973,7 +3951,6 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
         throw new HttpsError('internal', `Failed to analyze log notes: ${error.message}`);
     }
 });
-// --- END NEW ---
 
 /**
  * Takes a user's "Deeper Wish" and generates five potential outcome metric labels
