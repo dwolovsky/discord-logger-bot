@@ -5319,11 +5319,11 @@ client.on(Events.InteractionCreate, async interaction => {
         );
         await interaction.editReply({ components: [disabledRow] });
 
-        const publicPostMessage = `Share Your Self-Science Journey? 📣\n\nWould you like to share a message like this with the community in #experiments?\n\n> ${aiPublicPostSuggestion}\n\nOr, type your own message directly in #experiments.\n\nDo nothing, and this log remains private. This offer will expire in 1 minute.`;
+        const publicPostMessage = `Share Your Self-Science Journey? 📣\n\nWould you like to share a message like this with the community?\n\n> ${aiPublicPostSuggestion}\n\nOr, type your own message directly in #main.\n\nDo nothing, and this log remains private. This offer will expire in 1 minute.`;
 
         const postToGroupButton = new ButtonBuilder()
             .setCustomId('post_ai_log_summary_btn')
-            .setLabel('🚀 Post to #experiments')
+            .setLabel('🚀 Post to #main')
             .setStyle(ButtonStyle.Success);
         const newDmButtonRow = new ActionRowBuilder().addComponents(postToGroupButton);
 
@@ -5341,7 +5341,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     const disabledPostRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId('post_ai_log_summary_btn')
-                            .setLabel('🚀 Post to #experiments')
+                            .setLabel('🚀 Post to #main')
                             .setStyle(ButtonStyle.Success)
                             .setDisabled(true)
                     );
