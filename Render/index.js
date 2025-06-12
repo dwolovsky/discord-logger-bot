@@ -6289,7 +6289,7 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_firebase') {
 
       const modalSubmitStartTime = performance.now();
-      logger.log(`[dailyLogModal_firebase] Submission received by User: ${interaction.user.tag}, InteractionID: ${interaction.id}`); // Corrected: Using logger
+      console.log(`[dailyLogModal_firebase] Submission received by User: ${interaction.user.tag}, InteractionID: ${interaction.id}`); // Corrected: Using console
       let userData = null; // To store fetched user data for final message/actions
       let actionErrors = []; // Keep track of errors during actions
 
@@ -6297,7 +6297,7 @@ client.on(Events.InteractionCreate, async interaction => {
         // 1. Defer Reply
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const deferTime = performance.now();
-        logger.log(`[dailyLogModal_firebase] Deferral took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`); // Corrected: Using logger
+        console.log(`[dailyLogModal_firebase] Deferral took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`); // Corrected: Using console
         // 2. Get data from memory
         const setupData = userExperimentSetupData.get(interaction.user.id);
         const settings = setupData?.logFlowSettings;
@@ -6367,12 +6367,12 @@ client.on(Events.InteractionCreate, async interaction => {
             userExperimentSetupData.set(interaction.user.id, setupData);
         }
 
-        logger.log('[dailyLogModal_firebase] Payload for submitLog (HTTP):', payload);
+        console.log('[dailyLogModal_firebase] Payload for submitLog (HTTP):', payload);
         // This log will now show the userTag
 
 
         const fbCallStartTime = performance.now();
-        logger.log(`[dailyLogModal_firebase] Calling submitLog (HTTP) for User: ${interaction.user.id}...`);
+        console.log(`[dailyLogModal_firebase] Calling submitLog (HTTP) for User: ${interaction.user.id}...`);
 
         let submitResult;
         let httpResponseOk = false;
@@ -6396,47 +6396,47 @@ client.on(Events.InteractionCreate, async interaction => {
             httpResponseOk = apiResponse.ok;
             submitResult = await apiResponse.json();
         } catch (fetchError) {
-            logger.error('[dailyLogModal_firebase] Fetch error calling submitLog (HTTP):', fetchError); // Corrected: Using logger
+            console.error('[dailyLogModal_firebase] Fetch error calling submitLog (HTTP):', fetchError); // Corrected: Using console
             submitResult = { success: false, error: `Network or parsing error calling log service: ${fetchError.message}`, code: 'fetch-error' };
             httpResponseOk = false;
         }
 
         const fbCallEndTime = performance.now();
-        logger.log(`[dailyLogModal_firebase] submitLog (HTTP) call took: ${(fbCallEndTime - fbCallStartTime).toFixed(2)}ms. Ok: ${httpResponseOk}, Result:`, submitResult); // Corrected: Using logger
+        console.log(`[dailyLogModal_firebase] submitLog (HTTP) call took: ${(fbCallEndTime - fbCallStartTime).toFixed(2)}ms. Ok: ${httpResponseOk}, Result:`, submitResult); // Corrected: Using console
         if (!httpResponseOk || !submitResult || submitResult.success !== true) {
             const errorMessage = submitResult?.error ||
                 (httpResponseOk ? 'Log service returned failure.' : `Failed to reach log service (Status: ${submitResult?.status || 'N/A'}).`);
             // submitResult might not have status
             const errorCode = submitResult?.code ||
                 (httpResponseOk ? 'service-failure' : 'network-failure');
-            logger.error(`[dailyLogModal_firebase] submitLog (HTTP) indicated failure. Code: ${errorCode}, Message: ${errorMessage}`, submitResult); // Corrected: Using logger
+            console.error(`[dailyLogModal_firebase] submitLog (HTTP) indicated failure. Code: ${errorCode}, Message: ${errorMessage}`, submitResult); // Corrected: Using console
             await interaction.editReply({ content: `❌ Error saving log: ${errorMessage}` });
             return;
         }
 
         // Log successfully saved, now fetch updated user data and AI analysis
-        logger.log(`[dailyLogModal_firebase] Log ${submitResult.logId} saved. Fetching user data for bot...`); // Corrected: Using logger
+        console.log(`[dailyLogModal_firebase] Log ${submitResult.logId} saved. Fetching user data for bot...`); // Corrected: Using console
 
         // >>>>> START: TEMPORARY DELAY FOR TESTING PUBLIC MESSAGE TIMING <<<<<
-        // logger.log('[dailyLogModal_firebase] Introducing TEMPORARY 3-second delay before fetching user data...'); // Corrected: Using logger
+        // console.log('[dailyLogModal_firebase] Introducing TEMPORARY 3-second delay before fetching user data...'); // Corrected: Using console
         // await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for 3 seconds
-        // logger.log('[dailyLogModal_firebase] TEMPORARY delay finished.'); // Corrected: Using logger
+        // console.log('[dailyLogModal_firebase] TEMPORARY delay finished.'); // Corrected: Using console
         // >>>>> END: TEMPORARY DELAY FOR TESTING PUBLIC MESSAGE TIMING <<<<<
 
         const fetchUserDataStartTime = performance.now();
         const userDataResult = await callFirebaseFunction('getUserDataForBot', {}, interaction.user.id);
         const fetchUserDataEndTime = performance.now();
-        logger.log(`[dailyLogModal_firebase] getUserDataForBot call took: ${(fetchUserDataEndTime - fetchUserDataStartTime).toFixed(2)}ms.`); // Corrected: Using logger
+        console.log(`[dailyLogModal_firebase] getUserDataForBot call took: ${(fetchUserDataEndTime - fetchUserDataStartTime).toFixed(2)}ms.`); // Corrected: Using console
         if (!userDataResult || userDataResult.success !== true || !userDataResult.userData) {
-          logger.error('[dailyLogModal_firebase] Failed to fetch user data after log submission:', userDataResult); // Corrected: Using logger
+          console.error('[dailyLogModal_firebase] Failed to fetch user data after log submission:', userDataResult); // Corrected: Using console
           await interaction.editReply({ content: `✅ Log saved (ID: ${submitResult.logId})! However, there was an issue fetching updated streak/role info. It should update shortly.` });
           return;
         }
         userData = userDataResult.userData;
-        logger.log('[dailyLogModal_firebase] Fetched User Data:', JSON.stringify(userData, null, 2)); // Corrected: Using logger
+        console.log('[dailyLogModal_firebase] Fetched User Data:', JSON.stringify(userData, null, 2)); // Corrected: Using console
         const guild = interaction.guild;
         const member = interaction.member || await guild?.members.fetch(interaction.user.id).catch(err => {
-            logger.error(`[dailyLogModal_firebase] Failed to fetch member ${interaction.user.id}:`, err); // Corrected: Using logger
+            console.error(`[dailyLogModal_firebase] Failed to fetch member ${interaction.user.id}:`, err); // Corrected: Using console
             return null;
         });
         // --- Process Pending Actions ---
@@ -6444,11 +6444,11 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // 7a. Pending DM Message (from Streak/Milestones)
         if (userData.pendingDmMessage && typeof userData.pendingDmMessage === 'string' && userData.pendingDmMessage.trim() !== "") {
-          logger.log(`[dailyLogModal_firebase] Sending pending DM (streak/milestone) to ${interaction.user.tag}: "${userData.pendingDmMessage}"`); // Corrected: Using logger
+          console.log(`[dailyLogModal_firebase] Sending pending DM (streak/milestone) to ${interaction.user.tag}: "${userData.pendingDmMessage}"`); // Corrected: Using console
           try {
             await interaction.user.send(userData.pendingDmMessage);
           } catch (dmError) {
-            logger.error(`[dailyLogModal_firebase] Failed to send pending DM (streak/milestone) to ${interaction.user.tag}:`, dmError); // Corrected: Using logger
+            console.error(`[dailyLogModal_firebase] Failed to send pending DM (streak/milestone) to ${interaction.user.tag}:`, dmError); // Corrected: Using console
             actionErrors.push("Failed to send DM with streak/milestone updates.");
             if (dmError.code === 50007) {
               actionErrors.push("Note: I couldn't DM you. Please check server privacy settings if you want DMs.");
@@ -6461,27 +6461,27 @@ client.on(Events.InteractionCreate, async interaction => {
             // 7b. Pending Freeze Role Update
             if (userData.pendingFreezeRoleUpdate && typeof userData.pendingFreezeRoleUpdate === 'string' && userData.pendingFreezeRoleUpdate.trim() !== "") {
               const targetFreezeRoleName = userData.pendingFreezeRoleUpdate;
-              logger.log(`[dailyLogModal_firebase] Processing freeze role update for ${member.user.tag} to: ${targetFreezeRoleName}`); // Corrected: Using logger
+              console.log(`[dailyLogModal_firebase] Processing freeze role update for ${member.user.tag} to: ${targetFreezeRoleName}`); // Corrected: Using console
               try {
                   const targetRole = await ensureRole(guild, targetFreezeRoleName, null);
                   const currentFreezeRoles = member.roles.cache.filter(role => role.name.startsWith(FREEZE_ROLE_BASENAME) && role.name !== targetFreezeRoleName);
                   if (currentFreezeRoles.size > 0) {
                       await member.roles.remove(currentFreezeRoles);
-                      logger.log(`[dailyLogModal_firebase] Removed ${currentFreezeRoles.size} old freeze roles from ${member.user.tag}.`); // Corrected: Using logger
+                      console.log(`[dailyLogModal_firebase] Removed ${currentFreezeRoles.size} old freeze roles from ${member.user.tag}.`); // Corrected: Using console
                   }
                   if (!member.roles.cache.has(targetRole.id)) {
                       await member.roles.add(targetRole);
-                      logger.log(`[dailyLogModal_firebase] Added freeze role "${targetFreezeRoleName}" to ${member.user.tag}.`); // Corrected: Using logger
+                      console.log(`[dailyLogModal_firebase] Added freeze role "${targetFreezeRoleName}" to ${member.user.tag}.`); // Corrected: Using console
                   }
               } catch (freezeRoleError) {
-                  logger.error(`[dailyLogModal_firebase] Error updating freeze role for ${member.user.tag}:`, freezeRoleError); // Corrected: Using logger
+                  console.error(`[dailyLogModal_firebase] Error updating freeze role for ${member.user.tag}:`, freezeRoleError); // Corrected: Using console
                   actionErrors.push(`Failed to update freeze role to ${targetFreezeRoleName}.`);
               }
             }
 
             // 7c. Pending Role Cleanup / Regular Role Update
             if (userData.pendingRoleCleanup === true || (userData.pendingRoleUpdate && userData.pendingRoleUpdate.name)) {
-                logger.log(`[dailyLogModal_firebase] Processing role cleanup/update for ${member.user.tag}. Cleanup: ${userData.pendingRoleCleanup}, NewRole: ${userData.pendingRoleUpdate ? userData.pendingRoleUpdate.name : 'None'}`); // Corrected: Using logger
+                console.log(`[dailyLogModal_firebase] Processing role cleanup/update for ${member.user.tag}. Cleanup: ${userData.pendingRoleCleanup}, NewRole: ${userData.pendingRoleUpdate ? userData.pendingRoleUpdate.name : 'None'}`); // Corrected: Using console
                 try {
                     let rolesToRemove = [];
                     if (userData.pendingRoleCleanup === true) {
@@ -6491,57 +6491,57 @@ client.on(Events.InteractionCreate, async interaction => {
                             }
                         });
                         if (rolesToRemove.length > 0) {
-                          logger.log(`[dailyLogModal_firebase] Identified roles to remove for cleanup:`, rolesToRemove.map(r => r.name)); // Corrected: Using logger
+                          console.log(`[dailyLogModal_firebase] Identified roles to remove for cleanup:`, rolesToRemove.map(r => r.name)); // Corrected: Using console
                           await member.roles.remove(rolesToRemove);
-                          logger.log(`[dailyLogModal_firebase] Performed role cleanup for ${member.user.tag}.`); // Corrected: Using logger
+                          console.log(`[dailyLogModal_firebase] Performed role cleanup for ${member.user.tag}.`); // Corrected: Using console
                         }
                     }
 
                     if (userData.pendingRoleUpdate && userData.pendingRoleUpdate.name) {
                         const newRoleInfo = userData.pendingRoleUpdate; // { name, color, days }
-                        logger.log(`[dailyLogModal_firebase] Assigning new role: ${newRoleInfo.name}`); // Corrected: Using logger
+                        console.log(`[dailyLogModal_firebase] Assigning new role: ${newRoleInfo.name}`); // Corrected: Using console
                         const newRole = await ensureRole(guild, newRoleInfo.name, newRoleInfo.color);
                         if (!member.roles.cache.has(newRole.id)) {
                           await member.roles.add(newRole);
-                          logger.log(`[dailyLogModal_firebase] Added role "${newRole.name}" to ${member.user.tag}.`); // Corrected: Using logger
+                          console.log(`[dailyLogModal_firebase] Added role "${newRole.name}" to ${member.user.tag}.`); // Corrected: Using console
                         }
                     }
                 } catch (roleError) {
-                    logger.error(`[dailyLogModal_firebase] Error during role cleanup/update for ${member.user.tag}:`, roleError); // Corrected: Using logger
+                    console.error(`[dailyLogModal_firebase] Error during role cleanup/update for ${member.user.tag}:`, roleError); // Corrected: Using console
                     actionErrors.push("Failed to update your streak role.");
                 }
             }
 
             // This replaces any old, direct channel.send messages for milestones/extensions.
             if (userData.pendingPublicMessage && typeof userData.pendingPublicMessage === 'string' && userData.pendingPublicMessage.trim() !== "") {
-                logger.log(`[dailyLogModal_firebase] Attempting to send public message to channel ${interaction.channelId}: "${userData.pendingPublicMessage}"`); // Corrected: Using logger
+                console.log(`[dailyLogModal_firebase] Attempting to send public message to channel ${interaction.channelId}: "${userData.pendingPublicMessage}"`); // Corrected: Using console
                 try {
                     // Send to the channel where the /log command was initiated
                     await interaction.channel.send(userData.pendingPublicMessage);
-                    logger.log(`[dailyLogModal_firebase] Successfully sent public message for user ${interaction.user.tag}.`); // Corrected: Using logger
+                    console.log(`[dailyLogModal_firebase] Successfully sent public message for user ${interaction.user.tag}.`); // Corrected: Using console
                 } catch (publicMsgError) {
-                    logger.error(`[dailyLogModal_firebase] Failed to send pending public message for user ${interaction.user.tag}:`, publicMsgError); // Corrected: Using logger
+                    console.error(`[dailyLogModal_firebase] Failed to send pending public message for user ${interaction.user.tag}:`, publicMsgError); // Corrected: Using console
                     actionErrors.push("Failed to post public announcement to the channel.");
                 }
             } else if (userData.pendingPublicMessage) {
                 // Log if we have a message but it's not a sendable string (e.g. null, empty after trim)
-                logger.log(`[dailyLogModal_firebase] Had a pendingPublicMessage but it was not a valid string to send. Content: "${userData.pendingPublicMessage}"`); // Corrected: Using logger
+                console.log(`[dailyLogModal_firebase] Had a pendingPublicMessage but it was not a valid string to send. Content: "${userData.pendingPublicMessage}"`); // Corrected: Using console
             }
 
         } else { // End of if (guild && member)
-            logger.warn(`[dailyLogModal_firebase] Guild or Member object not available for user ${interaction.user.id}. Skipping public messages and role updates.`); // Corrected: Using logger
+            console.warn(`[dailyLogModal_firebase] Guild or Member object not available for user ${interaction.user.id}. Skipping public messages and role updates.`); // Corrected: Using console
             if (userData.pendingPublicMessage || userData.pendingFreezeRoleUpdate || userData.pendingRoleCleanup || userData.pendingRoleUpdate) {
                 actionErrors.push("Could not perform role updates or public announcements (guild/member data unavailable).");
             }
         }
 
         // 8. Clear Pending Actions in Firebase (CRITICAL: Call this LAST, only non-AI flags)
-        logger.log(`[dailyLogModal_firebase] Calling clearPendingUserActions (non-AI flags) for ${interaction.user.id}...`); // Corrected: Using logger
+        console.log(`[dailyLogModal_firebase] Calling clearPendingUserActions (non-AI flags) for ${interaction.user.id}...`); // Corrected: Using console
         try {
           await callFirebaseFunction('clearPendingUserActions', {}, interaction.user.id);
-          logger.log(`[dailyLogModal_firebase] Successfully cleared non-AI pending actions for ${interaction.user.id}.`); // Corrected: Using logger
+          console.log(`[dailyLogModal_firebase] Successfully cleared non-AI pending actions for ${interaction.user.id}.`); // Corrected: Using console
         } catch (clearError) {
-          logger.error(`[dailyLogModal_firebase] FAILED to clear non-AI pending actions for ${interaction.user.id}:`, clearError); // Corrected: Using logger
+          console.error(`[dailyLogModal_firebase] FAILED to clear non-AI pending actions for ${interaction.user.id}:`, clearError); // Corrected: Using console
           actionErrors.push("Critical: Failed to clear pending server actions (may retry on next log).");
         }
 
@@ -6582,16 +6582,16 @@ client.on(Events.InteractionCreate, async interaction => {
                 aiLogPublicPostSuggestion: userData.aiLogPublicPostSuggestion,
                 // Add any other relevant AI-generated data here if needed by subsequent steps
             });
-            logger.log(`[dailyLogModal_firebase] Stored AI log analysis data in userExperimentSetupData for ${interaction.user.id}.`); // Corrected: Using logger
+            console.log(`[dailyLogModal_firebase] Stored AI log analysis data in userExperimentSetupData for ${interaction.user.id}.`); // Corrected: Using console
 
         } else {
             aiAnalysisStatusMessage = "\n\n(AI analysis for notes not available or failed.)"; // Fallback if AI data is missing
-            logger.warn(`[dailyLogModal_firebase] AI log analysis data missing for user ${interaction.user.id}. Not sending AI DM prompt. Data:`, {
+            console.warn(`[dailyLogModal_firebase] AI log analysis data missing for user ${interaction.user.id}. Not sending AI DM prompt. Data:`, {
                 pendingLogAIResponseForDM: userData.pendingLogAIResponseForDM,
                 aiLogAcknowledgment: userData.aiLogAcknowledgment,
                 aiLogComfortMessage: userData.aiLogComfortMessage,
                 aiLogPublicPostSuggestion: userData.aiLogPublicPostSuggestion,
-            }); // Corrected: Using logger
+            }); // Corrected: Using console
         }
         
         await interaction.editReply({ 
@@ -6606,7 +6606,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     content: newDmMessageContent + "\n\nI've also got a thought about sharing your journey. Would you like to see it?", 
                     components: [newDmButtonRow] 
                 });
-                logger.log(`[dailyLogModal_firebase] Sent first AI log analysis DM to ${interaction.user.tag} (Message ID: ${dmMessage.id}).`); // Corrected: Using logger
+                console.log(`[dailyLogModal_firebase] Sent first AI log analysis DM to ${interaction.user.tag} (Message ID: ${dmMessage.id}).`); // Corrected: Using console
 
                 // Set timeout to disable buttons
                 // Store message ID and interaction user ID to re-fetch and disable buttons
@@ -6628,15 +6628,15 @@ client.on(Events.InteractionCreate, async interaction => {
                                     .setDisabled(true)
                             );
                             await fetchedDmMessage.edit({ components: [disabledRow] });
-                            logger.log(`[dailyLogModal_firebase] Disabled buttons in AI log analysis DM for ${interaction.user.tag} due to timeout.`); // Corrected: Using logger
+                            console.log(`[dailyLogModal_firebase] Disabled buttons in AI log analysis DM for ${interaction.user.tag} due to timeout.`); // Corrected: Using console
                         }
                     } catch (timeoutError) {
-                        logger.error(`[dailyLogModal_firebase] Error disabling AI log analysis DM buttons for ${interaction.user.tag}:`, timeoutError); // Corrected: Using logger
+                        console.error(`[dailyLogModal_firebase] Error disabling AI log analysis DM buttons for ${interaction.user.tag}:`, timeoutError); // Corrected: Using console
                     }
                 }, timeoutDuration);
 
             } catch (dmError) {
-                logger.error(`[dailyLogModal_firebase] Failed to send first AI log analysis DM to ${interaction.user.tag}:`, dmError); // Corrected: Using logger
+                console.error(`[dailyLogModal_firebase] Failed to send first AI log analysis DM to ${interaction.user.tag}:`, dmError); // Corrected: Using console
                 if (dmError.code === 50007) {
                     await interaction.followUp({ content: "I tried to DM you an AI analysis of your log, but your DMs are closed for this server or with me. Please enable DMs to receive these insights!", flags: MessageFlags.Ephemeral });
                 }
@@ -6645,7 +6645,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
       } catch (error) { // Catch for the main try block
         const errorTime = performance.now();
-        logger.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error); // Corrected: Using logger
+        console.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error); // Corrected: Using console
         let userErrorMessage = '❌ An unexpected error occurred while saving or processing your log. Please try again.';
         if (error.message) {
           if (error.message.includes('Firebase Error') || error.message.includes('authentication failed') || error.message.includes('connection not ready')) {
@@ -6657,15 +6657,15 @@ client.on(Events.InteractionCreate, async interaction => {
         if (interaction.deferred || interaction.replied) { // Check if deferred or already replied (e.g. initial defer was successful)
           try {
             await interaction.editReply({ content: userErrorMessage });
-          } catch (editError) { logger.error('[dailyLogModal_firebase] Failed to send main error via editReply:', editError); } // Corrected: Using logger
+          } catch (editError) { console.error('[dailyLogModal_firebase] Failed to send main error via editReply:', editError); } // Corrected: Using console
         } else { // If not even deferred (e.g. defer failed)
           try { await interaction.reply({ content: userErrorMessage, flags: MessageFlags.Ephemeral }); }
-          catch (replyError) { logger.error('[dailyLogModal_firebase] Failed to send main error via reply:', replyError); } // Corrected: Using logger
+          catch (replyError) { console.error('[dailyLogModal_firebase] Failed to send main error via reply:', replyError); } // Corrected: Using console
         }
       } // End main try-catch block
 
       const modalProcessEndTime = performance.now();
-      logger.log(`[experiment_setup_modal END ${interaction.id}] Processing finished for User: ${interaction.user.tag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`); // Corrected: Using logger
+      console.log(`[experiment_setup_modal END ${interaction.id}] Processing finished for User: ${interaction.user.tag}. Total time: ${(modalProcessEndTime - modalSubmitStartTime).toFixed(2)}ms`); // Corrected: Using console
     }
     // --- END OF COMPLETE DAILY LOG MODAL SUBMISSION HANDLER ---
 
