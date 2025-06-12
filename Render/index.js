@@ -5338,19 +5338,18 @@ client.on(Events.InteractionCreate, async interaction => {
 
 // --- NEW ---
     else if (interaction.isButton() && interaction.customId === 'ai_show_share_prompt_btn') {
-      const showSharePromptClickTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const userTagForLog = interaction.user.tag;
-      console.log(`[ai_show_share_prompt_btn START ${interactionId}] Clicked by ${userTagForLog}. Preparing to show AI public post suggestion.`);
-      try {
+    const showSharePromptClickTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    const userTagForLog = interaction.user.tag;
+    console.log(`[ai_show_share_prompt_btn START ${interactionId}] Clicked by ${userTagForLog}. Preparing to show AI public post suggestion.`);
+    try {
         await interaction.deferUpdate();
         const deferTime = performance.now();
         console.log(`[ai_show_share_prompt_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - showSharePromptClickTime).toFixed(2)}ms`);
 
         const setupData = userExperimentSetupData.get(userId);
         const aiPublicPostSuggestion = setupData?.aiLogPublicPostSuggestion;
-
         if (!aiPublicPostSuggestion || typeof aiPublicPostSuggestion !== 'string' || aiPublicPostSuggestion.trim() === "") {
             console.warn(`[ai_show_share_prompt_btn WARN ${interactionId}] AI public post suggestion missing or invalid for user ${userId}.`);
             await interaction.editReply({
@@ -5374,7 +5373,7 @@ client.on(Events.InteractionCreate, async interaction => {
         );
         await interaction.editReply({ components: [disabledRow] });
 
-        const publicPostMessage = `Share Your Self-Science Journey? 📣\n\nWould you like to share a message like this with the community?\n\n> ${aiPublicPostSuggestion}\n\nOr, type your own message directly in #main.\n\nDo nothing, and this log remains private. This offer will expire in 1 minute.`;
+        const publicPostMessage = `**Send some good vibes to the group?** ✨\n\nWould you like to share this message in the chat?\n\n> ${aiPublicPostSuggestion}\n\nOr, type your own message below.\n\nDo nothing, and this remains private.`;
 
         const postToGroupButton = new ButtonBuilder()
             .setCustomId('post_ai_log_summary_btn')
@@ -5382,17 +5381,20 @@ client.on(Events.InteractionCreate, async interaction => {
             .setStyle(ButtonStyle.Success);
         const newDmButtonRow = new ActionRowBuilder().addComponents(postToGroupButton);
 
-        const secondDmMessage = await interaction.user.send({
+        const ephemeralFollowUp = await interaction.followUp({
             content: publicPostMessage,
-            components: [newDmButtonRow]
+            components: [newDmButtonRow],
+            ephemeral: true
         });
-        console.log(`[ai_show_share_prompt_btn SENT_SECOND_DM ${interactionId}] Sent AI public post suggestion DM to ${userTagForLog} (Message ID: ${secondDmMessage.id}).`);
+        console.log(`[ai_show_share_prompt_btn SENT_EPHEMERAL_FOLLOWUP ${interactionId}] Sent AI public post suggestion as ephemeral followup to ${userTagForLog}.`);
 
         const timeoutDuration = 60 * 1000;
         setTimeout(async () => {
             try {
-                const fetchedSecondDmMessage = await secondDmMessage.channel.messages.fetch(secondDmMessage.id);
-                if (fetchedSecondDmMessage.components.length > 0 && fetchedSecondDmMessage.components[0].components[0].customId === 'post_ai_log_summary_btn' && !fetchedSecondDmMessage.components[0].components[0].disabled) {
+                // Attempt to edit the ephemeral message to disable the button.
+                // This might fail if the user has dismissed the message, which is acceptable.
+                const fetchedMessage = await ephemeralFollowUp.fetch().catch(() => null);
+                if (fetchedMessage && fetchedMessage.components.length > 0 && !fetchedMessage.components[0].components[0].disabled) {
                     const disabledPostRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId('post_ai_log_summary_btn')
@@ -5400,14 +5402,18 @@ client.on(Events.InteractionCreate, async interaction => {
                             .setStyle(ButtonStyle.Success)
                             .setDisabled(true)
                     );
-                    await fetchedSecondDmMessage.edit({ components: [disabledPostRow] });
-                    console.log(`[ai_show_share_prompt_btn DISABLED_POST_BUTTON ${interactionId}] Disabled 'Post to #experiments' button for ${userTagForLog} due to timeout.`);
+                    await fetchedMessage.edit({ components: [disabledPostRow] });
+                    console.log(`[ai_show_share_prompt_btn DISABLED_POST_BUTTON ${interactionId}] Disabled 'Post to #main' button for ${userTagForLog} due to timeout.`);
                 }
             } catch (timeoutError) {
-                console.error(`[ai_show_share_prompt_btn ERROR_DISABLING_POST_BUTTON ${interactionId}] Error disabling 'Post to #experiments' button for ${userTagForLog}:`, timeoutError);
+                // It's common for this to fail if the ephemeral message is gone.
+                // We only log errors that aren't the expected "Unknown Message" error.
+                if (timeoutError.code !== 10008) { 
+                    console.error(`[ai_show_share_prompt_btn ERROR_DISABLING_POST_BUTTON ${interactionId}] Error disabling 'Post to #main' button for ${userTagForLog}:`, timeoutError);
+                }
             }
         }, timeoutDuration);
-      } catch (error) {
+    } catch (error) {
         console.error(`[ai_show_share_prompt_btn ERROR ${interactionId}] Error processing button for ${userTagForLog}:`, error);
         try {
             if (!interaction.replied && !interaction.deferred) {
@@ -5418,9 +5424,9 @@ client.on(Events.InteractionCreate, async interaction => {
         } catch (fallbackError) {
             console.error(`[ai_show_share_prompt_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
         }
-      }
-      console.log(`[ai_show_share_prompt_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - showSharePromptClickTime).toFixed(2)}ms`);
     }
+    console.log(`[ai_show_share_prompt_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - showSharePromptClickTime).toFixed(2)}ms`);
+}
 
     else if (interaction.isButton() && interaction.customId === 'ai_no_share_prompt_btn') {
       const noSharePromptClickTime = performance.now();
@@ -6478,7 +6484,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const components = [];
 
             if (result.aiResponse) {
-                finalEphemeralMessage += `> ${result.aiResponse.acknowledgment} ${result.aiResponse.comfortMessage}`;
+                finalEphemeralMessage += `${result.aiResponse.acknowledgment}\n\n${result.aiResponse.comfortMessage}\n\nI've got a thought about sharing your journey. Would you like to see it?`;
                 // Store suggestion in memory for the button handler
                 const currentSetupData = userExperimentSetupData.get(interaction.user.id) || {};
                 userExperimentSetupData.set(interaction.user.id, {
