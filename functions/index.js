@@ -787,7 +787,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
 
 /**
  * Firestore trigger that listens for new log documents being created or updated
- * with `_triggerAnalysis: true` and calls `analyzeAndSummarizeLogNotes`.
+ * with `_triggerAnalysis: true` and calls the internal analysis logic.
  */
 exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (event) => {
     const snap = event.data;
@@ -810,7 +810,6 @@ exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (ev
 
         if (!userId || !userTag) {
             logger.error(`[onLogUpdateTriggerAnalysis] Missing userId or userTag in log ${logId}. Cannot trigger analysis.`);
-            // Update log to mark as failed analysis
             await snap.after.ref.update({
                 analysisStatus: 'failed_missing_user_info',
                 _triggerAnalysis: FieldValue.delete() // Clear flag to prevent re-trigger
@@ -819,26 +818,17 @@ exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (ev
         }
 
         try {
-            // =================================================================
-            // CORE FIX: Call analyzeAndSummarizeLogNotes directly as a function
-            // We pass a mock 'request' object containing the necessary data.
-            // =================================================================
-            const mockRequest = {
-                data: { logId, userId, userTag },
-                // No 'auth' object is needed since we are on the server and trust this call.
-            };
-            
-            // The 'await' here now calls the function directly in the same process.
-            await exports.analyzeAndSummarizeLogNotes(mockRequest);
+            // CORRECTED: Call the internal logic function directly.
+            await _analyzeAndSummarizeNotesLogic(logId, userId, userTag);
 
-            logger.log(`[onLogUpdateTriggerAnalysis] Successfully called analyzeAndSummarizeLogNotes for log ${logId}.`);
+            logger.log(`[onLogUpdateTriggerAnalysis] Successfully processed AI analysis for log ${logId}.`);
             // Update log to mark as analysis requested (the callable function will update user doc)
             await snap.after.ref.update({
                 analysisStatus: 'requested',
                 _triggerAnalysis: FieldValue.delete() // Clear flag
             });
         } catch (error) {
-            logger.error(`[onLogUpdateTriggerAnalysis] Error calling analyzeAndSummarizeLogNotes for log ${logId}:`, error);
+            logger.error(`[onLogUpdateTriggerAnalysis] Error calling internal logic for log ${logId}:`, error);
             // Update log to mark as failed analysis
             await snap.after.ref.update({
                 analysisStatus: `failed: ${error.message || 'unknown error'}`,
@@ -3813,26 +3803,15 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
   }
 });
 
-// In functions index.txt
 
 /**
- * Analyzes a user's log notes using Gemini and creates a document in a 
- * dedicated collection for the bot to pick up and send as a DM.
- * This function is intended to be called asynchronously.
- *
- * Expected request.data: { logId: string, userId: string, userTag: string }
+ * INTERNAL LOGIC for analyzing log notes. This is not a public-facing function.
+ * @param {string} logId The ID of the log document.
+ * @param {string} userId The ID of the user.
+ * @param {string} userTag The tag of the user.
+ * @returns {Promise<{success: boolean, message: string}>} A promise that resolves with the operation result.
  */
-exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
-    logger.log("[analyzeAndSummarizeLogNotes] Function triggered. Request data:", request.data);
-
-    const { logId, userId, userTag } = request.data;
-
-    // Basic validation of inputs
-    if (!logId || !userId || !userTag) {
-        logger.warn("[analyzeAndSummarizeLogNotes] Invalid arguments: logId, userId, or userTag missing.");
-        throw new HttpsError('invalid-argument', 'Missing required parameters: logId, userId, userTag.');
-    }
-
+async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
     const db = admin.firestore();
 
     try {
@@ -3841,8 +3820,9 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
         const logSnap = await logDocRef.get();
 
         if (!logSnap.exists) {
-            logger.warn(`[analyzeAndSummarizeLogNotes] Log document ${logId} not found for analysis.`);
-            throw new HttpsError('not-found', `Log document ${logId} not found.`);
+            logger.warn(`[_analyzeNotesLogic] Log document ${logId} not found for analysis.`);
+            // Throw a regular error, not HttpsError, as this is an internal function
+            throw new Error(`Log document ${logId} not found.`);
         }
 
         const logData = logSnap.data();
@@ -3853,15 +3833,14 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
 
         // If notes are empty, we don't need AI analysis
         if (!notes) {
-            logger.log(`[analyzeAndSummarizeLogNotes] Log ${logId} has no notes. Skipping AI analysis.`);
-            // No need to create a pending DM if there are no notes
+            logger.log(`[_analyzeNotesLogic] Log ${logId} has no notes. Skipping AI analysis.`);
             return { success: true, message: "No notes to analyze." };
         }
 
         // 2. Check if Gemini AI client is available
         if (!genAI) {
-            logger.error("[analyzeAndSummarizeLogNotes] Gemini AI client not initialized. Cannot analyze notes.");
-            throw new HttpsError('internal', "AI service is unavailable. (AI client not ready)");
+            logger.error("[_analyzeNotesLogic] Gemini AI client not initialized. Cannot analyze notes.");
+            throw new Error("AI service is unavailable. (AI client not ready)");
         }
 
         // 3. Construct the AI prompt
@@ -3870,7 +3849,6 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
         const prompt = `
             You are a "self-science" AI assistant, analyzing a user's daily log notes to provide concise feedback and a public sharing suggestion.
             Your tone is empathetic, supportive, and realistic but encouraging, focusing on the user's experience within their experiment.
-
             **User's Context:**
             - Deeper Wish: "${deeperProblem}"
             - Main Outcome Metric: "${outputMetric.label || 'N/A'}" (Goal: ${outputMetric.goal || 'N/A'} ${outputMetric.unit || 'N/A'})
@@ -3880,9 +3858,13 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
             "${notes}"
 
             **Your Task:**
-            1.  **Acknowledge Experience (25-50 characters):** Based on the notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme. It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
-            2.  **Comfort/Support Message (50-100 characters):** Provide a short, positive, and uplifting message that normalizes their experience or gently encourages them. Try to encourage a growth mindset and realistic optimism.
-            3.  **Public Post Suggestion (80-150 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group. This should be from *their perspective* (first-person), positive, and encourage connection or shared experience. It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
+            1.  **Acknowledge Experience (25-50 characters):** Based on the notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme.
+            It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
+            2.  **Comfort/Support Message (50-100 characters):** Provide a short, positive, and uplifting message that normalizes their experience or gently encourages them.
+            Try to encourage a growth mindset and realistic optimism.
+            3.  **Public Post Suggestion (80-150 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group.
+            This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
+            It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
             Examples:
                 * "Just had a breakthrough with [Habit] today! Feeling so [emotion]. Anyone else finding [insight] helpful?"
                 * "Navigating some [challenge] but still hitting [Outcome]! Anyone have similar experiences they could share?"
@@ -3897,15 +3879,15 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
             Do not include any other text, instructions, or markdown outside the JSON object.
         `;
 
-        logger.info(`[analyzeAndSummarizeLogNotes] Sending prompt to Gemini for log ${logId}.`);
+        logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
         // 4. Call Gemini
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Use a lighter, faster model
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const generationResult = await model.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: {
                 ...GEMINI_CONFIG,
-                temperature: 0.7, // Adjust for more direct, less creative responses
+                temperature: 0.7,
                 responseMimeType: "application/json",
             },
         });
@@ -3913,26 +3895,25 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
         const responseText = response.text()?.trim();
 
         if (!responseText) {
-            logger.warn(`[analyzeAndSummarizeLogNotes] Gemini returned an empty response for log ${logId}.`);
-            throw new HttpsError('internal', 'AI generated an empty response.');
+            logger.warn(`[_analyzeNotesLogic] Gemini returned an empty response for log ${logId}.`);
+            throw new Error('AI generated an empty response.');
         }
 
         let aiResult;
         try {
             aiResult = JSON.parse(responseText);
         } catch (parseError) {
-            logger.error(`[analyzeAndSummarizeLogNotes] Failed to parse Gemini JSON response for log ${logId}. Raw: "${responseText}". Error:`, parseError);
-            throw new HttpsError('internal', `AI returned an invalid format: ${parseError.message}`);
+            logger.error(`[_analyzeNotesLogic] Failed to parse Gemini JSON response for log ${logId}. Raw: "${responseText}". Error:`, parseError);
+            throw new Error(`AI returned an invalid format: ${parseError.message}`);
         }
 
-        // Basic validation of AI response structure
         if (!aiResult.acknowledgment || !aiResult.comfortMessage || !aiResult.publicPostSuggestion) {
-            logger.error(`[analyzeAndSummarizeLogNotes] AI response missing required fields for log ${logId}. Result:`, aiResult);
-            throw new HttpsError('internal', 'AI response missing required fields.');
+            logger.error(`[_analyzeNotesLogic] AI response missing required fields for log ${logId}. Result:`, aiResult);
+            throw new Error('AI response missing required fields.');
         }
 
         // 5. Create a document in the 'pendingAIDMResponses' collection
-        const aiResponseDocRef = db.collection('pendingAIDMResponses').doc(logId); // Use logId for a unique doc ID
+        const aiResponseDocRef = db.collection('pendingAIDMResponses').doc(logId);
         await aiResponseDocRef.set({
             userId: userId,
             userTag: userTag,
@@ -3943,15 +3924,46 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
             publicPostSuggestion: aiResult.publicPostSuggestion
         });
 
-        logger.log(`[analyzeAndSummarizeLogNotes] Successfully created pendingAIDMResponse ${logId} for user ${userId}.`);
+        logger.log(`[_analyzeNotesLogic] Successfully created pendingAIDMResponse ${logId} for user ${userId}.`);
         return { success: true, message: "AI response created and queued for delivery." };
 
     } catch (error) {
-        logger.error(`[analyzeAndSummarizeLogNotes] Error processing log ${logId} for user ${userId}:`, error);
+        logger.error(`[_analyzeNotesLogic] Error processing log ${logId} for user ${userId}:`, error);
+        // Re-throw the error so the calling function (onCall or onUpdate) can handle it.
+        throw error;
+    }
+}
 
-        if (error instanceof HttpsError) {
-            throw error;
-        }
+
+/**
+ * Analyzes a user's log notes using Gemini and creates a document in a 
+ * dedicated collection for the bot to pick up and send as a DM.
+ * This is the onCall wrapper for the internal logic.
+ *
+ * Expected request.data: { logId: string, userId: string, userTag: string }
+ */
+exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
+    logger.log("[analyzeAndSummarizeLogNotes] Function triggered. Request data:", request.data);
+
+    // 1. Authentication & Validation
+    if (!request.auth) {
+        logger.warn("[analyzeAndSummarizeLogNotes] Unauthenticated access attempt.");
+        throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
+    }
+    const { logId, userId, userTag } = request.data;
+    if (!logId || !userId || !userTag) {
+        logger.warn("[analyzeAndSummarizeLogNotes] Invalid arguments: logId, userId, or userTag missing.");
+        throw new HttpsError('invalid-argument', 'Missing required parameters: logId, userId, userTag.');
+    }
+
+    // 2. Call the internal logic function
+    try {
+        // This now calls the helper function with the core logic.
+        const result = await _analyzeAndSummarizeNotesLogic(logId, userId, userTag);
+        return result; // Forward the result to the client
+    } catch (error) {
+        logger.error(`[analyzeAndSummarizeLogNotes] Error processing log ${logId} for user ${userId}:`, error);
+        // Convert internal errors to HttpsError for the client
         if (error.message && error.message.toLowerCase().includes('safety')) {
             throw new HttpsError('resource-exhausted', "AI couldn't analyze notes due to content restrictions. Please try rephrasing.");
         }
