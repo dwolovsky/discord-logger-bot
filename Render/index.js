@@ -5287,27 +5287,24 @@ client.on(Events.InteractionCreate, async interaction => {
       const interactionId = interaction.id;
       const userId = interaction.user.id;
       const userTagForLog = interaction.user.tag;
-      logger.log(`[ai_show_share_prompt_btn START ${interactionId}] Clicked by ${userTagForLog}. Preparing to show AI public post suggestion.`);
-
+      console.log(`[ai_show_share_prompt_btn START ${interactionId}] Clicked by ${userTagForLog}. Preparing to show AI public post suggestion.`);
       try {
-        await interaction.deferUpdate(); // Acknowledge the button click immediately
+        await interaction.deferUpdate();
         const deferTime = performance.now();
-        logger.log(`[ai_show_share_prompt_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - showSharePromptClickTime).toFixed(2)}ms`);
+        console.log(`[ai_show_share_prompt_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - showSharePromptClickTime).toFixed(2)}ms`);
 
-        // Fetch the AI-generated public post suggestion from userExperimentSetupData
         const setupData = userExperimentSetupData.get(userId);
         const aiPublicPostSuggestion = setupData?.aiLogPublicPostSuggestion;
 
         if (!aiPublicPostSuggestion || typeof aiPublicPostSuggestion !== 'string' || aiPublicPostSuggestion.trim() === "") {
-            logger.warn(`[ai_show_share_prompt_btn WARN ${interactionId}] AI public post suggestion missing or invalid for user ${userId}.`);
+            console.warn(`[ai_show_share_prompt_btn WARN ${interactionId}] AI public post suggestion missing or invalid for user ${userId}.`);
             await interaction.editReply({
                 content: "I'm sorry, I couldn't find the sharing suggestion right now. Please try logging again if you'd like to see it.",
-                components: [] // Clear buttons
+                components: []
             });
             return;
         }
 
-        // Disable the original buttons in the first DM
         const disabledRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('ai_show_share_prompt_btn')
@@ -5320,27 +5317,23 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setStyle(ButtonStyle.Secondary)
                 .setDisabled(true)
         );
-        await interaction.editReply({ components: [disabledRow] }); // Update the current message (the first DM)
+        await interaction.editReply({ components: [disabledRow] });
 
-        // Construct the second DM message
         const publicPostMessage = `Share Your Self-Science Journey? 📣\n\nWould you like to share a message like this with the community in #experiments?\n\n> ${aiPublicPostSuggestion}\n\nOr, type your own message directly in #experiments.\n\nDo nothing, and this log remains private. This offer will expire in 1 minute.`;
 
         const postToGroupButton = new ButtonBuilder()
-            .setCustomId('post_ai_log_summary_btn') // New Custom ID for posting
+            .setCustomId('post_ai_log_summary_btn')
             .setLabel('🚀 Post to #experiments')
             .setStyle(ButtonStyle.Success);
-
         const newDmButtonRow = new ActionRowBuilder().addComponents(postToGroupButton);
 
-        // Send the second DM message
         const secondDmMessage = await interaction.user.send({
             content: publicPostMessage,
             components: [newDmButtonRow]
         });
-        logger.log(`[ai_show_share_prompt_btn SENT_SECOND_DM ${interactionId}] Sent AI public post suggestion DM to ${userTagForLog} (Message ID: ${secondDmMessage.id}).`);
+        console.log(`[ai_show_share_prompt_btn SENT_SECOND_DM ${interactionId}] Sent AI public post suggestion DM to ${userTagForLog} (Message ID: ${secondDmMessage.id}).`);
 
-        // Set a timeout to disable the "Post to Group" button
-        const timeoutDuration = 60 * 1000; // 1 minute
+        const timeoutDuration = 60 * 1000;
         setTimeout(async () => {
             try {
                 const fetchedSecondDmMessage = await secondDmMessage.channel.messages.fetch(secondDmMessage.id);
@@ -5353,16 +5346,14 @@ client.on(Events.InteractionCreate, async interaction => {
                             .setDisabled(true)
                     );
                     await fetchedSecondDmMessage.edit({ components: [disabledPostRow] });
-                    logger.log(`[ai_show_share_prompt_btn DISABLED_POST_BUTTON ${interactionId}] Disabled 'Post to #experiments' button for ${userTagForLog} due to timeout.`);
+                    console.log(`[ai_show_share_prompt_btn DISABLED_POST_BUTTON ${interactionId}] Disabled 'Post to #experiments' button for ${userTagForLog} due to timeout.`);
                 }
             } catch (timeoutError) {
-                logger.error(`[ai_show_share_prompt_btn ERROR_DISABLING_POST_BUTTON ${interactionId}] Error disabling 'Post to #experiments' button for ${userTagForLog}:`, timeoutError);
+                console.error(`[ai_show_share_prompt_btn ERROR_DISABLING_POST_BUTTON ${interactionId}] Error disabling 'Post to #experiments' button for ${userTagForLog}:`, timeoutError);
             }
         }, timeoutDuration);
-
       } catch (error) {
-        logger.error(`[ai_show_share_prompt_btn ERROR ${interactionId}] Error processing button for ${userTagForLog}:`, error);
-        // Fallback if initial deferUpdate or editReply failed
+        console.error(`[ai_show_share_prompt_btn ERROR ${interactionId}] Error processing button for ${userTagForLog}:`, error);
         try {
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ content: "Sorry, I couldn't show the sharing suggestion. Please try again.", ephemeral: true });
@@ -5370,10 +5361,10 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.followUp({ content: "Sorry, I couldn't show the sharing suggestion. Please try again.", ephemeral: true });
             }
         } catch (fallbackError) {
-            logger.error(`[ai_show_share_prompt_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
+            console.error(`[ai_show_share_prompt_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
         }
       }
-      logger.log(`[ai_show_share_prompt_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - showSharePromptClickTime).toFixed(2)}ms`);
+      console.log(`[ai_show_share_prompt_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - showSharePromptClickTime).toFixed(2)}ms`);
     }
 
     else if (interaction.isButton() && interaction.customId === 'ai_no_share_prompt_btn') {
@@ -5381,14 +5372,12 @@ client.on(Events.InteractionCreate, async interaction => {
       const interactionId = interaction.id;
       const userId = interaction.user.id;
       const userTagForLog = interaction.user.tag;
-      logger.log(`[ai_no_share_prompt_btn START ${interactionId}] Clicked by ${userTagForLog}. Declining AI public post suggestion.`);
-
+      console.log(`[ai_no_share_prompt_btn START ${interactionId}] Clicked by ${userTagForLog}. Declining AI public post suggestion.`);
       try {
-        await interaction.deferUpdate(); // Acknowledge the button click immediately
+        await interaction.deferUpdate();
         const deferTime = performance.now();
-        logger.log(`[ai_no_share_prompt_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - noSharePromptClickTime).toFixed(2)}ms`);
+        console.log(`[ai_no_share_prompt_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - noSharePromptClickTime).toFixed(2)}ms`);
 
-        // Disable the buttons in the first DM
         const disabledRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('ai_show_share_prompt_btn')
@@ -5401,22 +5390,19 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setStyle(ButtonStyle.Secondary)
                 .setDisabled(true)
         );
-        await interaction.editReply({ components: [disabledRow] }); // Update the current message (the first DM)
+        await interaction.editReply({ components: [disabledRow] });
 
-        // Send a confirmation message to the user in DMs
         await interaction.user.send("👍 Got it! Your log notes remain private. No one in the group will see them.");
-        logger.log(`[ai_no_share_prompt_btn CONFIRMED ${interactionId}] Confirmed decline to ${userTagForLog}.`);
+        console.log(`[ai_no_share_prompt_btn CONFIRMED ${interactionId}] Confirmed decline to ${userTagForLog}.`);
 
-        // Optional: Clear AI data from userExperimentSetupData if it's no longer needed
         const setupData = userExperimentSetupData.get(userId);
         if (setupData) {
             delete setupData.aiLogPublicPostSuggestion;
-            // Clear other AI-related flags if needed, e.g., in functions/index.js (clearPendingUserActions)
             userExperimentSetupData.set(userId, setupData);
         }
 
       } catch (error) {
-        logger.error(`[ai_no_share_prompt_btn ERROR ${interactionId}] Error processing button for ${userTagForLog}:`, error);
+        console.error(`[ai_no_share_prompt_btn ERROR ${interactionId}] Error processing button for ${userTagForLog}:`, error);
         try {
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ content: "Sorry, I couldn't process that. Please try again.", ephemeral: true });
@@ -5424,27 +5410,23 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.followUp({ content: "Sorry, I couldn't process that. Please try again.", ephemeral: true });
             }
         } catch (fallbackError) {
-            logger.error(`[ai_no_share_prompt_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
+            console.error(`[ai_no_share_prompt_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
         }
       }
-      logger.log(`[ai_no_share_prompt_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - noSharePromptClickTime).toFixed(2)}ms`);
+      console.log(`[ai_no_share_prompt_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - noSharePromptClickTime).toFixed(2)}ms`);
     }
-    // --- END NEW ---
 
-    // --- NEW ---
     else if (interaction.isButton() && interaction.customId === 'post_ai_log_summary_btn') {
       const postPublicClickTime = performance.now();
       const interactionId = interaction.id;
       const userId = interaction.user.id;
-      const userTagForLog = interaction.user.tag; // This will capture "username#discriminator" if available, or just "username"
-      logger.log(`[post_ai_log_summary_btn START ${interactionId}] Clicked by ${userTagForLog}. Attempting to post AI-suggested summary to group.`);
-
+      const userTagForLog = interaction.user.tag;
+      console.log(`[post_ai_log_summary_btn START ${interactionId}] Clicked by ${userTagForLog}. Attempting to post AI-suggested summary to group.`);
       try {
-        await interaction.deferUpdate(); // Acknowledge the button click immediately
+        await interaction.deferUpdate();
         const deferTime = performance.now();
-        logger.log(`[post_ai_log_summary_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - postPublicClickTime).toFixed(2)}ms`);
+        console.log(`[post_ai_log_summary_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - postPublicClickTime).toFixed(2)}ms`);
 
-        // Disable the button in the second DM
         const disabledRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('post_ai_log_summary_btn')
@@ -5452,66 +5434,56 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setStyle(ButtonStyle.Success)
                 .setDisabled(true)
         );
-        await interaction.editReply({ components: [disabledRow] }); // Update the current message (the second DM)
+        await interaction.editReply({ components: [disabledRow] });
 
-        // Retrieve the AI-suggested public post message from userExperimentSetupData
         const setupData = userExperimentSetupData.get(userId);
         const aiPublicPostSuggestion = setupData?.aiLogPublicPostSuggestion;
 
         if (!aiPublicPostSuggestion || typeof aiPublicPostSuggestion !== 'string' || aiPublicPostSuggestion.trim() === "") {
-            logger.warn(`[post_ai_log_summary_btn WARN ${interactionId}] AI public post suggestion missing or invalid for user ${userId}. Cannot post.`);
+            console.warn(`[post_ai_log_summary_btn WARN ${interactionId}] AI public post suggestion missing or invalid for user ${userId}. Cannot post.`);
             await interaction.followUp({ content: "I'm sorry, I couldn't find the message to post. Please try logging again if you'd like to share.", ephemeral: true });
             return;
         }
 
-        // Define the target public channel ID (e.g., #main channel)
-        // You should define this constant at the top of render index.txt or fetch from .env
-        const EXPERIMENTS_CHANNEL_ID = '1363161131723526437'; 
-
-        const targetGuildId = setupData?.guildId; // Ensure guildId was stored when flow started
+        const EXPERIMENTS_CHANNEL_ID = '1363161131723526437';
+        const targetGuildId = setupData?.guildId;
 
         if (!targetGuildId) {
-            logger.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Guild ID not found in setupData for user ${userId}. Cannot post to public channel.`);
+            console.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Guild ID not found in setupData for user ${userId}. Cannot post to public channel.`);
             await interaction.followUp({ content: "I couldn't identify which server to post to. Please try logging from the server you want to share in.", ephemeral: true });
             return;
         }
 
         const targetGuild = client.guilds.cache.get(targetGuildId);
         if (!targetGuild) {
-            logger.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Target guild ${targetGuildId} not found in bot's cache for user ${userId}.`);
+            console.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Target guild ${targetGuildId} not found in bot's cache for user ${userId}.`);
             await interaction.followUp({ content: "I couldn't find the server to post your message. Make sure I'm in the server you want to share in.", ephemeral: true });
             return;
         }
 
         const publicChannel = targetGuild.channels.cache.get(EXPERIMENTS_CHANNEL_ID);
         if (!publicChannel || !publicChannel.isTextBased()) {
-            logger.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Public channel ${EXPERIMENTS_CHANNEL_ID} not found or is not a text channel in guild ${targetGuildId}.`);
+            console.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Public channel ${EXPERIMENTS_CHANNEL_ID} not found or is not a text channel in guild ${targetGuildId}.`);
             await interaction.followUp({ content: `I couldn't find the <#${EXPERIMENTS_CHANNEL_ID}> channel or it's not a text channel in this server. Please ensure it exists and I have permission to post there.`, ephemeral: true });
             return;
         }
 
-        // Construct the message to post to the public channel
-        // Use member.displayName for a cleaner look in the public channel if available, otherwise user.username
         const member = await targetGuild.members.fetch(userId).catch(() => null);
         const displayUserName = member?.displayName || interaction.user.username;
         const messageToPost = `From **${displayUserName}**: ${aiPublicPostSuggestion}`;
-
-        // Post the message to the public channel
+        
         await publicChannel.send(messageToPost);
-        logger.log(`[post_ai_log_summary_btn PUBLIC_POST_SUCCESS ${interactionId}] Successfully posted AI-suggested message to <#${EXPERIMENTS_CHANNEL_ID}> for ${userTagForLog}.`);
-
-        // Inform the user in their DM that it was posted
+        console.log(`[post_ai_log_summary_btn PUBLIC_POST_SUCCESS ${interactionId}] Successfully posted AI-suggested message to <#${EXPERIMENTS_CHANNEL_ID}> for ${userTagForLog}.`);
+        
         await interaction.followUp({ content: `✅ Your message has been posted to <#${EXPERIMENTS_CHANNEL_ID}>!`, ephemeral: true });
-
-        // Clean up AI-related data from userExperimentSetupData after successful post
+        
         if (setupData) {
             delete setupData.aiLogPublicPostSuggestion;
-            // Additional cleanup needed for other AI flags in Firestore via clearPendingUserActions
             userExperimentSetupData.set(userId, setupData);
         }
 
       } catch (error) {
-        logger.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Error during public post for ${userTagForLog}:`, error);
+        console.error(`[post_ai_log_summary_btn ERROR ${interactionId}] Error during public post for ${userTagForLog}:`, error);
         try {
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ content: "Sorry, I couldn't post your message to the group. Please check my permissions or try again.", ephemeral: true });
@@ -5519,12 +5491,11 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.followUp({ content: "Sorry, I couldn't post your message to the group. Please check my permissions or try again.", ephemeral: true });
             }
         } catch (fallbackError) {
-            logger.error(`[post_ai_log_summary_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
+            console.error(`[post_ai_log_summary_btn FALLBACK_REPLY_ERROR ${interactionId}] Failed to send fallback error reply:`, fallbackError);
         }
       }
-      logger.log(`[post_ai_log_summary_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - postPublicClickTime).toFixed(2)}ms`);
+      console.log(`[post_ai_log_summary_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - postPublicClickTime).toFixed(2)}ms`);
     }
-    // --- END NEW ---
 
 
   } // End of "if (interaction.isButton())" block
