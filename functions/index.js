@@ -3657,9 +3657,10 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         const inputs = logData.inputs || [];
 
         // If notes are empty, we don't need AI analysis
+
         if (!notes) {
             logger.log(`[_analyzeNotesLogic] Log ${logId} has no notes. Skipping AI analysis.`);
-            return { success: true, message: "No notes to analyze." };
+            return null; // Return null if there are no notes to analyze
         }
 
         // 2. Check if Gemini AI client is available
@@ -3737,27 +3738,15 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             throw new Error('AI response missing required fields.');
         }
 
-        // 5. Create a document in the 'pendingAIDMResponses' collection
-        const aiResponseDocRef = db.collection('pendingAIDMResponses').doc(logId);
-        await aiResponseDocRef.set({
-            userId: userId,
-            userTag: userTag,
-            status: 'ready',
-            createdAt: FieldValue.serverTimestamp(),
-            acknowledgment: aiResult.acknowledgment,
-            comfortMessage: aiResult.comfortMessage,
-            publicPostSuggestion: aiResult.publicPostSuggestion
-        });
-
-        logger.log(`[_analyzeNotesLogic] Successfully created pendingAIDMResponse ${logId} for user ${userId}.`);
-        return { success: true, message: "AI response created and queued for delivery." };
-
-    } catch (error) {
-        logger.error(`[_analyzeNotesLogic] Error processing log ${logId} for user ${userId}:`, error);
-        // Re-throw the error so the calling function (onCall or onUpdate) can handle it.
-        throw error;
-    }
-}
+        // 5. Return the AI-generated result object directly
+        logger.log(`[_analyzeNotesLogic] Successfully generated AI response for log ${logId}.`);
+        return aiResult;
+            } catch (error) {
+                logger.error(`[_analyzeNotesLogic] Error processing log ${logId} for user ${userId}:`, error);
+                // Re-throw the error so the calling function (onCall or onUpdate) can handle it.
+                throw error;
+            }
+        }
 
 
 /**
