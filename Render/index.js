@@ -4135,6 +4135,12 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[log_daily_progress_btn START ${interactionId}] Button clicked by User: ${userId}`);
 
       const setupData = userExperimentSetupData.get(userId) || {};
+      // FIX: Store the guildId at the start of the log flow
+      const guildId = interaction.guildId;
+      if (guildId) {
+          setupData.guildId = guildId;
+          console.log(`[log_daily_progress_btn INFO ${interactionId}] Stored guildId ${guildId} in setupData for user ${userId}.`);
+      }
       const hasTimeMetrics = setupData.logFlowHasTimeMetrics; // Check for the cached flag from /go
       const cachedSettings = setupData.preFetchedWeeklySettings;
 
