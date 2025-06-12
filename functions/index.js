@@ -3673,8 +3673,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         const inputLabels = inputs.filter(i => i.label).map(i => `'${i.label}'`).join(', ') || 'no specific habits';
 
         const prompt = `
-            You are a "self-science" AI assistant, analyzing a user's daily log notes to provide concise feedback and a public sharing suggestion.
-            Your tone is empathetic, supportive, and realistic but encouraging, focusing on the user's experience within their experiment.
+            You are a witty, supportive friend. Your tone is conversational, informal, and always encouraging a growth mindset. Use everyday language and humor. Analyze the user's log notes and provide feedback that sounds like it's from a real person who cares.
             **User's Context:**
             - Deeper Wish: "${deeperProblem}"
             - Main Outcome Metric: "${outputMetric.label || 'N/A'}" (Goal: ${outputMetric.goal || 'N/A'} ${outputMetric.unit || 'N/A'})
@@ -3688,13 +3687,14 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
             2.  **Comfort/Support Message (50-100 characters):** Provide a short, positive, and uplifting message that normalizes their experience or gently encourages them.
             Try to encourage a growth mindset and realistic optimism.
-            3.  **Public Post Suggestion (80-150 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group.
+            3.  **Public Post Suggestion (80-130 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group.
             This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
             It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
             Examples:
-                * "Just had a breakthrough with [Habit] today! Feeling so [emotion]. Anyone else finding [insight] helpful?"
-                * "Navigating some [challenge] but still hitting [Outcome]! Anyone have similar experiences they could share?"
-                * "My experiment's revealing [small insight]. Anyone else finding anything interesting?"
+                * "Today was a tough one for me with [Habit or Outcome]. Any tips for staying consistent on low-energy days [or more specific problem from notes]?"
+                * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
+                * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins! Anyone else?"
+                * "I've been wanting [Deeper Wish], and today felt a step in that direction because [reason from notes]. It's cool to see new connections."
 
             Return your response ONLY as a JSON object with the following structure:
             {
