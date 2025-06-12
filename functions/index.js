@@ -783,7 +783,8 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     return null; // Firestore triggers don't need to return data to the client
 });
 
-// --- NEW ---
+// In functions/index.js
+
 /**
  * Firestore trigger that listens for new log documents being created or updated
  * with `_triggerAnalysis: true` and calls `analyzeAndSummarizeLogNotes`.
@@ -796,11 +797,12 @@ exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (ev
     }
 
     const logId = event.params.logId;
-    const oldData = event.data.before.data();
-    const newData = event.data.after.data();
+    const oldData = snap.before.data();
+    const newData = snap.after.data();
 
     // Check if _triggerAnalysis was just set to true
     if (newData._triggerAnalysis === true && oldData._triggerAnalysis !== true) {
+        
         logger.log(`[onLogUpdateTriggerAnalysis] Triggered for log ${logId}. _triggerAnalysis flag detected.`);
 
         const userId = newData.userId;
@@ -809,7 +811,7 @@ exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (ev
         if (!userId || !userTag) {
             logger.error(`[onLogUpdateTriggerAnalysis] Missing userId or userTag in log ${logId}. Cannot trigger analysis.`);
             // Update log to mark as failed analysis
-            await event.data.after.ref.update({
+            await snap.after.ref.update({
                 analysisStatus: 'failed_missing_user_info',
                 _triggerAnalysis: FieldValue.delete() // Clear flag to prevent re-trigger
             });
@@ -817,22 +819,28 @@ exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (ev
         }
 
         try {
-            // Call the analyzeAndSummarizeLogNotes callable function
-            // We need to construct a Callable function instance to invoke it
-            const analyzeFunc = admin.app().functions().httpsCallable('analyzeAndSummarizeLogNotes');
-            await analyzeFunc({ logId, userId, userTag });
+            // =================================================================
+            // CORE FIX: Call analyzeAndSummarizeLogNotes directly as a function
+            // We pass a mock 'request' object containing the necessary data.
+            // =================================================================
+            const mockRequest = {
+                data: { logId, userId, userTag },
+                // No 'auth' object is needed since we are on the server and trust this call.
+            };
+            
+            // The 'await' here now calls the function directly in the same process.
+            await exports.analyzeAndSummarizeLogNotes(mockRequest);
 
             logger.log(`[onLogUpdateTriggerAnalysis] Successfully called analyzeAndSummarizeLogNotes for log ${logId}.`);
             // Update log to mark as analysis requested (the callable function will update user doc)
-            await event.data.after.ref.update({
+            await snap.after.ref.update({
                 analysisStatus: 'requested',
                 _triggerAnalysis: FieldValue.delete() // Clear flag
             });
-
         } catch (error) {
             logger.error(`[onLogUpdateTriggerAnalysis] Error calling analyzeAndSummarizeLogNotes for log ${logId}:`, error);
             // Update log to mark as failed analysis
-            await event.data.after.ref.update({
+            await snap.after.ref.update({
                 analysisStatus: `failed: ${error.message || 'unknown error'}`,
                 _triggerAnalysis: FieldValue.delete() // Clear flag
             });
@@ -844,7 +852,6 @@ exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (ev
 
     return null;
 });
-// --- END NEW ---
 
 // Place this revised helper function above updateWeeklySettings in functions/index.js
 /**
