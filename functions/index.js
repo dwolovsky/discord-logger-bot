@@ -3296,13 +3296,13 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         Recent User Notes:
                         ${recentLogNotes || 'No recent notes available to incorporate.'}
 
-                        Your main goal is to get the user's attention (get them to read the message), and then encourage the user to find intrinsic joy, curiosity, or immediate, small rewards while performing ${actionReferenceInstruction}. Focus on the experience of the action itself. DO NOT use phrases like "achieve your goals" or "make progress."
+                        Your main goal is to get the user's attention (get them to read the message), and then encourage the user to find intrinsic joy, curiosity, or immediate, small rewards in ${actionReferenceInstruction}. Focus on the experience of the action itself. DO NOT use phrases like "achieve your goals" or "make progress."
 
                         IMPORTANT CONSIDERATIONS:
                         - Subtly tailor the message to reflect the time context provided above. Avoid cliches about the time of day.
                         - If any of the user's actions (e.g., "${inputsForAI.map(i => i.label).join('/')}") seem strongly tied to a specific time of day (e.g., 'Morning Wakeup', 'Bedtime Routine'), ONLY mention them if the user's current local time of day is appropriate. Otherwise, focus on their other, more general actions or frame the reminder generally about doing something rewarding in their day without mentioning the time-specific action.
                         - Creatively reference their specific actions. Vary whether you mention one, or multiple of their listed actions.
-                        - IMPORTANT: Subtly incorporate themes, feelings, questions, struggles, or wins, from their "Recent User Notes" if relevant and if it makes the reminder more empathetic or encouraging. For example, if notes mention "feeling tired," you could suggest a habit might "spark some energy, since you mentioned feeling tired in your last notes." If notes mention a small win, you could affirm the value of small positive steps and congratulate them on their win.
+                        - IMPORTANT, PUT THIS FIRST TO HOOK THEIR ATTENTION: Subtly incorporate themes, feelings, questions, struggles, or wins, from their "Recent User Notes" if relevant and if it makes the reminder more empathetic or encouraging. For example, if notes mention "feeling tired," you could suggest a habit might "spark some energy, since you mentioned feeling tired in your last notes." If notes mention a small win, you could affirm the value of small positive steps and congratulate them on their win.
 
                         Generate only the reminder message text. 1-3 sentences and under 150 characters.
                     `;
@@ -3699,7 +3699,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             Return your response ONLY as a JSON object with the following structure:
             {
                 "acknowledgment": "It sounds like you [acknowledgment].",
-                "comfortMessage": "Remember, [supportive message].",
+                "comfortMessage": "You already know, [supportive message].",
                 "publicPostSuggestion": "Just had a breakthrough with [Habit] today! Feeling so [emotion]. Anyone else finding [insight] helpful?"
             }
             Do not include any other text, instructions, or markdown outside the JSON object.
