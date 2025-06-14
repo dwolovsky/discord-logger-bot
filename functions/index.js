@@ -3199,122 +3199,48 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 }
                 // --- End AI Personalization Step 1 ---
 
-                // --- AI Personalization Step 2: Construct LLM Prompt Text with Time Context ---
+                // This is the new section to paste
+                // --- AI Personalization Step 2: Construct Time-Aware "Blended" LLM Prompt ---
                 let aiPromptText = "";
                 if (genAI && scheduledSettings && inputsForAI.length > 0) {
+                    // --- Select a random default message as a creative seed ---
+                    const randomSeedMessage = defaultReminderMessages[Math.floor(Math.random() * defaultReminderMessages.length)];
+
+                    // --- Re-integrate Time Context Logic ---
                     let timeContextForPrompt = "It's currently a general time for the user.";
                     const userInitialUTCOffsetHours = schedule.initialUTCOffsetHours;
-
                     if (typeof userInitialUTCOffsetHours === 'number') {
                         const userLocalHour = (currentUTCHour - userInitialUTCOffsetHours + 24) % 24;
                         let localTimeOfDayCategory = "";
                         if (userLocalHour >= 5 && userLocalHour < 12) localTimeOfDayCategory = "morning";
                         else if (userLocalHour >= 12 && userLocalHour < 17) localTimeOfDayCategory = "afternoon";
                         else if (userLocalHour >= 17 && userLocalHour < 21) localTimeOfDayCategory = "evening";
-                        else localTimeOfDayCategory = "night"; // Covers 21-23 and 0-4
-
-                        // Determine position within their local reminder window
-                        const localWindowStart = (schedule.reminderWindowStartUTC - userInitialUTCOffsetHours + 24) % 24;
-                        const localWindowEnd = (schedule.reminderWindowEndUTC - userInitialUTCOffsetHours + 24) % 24;
-                        const windowDuration = calculateWindowDuration(localWindowStart, localWindowEnd); // Assumes calculateWindowDuration is available
-
-                        let positionInWindow = "in their reminder window";
-                        if (windowDuration > 0 && windowDuration <= 24) { // Ensure valid duration
-                            let hoursIntoWindow;
-                            if (localWindowStart <= userLocalHour) { // Current hour is same day as window start
-                                hoursIntoWindow = userLocalHour - localWindowStart;
-                            } else { // Current hour is next day (window spanned midnight)
-                                hoursIntoWindow = (24 - localWindowStart) + userLocalHour;
-                            }
-
-                            if (hoursIntoWindow < windowDuration / 3) positionInWindow = "early in their reminder window";
-                            else if (hoursIntoWindow < (windowDuration * 2) / 3) positionInWindow = "midway through their reminder window";
-                            else positionInWindow = "nearing the end of their reminder window";
-                        }
-                        
-                        const formatHourForPrompt = (hour24) => {
-                            const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-                            const period = hour24 < 12 || hour24 === 24 ? 'AM' : 'PM';
-                            if (hour24 === 0) return '12AM (Midnight)';
-                             if (hour24 === 12) return '12PM (Noon)';
-                            return `${hour12}${period}`;
-                        };
-                        timeContextForPrompt = `It's currently ${localTimeOfDayCategory} for the user (around ${formatHourForPrompt(userLocalHour)} local time), ` +
-                                               `and they are ${positionInWindow} (local window: ${formatHourForPrompt(localWindowStart)} - ${formatHourForPrompt(localWindowEnd)}).`;
+                        else localTimeOfDayCategory = "night";
+                        timeContextForPrompt = `It's currently the ${localTimeOfDayCategory} for the user.`;
                     }
+                    
+                    const exampleActionsForPrompt = inputsForAI.map(inp => `'${inp.label}'`).join(', ');
 
-                    const exampleActionsForPrompt = inputsForAI.map(inp => `- '${inp.label}'${inp.unit ? ` (unit: ${inp.unit})` : ''}`).join('\n');
-                    let actionReferenceInstruction = "one of their daily habits below.";
-                    if (inputsForAI.length === 1) {
-                        actionReferenceInstruction = `their daily habit: '${inputsForAI[0].label}'.`;
-                    } else if (inputsForAI.length === 2) {
-                        actionReferenceInstruction = `their daily habits: '${inputsForAI[0].label}' or '${inputsForAI[1].label}'.`;
-                    } else if (inputsForAI.length >= 3) {
-                        const allLabels = inputsForAI.map(inp => `'${inp.label}'`).slice(0, 3).join(', ');
-                        actionReferenceInstruction = `some of their daily habits, like ${allLabels}.`;
-                    }
-
-                    let experimentProgressContext = "";
-                    const experimentSetAtDate = schedule.experimentSetAt?.toDate();
-                    const experimentEndDateDate = schedule.experimentEndTimestamp?.toDate();
-                    const nowForProgress = new Date();
-
-                    if (experimentSetAtDate && experimentEndDateDate && schedule.experimentDuration && nowForProgress > experimentSetAtDate && nowForProgress < experimentEndDateDate) {
-                        const totalDurationMillis = experimentEndDateDate.getTime() - experimentSetAtDate.getTime();
-                        const elapsedMillis = nowForProgress.getTime() - experimentSetAtDate.getTime();
-                        if (totalDurationMillis > 0) { // Avoid division by zero
-                            const progressRatio = elapsedMillis / totalDurationMillis;
-                            const durationText = schedule.experimentDuration.replace('_', '-');
-
-                            if (progressRatio < 0.15) { // First ~15%
-                                experimentProgressContext = `They've just started their current ${durationText} experiment period.`;
-                            } else if (progressRatio < 0.40) { // Up to ~40%
-                                experimentProgressContext = `They are early in their current ${durationText} experiment period.`;
-                            } else if (progressRatio < 0.70) { // Up to ~70%
-                                experimentProgressContext = `They are about midway through their current ${durationText} experiment period.`;
-                            } else if (progressRatio < 0.90) { // Up to ~90%
-                                experimentProgressContext = `They are progressing well and nearing the end of their ${durationText} experiment period.`;
-                            } else { // Last 10%
-                                experimentProgressContext = `They are in the final stretch of their current ${durationText} experiment period!`;
-                            }
-                        }
-                    }
-
-                    // ========================================================================
-                    // MODIFIED PROMPT TEXT START: Added recentLogNotes to AI context
-                    // ========================================================================
+                    // --- Construct the Final "Blended" Prompt with Time-Awareness ---
                     aiPromptText = `
-                        You are generating a short, personalized reminder message for a user doing self-experiments. The message should be 1-3 sentences and under 150 characters. The tone must be positive and funny. It should grab attention and trigger curiosity, like a scroll-stopping post.
+                        You are a witty, empathetic accountability partner, generating a short reminder message (1-3 sentences, under 150 characters) to help a user stay engaged with their daily habit experiment. Your primary goal is to get the user's attention (get them to read the message) by triggering curiosity, and then encourage the user to find intrinsic joy, curiosity, or immediate, small rewards in their habits and general personal growth.
 
                         CONTEXT:
-                        Time: ${timeContextForPrompt}
-                        ${experimentProgressContext ? `Progress: ${experimentProgressContext}` : ""}
+                        - Creative Seed: Your main goal is to adapt the core idea of this message: "${randomSeedMessage}"
+                        - User's Recent Notes: ${recentLogNotes || 'No recent notes available.'}
+                        - User's Habits: ${exampleActionsForPrompt}
+                        - Current Time Context: ${timeContextForPrompt}
 
-                        The user's current daily Habits include:
-                        ${exampleActionsForPrompt}
-
-                        Recent User Notes:
-                        ${recentLogNotes || 'No recent notes available to incorporate.'}
-
-                        Your main goal is to get the user's attention (get them to read the message), and then encourage the user to find intrinsic joy, curiosity, or immediate, small rewards in ${actionReferenceInstruction}. Focus on the experience of the action itself. DO NOT use phrases like "achieve your goals" or "make progress."
-
-                        IMPORTANT CONSIDERATIONS:
-                        - Subtly tailor the message to reflect the time context provided above. Avoid cliches about the time of day.
-                        - If any of the user's actions (e.g., "${inputsForAI.map(i => i.label).join('/')}") seem strongly tied to a specific time of day (e.g., 'Morning Wakeup', 'Bedtime Routine'), ONLY mention them if the user's current local time of day is appropriate. Otherwise, focus on their other, more general actions or frame the reminder generally about doing something rewarding in their day without mentioning the time-specific action.
-                        - Creatively reference their specific actions. Vary whether you mention one, or multiple of their listed actions.
-                        - IMPORTANT, PUT THIS FIRST TO HOOK THEIR ATTENTION: Subtly incorporate themes, feelings, questions, struggles, or wins, from their "Recent User Notes" if relevant and if it makes the reminder more empathetic or encouraging. For example, if notes mention "feeling tired," you could suggest a habit might "spark some energy, since you mentioned feeling tired in your last notes." If notes mention a small win, you could affirm the value of small positive steps and congratulate them on their win.
-
-                        Generate only the reminder message text. 1-3 sentences and under 150 characters.
+                        YOUR TASK:
+                        1.  Start with the "Creative Seed" as your core theme.
+                        2.  Personalize that theme using the "User's Recent Notes".
+                        3.  Make the message actionable by weaving in a reference to one of the "User's Habits", especially if it's relevant to "User's Recent Notes". If no habit is mentioned in the notes, go for broad encouragement to find any enjoyable growth in their day. Focus on the experience of their actions themselves. DO NOT use phrases like "achieve your goals" or "make progress."
+                        4.  **CRUCIAL CONSTRAINT:** Use the "Current Time Context" to ensure your message is appropriate. If a habit is clearly time-specific (e.g., 'Morning Meditation', 'Bedtime Reading'), DO NOT mention it if the current time is incongruent (e.g., do not mention a bedtime habit in a morning reminder). If all listed habits are time-incongruent, frame the reminder more generally without mentioning a specific habit.
+                        5.  Generate ONLY the reminder message text. Be direct and conversational.
                     `;
-                    // ========================================================================
-                    // MODIFIED PROMPT TEXT END
-                    // ========================================================================
-
-                    logger.info(`[sendScheduledReminders - AI Step 2 REV] User ${userId}: Constructed AI Prompt (Time-Aware):\n${aiPromptText}`);
-                } else if (inputsForAI.length === 0 && genAI && scheduledSettings) {
-                    // logger.info(`[sendScheduledReminders - AI Step 2 REV] User ${userId}: No inputsForAI, skipping AI prompt construction.`);
+                    logger.info(`[sendScheduledReminders - AI Step 2 Blended Time-Aware] User ${userId}: Constructed Blended AI Prompt. Seed: "${randomSeedMessage}"`);
                 }
-                // --- End AI Personalization Step 2 with Time Context ---
+                // --- End AI Personalization Step 2 ---
 
                 // --- AI Personalization Step 3: Make LLM API Call & Handle Response ---
                 let finalReminderMessage = "";
