@@ -1433,14 +1433,12 @@ client.on(Events.MessageCreate, async message => {
     return;
   }
 
-  // --- Stage 1: Handle "awaiting_wish" and transition to first question ---
-  if (setupData.dmFlowState === 'awaiting_wish') {
+   // --- Stage 1: Handle "awaiting_wish" and transition to first question ---
+    if (setupData.dmFlowState === 'awaiting_wish') {
       const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
-      const userTag = message.author.tag;
-      const userId = message.author.id;
-      const messageContent = message.content.trim();
 
       if (!messageContent) {
+        // Send a new message for the error, don't edit the original prompt
         await message.author.send("It looks like your Deeper Wish was empty. Please try again.");
         console.log(`[MessageCreate AWAITING_WISH_EMPTY ${interactionIdForLog}] User ${userTag} sent empty wish.`);
         return;
@@ -1451,34 +1449,33 @@ client.on(Events.MessageCreate, async message => {
       setupData.deeperProblem = messageContent;
       setupData.dmFlowState = 'awaiting_blockers';
       console.log(`[MessageCreate AWAITING_WISH_RECEIVED ${interactionIdForLog}] User ${userTag} submitted Deeper Wish. State changed to '${setupData.dmFlowState}'.`);
-
-      // --- "Send New, Edit Old with Link" PATTERN ---
       
-      // 1. Send the NEW prompt first to get its URL
+      // --- "Send New, Edit Old" PATTERN ---
+      
+      // 1. Send NEW prompt as an Embed
       const newPromptEmbed = new EmbedBuilder()
           .setColor('#5865F2') 
           .setTitle("Step 2: Identifying Blockers")
           .setDescription("Now let's break down the wish into **1 measurable outcome.**\n\nTo do that, please answer 3 quick questions.")
           .addFields({ 
-             name: 'Question 1', 
+              name: 'Question 1', 
               value: "What are the biggest blockers preventing progress on that wish?" 
           });
+
       const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
       console.log(`[MessageCreate ASK_BLOCKERS ${interactionIdForLog}] Sent new prompt for blockers as an embed.`);
 
-      // 2. EDIT THE OLD prompt with a direct link to the new one
+      // 2. EDIT OLD prompt
       const oldPromptId = setupData.lastPromptMessageId;
       if (oldPromptId) {
           try {
               const oldPrompt = await message.channel.messages.fetch(oldPromptId);
-              // Create a markdown link to the new message
-              const confirmationLink = `[**↓ Continue Below ↓**](${newPromptMessage.url})`;
               await oldPrompt.edit({
-                  content: `✅️ Wish received. ${confirmationLink}`,
+                  content: "✅️ Wish received. \`\`\`diff\n+ Scroll down\n\`\`\`",
                   components: [],
                   embeds: [] // Also clear embeds from the old message
               });
-              console.log(`[MessageCreate EDITED_OLD_PROMPT ${interactionIdForLog}] Edited previous 'wish' prompt with a link.`);
+              console.log(`[MessageCreate EDITED_OLD_PROMPT ${interactionIdForLog}] Edited previous 'wish' prompt.`);
           } catch (editError) {
               console.warn(`[MessageCreate EDIT_OLD_PROMPT_FAIL ${interactionIdForLog}] Could not edit old prompt (ID: ${oldPromptId}). It may have been deleted. Error: ${editError.message}`);
           }
@@ -3612,7 +3609,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const firstPromptEmbed = new EmbedBuilder()
             .setColor('#5865F2')
             .setTitle("Let's Set Your Experiment! 🚀")
-            .setDescription("## Experiments have 3 parts:\n\n1. **A Wish** to pursue\n2. **An outcome** to track\n3. **1 - 3 Habits** to test out\n\n## ✨ **Let's start with your wish!** ✨\n\nWhat's 1 thing you wish for in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n### Tap the <:chaticon:1384220348685488299> icon and type your wish!\n\<**:chaticon:1384220348685488299> icon  →  →  →  →  ↘  ↘  ↘**")
+            .setDescription("## Experiments have 3 parts:\n\n**1. A Wish** to pursue\n**2. An outcome** to track\n**3. 1 - 3 Habits** to test out\n\n## Let's start with a wish! ✨\n\nWhat's 1 thing you wish for in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n### Tap the <:chaticon:1384220348685488299> icon and type your wish!\n\nTap <:chaticon:1384220348685488299> icon  →  →  →  ↘ ↘ ↘")
 
         const promptMessage = await dmChannel.send({ embeds: [firstPromptEmbed] });
 
@@ -6792,3 +6789,4 @@ client.login(DISCORD_TOKEN).catch(err => {
   console.error('❌ Failed to login to Discord:', err);
   process.exit(1);
 });
+
