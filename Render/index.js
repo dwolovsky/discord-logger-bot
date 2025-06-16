@@ -3608,8 +3608,8 @@ client.on(Events.InteractionCreate, async interaction => {
         const dmChannel = await interaction.user.createDM();
         const firstPromptEmbed = new EmbedBuilder()
             .setColor('#5865F2')
-            .setTitle("🚀 Experiments Change Lives!")
-            .setDescription("\nSelf Science Experiments\nhave 3 components:\n\n1. A wish to change\n2. An outcome to track\n3. 1-3 habits to test\n\n**Let's start with your wish!** ✨\n\nWhat's 1 thing you wish was different in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n**Tap the <:chaticon:1384220348685488299> icon**\nand type your wish!\n\nExamples:\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\nTap the <:chaticon:1384220348685488299> icon  →  →  →  ↘ ↘ ↘.")
+            .setTitle("🚀 Let's Set Your Experiment!")
+            .setDescription("\n\nExperiments have 3 components:\n\n1. **A Wish** to pursue\n2. **An outcome** to track\n3. **1 - 3 Habits** to test out\n\n✨ **Let's start with your wish!** ✨\n\nWhat's 1 thing you wish for in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n**Tap the <:chaticon:1384220348685488299> icon**\nand type your wish!\n\n<:chaticon:1384220348685488299> icon  →  →  →  ↘ ↘ ↘")
 
         const promptMessage = await dmChannel.send({ embeds: [firstPromptEmbed] });
 
