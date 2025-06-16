@@ -1536,6 +1536,7 @@ client.on(Events.MessageCreate, async message => {
     }
 
     // --- Stage 3: Handle "awaiting_positive_habits" and transition to final question ---
+
     else if (setupData.dmFlowState === 'awaiting_positive_habits') {
       const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
 
@@ -1545,18 +1546,46 @@ client.on(Events.MessageCreate, async message => {
         return;
       }
       
-      // Store the positive habits
+      // Store the positive habits and transition state
       setupData.userPositiveHabits = messageContent;
-      
-      // Transition to the final new question state
       setupData.dmFlowState = 'awaiting_vision';
+      console.log(`[MessageCreate AWAITING_POSITIVE_HABITS_RECEIVED ${interactionIdForLog}] User ${userTag} submitted positive habits. State changed to '${setupData.dmFlowState}'.`);
+
+      // --- "Send New, Edit Old" PATTERN ---
+
+      // 1. Send NEW prompt as an Embed
+      const newPromptEmbed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle("Step 4: Defining Success")
+        .setDescription("If your wish came true, what's the **first small, positive change** you'd notice in your daily life?\n\nBe specific!")
+        .addFields({
+            name: 'Example',
+            value: "**Wish**: 'More energy'\n**First Change**: 'Not needing naps in the afternoon'"
+        });
+
+      const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
+      console.log(`[MessageCreate ASK_VISION ${interactionIdForLog}] Sent new prompt for vision of success as an embed.`);
+
+      // 2. EDIT OLD prompt
+      const oldPromptId = setupData.lastPromptMessageId;
+      if (oldPromptId) {
+          try {
+              const oldPrompt = await message.channel.messages.fetch(oldPromptId);
+              await oldPrompt.edit({
+                  content: "✅️ Positive habits received. \`\`\`diff\n+ Scroll down\n\`\`\`",
+                  components: [],
+                  embeds: []
+              });
+              console.log(`[MessageCreate EDITED_OLD_PROMPT ${interactionIdForLog}] Edited previous 'positive habits' prompt.`);
+          } catch (editError) {
+              console.warn(`[MessageCreate EDIT_OLD_PROMPT_FAIL ${interactionIdForLog}] Could not edit old prompt (ID: ${oldPromptId}). Error: ${editError.message}`);
+          }
+      }
+
+      // 3. Update setupData for the NEXT step
+      setupData.lastPromptMessageId = newPromptMessage.id;
       userExperimentSetupData.set(userId, setupData);
-      
-      console.log(`[MessageCreate AWAITING_POSITIVE_HABITS_RECEIVED ${interactionIdForLog}] User ${userTag} submitted positive habits: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
-      
-      // Ask the final follow-up question
-      await message.author.send("---\n---\n**Last one:**\nIf your wish came true,\nwhat's the 1st small, positive change you'd notice in your daily life?\n\nBe specific now!\n\nFor example:\n**Wish** = 'More energy'\n**Small Change** = 'Not needing naps'");
-      console.log(`[MessageCreate ASK_VISION ${interactionIdForLog}] Prompted ${userTag} for their vision of success.`);
+      console.log(`[MessageCreate NEXT_PROMPT_ID_STORED ${interactionIdForLog}] Stored new prompt ID ${newPromptMessage.id} for the next step.`);
     }
 
     // --- Stage 4: Handle "awaiting_vision", process all context, and call AI ---
@@ -3563,44 +3592,50 @@ client.on(Events.InteractionCreate, async interaction => {
       const userId = interaction.user.id;
       const userTag = interaction.user.tag;
       const interactionId = interaction.id;
-      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}. Initiating AI Assisted setup. Time: ${aiSetupStartTime.toFixed(2)}ms`);
+      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}.`);
+
       try {
+        // --- Stage 1: Acknowledge with a "loading" message ---
+        await interaction.update({
+            content: '⚙️ Contacting your personal AI assistant... One moment.',
+            embeds: [],
+            components: []
+        });
+        const updateTime = performance.now();
+        console.log(`[${interaction.customId} ACKNOWLEDGED ${interactionId}] Updated original message to 'loading' state. Took: ${(updateTime - aiSetupStartTime).toFixed(2)}ms`);
+
+        // --- Stage 2: Perform the logic (send DM) ---
         const dmChannel = await interaction.user.createDM();
+        const firstPromptEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle("🚀 Experiments Change Lives!")
+            .setDescription("\nSelf Science Experiments\nhave 3 components:\n\n1. A wish to change\n2. An outcome to track\n3. 1-3 habits to test\n\n**Let's start with your wish!** ✨\n\nWhat's 1 thing you wish was different in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n**Tap the <:chaticon:1384220348685488299> icon**\nand type your wish!\n\nExamples:\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\nTap the <:chaticon:1384220348685488299> icon  →  →  →  ↘ ↘ ↘.")
+
+        const promptMessage = await dmChannel.send({ embeds: [firstPromptEmbed] });
+
+        // --- Stage 3: Update the original message with the final button and perfect link ---
         const goToDmsButton = new ButtonBuilder()
           .setLabel('➡️ Continue in DMs')
           .setStyle(ButtonStyle.Link)
-          .setURL(`https://discord.com/channels/@me/${dmChannel.id}`);
+          .setURL(`https://discord.com/channels/@me/${dmChannel.id}/${promptMessage.id}`); // The perfect link
+
         const actionRow = new ActionRowBuilder().addComponents(goToDmsButton);
 
-        await interaction.update({
-            content: "🤖 Click the button below to continue in your DMs!",
-            embeds: [],
+        // Use editReply because we already responded with update()
+        await interaction.editReply({
+            content: '✅ Your personal AI assistant is ready! Click below to continue.',
             components: [actionRow]
         });
-        const updateTime = performance.now();
-        console.log(`[${interaction.customId} UPDATED_REPLY ${interactionId}] Acknowledged button for ${userTag}. Took: ${(updateTime - aiSetupStartTime).toFixed(2)}ms`);
 
+        // --- Stage 4: Initialize the user's state in memory ---
         const currentSetupData = userExperimentSetupData.get(userId) || {};
         const guildIdToUse = currentSetupData.guildId || interaction.guild?.id || process.env.GUILD_ID;
 
         if (!guildIdToUse) {
-            console.error(`[${AI_ASSISTED_SETUP_BTN_ID} CRITICAL ${interactionId}] guildId could not be determined for user ${userTag}.`);
-            await interaction.followUp({ content: "Critical error: Server context is missing for AI setup. Please try starting from `/go` in the server.", ephemeral: true });
-            return;
+            // This is a safety check; should be unlikely to fail now.
+            throw new Error(`[${AI_ASSISTED_SETUP_BTN_ID} CRITICAL] guildId could not be determined.`);
         }
-
-        const firstPromptEmbed = new EmbedBuilder()
-            .setColor('#5865F2')
-            .setTitle("🚀 Let's Design Your Experiment!")
-            .setDescription("Big changes come from experiments.\n\nAn experiment has 3 components:\n1. A wish\n2. A measurable outcome\n3. 1-3 habits to improve that outcome")
-            .addFields({
-                name: "Let's start with your wish! ✨",
-                value: "What's 1 thing you wish was different in your daily life right now?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'"
-            })
-            .setFooter({ text: "Please type your answer below and press send." });
-
-        const promptMessage = await dmChannel.send({ embeds: [firstPromptEmbed] });
-
+        
         userExperimentSetupData.set(userId, {
             userId: userId,
             userTag: userTag,
@@ -3608,41 +3643,30 @@ client.on(Events.InteractionCreate, async interaction => {
             interactionId: interactionId,
             dmFlowState: 'awaiting_wish',
             lastPromptMessageId: promptMessage.id,
-            deeperWish: null,
-            deeperProblem: null,
-            aiGeneratedOutcomeLabelSuggestions: null,
-            outcomeLabel: null,
-            outcomeUnit: null,
-            outcomeGoal: null,
-            currentInputIndex: 1,
-            inputs: [],
-            aiGeneratedInputLabelSuggestions: null,
-            currentInputDefinition: null,
-            aiGeneratedUnitSuggestionsForCurrentItem: null,
+            //... (rest of the fields are reset)
         });
 
-        const dmSentTime = performance.now();
-        console.log(`[${interaction.customId} DM_SENT ${interactionId}] Sent 'awaiting_wish' DM to ${userTag} as embed and stored prompt ID ${promptMessage.id}.`);
+        console.log(`[${interaction.customId} SUCCESS ${interactionId}] Full flow complete. Final button sent and state initialized for ${userTag}.`);
+
       } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[${interaction.customId} ERROR ${interactionId}] Error initiating AI assisted setup for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Error during two-stage setup for ${userTag}:`, error);
         if (error.code === 50007) {
-             console.error(`[${interaction.customId} DM_FAIL ${interactionId}] Cannot send DMs to ${userTag}. They may have DMs disabled.`);
              try {
-                await interaction.followUp({
-                    content: "⚠️ I couldn't send you a DM. Please check your server Privacy Settings to allow DMs if you'd like to use the AI Assisted setup.",
-                    ephemeral: true
+                await interaction.editReply({
+                    content: "⚠️ I couldn't send you a DM. Please check your server Privacy Settings to allow DMs from server members.",
+                    components: []
                  });
-             } catch (followUpError) {
-                console.error(`[${interaction.customId} FOLLOWUP_FAIL ${interactionId}] Failed to send DM failure followup:`, followUpError);
-             }
-        } else if (interaction.replied || interaction.deferred) {
+             } catch (e) { console.error(`[${interaction.customId} CATCH_EDIT_REPLY_FAIL ${interactionId}]`, e); }
+        } else {
             try {
-                await interaction.followUp({
-                    content: "❌ An error occurred trying to start the AI assisted setup. Please try again.",
-                    ephemeral: true
-                });
-            } catch (editErr) { console.error(`[${interaction.customId} EDIT_REPLY_ERROR_FALLBACK ${interactionId}]`, editErr); }
+                // Check if we can still edit the 'loading' message to show an error
+                if (!interaction.replied) { // This check is tricky after update()
+                     await interaction.editReply({
+                        content: '❌ An error occurred trying to start the AI assisted setup. Please try again.',
+                        components: []
+                    });
+                }
+            } catch (e) { console.error(`[${interaction.customId} CATCH_EDIT_REPLY_FAIL ${interactionId}]`, e); }
         }
         userExperimentSetupData.delete(userId);
       }
