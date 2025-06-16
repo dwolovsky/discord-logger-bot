@@ -3609,7 +3609,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const firstPromptEmbed = new EmbedBuilder()
             .setColor('#5865F2')
             .setTitle("Let's Set Your Experiment! 🚀")
-            .setDescription("## Experiments have 3 parts:\n\n**1. A Wish** to pursue\n**2. An outcome** to track\n**3. 1 - 3 Habits** to test out\n\n## Let's start with a wish! ✨\n\nWhat's 1 thing you wish for in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n### Tap the <:chaticon:1384220348685488299> icon and type your wish!\n\nTap <:chaticon:1384220348685488299> icon  →  →  →  ↘ ↘ ↘")
+            .setDescription("## Experiments have 3 parts:\n\n**1. A Wish** to pursue\n**2. An outcome** to track\n**3. 1 - 3 Habits** to test out\n\n## Let's start with a wish! ✨\n\nWhat's 1 thing you wish for in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n### Tap the <:chaticon:1384220348685488299> icon and type your wish!\n\n→  →  →  →  →  →  →  →  →  →  →  →  ↘ ↘ ↘")
 
         const promptMessage = await dmChannel.send({ embeds: [firstPromptEmbed] });
 
