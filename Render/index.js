@@ -1455,12 +1455,8 @@ client.on(Events.MessageCreate, async message => {
       // 1. Send NEW prompt as an Embed
       const newPromptEmbed = new EmbedBuilder()
           .setColor('#5865F2') 
-          .setTitle("Step 2: Identifying Blockers")
-          .setDescription("Now let's break down the wish into **1 measurable outcome.**\n\nTo do that, please answer 3 quick questions.")
-          .addFields({ 
-              name: 'Question 1', 
-              value: "What are the biggest blockers preventing progress on that wish?" 
-          });
+          .setTitle("2. Outcome To Track")
+          .setDescription("Now let's break down the wish\ninto a **measurable outcome.**\n\nTo do that, please answer 3 quick questions.\n\n### Question 1\nWhat are the biggest obstacles to progress on that wish?")
 
       const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
       console.log(`[MessageCreate ASK_BLOCKERS ${interactionIdForLog}] Sent new prompt for blockers as an embed.`);
@@ -1471,7 +1467,7 @@ client.on(Events.MessageCreate, async message => {
           try {
               const oldPrompt = await message.channel.messages.fetch(oldPromptId);
               await oldPrompt.edit({
-                  content: "✅️ Wish received. \`\`\`diff\n+ Scroll down\n\`\`\`",
+                  content: "✅️ Wish received. **Scroll down**",
                   components: [],
                   embeds: [] // Also clear embeds from the old message
               });
@@ -1507,8 +1503,8 @@ client.on(Events.MessageCreate, async message => {
       // 1. Send NEW prompt as an Embed
       const newPromptEmbed = new EmbedBuilder()
         .setColor('#5865F2')
-        .setTitle("Step 3: Acknowledging Strengths")
-        .setDescription("What are 1 or more positive habits you already do consistently?\n\n*They can be related to the wish or not. It all helps* 💃");
+        .setTitle("3. Existing Positives")
+        .setDescription("What are 1 or more positive habits you already do consistently?\n\nThey can be related to the wish or not. **It all helps** 💃");
 
       const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
       console.log(`[MessageCreate ASK_POSITIVE_HABITS ${interactionIdForLog}] Sent new prompt for positive habits as an embed.`);
@@ -1519,7 +1515,7 @@ client.on(Events.MessageCreate, async message => {
           try {
               const oldPrompt = await message.channel.messages.fetch(oldPromptId);
               await oldPrompt.edit({
-                  content: "✅️ Blockers received. \`\`\`diff\n+ Scroll down\n\`\`\`",
+                  content: "✅️ Blockers received. **Scroll down**",
                   components: [],
                   embeds: []
               });
@@ -1556,12 +1552,8 @@ client.on(Events.MessageCreate, async message => {
       // 1. Send NEW prompt as an Embed
       const newPromptEmbed = new EmbedBuilder()
         .setColor('#5865F2')
-        .setTitle("Step 4: Defining Success")
-        .setDescription("If your wish came true, what's the **first small, positive change** you'd notice in your daily life?\n\nBe specific!")
-        .addFields({
-            name: 'Example',
-            value: "**Wish**: 'More energy'\n**First Change**: 'Not needing naps in the afternoon'"
-        });
+        .setTitle("4. Noticeable Success")
+        .setDescription("If your wish came true, what's the **1st small, positive change** you'd notice in your daily life?\n\nBe specific now!\n\n### Example\n\n**Wish**: 'More energy'\n**1st Change**: 'Not being sleepy in the afternoon'")
 
       const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
       console.log(`[MessageCreate ASK_VISION ${interactionIdForLog}] Sent new prompt for vision of success as an embed.`);
@@ -1572,7 +1564,7 @@ client.on(Events.MessageCreate, async message => {
           try {
               const oldPrompt = await message.channel.messages.fetch(oldPromptId);
               await oldPrompt.edit({
-                  content: "✅️ Positive habits received. \`\`\`diff\n+ Scroll down\n\`\`\`",
+                  content: "✅️ Positive habits received. **Scroll down**",
                   components: [],
                   embeds: []
               });
@@ -1589,6 +1581,7 @@ client.on(Events.MessageCreate, async message => {
     }
 
     // --- Stage 4: Handle "awaiting_vision", process all context, and call AI ---
+
     else if (setupData.dmFlowState === 'awaiting_vision') {
       const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
 
@@ -1601,24 +1594,48 @@ client.on(Events.MessageCreate, async message => {
       // Store the final piece of context
       setupData.userVision = messageContent;
       setupData.dmFlowState = 'processing_context'; // New state
-      userExperimentSetupData.set(userId, setupData);
-      
       console.log(`[MessageCreate AWAITING_VISION_RECEIVED ${interactionIdForLog}] User ${userTag} submitted vision: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
 
-      // Send the "thinking" message and store it
-      const thinkingMessage = await message.author.send(`---\nExcellent, thank you for sharing that. I'm now analyzing your wish, blockers, habits, and vision to suggest a personalized experiment...\n\nBrainstorming... 1 sec`);
+      // --- "Send New, Edit Old" PATTERN for Loading State ---
+
+      // 1. EDIT OLD prompt
+      const oldPromptId = setupData.lastPromptMessageId;
+      if (oldPromptId) {
+          try {
+              const oldPrompt = await message.channel.messages.fetch(oldPromptId);
+              await oldPrompt.edit({
+                  content: `✅️ Vision received. \`\`\`diff\n+ Scroll down\n\`\`\``,
+                  components: [],
+                  embeds: []
+              });
+              console.log(`[MessageCreate EDITED_OLD_PROMPT ${interactionIdForLog}] Edited previous 'vision' prompt.`);
+          } catch (editError) {
+              console.warn(`[MessageCreate EDIT_OLD_PROMPT_FAIL ${interactionIdForLog}] Could not edit old prompt (ID: ${oldPromptId}). It may have been deleted. Error: ${editError.message}`);
+          }
+      }
+
+      // 2. Send NEW "Thinking" message as an Embed
+      const thinkingEmbed = new EmbedBuilder()
+          .setColor('#5865F2')
+          .setDescription("🧠 Analyzing your responses to suggest a personalized experiment...");
+      
+      const thinkingMessage = await message.author.send({ embeds: [thinkingEmbed] });
+      
+      // 3. Update setupData for the NEXT step (the AI call)
+      setupData.lastPromptMessageId = thinkingMessage.id;
+      userExperimentSetupData.set(userId, setupData);
+      console.log(`[MessageCreate THINKING_MESSAGE_SENT ${interactionIdForLog}] Sent new 'thinking' message ${thinkingMessage.id} and stored it as lastPromptMessageId.`);
 
       // --- Call Firebase Function with the complete context ---
       try {
         console.log(`[MessageCreate LLM_CALL_START ${interactionIdForLog}] Calling 'generateOutcomeLabelSuggestions' Firebase function for ${userTag} with full context.`);
-        
         if (!firebaseFunctions) {
             throw new Error("Firebase Functions client not initialized.");
         }
 
         const llmResult = await callFirebaseFunction(
           'generateOutcomeLabelSuggestions',
-          { // NEW: Payload now includes all collected context
+          { // Payload now includes all collected context
             userWish: setupData.deeperWish,
             userBlockers: setupData.userBlockers,
             userPositiveHabits: setupData.userPositiveHabits,
@@ -1626,10 +1643,9 @@ client.on(Events.MessageCreate, async message => {
           },
           userId
         );
-        
         console.log(`[MessageCreate LLM_CALL_END ${interactionIdForLog}] Firebase function 'generateOutcomeLabelSuggestions' returned for ${userTag}.`);
 
-        if (llmResult && llmResult.success && llmResult.suggestions && llmResult.suggestions.length === 5) {
+        if (llmResult && llmResult.success && llmResult.suggestions && llmResult.suggestions.length > 0) { // Check for > 0 suggestions for robustness
             setupData.aiGeneratedOutcomeLabelSuggestions = llmResult.suggestions;
             setupData.dmFlowState = 'awaiting_outcome_label_dropdown_selection';
             userExperimentSetupData.set(userId, setupData);
@@ -1639,14 +1655,12 @@ client.on(Events.MessageCreate, async message => {
             const outcomeLabelSelectMenu = new StringSelectMenuBuilder()
               .setCustomId('ai_outcome_label_select')
               .setPlaceholder('Potential Outcomes to measure');
-            
             outcomeLabelSelectMenu.addOptions(
               new StringSelectMenuOptionBuilder()
                 .setLabel("✏️ Enter my own...")
                 .setValue('custom_outcome_label')
                 .setDescription("Type your own outcome metric.")
             );
-
             llmResult.suggestions.forEach((suggestion, index) => {
               outcomeLabelSelectMenu.addOptions(
                 new StringSelectMenuOptionBuilder()
@@ -1655,31 +1669,37 @@ client.on(Events.MessageCreate, async message => {
                   .setDescription((suggestion.briefExplanation || 'AI Suggested Label').substring(0, 100))
               );
             });
-            
             const rowWithLabelSelect = new ActionRowBuilder().addComponents(outcomeLabelSelectMenu);
-            let introMessage = `Here are some ideas for a **Measurable Outcome**\nto support your wish:\n\n**"${setupData.deeperWish}"**.\n\nSelect one from the dropdown\nor "✏️ Enter my own..."\n\n(It may take a moment to load after you choose...)`;
+            
+            const resultsEmbed = new EmbedBuilder()
+                .setColor('#57F287') // Green for success
+                .setTitle("Personalized Suggestions")
+                .setDescription(`Here are some ideas for a **Measurable Outcome** to support your wish:\n\n**"${setupData.deeperWish}"**.\n\nSelect one from the dropdown or choose to "Enter my own..."`);
 
             // Edit the "thinking" message with the results
             await thinkingMessage.edit({
-                content: introMessage,
+                embeds: [resultsEmbed],
                 components: [rowWithLabelSelect]
             });
-            
-            console.log(`[MessageCreate LABEL_DROPDOWN_SENT ${interactionIdForLog}] Displayed AI outcome label suggestions dropdown to ${userTag}. State: ${setupData.dmFlowState}.`);
-        
+            console.log(`[MessageCreate LABEL_DROPDOWN_SENT ${interactionIdForLog}] Edited 'thinking' message to display AI outcome label suggestions dropdown to ${userTag}. State: ${setupData.dmFlowState}.`);
         } else {
             // This 'else' block handles cases where the LLM call failed or returned unexpected data.
             let failureReason = "AI failed to return valid suggestions";
             if (llmResult && llmResult.error) {
                 failureReason = llmResult.error;
             } else if (llmResult && llmResult.suggestions) {
-                failureReason = `AI returned ${llmResult.suggestions?.length || 0} suggestions instead of 5.`;
+                failureReason = `AI returned an unexpected number of suggestions (${llmResult.suggestions?.length || 0}).`;
             }
             console.error(`[MessageCreate LLM_ERROR ${interactionIdForLog}] LLM call 'generateOutcomeLabelSuggestions' failed or returned invalid data for ${userTag}. Reason: ${failureReason}. Result:`, llmResult);
             
             // Edit the "thinking" message with the fallback prompt
-            await thinkingMessage.edit("I had a bit of trouble brainstorming Outcome Metric suggestions right now. 😕\n\nWhat **Label** would you like to give your Key Outcome Metric? This is the main thing you'll track *daily* to see if you're making progress.\n\nE.g.\n● 'Energy Level'\n● 'Sleep Quality'\n● 'Tasks Completed'\n\nType just the label below (30 characters or less).");
+            const fallbackEmbed = new EmbedBuilder()
+              .setColor('#FEE75C') // Yellow for warning/fallback
+              .setTitle("Manual Input Required")
+              .setDescription("I had a bit of trouble brainstorming suggestions right now. 😕\n\nNo worries! What **Label** would you like to give your Key Outcome Metric? This is the main thing you'll track *daily*.\n\nE.g., 'Energy Level', 'Sleep Quality', 'Tasks Completed'\n\nType just the label below (max 30 characters).");
             
+            await thinkingMessage.edit({ embeds: [fallbackEmbed], components: [] });
+
             // Fallback to direct text input for the outcome label
             setupData.dmFlowState = 'awaiting_outcome_label';
             userExperimentSetupData.set(userId, setupData);
@@ -1690,18 +1710,18 @@ client.on(Events.MessageCreate, async message => {
         
         // Try to edit the "thinking" message with an error message
         try {
-          await thinkingMessage.edit("I encountered an issue trying to connect with my AI brain for suggestions. Please try again in a bit, or you can 'cancel' and use the manual setup for now.");
+          const errorEmbed = new EmbedBuilder()
+            .setColor('#ED4245') // Red for error
+            .setTitle("Connection Error")
+            .setDescription("I encountered an issue connecting with my AI brain for suggestions. Please try again in a bit, or you can type `cancel` and use the manual setup for now.");
+
+          await thinkingMessage.edit({ embeds: [errorEmbed], components: [] });
         } catch (editError) {
           console.error(`[MessageCreate EDIT_THINKING_MESSAGE_ON_ERROR_FAIL ${interactionIdForLog}] Could not edit thinkingMessage after catch. Sending new message. Error:`, editError);
-          await message.author.send("I encountered an issue trying to connect with my AI brain for suggestions. Please try again in a bit, or you can 'cancel' and use the manual setup for now.");
+          await message.author.send("I encountered a critical issue trying to connect with my AI brain for suggestions. Please try again in a bit, or you can type `cancel` and use the manual setup for now.");
         }
         
-        // Revert state so they can try the flow again or cancel
-        const existingData = userExperimentSetupData.get(userId) || {};
-        userExperimentSetupData.set(userId, {
-            ...existingData,
-            dmFlowState: 'awaiting_wish', // Revert to start
-        });
+        // Do not revert state here; allow user to type 'cancel' or wait for the issue to be resolved.
       }
     }
 
@@ -1769,72 +1789,70 @@ client.on(Events.MessageCreate, async message => {
     }
 
       // [render index with AI set exp.txt]
-    else if (setupData.dmFlowState === 'awaiting_custom_outcome_label_text') { // [cite: 274]
-      const customLabelText = messageContent.trim(); // [cite: 274]
-      const interactionIdForLog = setupData.interactionId || 'DM_FLOW'; // [cite: 275]
-      const userId = message.author.id; // [cite: 276]
-      const userTag = message.author.tag; // [cite: 277]
+    else if (setupData.dmFlowState === 'awaiting_custom_outcome_label_text') {
+      const customLabelText = messageContent.trim();
+      const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
 
-      if (!customLabelText) { // [cite: 278]
-        await message.author.send( // [cite: 278]
-          "It looks like your Outcome was empty. Please type your Outcome Metric\n\nE.g., \"Overall Well-being\"\n\n(max 30 characters)." // [cite: 278]
-        ); // [cite: 278]
-        console.log(`[MessageCreate CUSTOM_OUTCOME_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom outcome label.`); // [cite: 279]
-        return; // [cite: 280]
-      }
-
-      const MAX_LABEL_LENGTH = 30; // [cite: 280]
-      if (customLabelText.length > MAX_LABEL_LENGTH) { // [cite: 281]
-        await message.author.send( // [cite: 281]
-          `That custom label is a bit long! Please keep it under **${MAX_LABEL_LENGTH} characters**.\n\n` + // [cite: 281]
-          `Your label was: "${customLabelText}" (${customLabelText.length} chars).\n\n` + // [cite: 281]
-          `Could you provide a shorter one for your Outcome Metric?` // [cite: 281]
-        ); // [cite: 281]
-        console.log(`[MessageCreate CUSTOM_OUTCOME_LABEL_TOO_LONG ${interactionIdForLog}] User ${userTag} sent custom outcome label over ${MAX_LABEL_LENGTH} chars: "${customLabelText}" (${customLabelText.length} chars).`); // [cite: 282]
-        return; // [cite: 283]
-      }
-
-      setupData.outcomeLabel = customLabelText; // [cite: 283]
-      delete setupData.outcomeLabelSuggestedUnitType; // Clear any previous AI suggestion for unit type // [cite: 284]
-      userExperimentSetupData.set(userId, setupData); // [cite: 284]
-
-      console.log(`[MessageCreate CUSTOM_OUTCOME_LABEL_RECEIVED ${interactionIdForLog}] User ${userTag} submitted custom outcome label: "${customLabelText}". Proceeding to ask for custom unit.`); // [cite: 285]
-      
-
-        setupData.dmFlowState = 'awaiting_outcome_unit_dropdown_selection'; // NEW STATE
-        userExperimentSetupData.set(userId, setupData);
-
-        const outcomeUnitSelectMenu = new StringSelectMenuBuilder()
-            .setCustomId(OUTCOME_UNIT_SELECT_ID) // Use your new constant
-            .setPlaceholder('How can you measure this outcome daily?');
-        
-        // CORRECTED LOOP: Access .label and .description properties of the object
-        outcomeUnitSelectMenu.addOptions(
-            new StringSelectMenuOptionBuilder()
-                .setLabel("✏️ Enter my own custom unit...")
-                .setValue(CUSTOM_UNIT_OPTION_VALUE) // Use your new constant
+      if (!customLabelText) {
+        await message.author.send(
+          "It looks like your Outcome was empty. Please type your Outcome Metric, e.g., \"Overall Well-being\" (max 30 characters)."
         );
-        PREDEFINED_OUTCOME_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
-            outcomeUnitSelectMenu.addOptions(
-                new StringSelectMenuOptionBuilder()
-                    .setLabel(unitSuggestion.label.substring(0, 100))
-                    .setValue(unitSuggestion.label) // Use label as the value
-                    .setDescription((unitSuggestion.description || '').substring(0, 100))
-            );
-        });
+        console.log(`[MessageCreate CUSTOM_OUTCOME_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom outcome label.`);
+        return;
+      }
 
-        const rowWithOutcomeUnitSelect = new ActionRowBuilder().addComponents(outcomeUnitSelectMenu);
-        const unitDropdownPromptMessage = `---\nGreat! Your Outcome is:\n\n**"${setupData.outcomeLabel}"**.\n\nHow will you measure this daily?\n\nChoose a scale/unit from the list, or enter your own.`;
-        
-        await message.author.send({
-            content: unitDropdownPromptMessage,
-            components: [rowWithOutcomeUnitSelect]
-        });
-        
-        console.log(`[MessageCreate CUSTOM_LABEL_OUTCOME_UNIT_DROPDOWN_SENT ${interactionIdForLog}] Prompted ${userTag} with outcome unit dropdown. State: ${setupData.dmFlowState}.`);
-        // ***** END: CORRECTED SECTION *****
+      const MAX_LABEL_LENGTH = 30;
+      if (customLabelText.length > MAX_LABEL_LENGTH) {
+        await message.author.send(
+          `That custom label is a bit long! Please keep it under **${MAX_LABEL_LENGTH} characters**.\n\n` +
+          `Your label was: "${customLabelText}" (${customLabelText.length} chars).\n\n` +
+          `Could you provide a shorter one for your Outcome Metric?`
+        );
+        console.log(`[MessageCreate CUSTOM_OUTCOME_LABEL_TOO_LONG ${interactionIdForLog}] User ${userTag} sent custom outcome label over ${MAX_LABEL_LENGTH} chars.`);
+        return;
+      }
 
-    } // End of awaiting_custom_outcome_label_text
+      setupData.outcomeLabel = customLabelText;
+      delete setupData.outcomeLabelSuggestedUnitType;
+      setupData.dmFlowState = 'awaiting_outcome_unit_dropdown_selection';
+      console.log(`[MessageCreate CUSTOM_OUTCOME_LABEL_RECEIVED ${interactionIdForLog}] User ${userTag} submitted custom outcome label: "${customLabelText}".`);
+
+      // --- "Send New, Edit Old" ---
+      // 1. EDIT OLD
+      const oldPromptId = setupData.lastPromptMessageId;
+      if (oldPromptId) {
+          try {
+              const oldPrompt = await message.channel.messages.fetch(oldPromptId);
+              await oldPrompt.edit({
+                  content: `✅️ Custom Label: "${customLabelText}" \`\`\`diff\n+ Scroll down\n\`\`\``,
+                  embeds: [],
+                  components: []
+              });
+              console.log(`[MessageCreate EDITED_OLD_PROMPT ${interactionIdForLog}] Edited previous 'custom label' prompt.`);
+          } catch (editError) {
+              console.warn(`[MessageCreate EDIT_OLD_PROMPT_FAIL ${interactionIdForLog}] Could not edit old 'custom label' prompt (ID: ${oldPromptId}). Error: ${editError.message}`);
+          }
+      }
+
+      // 2. SEND NEW
+      const nextStepConfig = dmFlowConfig[setupData.dmFlowState];
+      const { content, components } = nextStepConfig.prompt(setupData);
+      
+      const newPromptEmbed = new EmbedBuilder()
+          .setColor('#5865F2')
+          .setTitle("📏 How to Measure?")
+          .setDescription(content);
+      
+      const newPromptMessage = await message.author.send({
+          embeds: [newPromptEmbed],
+          components: components
+      });
+
+      // 3. UPDATE STATE
+      setupData.lastPromptMessageId = newPromptMessage.id;
+      userExperimentSetupData.set(userId, setupData);
+      console.log(`[MessageCreate CUSTOM_LABEL_OUTCOME_UNIT_DROPDOWN_SENT ${interactionIdForLog}] Prompted ${userTag} with outcome unit dropdown. State: ${setupData.dmFlowState}.`);
+    }
 
     else if (setupData.dmFlowState === 'awaiting_custom_outcome_unit_text') {
       const customOutcomeUnit = messageContent.trim(); // messageContent is from the top of MessageCreate
@@ -3609,7 +3627,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const firstPromptEmbed = new EmbedBuilder()
             .setColor('#5865F2')
             .setTitle("Let's Set Your Experiment! 🚀")
-            .setDescription("## Experiments have 3 parts:\n\n**1. A Wish** to pursue\n**2. An outcome** to track\n**3. 1 - 3 Habits** to test out\n\n## Let's start with a wish! ✨\n\nWhat's 1 thing you wish for in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n### Tap the <:chaticon:1384220348685488299> icon and type your wish!\n\n→  →  →  →  →  →  →  →  →  →  →  →  ↘ ↘ ↘")
+            .setDescription("## Experiments have 3 parts:\n\n1. **A Wish** to pursue\n2. **An outcome** to track\n3. **1 - 3 Habits** to test out\n\n## Let's start with a wish! ✨\n\nWhat's 1 thing you wish for in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n### Tap the <:chaticon:1384220348685488299> icon and type your wish!\n\n→  →  →  →  →  →  →  →  →  →  →  →  ↘ ↘ ↘")
 
         const promptMessage = await dmChannel.send({ embeds: [firstPromptEmbed] });
 
@@ -5691,117 +5709,107 @@ client.on(Events.InteractionCreate, async interaction => {
       const interactionId = interaction.id; 
       const userId = interaction.user.id; 
       const userTagForLog = interaction.user.tag; 
+      const originalMessage = interaction.message; // The message containing the dropdown
 
-      console.log(`[ai_outcome_label_select START ${interactionId}] Received selection from ${userTagForLog}.`); // [cite: 1337]
+      console.log(`[ai_outcome_label_select START ${interactionId}] Received selection from ${userTagForLog}.`);
       try { 
-        await interaction.deferUpdate(); 
+        await interaction.deferUpdate();
         const deferTime = performance.now();
-        console.log(`[ai_outcome_label_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - selectMenuSubmitTime).toFixed(2)}ms`); //[cite: 1338]
+        console.log(`[ai_outcome_label_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - selectMenuSubmitTime).toFixed(2)}ms`);
 
         const setupData = userExperimentSetupData.get(userId);
         if (!setupData || setupData.dmFlowState !== 'awaiting_outcome_label_dropdown_selection') { 
-          console.warn(`[ai_outcome_label_select WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState || 'no setupData'}. Current interaction customId: ${interaction.customId}`); //[cite: 1339]
-          await interaction.followUp({ content: "It seems there was a mix-up with our current step, or your session expired. Please try starting the AI setup again with the `/go` command if you see this message repeatedly.", ephemeral: true }); // [cite: 1340]
-          return; 
+          console.warn(`[ai_outcome_label_select WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState || 'no setupData'}.`);
+          await interaction.followUp({ content: "It seems there was a mix-up with our current step. Please try starting the setup again with `/go`.", ephemeral: true });
+          return;
         }
 
         const selectedValue = interaction.values[0]; 
-        let outcomeLabel = "";
-
-        if (selectedValue === 'custom_outcome_label') { 
-          console.log(`[ai_outcome_label_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom label'.`); // [cite: 1343]
-          setupData.dmFlowState = 'awaiting_custom_outcome_label_text'; // New state 
-          userExperimentSetupData.set(userId, setupData); // [cite: 1344]
         
-          await interaction.editReply({
-              content: `Ok, please type your custom label below\n\nE.g.\n● "Optimism Score"\n● "Faith in myself"\n● "Productivity Level"`,
-              components: [] // This removes the select menu from the message
+        if (selectedValue === 'custom_outcome_label') { 
+          console.log(`[ai_outcome_label_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom label'.`);
+          setupData.dmFlowState = 'awaiting_custom_outcome_label_text';
+          
+          // --- "Send New, Edit Old" ---
+          // 1. EDIT OLD
+          await originalMessage.edit({
+            content: `✅️ Custom choice selected. \`\`\`diff\n+ Scroll down\n\`\`\``,
+            embeds: [],
+            components: []
           });
-          console.log(`[ai_outcome_label_select CUSTOM_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom label text. State: ${setupData.dmFlowState}.`); // [cite: 1348]
-          return; // Wait for user's text message 
+
+          // 2. SEND NEW
+          const customPromptEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle("✏️ Custom Outcome Metric")
+            .setDescription("Please type your custom label below.\n\nE.g., 'Optimism Score', 'Faith in myself', 'Productivity Level'\n\n(max 30 characters)");
+          const newPromptMessage = await interaction.user.send({ embeds: [customPromptEmbed] });
+
+          // 3. UPDATE STATE
+          setupData.lastPromptMessageId = newPromptMessage.id;
+          userExperimentSetupData.set(userId, setupData);
+          console.log(`[ai_outcome_label_select CUSTOM_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom label text. State: ${setupData.dmFlowState}.`);
+          return;
 
         } else if (selectedValue.startsWith('ai_suggestion_')) { 
           const suggestionIndex = parseInt(selectedValue.split('ai_suggestion_')[1], 10);
-          if (setupData.aiGeneratedOutcomeLabelSuggestions && suggestionIndex >= 0 && suggestionIndex < setupData.aiGeneratedOutcomeLabelSuggestions.length) { 
-            const chosenSuggestion = setupData.aiGeneratedOutcomeLabelSuggestions[suggestionIndex];
-            outcomeLabel = chosenSuggestion.label; // [cite: 1350]
-            // outcomeLabelSuggestedUnitType = chosenSuggestion.suggestedUnitType; // We don't need to store or use this anymore for AI unit gen
-          } else { 
-            console.error(`[ai_outcome_label_select ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for ${userTagForLog}. Selected value: ${selectedValue}`); //[cite: 1351]
-            await interaction.followUp({ content: "Sorry, I couldn't process that selection. Please try choosing again or restarting the setup.", ephemeral: true }); //[cite: 1352]
-            return; 
-          }
-          // If an AI suggestion was chosen and processed:
-          setupData.outcomeLabel = outcomeLabel; //[cite: 1353]
-          // delete setupData.outcomeLabelSuggestedUnitType; // Clean up if it was previously set [cite: 1354]
-          userExperimentSetupData.set(userId, setupData);
-          console.log(`[ai_outcome_label_select AI_SUGGESTION_CONFIRMED ${interactionId}] User ${userTagForLog} selected Outcome Label: "${outcomeLabel}". Proceeding to ask for custom unit.`); // [cite: 1355]
-          
-          // ***** CORRECTED SECTION FOR OUTCOME UNIT DROPDOWN *****
-          setupData.dmFlowState = 'awaiting_outcome_unit_dropdown_selection'; // [cite: 1356]
-          userExperimentSetupData.set(userId, setupData); // [cite: 1357]
-          
-          const outcomeUnitSelectMenu = new StringSelectMenuBuilder()
-              .setCustomId(OUTCOME_UNIT_SELECT_ID) 
-              .setPlaceholder('Best measure for this outcome?'); // [cite: 1358]
-          
-              outcomeUnitSelectMenu.addOptions(
-              new StringSelectMenuOptionBuilder()
-                  .setLabel("✏️ Custom unit/scale...")
-                  .setValue(CUSTOM_UNIT_OPTION_VALUE) 
-                  .setDescription("Write your own or tweak one of these.")
-          ); // [cite: 1360]
+          const chosenSuggestion = setupData.aiGeneratedOutcomeLabelSuggestions?.[suggestionIndex];
 
-          PREDEFINED_OUTCOME_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
-              outcomeUnitSelectMenu.addOptions(
-                  new StringSelectMenuOptionBuilder()
-                      .setLabel(unitSuggestion.label.substring(0, 100)) // CORRECTED
-                      .setValue(unitSuggestion.label) // CORRECTED - using label as value
-                      .setDescription((unitSuggestion.description || '').substring(0, 100)) // CORRECTED & Added description
-              );
-          }); 
-          
-          const rowWithOutcomeUnitSelect = new ActionRowBuilder().addComponents(outcomeUnitSelectMenu); // [cite: 1361]
-          const unitDropdownPromptMessage = `**"${setupData.outcomeLabel}"**\n\nWhat's a good daily measure for it?\n\nChoose a scale/unit from the list, or enter your own.`; // [cite: 1362]
-          // ***** END: CORRECTED SECTION *****
-          
-          try {
-            // Edit the DM message that had the label dropdown
-            await interaction.editReply({ 
-              content: unitDropdownPromptMessage,
-              components: [rowWithOutcomeUnitSelect] 
-            }); // [cite: 1364]
-          } catch (editError) {
-            console.warn(`[ai_outcome_label_select EDIT_REPLY_FAIL_UNIT_DROPDOWN ${interactionId}] Failed to edit message for outcome unit dropdown. Sending new DM. Error: ${editError.message}`); // [cite: 1365]
-            await interaction.user.send({
-                content: unitDropdownPromptMessage,
-                components: [rowWithOutcomeUnitSelect]
-            }); // [cite: 1366]
+          if (!chosenSuggestion) {
+            console.error(`[ai_outcome_label_select ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for ${userTagForLog}.`);
+            await interaction.followUp({ content: "Sorry, I couldn't process that selection. Please try choosing again or restarting the setup.", ephemeral: true });
+            return;
           }
-          console.log(`[ai_outcome_label_select OUTCOME_UNIT_DROPDOWN_SENT ${interactionId}] Prompted ${userTagForLog} with outcome unit dropdown. State: ${setupData.dmFlowState}.`); // [cite: 1367]
+
+          const outcomeLabel = chosenSuggestion.label;
+          setupData.outcomeLabel = outcomeLabel;
+          setupData.dmFlowState = 'awaiting_outcome_unit_dropdown_selection';
+          console.log(`[ai_outcome_label_select AI_SUGGESTION_CONFIRMED ${interactionId}] User ${userTagForLog} selected Outcome Label: "${outcomeLabel}".`);
+
+          // --- "Send New, Edit Old" ---
+          // 1. EDIT OLD
+          await originalMessage.edit({
+            content: `✅️ Outcome: "${outcomeLabel}" \`\`\`diff\n+ Scroll down\n\`\`\``,
+            embeds: [],
+            components: []
+          });
+
+          // 2. SEND NEW
+          const nextStepConfig = dmFlowConfig[setupData.dmFlowState];
+          const { content, components } = nextStepConfig.prompt(setupData); // Re-use the prompt from our config
+          
+          const newPromptEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle("📏 How to Measure?")
+            .setDescription(content); // The content from the config becomes the description
+          
+          const newPromptMessage = await interaction.user.send({
+            embeds: [newPromptEmbed],
+            components: components 
+          });
+
+          // 3. UPDATE STATE
+          setupData.lastPromptMessageId = newPromptMessage.id;
+          userExperimentSetupData.set(userId, setupData);
+          console.log(`[ai_outcome_label_select OUTCOME_UNIT_DROPDOWN_SENT ${interactionId}] Prompted ${userTagForLog} with outcome unit dropdown. State: ${setupData.dmFlowState}.`);
           
         } else { 
-          console.error(`[ai_outcome_label_select ERROR ${interactionId}] Unknown selection value: ${selectedValue} for user ${userTagForLog}.`); // [cite: 1368]
-          await interaction.followUp({ content: "Sorry, an unexpected error occurred with your selection. Please try again.", ephemeral: true }); 
-          return; 
+          console.error(`[ai_outcome_label_select ERROR ${interactionId}] Unknown selection value: ${selectedValue} for user ${userTagForLog}.`);
+          await interaction.followUp({ content: "Sorry, an unexpected error occurred with your selection. Please try again.", ephemeral: true });
         }
       } catch (error) { 
         const errorTime = performance.now();
-        console.error(`[ai_outcome_label_select ERROR ${interactionId}] Error processing select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error); // [cite: 1370]
-        if (!interaction.replied && !interaction.deferred) { 
-            try { await interaction.reply({ content: "Sorry, something went wrong with that selection. Please try again.", ephemeral: true }); // [cite: 1372] } 
-         } catch (e) { console.error(`[ai_outcome_label_select ERROR_REPLY_FAIL ${interactionId}]`, e); // [cite: 1373] } 
+        console.error(`[ai_outcome_label_select ERROR ${interactionId}] Error processing select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
+        if (!interaction.replied && !interaction.deferred) {
+            try { await interaction.reply({ content: "Sorry, something went wrong with that selection. Please try again.", ephemeral: true }); } 
+            catch (e) { console.error(`[ai_outcome_label_select ERROR_REPLY_FAIL ${interactionId}]`, e); }
+        } else {
+            try { await interaction.followUp({ content: "Sorry, something went wrong processing your choice. You might need to try selecting again.", ephemeral: true }); } 
+            catch (e) { console.error(`[ai_outcome_label_select ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
         }
-       } else if (!interaction.replied) { 
-            try { await interaction.editReply({ content: "Sorry, something went wrong processing your choice. You might need to try selecting again.", components: [] });//  [cite: 1374] } 
-         } catch (e) { console.error(`[ai_outcome_label_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); // [cite: 1375] } 
-        }
-       } else { 
-            // If an error occurs after a followUp, further followUps might be complex.
-        } 
       } 
       const processEndTime = performance.now();
-      console.log(`[ai_outcome_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - selectMenuSubmitTime).toFixed(2)}ms`); // [cite: 1378]
+      console.log(`[ai_outcome_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - selectMenuSubmitTime).toFixed(2)}ms`);
     }
     
     else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input1_label_select') {
