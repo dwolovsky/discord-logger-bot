@@ -957,7 +957,7 @@ async function sendNextTimeLogPrompt(interaction, userId) {
         .setStyle(ButtonStyle.Success);
 
     await interaction.editReply({
-        content: "✅ All time-based metrics have been recorded. Click below to log your remaining metrics and notes.",
+        content: "---\n---\n\nClick below to log your remaining metrics and notes.",
         embeds: [],
         components: [new ActionRowBuilder().addComponents(finalButton)]
     });
@@ -1433,30 +1433,59 @@ client.on(Events.MessageCreate, async message => {
     return;
   }
 
- // --- Stage 1: Handle "awaiting_wish" and transition to first question ---
-  if (setupData.dmFlowState === 'awaiting_wish') {
-    const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
+   // --- Stage 1: Handle "awaiting_wish" and transition to first question ---
+    if (setupData.dmFlowState === 'awaiting_wish') {
+      const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
 
-    if (!messageContent) {
-      await message.author.send("It looks like your Deeper Wish was empty. Please tell me, what's one thing you wish was different or better in your daily life right now?");
-      console.log(`[MessageCreate AWAITING_WISH_EMPTY ${interactionIdForLog}] User ${userTag} sent empty wish.`);
-      return;
+      if (!messageContent) {
+        // Send a new message for the error, don't edit the original prompt
+        await message.author.send("It looks like your Deeper Wish was empty. Please try again.");
+        console.log(`[MessageCreate AWAITING_WISH_EMPTY ${interactionIdForLog}] User ${userTag} sent empty wish.`);
+        return;
+      }
+
+      // Store the wish and transition state
+      setupData.deeperWish = messageContent;
+      setupData.deeperProblem = messageContent;
+      setupData.dmFlowState = 'awaiting_blockers';
+      console.log(`[MessageCreate AWAITING_WISH_RECEIVED ${interactionIdForLog}] User ${userTag} submitted Deeper Wish. State changed to '${setupData.dmFlowState}'.`);
+      
+      // --- "Send New, Edit Old" PATTERN ---
+      
+      // 1. Send NEW prompt as an Embed
+      const newPromptEmbed = new EmbedBuilder()
+          .setColor('#5865F2') 
+          .setTitle("Step 2: Identifying Blockers")
+          .setDescription("Now let's break down the wish into **1 measurable outcome.**\n\nTo do that, please answer 3 quick questions.")
+          .addFields({ 
+              name: 'Question 1', 
+              value: "What are the biggest blockers preventing progress on that wish?" 
+          });
+
+      const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
+      console.log(`[MessageCreate ASK_BLOCKERS ${interactionIdForLog}] Sent new prompt for blockers as an embed.`);
+
+      // 2. EDIT OLD prompt
+      const oldPromptId = setupData.lastPromptMessageId;
+      if (oldPromptId) {
+          try {
+              const oldPrompt = await message.channel.messages.fetch(oldPromptId);
+              await oldPrompt.edit({
+                  content: "✅️ Wish received. \`\`\`diff\n+ Scroll down\n\`\`\`",
+                  components: [],
+                  embeds: [] // Also clear embeds from the old message
+              });
+              console.log(`[MessageCreate EDITED_OLD_PROMPT ${interactionIdForLog}] Edited previous 'wish' prompt.`);
+          } catch (editError) {
+              console.warn(`[MessageCreate EDIT_OLD_PROMPT_FAIL ${interactionIdForLog}] Could not edit old prompt (ID: ${oldPromptId}). It may have been deleted. Error: ${editError.message}`);
+          }
+      }
+
+      // 3. Update setupData for the NEXT step
+      setupData.lastPromptMessageId = newPromptMessage.id;
+      userExperimentSetupData.set(userId, setupData);
+      console.log(`[MessageCreate NEXT_PROMPT_ID_STORED ${interactionIdForLog}] Stored new prompt ID ${newPromptMessage.id} for the next step.`);
     }
-
-    // Store the wish
-    setupData.deeperWish = messageContent;
-    setupData.deeperProblem = messageContent; // Store in both for compatibility 
-    
-    // Transition to the first new question state
-    setupData.dmFlowState = 'awaiting_blockers';
-    userExperimentSetupData.set(userId, setupData);
-
-    console.log(`[MessageCreate AWAITING_WISH_RECEIVED ${interactionIdForLog}] User ${userTag} submitted Deeper Wish: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
-
-    // Ask the first follow-up question
-    await message.author.send("---\n---\nNow let's break down the wish into\n**1 measurable outcome.**\n\nTo do that, please answer 3 quick questions.\n\n1. What are the biggest blockers preventing progress on that wish?");
-    console.log(`[MessageCreate ASK_BLOCKERS ${interactionIdForLog}] Prompted ${userTag} for blockers.`);
-  }
 
     // --- Stage 2: Handle "awaiting_blockers" and transition to second question ---
     else if (setupData.dmFlowState === 'awaiting_blockers') {
@@ -1468,18 +1497,42 @@ client.on(Events.MessageCreate, async message => {
         return;
       }
       
-      // Store the blockers
+      // Store the blockers and transition state
       setupData.userBlockers = messageContent;
-      
-      // Transition to the second new question state
       setupData.dmFlowState = 'awaiting_positive_habits';
+      console.log(`[MessageCreate AWAITING_BLOCKERS_RECEIVED ${interactionIdForLog}] User ${userTag} submitted blockers. State changed to '${setupData.dmFlowState}'.`);
+
+      // --- "Send New, Edit Old" PATTERN ---
+
+      // 1. Send NEW prompt as an Embed
+      const newPromptEmbed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle("Step 3: Acknowledging Strengths")
+        .setDescription("What are 1 or more positive habits you already do consistently?\n\n*They can be related to the wish or not. It all helps* 💃");
+
+      const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
+      console.log(`[MessageCreate ASK_POSITIVE_HABITS ${interactionIdForLog}] Sent new prompt for positive habits as an embed.`);
+
+      // 2. EDIT OLD prompt
+      const oldPromptId = setupData.lastPromptMessageId;
+      if (oldPromptId) {
+          try {
+              const oldPrompt = await message.channel.messages.fetch(oldPromptId);
+              await oldPrompt.edit({
+                  content: "✅️ Blockers received. \`\`\`diff\n+ Scroll down\n\`\`\`",
+                  components: [],
+                  embeds: []
+              });
+              console.log(`[MessageCreate EDITED_OLD_PROMPT ${interactionIdForLog}] Edited previous 'blockers' prompt.`);
+          } catch (editError) {
+              console.warn(`[MessageCreate EDIT_OLD_PROMPT_FAIL ${interactionIdForLog}] Could not edit old prompt (ID: ${oldPromptId}). Error: ${editError.message}`);
+          }
+      }
+
+      // 3. Update setupData for the NEXT step
+      setupData.lastPromptMessageId = newPromptMessage.id;
       userExperimentSetupData.set(userId, setupData);
-      
-      console.log(`[MessageCreate AWAITING_BLOCKERS_RECEIVED ${interactionIdForLog}] User ${userTag} submitted blockers: "${messageContent}". State changed to '${setupData.dmFlowState}'.`);
-      
-      // Ask the second follow-up question
-      await message.author.send("---\n---\n**Next Question:**\nWhat are 1 or more positive habits\nyou already do consistently?\n\n*They can be related to the wish or not. It all helps* 💃");
-      console.log(`[MessageCreate ASK_POSITIVE_HABITS ${interactionIdForLog}] Prompted ${userTag} for positive habits.`);
+      console.log(`[MessageCreate NEXT_PROMPT_ID_STORED ${interactionIdForLog}] Stored new prompt ID ${newPromptMessage.id} for the next step.`);
     }
 
     // --- Stage 3: Handle "awaiting_positive_habits" and transition to final question ---
@@ -2890,10 +2943,10 @@ client.on(Events.InteractionCreate, async interaction => {
             const goHubEmbed = new EmbedBuilder()
               .setColor('#7F00FF') // A nice vibrant purple, change as you like
               .setTitle('⚡ Go Hub 🚀')
-              .setDescription('Welcome to your experiment control panel')
+              .setDescription('Your experiment control panel')
               .addFields(
-                  { name: '🔬 Set Experiment', value: 'Define your goals & metrics.', inline: true },
-                  { name: '✍️ Daily Log', value: 'Log your metrics & notes.', inline: true },
+                  //{ name: '🔬 Set Experiment', value: 'Define your goals & metrics.', inline: true },
+                  //{ name: '✍️ Daily Log', value: 'Log your metrics & notes.', inline: true },
                   //{ name: '🔥 Streak Stats', value: 'View your streak and the leaderboard.', inline: true },
                   //{ name: '💡 AI Insights', value: 'Get AI-powered analysis of your data.', inline: true }
               )
@@ -2906,7 +2959,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             const logProgressButton = new ButtonBuilder()
               .setCustomId('log_daily_progress_btn')
-              .setLabel('✍️ Daily Log')
+              .setLabel('✍️ Log Data')
               .setStyle(ButtonStyle.Success);
 
            /*
@@ -3319,9 +3372,8 @@ client.on(Events.InteractionCreate, async interaction => {
             // --- Build the Informational Embed ---
             const commaFormatEmbed = new EmbedBuilder()
                 .setColor('#FFD700') // Gold color for information
-                .setTitle('REMINDER: Use Commas! ↳ , ↲')
-                .setDescription("Each line should have this format:\nGoal # , Unit / Scale , Label\n\nE.g.\n7.5, hours, Sleep\nOR\n8, out of 10, Relationships)\n\n" +
-                "Click the button below when you're ready to open the edit form."
+                .setTitle('REMINDER')
+                .setDescription("Each line should have this format:\nGoal # , Unit / Scale , Label\n\nE.g.\n7.5, hours, Sleep\nOR\n8, out of 10, Relationships)\n\nUse Commas! ↳  ,  ↲"
                 );
 
             // --- Create a "Continue to Form" button ---
@@ -3506,51 +3558,56 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[${interaction.customId} END ${interactionId}] User: ${userTag}. TotalInHandler: ${(handlerEndPerfNow - continueButtonStartTime).toFixed(2)}ms.`);
     } // End of 'continue_to_manual_form_btn' handler
 
-    // --- (render/index.js) ---
-    // Inside the 'if (interaction.isButton())' block, after the MANUAL_SETUP_BTN_ID handler:
-
     else if (interaction.customId === AI_ASSISTED_SETUP_BTN_ID) {
-      // DIAGNOSTIC LOG - VERY FIRST LINE in this handler
-      console.log(`[${AI_ASSISTED_SETUP_BTN_ID} ENTERED_HANDLER ${interaction.id}] Handler entered for user ${interaction.user.tag}.`);
       const aiSetupStartTime = performance.now();
       const userId = interaction.user.id;
       const userTag = interaction.user.tag;
-      console.log(`[${interaction.customId} START ${interaction.id}] Clicked by ${userTag}. Initiating AI Assisted setup. Time: ${aiSetupStartTime.toFixed(2)}ms`);
-
+      const interactionId = interaction.id;
+      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}. Initiating AI Assisted setup. Time: ${aiSetupStartTime.toFixed(2)}ms`);
       try {
         const dmChannel = await interaction.user.createDM();
-
         const goToDmsButton = new ButtonBuilder()
           .setLabel('➡️ Continue in DMs')
           .setStyle(ButtonStyle.Link)
           .setURL(`https://discord.com/channels/@me/${dmChannel.id}`);
-
         const actionRow = new ActionRowBuilder().addComponents(goToDmsButton);
 
         await interaction.update({
-            content: "🤖 Click the button below\nto continue in the DMs!",
+            content: "🤖 Click the button below to continue in your DMs!",
             embeds: [],
             components: [actionRow]
         });
-
         const updateTime = performance.now();
-        console.log(`[${interaction.customId} UPDATED_REPLY ${interaction.id}] Acknowledged button for ${userTag}. Took: ${(updateTime - aiSetupStartTime).toFixed(2)}ms`);
-        // New logic to correctly determine guildId and initialize/reset state
+        console.log(`[${interaction.customId} UPDATED_REPLY ${interactionId}] Acknowledged button for ${userTag}. Took: ${(updateTime - aiSetupStartTime).toFixed(2)}ms`);
+
         const currentSetupData = userExperimentSetupData.get(userId) || {};
-        const guildIdToUse = currentSetupData.guildId || process.env.GUILD_ID; // Prioritize already stored guildId (from DM flow), fallback to ENV
+        const guildIdToUse = currentSetupData.guildId || interaction.guild?.id || process.env.GUILD_ID;
 
         if (!guildIdToUse) {
-            console.error(`[${AI_ASSISTED_SETUP_BTN_ID} CRITICAL ${interaction.id}] guildId could not be determined for user ${userTag}. currentSetupData.guildId was ${currentSetupData.guildId}, process.env.GUILD_ID was ${process.env.GUILD_ID}`);
-            await interaction.editReply({ content: "Critical error: Server context is missing for AI setup. Please try starting from `/go` in the server.", components: [], embeds: [] });
-            return; // Stop further execution in this handler
+            console.error(`[${AI_ASSISTED_SETUP_BTN_ID} CRITICAL ${interactionId}] guildId could not be determined for user ${userTag}.`);
+            await interaction.followUp({ content: "Critical error: Server context is missing for AI setup. Please try starting from `/go` in the server.", ephemeral: true });
+            return;
         }
+
+        const firstPromptEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle("🚀 Let's Design Your Experiment!")
+            .setDescription("Big changes come from experiments.\n\nAn experiment has 3 components:\n1. A wish\n2. A measurable outcome\n3. 1-3 habits to improve that outcome")
+            .addFields({
+                name: "Let's start with your wish! ✨",
+                value: "What's 1 thing you wish was different in your daily life right now?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'"
+            })
+            .setFooter({ text: "Please type your answer below and press send." });
+
+        const promptMessage = await dmChannel.send({ embeds: [firstPromptEmbed] });
 
         userExperimentSetupData.set(userId, {
             userId: userId,
             userTag: userTag,
             guildId: guildIdToUse,
-            interactionId: interaction.id,
+            interactionId: interactionId,
             dmFlowState: 'awaiting_wish',
+            lastPromptMessageId: promptMessage.id,
             deeperWish: null,
             deeperProblem: null,
             aiGeneratedOutcomeLabelSuggestions: null,
@@ -3563,34 +3620,29 @@ client.on(Events.InteractionCreate, async interaction => {
             currentInputDefinition: null,
             aiGeneratedUnitSuggestionsForCurrentItem: null,
         });
-        console.log(`[${interaction.customId} STATE_INIT ${interaction.id}] Initialized DM flow state for ${userTag}: awaiting_wish.`);
 
-        await dmChannel.send({
-            content: "---\n---\nBig changes come from experiments.\n\nAn experiment has 3 components:\n1. A wish\n2. A measurable outcome\n3. 1-3 habits to improve that outcome\n\nLet's start with your wish! ✨\n\nWhat's 1 thing you wish was different in your daily life right now?\n\n**Tap the BOTTOM RIGHT 💬 icon**\nand type your wish!\n\nExamples:\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n→ → → → → → → → → → → → → → ↘"
-          //REMOVED \n\n(You'll be able to review and edit everything at the end. Type 'cancel' any time to stop this setup).
-          });
         const dmSentTime = performance.now();
-        console.log(`[${interaction.customId} DM_SENT ${interaction.id}] Sent 'awaiting_wish' DM to ${userTag}. Took: ${(dmSentTime - updateTime).toFixed(2)}ms`);
+        console.log(`[${interaction.customId} DM_SENT ${interactionId}] Sent 'awaiting_wish' DM to ${userTag} as embed and stored prompt ID ${promptMessage.id}.`);
       } catch (error) {
         const errorTime = performance.now();
-        console.error(`[${interaction.customId} ERROR ${interaction.id}] Error initiating AI assisted setup for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Error initiating AI assisted setup for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
         if (error.code === 50007) {
-             console.error(`[${interaction.customId} DM_FAIL ${interaction.id}] Cannot send DMs to ${userTag}. They may have DMs disabled.`);
+             console.error(`[${interaction.customId} DM_FAIL ${interactionId}] Cannot send DMs to ${userTag}. They may have DMs disabled.`);
              try {
-                await interaction.followUp({ // followUp as update() might have succeeded but DM failed
-                    content: "⚠️ I couldn't send you a DM. Please ensure your DMs are enabled for this server if you'd like to use the AI Assisted setup.",
-                    flags: MessageFlags.Ephemeral
-                });
+                await interaction.followUp({
+                    content: "⚠️ I couldn't send you a DM. Please check your server Privacy Settings to allow DMs if you'd like to use the AI Assisted setup.",
+                    ephemeral: true
+                 });
              } catch (followUpError) {
-                console.error(`[${interaction.customId} FOLLOWUP_FAIL ${interaction.id}] Failed to send DM failure followup:`, followUpError);
+                console.error(`[${interaction.customId} FOLLOWUP_FAIL ${interactionId}] Failed to send DM failure followup:`, followUpError);
              }
-        } else if (interaction.replied || interaction.deferred) { // If update failed
+        } else if (interaction.replied || interaction.deferred) {
             try {
-                await interaction.editReply({
+                await interaction.followUp({
                     content: "❌ An error occurred trying to start the AI assisted setup. Please try again.",
-                    embeds: [], components: []
+                    ephemeral: true
                 });
-            } catch (editErr) { console.error(`[${interaction.customId} EDIT_REPLY_ERROR_FALLBACK ${interaction.id}]`, editErr); }
+            } catch (editErr) { console.error(`[${interaction.customId} EDIT_REPLY_ERROR_FALLBACK ${interactionId}]`, editErr); }
         }
         userExperimentSetupData.delete(userId);
       }
@@ -4166,7 +4218,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
                 let finalPlaceholder = 'What did you observe? Any questions or insights?';
                 if (settings.deeperProblem) {
-                    finalPlaceholder = `What affected your goal today? → \n\n${settings.deeperProblem.substring(0, 60)}`;
+                    finalPlaceholder = `What affected your goal today?\n\n ↳ "${settings.deeperProblem.substring(0, 60)}"`;
                 }
                 notesInput.setPlaceholder(finalPlaceholder);
                 components.push(new ActionRowBuilder().addComponents(notesInput));
@@ -4336,7 +4388,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
             let finalPlaceholder = 'What did you observe? Any questions or insights?';
             if (settings.deeperProblem) {
-                finalPlaceholder = `What affected your goal today? → \n\n${settings.deeperProblem.substring(0, 60)}`;
+                finalPlaceholder = `What affected your goal today?\n\n ↳ "${settings.deeperProblem.substring(0, 60)}"`;
             }
             notesInput.setPlaceholder(finalPlaceholder);
             components.push(new ActionRowBuilder().addComponents(notesInput));
@@ -6440,7 +6492,7 @@ client.on(Events.InteractionCreate, async interaction => {
             console.log(`[dailyLogModal_firebase] Log ${result.logId} saved. AI Response received.`);
 
             // 5. Construct and send the final ephemeral reply
-            let finalEphemeralMessage = `✅ **Log Saved!**\n\n`;
+            let finalEphemeralMessage = `---\n---\n✅ **Log Saved!**\n\n`;
             const components = [];
 
             if (result.aiResponse) {

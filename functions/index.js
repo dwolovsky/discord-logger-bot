@@ -3237,6 +3237,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         3.  Make the message actionable by weaving in a reference to one of the "User's Habits", especially if it's relevant to "User's Recent Notes". If no habit is mentioned in the notes, go for broad encouragement to find any enjoyable growth in their day. Focus on the experience of their actions themselves. DO NOT use phrases like "achieve your goals" or "make progress."
                         4.  **CRUCIAL CONSTRAINT:** Use the "Current Time Context" to ensure your message is appropriate. If a habit is clearly time-specific (e.g., 'Morning Meditation', 'Bedtime Reading'), DO NOT mention it if the current time is incongruent (e.g., do not mention a bedtime habit in a morning reminder). If all listed habits are time-incongruent, frame the reminder more generally without mentioning a specific habit.
                         5.  Generate ONLY the reminder message text. Be direct and conversational.
+                        6.  Do not include any greeting (e.g., "Hi," "Hello"). Dive straight into the message.
                     `;
                     logger.info(`[sendScheduledReminders - AI Step 2 Blended Time-Aware] User ${userId}: Constructed Blended AI Prompt. Seed: "${randomSeedMessage}"`);
                 }
@@ -3621,12 +3622,13 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
                 * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
                 * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins! Anyone else?"
                 * "I've been wanting [Deeper Wish], and today felt a step in that direction because [reason from notes]. It's cool to see new connections."
+                * "My main takeaway from today: [brief, insightful summary of a learning]. Curious if that resonates with anyone."
 
             Return your response ONLY as a JSON object with the following structure:
             {
-                "acknowledgment": "It sounds like you [acknowledgment].",
-                "comfortMessage": "You already know, [supportive message].",
-                "publicPostSuggestion": "Just had a breakthrough with [Habit] today! Feeling so [emotion]. Anyone else finding [insight] helpful?"
+                "acknowledgment": "A concise, empathetic sentence acknowledging the user's experience from their notes.",
+                "comfortMessage": "A short, uplifting, and supportive message for the user.",
+                "publicPostSuggestion": "An engaging, first-person sentence (as the user) that could be posted publicly. This should be a varied output that can be a question, a celebration, or an insight based on their notes. Refer to examples above."
             }
             Do not include any other text, instructions, or markdown outside the JSON object.
         `;
