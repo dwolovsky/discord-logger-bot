@@ -326,7 +326,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     let displayNameForMessage;
     const storedUserTag = logData.userTag;
 
-    if (storedUserTag && storedUsertag.includes('#')) {
+    if (storedUserTag && storedUserTag.includes('#')) {
         const usernamePart = storedUserTag.substring(0, storedUserTag.lastIndexOf('#'));
         displayNameForMessage = (usernamePart && usernamePart.trim() !== "") ? usernamePart : storedUserTag;
     } else {

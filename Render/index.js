@@ -1249,14 +1249,27 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
         }
     }
     
-    if (loggedMetrics.length > 0) {
-        dmEmbed.addFields({ name: 'Logged Data', value: '\u200B' }); // Title for the data section
-        loggedMetrics.forEach(metric => {
-            if (metric.label) {
-                 dmEmbed.addFields({ name: `${metric.label} (${metric.unit})`, value: `${metric.value}`, inline: true });
+            // 1. Build a single description string that INCLUDES the header.
+            let newDescription = payload.notes && payload.notes.trim() !== "" 
+                ? payload.notes.trim() 
+                : "*No notes were provided for this log.*";
+
+            if (loggedMetrics.length > 0) {
+                // Add two newlines for a clean break, then add the bolded header.
+                newDescription += `\n\n**Logged Data**`; 
             }
-        });
-    }
+
+            dmEmbed.setDescription(newDescription);
+
+            // 2. Now, ONLY add the fields for the actual metrics. Do NOT add the separate header field.
+            if (loggedMetrics.length > 0) {
+                loggedMetrics.forEach(metric => {
+                    if (metric.label) {
+                        dmEmbed.addFields({ name: `${metric.label} (${metric.unit})`, value: `${metric.value}`, inline: true });
+                    }
+                });
+            }
+
 
     await interaction.user.send({ embeds: [dmEmbed] });
     console.log(`[sendAppreciationDM] Successfully sent log summary DM to ${interaction.user.tag}.`);
@@ -3256,21 +3269,18 @@ client.on(Events.InteractionCreate, async interaction => {
             const setupData = userExperimentSetupData.get(userId);
 
             if (!setupData) {
-                await interaction.editReply({ content: "Your session has expired. Please start over.", components: [] });
+                await interaction.editReply({ content: "Your session has expired. Please start over.", components: [], embeds: [] });
                 return;
             }
 
             // 1. Determine the destination state from the button's ID
             const destinationState = interaction.customId.split(':')[1];
-            
             // 2. Identify the CURRENT state to know what data to clear
             const currentState = setupData.dmFlowState;
-            
             // 3. Look up the fields to clear for the state we are LEAVING
             const fieldsToClear = dmFlowConfig[currentState]?.fieldsToClear || [];
             
             console.log(`[Dynamic Back Button ${interactionId}] User ${userId} going from ${currentState} to ${destinationState}. Clearing fields: ${fieldsToClear.join(', ')}`);
-
             for (const field of fieldsToClear) {
                 delete setupData[field];
             }
@@ -3282,15 +3292,15 @@ client.on(Events.InteractionCreate, async interaction => {
             // 5. Get the prompt for the destination state from our config
             const step = dmFlowConfig[destinationState];
             if (!step || typeof step.prompt !== 'function') {
-                await interaction.editReply({ content: "Error: Cannot find the previous step in the flow configuration. Please restart the setup.", components: [] });
+                await interaction.editReply({ content: "Error: Cannot find the previous step in the flow configuration. Please restart the setup.", components: [], embeds: [] });
                 return;
             }
 
-            // 6. Generate the content and components for the previous step
-            const { content, components } = step.prompt(setupData);
-
-            // 7. Update the message to show the previous step's prompt
-            await interaction.editReply({ content, components });
+            // 6. Generate the content, embeds, and components for the previous step
+            const { content, embeds, components } = step.prompt(setupData);
+            
+            // 7. Update the message to show the previous step's prompt, including embeds
+            await interaction.editReply({ content, embeds: embeds || [], components: components || [] });
 
         } catch (error) {
             console.error(`[Dynamic Back Button ERROR ${interactionId}]`, error);
