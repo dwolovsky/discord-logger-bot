@@ -546,7 +546,7 @@ const dmFlowConfig = {
     prompt: (setupData) => {
       const outcomeUnitSelectMenu = new StringSelectMenuBuilder()
         .setCustomId('outcome_unit_select')
-        .setPlaceholder('How will you measure this outcome daily?');
+        .setPlaceholder('What metric makes sense for this outcome?');
       outcomeUnitSelectMenu.addOptions(
         new StringSelectMenuOptionBuilder()
           .setLabel("✏️ Enter my own custom unit...")
@@ -1209,6 +1209,66 @@ async function sendFinalSummaryDM(interaction, setupData) {
     }
 }
 
+/**
+ * Asynchronously sends a DM with the user's logged data and notes.
+ * @param {import('discord.js').Interaction} interaction - The interaction object to get the user from.
+ * @param {object | null} aiResponse - The AI response object (used only to determine if notes existed).
+ * @param {object} settings - The user's experiment settings.
+ * @param {object} payload - The submitted log data, including notes and values.
+ */
+async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
+  try {
+    const dmEmbed = new EmbedBuilder()
+      .setColor(0x3498DB) // A nice blue
+      .setTitle("✨ Daily Log Summary ✨")
+      .setFooter({ text: "This is a private copy of your log entry." });
+
+    // Set the embed's main text to be the user's notes.
+    if (payload.notes && payload.notes.trim() !== "") {
+      dmEmbed.setDescription(payload.notes);
+    } else {
+      dmEmbed.setDescription("*No notes were provided for this log.*");
+    }
+
+    // Add the logged numerical data as fields
+    const loggedMetrics = [];
+    if (settings.output) {
+        loggedMetrics.push({
+            label: settings.output.label,
+            unit: settings.output.unit,
+            value: payload.outputValue
+        });
+    }
+    for (let i = 0; i < 3; i++) {
+        if (settings[`input${i + 1}`] && payload.inputValues[i]) {
+            loggedMetrics.push({
+                label: settings[`input${i + 1}`].label,
+                unit: settings[`input${i + 1}`].unit,
+                value: payload.inputValues[i]
+            });
+        }
+    }
+    
+    if (loggedMetrics.length > 0) {
+        dmEmbed.addFields({ name: 'Logged Data', value: '\u200B' }); // Title for the data section
+        loggedMetrics.forEach(metric => {
+            if (metric.label) {
+                 dmEmbed.addFields({ name: `${metric.label} (${metric.unit})`, value: `${metric.value}`, inline: true });
+            }
+        });
+    }
+
+    await interaction.user.send({ embeds: [dmEmbed] });
+    console.log(`[sendAppreciationDM] Successfully sent log summary DM to ${interaction.user.tag}.`);
+
+  } catch (error) {
+    if (error.code === 50007) { // Cannot send messages to this user
+      console.warn(`[sendAppreciationDM] Could not send log summary DM to ${interaction.user.tag} (DMs likely disabled).`);
+    } else {
+      console.error(`[sendAppreciationDM] Error sending log summary DM to ${interaction.user.tag}:`, error);
+    }
+  }
+}
 
 // End of Firebase initialization and helper functions block
 // Your existing bot code (const client = new Client(...), etc.) starts below this
@@ -1377,7 +1437,7 @@ client.on(Events.MessageCreate, async message => {
       const newPromptEmbed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle("3. Existing Positives")
-        .setDescription("What are 1 or more positive habits you already do consistently?\n\nThey can be related to the wish or not. **It all helps** 💃");
+        .setDescription("What are 1 or more positive habits you already do consistently?\n\nThey can be related to the wish or not.\n\n**It all helps** 💃");
 
       const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
       console.log(`[MessageCreate ASK_POSITIVE_HABITS ${interactionIdForLog}] Sent new prompt for positive habits as an embed.`);
@@ -1426,7 +1486,7 @@ client.on(Events.MessageCreate, async message => {
       const newPromptEmbed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle("4. Noticeable Success")
-        .setDescription("If your wish came true, what's the **1st small, positive change** you'd notice in your daily life?\n\nBe specific now!\n### Example\n\n**Wish**: 'More energy'\n**1st Change**: 'Not being sleepy in the afternoon'")
+        .setDescription("If your wish came true, what's the **1st positive change** you'd notice?\n### Example\n\n**If Wish** = 'More energy'\n\n**Then 1st Change** = 'Needing less coffee'")
 
       const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
       console.log(`[MessageCreate ASK_VISION ${interactionIdForLog}] Sent new prompt for vision of success as an embed.`);
@@ -2056,7 +2116,7 @@ client.on(Events.MessageCreate, async message => {
 
       const habitUnitSelectMenu = new StringSelectMenuBuilder()
           .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // Dynamic ID e.g., input_unit_select_2
-          .setPlaceholder('How will you measure this habit daily?');
+          .setPlaceholder('What metric makes sense for this habit?');
       habitUnitSelectMenu.addOptions(
                 new StringSelectMenuOptionBuilder()
                     .setLabel("✏️ Enter custom unit...")
@@ -2073,7 +2133,7 @@ client.on(Events.MessageCreate, async message => {
       
       const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
       const unitDropdownPromptMessage = `Okay, your 2nd Daily Habit is:\n**"${input2Label}"**.\n\n` +
-                                      `How will you measure this daily?\nThis is its **Unit/Scale**.`;
+                                      `What metric makes sense for this habit?`;
 
       await message.author.send({
           content: unitDropdownPromptMessage,
@@ -2129,7 +2189,7 @@ client.on(Events.MessageCreate, async message => {
 
       const habitUnitSelectMenu = new StringSelectMenuBuilder()
           .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // This will be 'input_unit_select_3'
-          .setPlaceholder('How will you measure this habit daily?');
+          .setPlaceholder('What metric makes sense for this habit?');
       habitUnitSelectMenu.addOptions(
           new StringSelectMenuOptionBuilder()
               .setLabel("✏️ Enter custom unit...")
@@ -2249,45 +2309,40 @@ client.on(Events.MessageCreate, async message => {
     }
 
     else if (setupData.dmFlowState === 'awaiting_input2_custom_unit_text') {
-      const customInput2Unit = messageContent.trim(); // messageContent is from the top of MessageCreate
+      const customInput2Unit = messageContent.trim();
       const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
       const userId = message.author.id;
       const userTag = message.author.tag;
       const input2Label = setupData.currentInputDefinition?.label;
-
-      // Ensure Input 2 label is still in context
       if (!input2Label || setupData.currentInputIndex !== 2) {
         console.error(`[MessageCreate AWAITING_INPUT2_CUSTOM_UNIT_TEXT_ERROR ${interactionIdForLog}] Missing Input 2 label or incorrect index in setupData for user ${userTag}. State: ${setupData.dmFlowState}, Index: ${setupData.currentInputIndex}. Aborting.`);
         await message.author.send("I seem to have lost track of your second habit's label. Let's try defining this habit again. What Label would you give your second daily habit? (max 30 characters)");
-        setupData.dmFlowState = 'awaiting_input2_label_text'; // Revert to asking for label for Input 2
+        setupData.dmFlowState = 'awaiting_input2_label_text';
         delete setupData.currentInputDefinition;
         userExperimentSetupData.set(userId, setupData);
         return;
       }
 
       console.log(`[MessageCreate AWAITING_INPUT2_CUSTOM_UNIT_TEXT ${interactionIdForLog}] User ${userTag} (ID: ${userId}) sent custom unit: "${customInput2Unit}" for Input 2 Label: "${input2Label}".`);
-
       if (!customInput2Unit) {
         await message.author.send(
           `It looks like your custom unit for your second habit **"${input2Label}"** was empty. How would you like to measure this habit daily?\n` +
           `Please type your custom Unit/Scale\n\nE.g.\n● "Minutes"\n● "Reps"\n● "0-10 effort"\n● "Pages"\n\n(Max 15 characters).`
         );
         console.log(`[MessageCreate INPUT2_CUSTOM_UNIT_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom unit for Input 2.`);
-        return; // Keep state, wait for new message
+        return;
       }
 
-      // Validate the unit string itself
-      const MAX_UNIT_ONLY_LENGTH = 15; // Consistent
+      const MAX_UNIT_ONLY_LENGTH = 15;
       if (customInput2Unit.length > MAX_UNIT_ONLY_LENGTH) {
         await message.author.send(
           `That unit ("${customInput2Unit}") is a bit long (max ${MAX_UNIT_ONLY_LENGTH} characters for the unit itself).\n\n` +
           `Could you provide a more concise scale/unit to measure for your habit\n**"${input2Label}"**?\n\nMax 15 characters.`
         );
         console.log(`[MessageCreate INPUT2_CUSTOM_UNIT_TOO_LONG ${interactionIdForLog}] User ${userTag} sent unit for Input 2 over ${MAX_UNIT_ONLY_LENGTH} chars: "${customInput2Unit}".`);
-        return; // Keep state
+        return;
       }
 
-      // --- Combined Length Check ---
       const combinedLength = (input2Label + " " + customInput2Unit).length;
       const MAX_COMBINED_LENGTH = 45;
 
@@ -2297,66 +2352,61 @@ client.on(Events.MessageCreate, async message => {
             `Could you please provide a shorter Unit/Scale for **"${input2Label}"**?`
         );
         console.warn(`[MessageCreate INPUT2_CUSTOM_UNIT_COMBO_TOO_LONG ${interactionIdForLog}] Combined length for Input 2 ("${input2Label} / ${customInput2Unit}") is ${combinedLength} (max ${MAX_COMBINED_LENGTH}).`);
-        return; // Keep state, user needs to provide a shorter unit
+        return;
       }
-      // --- End Combined Length Check ---
 
-      // Validation passed
       setupData.currentInputDefinition.unit = customInput2Unit;
       delete setupData.currentInputDefinition.unitCategory;
       delete setupData.aiGeneratedUnitSuggestionsForCurrentItem;
 
-      setupData.dmFlowState = 'awaiting_input2_target_number'; // Next state for Input 2
+      setupData.dmFlowState = 'awaiting_input2_target_number';
       userExperimentSetupData.set(userId, setupData);
-
       console.log(`[MessageCreate INPUT2_CUSTOM_UNIT_VALID ${interactionIdForLog}] User ${userTag} confirmed custom unit for Input 2: "${customInput2Unit}" for label "${input2Label}". Combo length: ${combinedLength}. State changed to '${setupData.dmFlowState}'.`);
-
-      const targetPromptMessage = `Great! Your second daily habit is\n\n**${input2Label}** **${customInput2Unit}**.\n\nWhat is your daily **Target amount**?\n\nPlease type the number below\n(0 and up, decimals ok ✅).`;
-
-      await message.author.send(targetPromptMessage);
+      
+      const targetEmbed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle("🎯 Daily Target for Habit 2")
+        .setDescription(`Great! Your second daily habit is\n\n**${input2Label} ${customInput2Unit}**.\n\nWhat is your daily **Target amount**?\n\nPlease type the number below\n(0 and up, decimals ok ✅).`);
+        
+      await message.author.send({ embeds: [targetEmbed] });
       console.log(`[MessageCreate INPUT2_CUSTOM_UNIT_TARGET_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for Input 2 target number.`);
     }
 
     else if (setupData.dmFlowState === 'awaiting_input3_custom_unit_text') {
-      const customInput3Unit = messageContent.trim(); // messageContent is from the top of MessageCreate
+      const customInput3Unit = messageContent.trim();
       const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
       const userId = message.author.id;
       const userTag = message.author.tag;
       const input3Label = setupData.currentInputDefinition?.label;
-
-      // Ensure Input 3 label is still in context
       if (!input3Label || setupData.currentInputIndex !== 3) {
         console.error(`[MessageCreate AWAITING_INPUT3_CUSTOM_UNIT_TEXT_ERROR ${interactionIdForLog}] Missing Input 3 label or incorrect index in setupData for user ${userTag}. State: ${setupData.dmFlowState}, Index: ${setupData.currentInputIndex}. Aborting.`);
         await message.author.send("I seem to have lost track of your third habit's label. Let's try defining this habit again. What Label would you give your third daily habit? (max 30 characters)");
-        setupData.dmFlowState = 'awaiting_input3_label_text'; // Revert to asking for label for Input 3
+        setupData.dmFlowState = 'awaiting_input3_label_text';
         delete setupData.currentInputDefinition;
         userExperimentSetupData.set(userId, setupData);
         return;
       }
 
       console.log(`[MessageCreate AWAITING_INPUT3_CUSTOM_UNIT_TEXT ${interactionIdForLog}] User ${userTag} (ID: ${userId}) sent custom unit: "${customInput3Unit}" for Input 3 Label: "${input3Label}".`);
-
       if (!customInput3Unit) {
         await message.author.send(
           `It looks like your custom unit for your third habit **"${input3Label}"** was empty. How would you like to measure this habit daily?\n` +
           `Please type your custom Unit/Scale\n\nE.g.\n● "Minutes"\n● "Reps"\n● "0-10 effort"\n● "Pages"\n\n(Max 15 characters).`
         );
         console.log(`[MessageCreate INPUT3_CUSTOM_UNIT_EMPTY ${interactionIdForLog}] User ${userTag} sent empty custom unit for Input 3.`);
-        return; // Keep state, wait for new message
+        return;
       }
 
-      // Validate the unit string itself
-      const MAX_UNIT_ONLY_LENGTH = 15; // Consistent
+      const MAX_UNIT_ONLY_LENGTH = 15;
       if (customInput3Unit.length > MAX_UNIT_ONLY_LENGTH) {
         await message.author.send(
           `That unit ("${customInput3Unit}") is a bit long (max ${MAX_UNIT_ONLY_LENGTH} characters for the unit itself).\n` +
           `Could you provide a more concise scale/unit for your habit\n**"${input3Label}"**?\n\nE.g., "minutes", "reps", "0-10 effort", "pages"\n\nMax 15 characters.`
         );
         console.log(`[MessageCreate INPUT3_CUSTOM_UNIT_TOO_LONG ${interactionIdForLog}] User ${userTag} sent unit for Input 3 over ${MAX_UNIT_ONLY_LENGTH} chars: "${customInput3Unit}".`);
-        return; // Keep state
+        return;
       }
 
-      // --- Combined Length Check ---
       const combinedLength = (input3Label + " " + customInput3Unit).length;
       const MAX_COMBINED_LENGTH = 45;
 
@@ -2366,26 +2416,23 @@ client.on(Events.MessageCreate, async message => {
             `Could you please provide a shorter Unit/Scale for **"${input3Label}"**?`
         );
         console.warn(`[MessageCreate INPUT3_CUSTOM_UNIT_COMBO_TOO_LONG ${interactionIdForLog}] Combined length for Input 3 ("${input3Label} / ${customInput3Unit}") is ${combinedLength} (max ${MAX_COMBINED_LENGTH}).`);
-        return; // Keep state, user needs to provide a shorter unit
+        return;
       }
-      // --- End Combined Length Check ---
 
-      // Validation passed
       setupData.currentInputDefinition.unit = customInput3Unit;
       delete setupData.currentInputDefinition.unitCategory;
       delete setupData.aiGeneratedUnitSuggestionsForCurrentItem;
 
-      setupData.dmFlowState = 'awaiting_input3_target_number'; // Next state for Input 3
+      setupData.dmFlowState = 'awaiting_input3_target_number';
       userExperimentSetupData.set(userId, setupData);
-
       console.log(`[MessageCreate INPUT3_CUSTOM_UNIT_VALID ${interactionIdForLog}] User ${userTag} confirmed custom unit for Input 3: "${customInput3Unit}" for label "${input3Label}". Combo length: ${combinedLength}. State changed to '${setupData.dmFlowState}'.`);
+      
+      const targetEmbed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle("🎯 Daily Target for Habit 3")
+        .setDescription(`Great! For your 3rd daily habit:\n\n**${input3Label} ${customInput3Unit}**\n\nWhat is your daily **Target #**?\nPlease type the number below.`);
 
-      const targetPromptMessage = `Great! For your 3rd daily habit:\n\n**${input3Label} ${customInput3Unit}**
-
-      What is your daily **Target #** for ${input3Label} ${customInput3Unit}?
-      Please type the number below.`;
-
-      await message.author.send(targetPromptMessage);
+      await message.author.send({ embeds: [targetEmbed] });
       console.log(`[MessageCreate INPUT3_CUSTOM_UNIT_TARGET_PROMPT_SENT ${interactionIdForLog}] Prompted ${userTag} for Input 3 target number.`);
     }
 
@@ -3994,11 +4041,9 @@ client.on(Events.InteractionCreate, async interaction => {
         
         const instructionEmbed = new EmbedBuilder()
             .setColor('#FFA500') // Orange for instruction/warning
-            .setTitle('✏️ Edit Your Experiment Metrics')
+            .setTitle('CRUCIAL FORMATTING NOTE:')
             .setDescription(
-                "**CRUCIAL FORMATTING NOTE:**\n" +
-                "Use Commas!!! ↳ , ↲ \n\nEach line should have this format:\nGoal # , Unit / Scale , Label\n\nE.g.\n7.5, hours, Sleep\nOR\n8, out of 10, Relationships)\n\n" +
-                "Click the button below when you're ready to open the edit form."
+                "Each line should have this format:\nGoal # , Unit / Scale , Label\n\nE.g.\n7.5, hours, Sleep\nOR\n8, out of 10, Relationships)\n\nUse Commas! ↳  ,  ↲"
             )
             .setFooter({text: "Your current Duration and Reminder settings will remain unchanged by this edit."});
 
@@ -5756,7 +5801,6 @@ client.on(Events.InteractionCreate, async interaction => {
       const userId = interaction.user.id;
       const userTagForLog = interaction.user.tag;
       console.log(`[ai_input1_label_select START ${interactionId}] Received Input 1 HABIT LABEL selection from ${userTagForLog}.`);
-      
       try {
         await interaction.deferUpdate();
         const deferTime = performance.now();
@@ -5771,16 +5815,19 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const selectedValue = interaction.values[0];
         let chosenHabitLabel = "";
-        
         if (selectedValue === 'custom_input1_label') {
           console.log(`[ai_input1_label_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom habit label' for Input 1.`);
           setupData.dmFlowState = 'awaiting_input1_label_text';
           userExperimentSetupData.set(userId, setupData);
-          const customLabelPrompt = `Please type your habit (or life priority) below\n\nE.g.\n● "Journaling"\n● "Mindful Walk"\n● "Exercise".\n\n(max 30 characters)`;
-          await interaction.editReply({ content: customLabelPrompt, components: [] });
+
+          const customLabelEmbed = new EmbedBuilder()
+            .setColor('#5865F2') // Consistent color for prompts
+            .setTitle("✏️ Custom Daily Habit")
+            .setDescription("Please type your habit (or life priority) below.\n\n**Examples:**\n● \"Journaling\"\n● \"Mindful Walk\"\n● \"Exercise\"\n\n(max 30 characters)");
+          
+          await interaction.editReply({ embeds: [customLabelEmbed], components: [] });
           console.log(`[ai_input1_label_select CUSTOM_LABEL_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom Input 1 label text.`);
           return;
-
         } else if (selectedValue.startsWith('ai_input1_label_suggestion_')) {
           const suggestionIndex = parseInt(selectedValue.split('ai_input1_label_suggestion_')[1], 10);
           if (setupData.aiGeneratedInputLabelSuggestions?.[suggestionIndex]) {
@@ -5810,13 +5857,12 @@ client.on(Events.InteractionCreate, async interaction => {
         
         await interaction.editReply({ content, components });
         console.log(`[ai_input1_label_select UNIT_DROPDOWN_SENT ${interactionId}] Prompted ${userTagForLog} with habit unit dropdown for Input 1.`);
-
       } catch (error) {
         const errorTime = performance.now();
         console.error(`[ai_input1_label_select ERROR ${interactionId}] Error processing Input 1 HABIT LABEL select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
         if (!interaction.replied) {
-            try { await interaction.followUp({ content: "Sorry, an error occurred after your selection. Please try again if needed.", ephemeral: true });
-            } catch (e) { console.error(`[ai_input1_label_select ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
+            try { await interaction.followUp({ content: "Sorry, an error occurred after your selection. Please try again if needed.", ephemeral: true }); } 
+            catch (e) { console.error(`[ai_input1_label_select ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
         }
       }
       const processEndTime = performance.now();
@@ -5848,15 +5894,17 @@ client.on(Events.InteractionCreate, async interaction => {
           console.log(`[ai_input2_label_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom habit label' for Input 2.`);
           setupData.dmFlowState = 'awaiting_input2_label_text'; // Set the next state
           userExperimentSetupData.set(userId, setupData);
-
-          const customLabelPrompt = `Please type your habit below\n\nE.g.\n\n● "Journaling"\n● "Mindful Walk"\n● "Exercise"\n\n(max 30 characters)`;
+          
+          const customLabelEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle("✏️ Custom Daily Habit 2")
+            .setDescription("Please type your second habit below.\n\n**Examples:**\n● \"Evening Review\"\n● \"Limit Screen Time\"\n\n(max 30 characters)");
 
           // This single call correctly updates the DM, replacing the dropdown with the new prompt.
           await interaction.editReply({
-              content: customLabelPrompt,
+              embeds: [customLabelEmbed],
               components: [] // This removes the select menu from the message
           });
-
           console.log(`[ai_input2_label_select CUSTOM_LABEL_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom Input 2 label text. State: ${setupData.dmFlowState}.`);
           return; // Wait for the user's text message
       } else if (selectedValue.startsWith('ai_input2_label_suggestion_')) {
@@ -5876,18 +5924,16 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         // AI-suggested habit label was chosen and is valid
-        setupData.currentInputDefinition = { label: chosenHabitLabel }; // currentInputDefinition now holds Input 2's label
+        setupData.currentInputDefinition = { label: chosenHabitLabel };
+        // currentInputDefinition now holds Input 2's label
         delete setupData.aiGeneratedInputLabelSuggestions;
-        
         // ***** CORRECTED SECTION FOR INPUT 2 UNIT DROPDOWN *****
-        setupData.dmFlowState = `awaiting_input${setupData.currentInputIndex}_unit_dropdown_selection`; // Will be 'awaiting_input2_unit_dropdown_selection'
+        setupData.dmFlowState = `awaiting_input${setupData.currentInputIndex}_unit_dropdown_selection`;
+        // Will be 'awaiting_input2_unit_dropdown_selection'
         userExperimentSetupData.set(userId, setupData);
-        
         const habitUnitSelectMenu = new StringSelectMenuBuilder()
             .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // Will be 'input_unit_select_2'
-            .setPlaceholder('How will you measure this habit daily?');
-        
-
+            .setPlaceholder('What metric makes sense for this habit?');
         habitUnitSelectMenu.addOptions(
             new StringSelectMenuOptionBuilder()
                 .setLabel("✏️ Enter my own custom unit...")
@@ -5902,7 +5948,6 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             habitUnitSelectMenu.addOptions(option);
         });
-                
         const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
         const unitDropdownPromptMessage = `**Habit ${setupData.currentInputIndex} = ${chosenHabitLabel}**.\n\nHow will you measure this?`;
         // ***** END: CORRECTED SECTION *****
@@ -5918,7 +5963,6 @@ client.on(Events.InteractionCreate, async interaction => {
             components: [rowWithHabitUnitSelect]
         });
         console.log(`[ai_input${setupData.currentInputIndex}_label_select INPUT_UNIT_DROPDOWN_SENT ${interactionId}] Prompted ${userTagForLog} with habit unit dropdown for Input ${setupData.currentInputIndex}. State: ${setupData.dmFlowState}.`);
-
       } catch (error) {
         const errorTime = performance.now();
         console.error(`[ai_input2_label_select ERROR ${interactionId}] Error processing Input 2 HABIT LABEL select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
@@ -5960,14 +6004,16 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = 'awaiting_input3_label_text';
           userExperimentSetupData.set(userId, setupData);
 
-          const customLabelPrompt = `You chose to enter your own custom label for your 3rd Daily Habit.\n\nPlease type your custom label in a new message below\n(max 30 characters).`;
-
+          const customLabelEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle("✏️ Custom Daily Habit 3")
+            .setDescription("Please type your third and final habit below.\n\n(max 30 characters)");
+            
           // This single call correctly updates the DM, replacing the dropdown with the new prompt.
           await interaction.editReply({
-              content: customLabelPrompt,
+              embeds: [customLabelEmbed],
               components: [] // Removes the select menu
           });
-
           console.log(`[ai_input3_label_select CUSTOM_LABEL_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom Input 3 label text. State: ${setupData.dmFlowState}.`);
           return; // Wait for user's text message
       } else if (selectedValue.startsWith('ai_input3_label_suggestion_')) {
@@ -5987,18 +6033,16 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         // AI-suggested habit label was chosen and is valid
-        setupData.currentInputDefinition = { label: chosenHabitLabel }; // currentInputDefinition now holds Input 3's label
+        setupData.currentInputDefinition = { label: chosenHabitLabel };
+        // currentInputDefinition now holds Input 3's label
         delete setupData.aiGeneratedInputLabelSuggestions;
-        
         // ***** CORRECTED SECTION FOR INPUT 3 UNIT DROPDOWN *****
-        setupData.dmFlowState = `awaiting_input${setupData.currentInputIndex}_unit_dropdown_selection`; // Will be 'awaiting_input3_unit_dropdown_selection'
+        setupData.dmFlowState = `awaiting_input${setupData.currentInputIndex}_unit_dropdown_selection`;
+        // Will be 'awaiting_input3_unit_dropdown_selection'
         userExperimentSetupData.set(userId, setupData);
-        
         const habitUnitSelectMenu = new StringSelectMenuBuilder()
             .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // Will be 'input_unit_select_3'
-            .setPlaceholder('How will you measure this habit daily?');
-        
-
+            .setPlaceholder('What metric makes sense for this habit?');
         habitUnitSelectMenu.addOptions(
             new StringSelectMenuOptionBuilder()
                 .setLabel("✏️ Enter my own custom unit...")
@@ -6013,7 +6057,6 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             habitUnitSelectMenu.addOptions(option);
         });
-                      
         const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
         const unitDropdownPromptMessage = `**Habit ${setupData.currentInputIndex} = ${chosenHabitLabel}**.\n\nHow will you measure this?`;
         // ***** END: CORRECTED SECTION *****
@@ -6029,7 +6072,6 @@ client.on(Events.InteractionCreate, async interaction => {
             components: [rowWithHabitUnitSelect]
         });
         console.log(`[ai_input${setupData.currentInputIndex}_label_select INPUT_UNIT_DROPDOWN_SENT ${interactionId}] Prompted ${userTagForLog} with habit unit dropdown for Input ${setupData.currentInputIndex}. State: ${setupData.dmFlowState}.`);
-
       } catch (error) {
         const errorTime = performance.now();
         console.error(`[ai_input3_label_select ERROR ${interactionId}] Error processing Input 3 HABIT LABEL select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
@@ -6069,12 +6111,17 @@ client.on(Events.InteractionCreate, async interaction => {
           console.log(`[${OUTCOME_UNIT_SELECT_ID} CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'Enter my own custom unit' for Outcome.`);
           setupData.dmFlowState = 'awaiting_custom_outcome_unit_text';
           userExperimentSetupData.set(userId, setupData);
-          const customUnitPrompt = `Okay, you want to enter a custom unit for your Outcome Metric: **"${setupData.outcomeLabel}"**.\n\nPlease type your custom Unit/Scale below (e.g., "0-10 rating", "USD", "Tasks").\nMax 15 characters.`;
+
+          const customUnitEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle("✏️ Custom Unit/Scale")
+            .setDescription(`Okay, you want to enter a custom unit for your Outcome Metric: **"${setupData.outcomeLabel}"**.\n\nPlease type your custom Unit/Scale below (e.g., "0-10 rating", "USD", "Tasks").\n\n(Max 15 characters)`);
+
           try {
-            await interaction.editReply({ content: customUnitPrompt, components: [] });
+            await interaction.editReply({ embeds: [customUnitEmbed], components: [] });
           } catch (editError) {
             console.warn(`[${OUTCOME_UNIT_SELECT_ID} EDIT_REPLY_FAIL_CUSTOM ${interactionId}] Failed to edit message for custom unit path. Sending new DM. Error: ${editError.message}`);
-            await interaction.user.send(customUnitPrompt);
+            await interaction.user.send({ embeds: [customUnitEmbed] });
           }
           console.log(`[${OUTCOME_UNIT_SELECT_ID} CUSTOM_UNIT_PROMPT_SENT ${interactionId}] Prompted ${userTagForLog} for custom outcome unit text. State: ${setupData.dmFlowState}.`);
           return;
@@ -6087,7 +6134,6 @@ client.on(Events.InteractionCreate, async interaction => {
           setupData.dmFlowState = nextState;
           userExperimentSetupData.set(userId, setupData);
           console.log(`[${OUTCOME_UNIT_SELECT_ID} PREDEFINED_UNIT_SELECTED ${interactionId}] User ${userTagForLog} selected unit "${selectedValue}". Transitioning to state '${nextState}'.`);
-
           // Get the next prompt from our central config
           const step = dmFlowConfig[nextState];
           const { content, embeds, components } = step.prompt(setupData);
@@ -6104,15 +6150,11 @@ client.on(Events.InteractionCreate, async interaction => {
         const errorTime = performance.now();
         console.error(`[${OUTCOME_UNIT_SELECT_ID} ERROR ${interactionId}] Error processing select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
         if (interaction.deferred && !interaction.replied) {
-            try { await interaction.editReply({ content: "Sorry, something went wrong processing your outcome unit choice. You might need to try selecting again.", components: [] });
-            }
-            catch (e) { console.error(`[${OUTCOME_UNIT_SELECT_ID} ERROR_EDITREPLY_FAIL ${interactionId}]`, e);
-            }
+            try { await interaction.editReply({ content: "Sorry, something went wrong processing your outcome unit choice. You might need to try selecting again.", components: [] }); }
+            catch (e) { console.error(`[${OUTCOME_UNIT_SELECT_ID} ERROR_EDITREPLY_FAIL ${interactionId}]`, e); }
         } else {
-            try { await interaction.followUp({ content: "Sorry, an error occurred after your outcome unit selection. Please try again if needed.", ephemeral: true });
-            }
-            catch (e) { console.error(`[${OUTCOME_UNIT_SELECT_ID} ERROR_FOLLOWUP_FAIL ${interactionId}]`, e);
-            }
+            try { await interaction.followUp({ content: "Sorry, an error occurred after your outcome unit selection. Please try again if needed.", ephemeral: true }); }
+            catch (e) { console.error(`[${OUTCOME_UNIT_SELECT_ID} ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
         }
       }
       const processEndTime = performance.now();
@@ -6128,7 +6170,6 @@ client.on(Events.InteractionCreate, async interaction => {
       const inputIndexStr = interaction.customId.substring(INPUT_UNIT_SELECT_ID_PREFIX.length);
       const inputIndex = parseInt(inputIndexStr, 10);
       console.log(`[${interaction.customId} START ${interactionId}] Received Input ${inputIndex} Unit selection from ${userTagForLog}.`);
-
       try {
         await interaction.deferUpdate();
         const deferTime = performance.now();
@@ -6149,20 +6190,22 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const selectedValue = interaction.values[0];
         const currentHabitLabel = setupData.currentInputDefinition.label;
-        
         if (selectedValue === CUSTOM_UNIT_OPTION_VALUE) {
           console.log(`[${interaction.customId} CUSTOM_PATH ${interactionId}] User selected 'custom unit' for Input ${inputIndex}.`);
           setupData.dmFlowState = `awaiting_input${inputIndex}_custom_unit_text`;
           userExperimentSetupData.set(userId, setupData);
-          const customUnitPrompt = `Okay, you want to enter a custom unit for your Habit ${inputIndex}: **"${currentHabitLabel}"**.\n\nPlease type your custom Unit/Scale below (e.g., "minutes", "reps", "0-5 scale").\nMax 15 characters.`;
-          await interaction.editReply({ content: customUnitPrompt, components: [] });
+          
+          const customUnitEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle(`✏️ Custom Unit for Habit ${inputIndex}`)
+            .setDescription(`Okay, you want to enter a custom unit for: **"${currentHabitLabel}"**.\n\nPlease type your custom Unit/Scale below (e.g., "minutes", "reps", "0-5 scale").\n\n(Max 15 characters)`);
+
+          await interaction.editReply({ embeds: [customUnitEmbed], components: [] });
           console.log(`[${interaction.customId} CUSTOM_UNIT_PROMPT_SENT ${interactionId}] Prompted for custom Input ${inputIndex} unit text.`);
           return;
-
         } else {
           // A predefined unit was selected
           setupData.currentInputDefinition.unit = selectedValue;
-          
           // For now, we only have the back button fully configured for the first habit (inputIndex === 1)
           if (inputIndex === 1) {
               const isTimeMetric = TIME_OF_DAY_KEYWORDS.includes(selectedValue.toLowerCase().trim());
@@ -6193,8 +6236,13 @@ client.on(Events.InteractionCreate, async interaction => {
               } else {
                   setupData.dmFlowState = `awaiting_input${inputIndex}_target_number`;
                   userExperimentSetupData.set(userId, setupData);
-                  const targetPromptMessage = `Perfect!\nFor your habit **"${currentHabitLabel}"** (measured in **"${selectedValue}"**):\n\nWhat is your daily **Target Number**?\nPlease type the number below (e.g., 30, 1, 0, 5.5).`;
-                  await interaction.editReply({ content: targetPromptMessage, components: [] });
+                  
+                  const targetEmbed = new EmbedBuilder()
+                    .setColor('#5865F2')
+                    .setTitle(`🎯 Daily Target for Habit ${inputIndex}`)
+                    .setDescription(`Perfect!\nFor your habit **"${currentHabitLabel}"** (measured in **"${selectedValue}"**):\n\nWhat is your daily **Target Number**?\nPlease type the number below (e.g., 30, 1, 0, 5.5).`);
+
+                  await interaction.editReply({ embeds: [targetEmbed], components: [] });
               }
               console.log(`[${interaction.customId} PREDEFINED_UNIT_SELECTED_FALLBACK ${interactionId}] Used old logic to send target prompt for Input ${inputIndex}.`);
           }
@@ -6203,8 +6251,8 @@ client.on(Events.InteractionCreate, async interaction => {
         const errorTime = performance.now();
         console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing select menu for Input ${inputIndex} for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
         if (!interaction.replied) {
-            try { await interaction.followUp({ content: `Sorry, an error occurred after your unit selection for Habit ${inputIndex}. Please try again if needed.`, ephemeral: true });
-            } catch (e) { console.error(`[${interaction.customId} ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
+            try { await interaction.followUp({ content: `Sorry, an error occurred after your unit selection for Habit ${inputIndex}. Please try again if needed.`, ephemeral: true }); } 
+            catch (e) { console.error(`[${interaction.customId} ERROR_FOLLOWUP_FAIL ${interactionId}]`, e); }
         }
       }
       const processEndTime = performance.now();
@@ -6393,8 +6441,7 @@ client.on(Events.InteractionCreate, async interaction => {
    // Handle modal submission
   else if (interaction.isModalSubmit()) {
   // +++ COMPLETE MODAL SUBMISSION HANDLER FOR DAILY LOG (FIREBASE) +++
-    // REPLACE the 'dailyLogModal_firebase' handler in render/index.js with this definitive, simpler version.
-
+   // REPLACE THE EXISTING 'dailyLogModal_firebase' HANDLER
     if (interaction.isModalSubmit() && interaction.customId === 'dailyLogModal_firebase') {
         const modalSubmitStartTime = performance.now();
         console.log(`[dailyLogModal_firebase] Submission received by User: ${interaction.user.tag}, InteractionID: ${interaction.id}`);
@@ -6409,79 +6456,81 @@ client.on(Events.InteractionCreate, async interaction => {
             const setupData = userExperimentSetupData.get(interaction.user.id);
             const settings = setupData?.logFlowSettings;
             const loggedTimeValues = setupData?.loggedTimeValues || {};
-
             if (!settings) {
                 await interaction.editReply({ content: "❌ Error: Could not find the settings for this experiment log. Please try starting the log process again.", components: [] });
                 return;
             }
 
-            // 3. Consolidate and validate values
-            let payloadOutputValue;
-            const payloadInputValues = ["", "", ""];
-            const notes = interaction.fields.getTextInputValue('log_notes')?.trim();
-            
+            // 3. Consolidate and validate values from the modal
+            const payload = {
+                outputValue: null,
+                inputValues: ["", "", ""],
+                notes: interaction.fields.getTextInputValue('log_notes')?.trim(),
+                userTag: interaction.user.tag,
+                channelId: interaction.channel.id
+            };
+
             if (settings.output && settings.output.label) {
                 if (loggedTimeValues.hasOwnProperty(settings.output.label)) {
-                    payloadOutputValue = loggedTimeValues[settings.output.label];
+                    payload.outputValue = loggedTimeValues[settings.output.label];
                 } else {
-                    try { payloadOutputValue = interaction.fields.getTextInputValue('log_output_value')?.trim(); } catch { /* was not in modal */ }
+                    try { payload.outputValue = interaction.fields.getTextInputValue('log_output_value')?.trim(); } catch { /* was not in modal */ }
                 }
             }
             for (let i = 0; i < 3; i++) {
                 const inputConfig = settings[`input${i + 1}`];
                 if (inputConfig && inputConfig.label) {
                     if (loggedTimeValues.hasOwnProperty(inputConfig.label)) {
-                        payloadInputValues[i] = loggedTimeValues[inputConfig.label];
+                        payload.inputValues[i] = loggedTimeValues[inputConfig.label];
                     } else {
-                        try { payloadInputValues[i] = interaction.fields.getTextInputValue(`log_input${i + 1}_value`)?.trim(); } catch { /* was not in modal */ }
+                        try { payload.inputValues[i] = interaction.fields.getTextInputValue(`log_input${i + 1}_value`)?.trim(); } catch { /* was not in modal */ }
                     }
                 }
             }
 
-            if (payloadOutputValue === undefined || payloadOutputValue === null || (payloadInputValues[0] === undefined || payloadInputValues[0] === null || payloadInputValues[0] === "") || !notes) {
+            if (payload.outputValue === undefined || payload.outputValue === null || (payload.inputValues[0] === undefined || payload.inputValues[0] === null || payload.inputValues[0] === "") || !payload.notes) {
                 await interaction.editReply({ content: "❌ Missing required fields (Outcome, Habit 1, or Notes)." });
                 return;
             }
 
-            // 4. Call the synchronous Firebase Function with all data, including channelId
-            const payload = {
-                outputValue: payloadOutputValue,
-                inputValues: payloadInputValues,
-                notes,
-                userTag: interaction.user.tag,
-                channelId: interaction.channel.id // Add channelId to the payload
-            };
-
+            // 4. Call the synchronous Firebase Function
             console.log(`[dailyLogModal_firebase] Calling submitAndAnalyzeLog for User: ${interaction.user.id}`);
             const result = await callFirebaseFunction('submitAndAnalyzeLog', payload, interaction.user.id);
-
             if (!result || !result.success) {
                 throw new Error(result?.error || "Failed to submit log and get AI analysis.");
             }
 
             console.log(`[dailyLogModal_firebase] Log ${result.logId} saved. AI Response received.`);
-
+            
             // 5. Construct and send the final ephemeral reply
-            let finalEphemeralMessage = `---\n---\n✅ **Log Saved!**\n\n`;
+            let finalEphemeralMessage = "";
             const components = [];
 
             if (result.aiResponse) {
-                finalEphemeralMessage += `${result.aiResponse.acknowledgment}\n\n${result.aiResponse.comfortMessage}\n\nI've got a thought about sharing your journey. Would you like to see it?`;
-                // Store suggestion in memory for the button handler
+                // When AI gives feedback, the message is direct and does NOT include an inspirational quote.
+                finalEphemeralMessage = `✅ **Log Saved!**\n\n${result.aiResponse.acknowledgment}\n\n${result.aiResponse.comfortMessage}\n\nI've got a thought about sharing your journey. Would you like to see it?`;
+                
                 const currentSetupData = userExperimentSetupData.get(interaction.user.id) || {};
                 userExperimentSetupData.set(interaction.user.id, {
                     ...currentSetupData,
                     aiLogPublicPostSuggestion: result.aiResponse.publicPostSuggestion,
                 });
-
-                // Add the "Show me" button
                 const showShareButton = new ButtonBuilder()
                     .setCustomId('ai_show_share_prompt_btn')
                     .setLabel('📣 Yes, Show Me!')
                     .setStyle(ButtonStyle.Primary);
                 components.push(new ActionRowBuilder().addComponents(showShareButton));
+
+                // Send the appreciation DM asynchronously with the logged data
+                sendAppreciationDM(interaction, result.aiResponse, settings, payload);
+
             } else {
-                finalEphemeralMessage += "Your log and notes have been recorded successfully.";
+                // When there is NO AI feedback, we include an inspirational quote.
+                const randomMessage = inspirationalMessages[Math.floor(Math.random() * inspirationalMessages.length)];
+                finalEphemeralMessage = `*${randomMessage}*\n\n---\n---\n✅ **Log Saved!**\n\nYour log and notes have been recorded successfully.`;
+                
+                // Send the appreciation DM asynchronously (no AI response) with the logged data
+                sendAppreciationDM(interaction, null, settings, payload);
             }
             
             await interaction.editReply({ 

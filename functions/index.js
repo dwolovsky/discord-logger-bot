@@ -312,8 +312,6 @@ exports.getFirebaseAuthToken = onCall(async (request) => {
 /**
  * Calculates and updates the user's streak data.
  */
-// REPLACE the existing onLogCreatedUpdateStreak function in functions/index.js with this new version.
-
 exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (event) => {
     const snap = event.data;
     if (!snap) {
@@ -328,7 +326,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     let displayNameForMessage;
     const storedUserTag = logData.userTag;
 
-    if (storedUserTag && storedUserTag.includes('#')) {
+    if (storedUserTag && storedUsertag.includes('#')) {
         const usernamePart = storedUserTag.substring(0, storedUserTag.lastIndexOf('#'));
         displayNameForMessage = (usernamePart && usernamePart.trim() !== "") ? usernamePart : storedUserTag;
     } else {
@@ -367,7 +365,6 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
             }
 
             let newState = { newStreak: 1, freezesRemaining: currentData.freezes, usedFreeze: false, streakBroken: false, streakContinued: false };
-
             if (currentData.lastLog instanceof Date && !isNaN(currentData.lastLog)) {
                 const hoursSinceLastLog = Math.abs(logTimestamp.getTime() - currentData.lastLog.getTime()) / 3600000;
                 logger.log(`Hours since last log for ${userId}: ${hoursSinceLastLog.toFixed(2)}`);
@@ -404,13 +401,10 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                 [STREAK_CONFIG.FIELDS.USER_TAG]: logData.userTag || currentData.userTag,
                 [STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE]: `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${newState.freezesRemaining}`
             };
-
             let roleInfo = null;
             let dmMessageText = null;
             let tempPublicMessage = null;
-
             const isTrueFirstDay = (!userDoc.exists || previousStreak === 0) && newState.newStreak === 1 && !newState.streakBroken;
-            
             if (isTrueFirstDay) {
                 dmMessageText = `🎉 Welcome to your habit tracking journey, ${displayNameForMessage}! You've just logged Day 1. Keep it up! You've also earned the 'Level 1' role. 🔥`;
                 tempPublicMessage = `🎉 Please welcome @${displayNameForMessage} to their habit tracking journey! They've just logged Day 1! Show some support! 🚀`;
@@ -420,7 +414,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                 dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
                 tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', displayNameForMessage);
                 roleInfo = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
-                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true; // Flag for role cleanup
+                updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true;
             } else if (newState.newStreak > previousStreak) {
                 const milestoneRole = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === newState.newStreak);
                 if (milestoneRole) {
@@ -430,7 +424,8 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                          tempPublicMessage = `🎉 Big congrats to ${displayNameForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
                     }
                 } else {
-                    tempPublicMessage = `🥳 ${displayNameForMessage} just extended their daily logging streak to ${newState.newStreak} days! Keep it up!`;
+                    // This is the updated line
+                    tempPublicMessage = `🥳 ${displayNameForMessage} just extended their daily logging streak to **${newState.newStreak} days**! (Freezes: ${newState.freezesRemaining} 🧊)`;
                 }
             }
 
@@ -445,7 +440,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
             
             // --- NEW: Write public message to its own collection ---
             if (tempPublicMessage && channelId) {
-                const publicMessageRef = db.collection('pendingPublicMessages').doc(); // Create new doc with auto-ID
+                const publicMessageRef = db.collection('pendingPublicMessages').doc();
                 transaction.set(publicMessageRef, {
                     message: tempPublicMessage,
                     channelId: channelId,
@@ -459,7 +454,6 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
             }
 
             // --- Update User Document ---
-            // Note: PENDING_PUBLIC_MESSAGE and PENDING_ROLE_CLEANUP (for public messages) are removed from this updateData object
             updateData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] = dmMessageText ? dmMessageText : FieldValue.delete();
             updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = roleInfo ? roleInfo : FieldValue.delete();
             if (newState.streakBroken) {
@@ -470,7 +464,6 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
 
             transaction.set(userRef, updateData, { merge: true });
         });
-
         logger.log(`Successfully processed streak & milestone update for user ${userId}.`);
     } catch (error) {
         logger.error(`Error running transaction for user ${userId} streak/milestone update:`, error);
