@@ -5555,7 +5555,7 @@ client.on(Events.InteractionCreate, async interaction => {
         await publicChannel.send(messageToPost);
         console.log(`[post_ai_log_summary_btn PUBLIC_POST_SUCCESS ${interactionId}] Successfully posted AI-suggested message to <#${EXPERIMENTS_CHANNEL_ID}> for ${userTagForLog}.`);
         
-        await interaction.followUp({ content: `✅ Your message has been posted to <#${EXPERIMENTS_CHANNEL_ID}>!`, ephemeral: true });
+        await interaction.followUp({ content: `✅ Your message has been posted`, ephemeral: true });
         
         if (setupData) {
             delete setupData.aiLogPublicPostSuggestion;
