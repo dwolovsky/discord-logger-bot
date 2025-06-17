@@ -318,39 +318,6 @@ function setupStatsNotificationListener(client) {
                                 });
                                 console.log(`[StatsListener] Updated notification ${docId} to 'processed_by_bot'.`);
 
-                               // <<< START OF NEW MODIFICATION FOR DELAYED FOLLOW-UP >>>
-                                const delayMinutes = 5; // Or up to 10, e.g., Math.floor(Math.random() * 6) + 5; for 5-10 mins
-                                const delayMilliseconds = delayMinutes * 60 * 1000;
-                                console.log(`[StatsListener] Scheduling follow-up DM for user ${userId} in ${delayMinutes} minutes regarding experiment ${statsReportData.experimentId} conclusion.`);
-                                setTimeout(async () => {
-                                    try {
-                                        const followUpEmbed = new EmbedBuilder()
-                                             .setColor(0x4A90E2) // A different color, perhaps blue
-                                            .setTitle('Experiment Transition')
-                                             .setDescription(`Check your stats above! ⬆️\n\nAt this point, you have 2 options:\n\n1. Start a new experiment\n(click the button below)\n\n2. Continue with the same experiment.\nKeep logging as usual.\nYou'll get a weekly stats update\nAND new weekly AI insights too!`)
-                                            .setFooter({ text: `Experiment ID: ${statsReportData.experimentId || 'N/A'}` })
-                                            .setTimestamp();
-
-                                        const followUpActionRow = new ActionRowBuilder()
-                                             .addComponents(
-                                                new ButtonBuilder()
-                                                      .setCustomId('start_new_experiment_prompt_btn') // Same new custom ID as before
-                                                    .setLabel('🚀 Start New Experiment')
-                                                    .setStyle(ButtonStyle.Success) // Changed to Success for more prominence
-                                             );
-
-                                        await discordUser.send({
-                                            embeds: [followUpEmbed],
-                                            components: [followUpActionRow]
-                                         });
-                                        console.log(`[StatsListener] Successfully sent DELAYED follow-up DM to user ${userId} for experiment ${statsReportData.experimentId}.`);
-                                    } catch (followUpError) {
-                                        console.error(`[StatsListener] Failed to send DELAYED follow-up DM to user ${userId} for experiment ${statsReportData.experimentId}:`, followUpError);
-                                        // Not updating Firestore notification here as this is a best-effort follow-up
-                                    }
-                                }, delayMilliseconds);
-                                // <<< END OF NEW MODIFICATION FOR DELAYED FOLLOW-UP >>>
-
                             }).catch(async (dmError) => {
                                 console.error(`[StatsListener] Failed to send stats DM to user ${userId} for experiment ${statsReportData.experimentId}:`, dmError);
                                  await change.doc.ref.update({ status: 'error_dm_failed', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: dmError.message });
@@ -3627,7 +3594,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const firstPromptEmbed = new EmbedBuilder()
             .setColor('#5865F2')
             .setTitle("Let's Set Your Experiment! 🚀")
-            .setDescription("## Experiments have 3 parts:\n\n1. **A Wish** to pursue\n2. **An outcome** to track\n3. **1 - 3 Habits** to test out\n\n## Let's start with a wish! ✨\n\nWhat's 1 thing you wish for in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n### Tap the <:chaticon:1384220348685488299> icon and type your wish!\n\n→  →  →  →  →  →  →  →  →  →  →  →  ↘ ↘ ↘")
+            .setDescription("### It has 3 parts:\n\n1. **A Wish** to aim for.\n2. **An outcome** to measure.\n3. **1 - 3 Habits** to test out.\n### Let's start with a wish! ✨\n\nWhat's 1 thing you wish for in your daily life?\n\n**Examples:**\n● 'To be less stressed'\n● 'To have more energy'\n● 'To have better relationships'\n\n### Tap the <:chaticon:1384220348685488299> icon and type your wish!\n\n→  →  →  →  →  →  →  →  →  →  →  →  ↘ ↘ ↘")
 
         const promptMessage = await dmChannel.send({ embeds: [firstPromptEmbed] });
 
@@ -4662,15 +4629,14 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[ai_insights_btn /go END ${interactionId}] Finished processing for user ${userId}. Total time: ${(processEndTime - goInsightsButtonStartTime).toFixed(2)}ms`);
     }
  
-   // --- Handler for "Get AI Insights" Button (from Stats DM) ---
+      // --- Handler for "Get AI Insights" Button (from Stats DM) ---
     else if (interaction.isButton() && interaction.customId.startsWith('get_ai_insights_btn_')) {
       const insightsButtonStartTime = performance.now();
       const interactionId = interaction.id; // For logging
       const userId = interaction.user.id;
       const experimentId = interaction.customId.split('get_ai_insights_btn_')[1];
-
       console.log(`[get_ai_insights_btn_ START ${interactionId}] Clicked by ${userId} for experiment ${experimentId}. Time: ${insightsButtonStartTime.toFixed(2)}ms`);
-
+      
       if (!experimentId) {
         console.error(`[get_ai_insights_btn_ ERROR ${interactionId}] Could not parse experimentId from customId: ${interaction.customId}`);
         try {
@@ -4685,11 +4651,7 @@ client.on(Events.InteractionCreate, async interaction => {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const deferTime = performance.now();
         console.log(`[get_ai_insights_btn_ DEFERRED ${interactionId}] Interaction deferred for experiment ${experimentId}. Took: ${(deferTime - insightsButtonStartTime).toFixed(2)}ms`);
-
-        // (MVP Focus): Insights for "This Experiment" (the parsed experimentId).
-        // (Future Enhancement Placeholder: This is where logic for a dropdown would go,
-        // allowing users to select "This Experiment," "Past 2 Experiments," etc. For MVP, proceed directly.)
-
+        
         console.log(`[get_ai_insights_btn_ FIREBASE_CALL ${interactionId}] Calling 'fetchOrGenerateAiInsights' for experiment ${experimentId}, user ${userId}.`);
         const result = await callFirebaseFunction(
             'fetchOrGenerateAiInsights', // New Firebase Function name
@@ -4697,16 +4659,38 @@ client.on(Events.InteractionCreate, async interaction => {
             userId // Pass the interacting user's ID for authentication
         );
         const firebaseCallEndTime = performance.now();
-        console.log(`[get_ai_insights_btn_ FIREBASE_RETURN ${interactionId}] 'fetchOrGenerateAiInsights' returned for exp ${experimentId}. Took: ${(firebaseCallEndTime - deferTime).toFixed(2)}ms. Result:`, result);
+        console.log(`[get_ai_insights_btn_ FIREBASE_RETURN ${interactionId}] 'fetchOrGenerateAiInsights' returned for exp ${experimentId}. Took: ${(firebaseCallEndTime - deferTime).toFixed(2)}ms.`);
 
         if (result && result.success) {
-            // Display insight (simple text DM and edit ephemeral reply)
-            // The message includes a placeholder for the source (cached/generated)
-            // Note: Discord does not render <span class="math-inline"> in DMs. Markdown is preferred.
-            // Using a simpler source indication.
-            await interaction.user.send(`💡 **AI Insights**\n\n${result.insightsText}`);
-            await interaction.editReply({ content: "✅ AI Insights have been sent to your DMs!", components: [] });
-            console.log(`[get_ai_insights_btn_ SUCCESS ${interactionId}] AI Insights sent to DMs for experiment ${experimentId}, user ${userId}.`);
+            
+            // <<< START: FINAL COMBINED LOGIC >>>
+            // 1. Create the "Start New Experiment" button
+            const followUpActionRow = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('start_new_experiment_prompt_btn') 
+                        .setLabel('🚀 Start a New Experiment')
+                        .setStyle(ButtonStyle.Success)
+                );
+
+            // 2. Define the complete message content, including the descriptive text
+            const finalMessageContent = `💡 **AI Insights**\n\n${result.insightsText}` +
+                `\n\n---\n\n` +
+                `At this point, you have 2 options:\n\n` +
+                `1. **Start a new experiment**\n(click the button below)\n\n` +
+                `2. **Continue with the same experiment.**\nKeep logging as usual. You'll get a weekly stats update AND new weekly AI insights too!`;
+
+            // 3. Send the insights, descriptive text, and button in a SINGLE DM
+            await interaction.user.send({
+                content: finalMessageContent,
+                components: [followUpActionRow]
+            });
+
+            // 4. Update the ephemeral reply to the user
+            await interaction.editReply({ content: "✅ AI Insights and your next step have been sent to your DMs!", components: [] });
+            console.log(`[get_ai_insights_btn_ SUCCESS ${interactionId}] Combined AI Insights, description, and 'Start New' button sent to DMs for experiment ${experimentId}, user ${userId}.`);
+            // <<< END: FINAL COMBINED LOGIC >>>
+
         } else {
             console.error(`[get_ai_insights_btn_ FIREBASE_FAIL ${interactionId}] 'fetchOrGenerateAiInsights' failed for exp ${experimentId}. Result:`, result);
             await interaction.editReply({ content: `❌ Failed to get AI insights: ${result ? result.message : 'Unknown error.'}`, components: [] });
@@ -4715,7 +4699,7 @@ client.on(Events.InteractionCreate, async interaction => {
       } catch (error) {
         const errorTime = performance.now();
         console.error(`[get_ai_insights_btn_ CATCH_ERROR ${interactionId}] Error processing AI insights for exp ${experimentId}, user ${userId} at ${errorTime.toFixed(2)}ms:`, error);
-        // Ensure a reply if not already done
+        
         if (interaction.deferred && !interaction.replied) {
             try {
                 await interaction.editReply({ content: `❌ An error occurred while fetching AI insights: ${error.message || 'Please try again.'}`, components: [] });
@@ -4733,7 +4717,6 @@ client.on(Events.InteractionCreate, async interaction => {
       const processEndTime = performance.now();
       console.log(`[get_ai_insights_btn_ END ${interactionId}] Finished processing for experiment ${experimentId}. Total time: ${(processEndTime - insightsButtonStartTime).toFixed(2)}ms`);
     }
-    // Make sure to add this 'else if' block before any final 'else' or default catch-all for unrecognized interactions.
 
         // --- START: NEW Unified Handler for Reminder Select Menus ---
     // --- Handler for "Set Reminders" button (Now Step 1: Get Current Time) ---
