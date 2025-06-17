@@ -61,302 +61,295 @@ if (serviceAccount) {
     console.warn("Firebase Admin SDK NOT Initialized - Firestore listener for stats notifications and other admin features will NOT work.");
 }
 
+// This map will temporarily hold the full stats report for a user navigating the paginated view.
+// Key: userId, Value: { statsReportData, experimentId }
+const userStatsReportData = new Map();
+
+/**
+ * Builds the embed fields for Page 1 (Core Statistics).
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ */
+/**
+ * Builds the embed fields for Page 1 (Core Statistics).
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ */
+function buildCoreStatsPage(embed, statsReportData) {
+    embed.setTitle('📊 Core Statistics (Page 1 of 3)');
+
+    if (statsReportData.calculatedMetricStats && typeof statsReportData.calculatedMetricStats === 'object' && Object.keys(statsReportData.calculatedMetricStats).length > 0) {
+        for (const metricKey in statsReportData.calculatedMetricStats) {
+            const metric = statsReportData.calculatedMetricStats[metricKey];
+            let fieldValue = '';
+
+            if (metric.status === 'skipped_insufficient_data') {
+                fieldValue = `*Not enough data (had ${metric.dataPoints}, needed 5).*`;
+            } else {
+                const unit = metric.unit ? ` ${metric.unit}` : '';
+                // Helper to format the value, using the bot's existing time formatter if needed.
+                const formatValue = (val) => (isTimeMetric(metric.unit) ? formatDecimalAsTime(val) : val);
+
+                fieldValue += `**Avg:** ${formatValue(metric.average)}${unit}\n`;
+                fieldValue += `**Median:** ${formatValue(metric.median)}${unit}\n`;
+                fieldValue += `**Min:** ${formatValue(metric.min)}${unit}, **Max:** ${formatValue(metric.max)}${unit}\n`;
+
+                // --- NEW: Consistency Interpretation Logic ---
+                const variation = metric.variationPercentage;
+                let consistencyLabel = "Not enough data";
+                if (variation !== undefined && variation !== null) {
+                    if (variation < 20) {
+                        consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
+                    } else if (variation <= 35) {
+                        consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
+                    } else {
+                        consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
+                    }
+                }
+                fieldValue += `**Consistency:** ${consistencyLabel}\n`;
+                // --- END NEW ---
+
+                fieldValue += `**Data Points:** ${metric.dataPoints}`;
+            }
+            embed.addFields({ name: metric.label || metricKey, value: fieldValue, inline: true });
+        }
+    } else {
+        embed.addFields({ name: 'Statistics', value: 'No core statistics were calculated for this report.', inline: false });
+    }
+}
+
+/**
+ * Builds the embed fields for Page 2 (Correlations/Impacts).
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ */
+function buildCorrelationsPage(embed, statsReportData) {
+    embed.setTitle('🔗 Habit Impacts (Page 2 of 3)')
+         .setDescription('How did your daily habits influence your outcome?');
+
+    if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
+        for (const key in statsReportData.correlations) {
+            const corr = statsReportData.correlations[key];
+            if (!corr || corr.status !== 'calculated' || corr.coefficient === undefined || isNaN(corr.coefficient)) {
+                embed.addFields({ name: `Impact of **${corr.label || key}**`, value: `*Not enough data to determine an impact.*`, inline: false });
+                continue;
+            }
+
+            const rSquared = corr.coefficient * corr.coefficient;
+            const direction = corr.coefficient >= 0 ? 'went up' : 'went down';
+            const isConfident = corr.pValue !== null && corr.pValue < 0.05;
+            const confidenceText = isConfident ? "We're 95% confident in this relationship." : "This may be worth getting more data to confirm.";
+
+            let strengthText = "No detectable";
+            let strengthEmoji = "🟦";
+            const absCoeff = Math.abs(corr.coefficient);
+            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+            else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+            else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+            else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
+            
+            const value = `When you increased **${corr.label}**...\n...your **${corr.vsOutputLabel}** ${direction}.\n\n` +
+                          `**Influence Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
+                          `*${confidenceText}*`;
+
+            embed.addFields({ name: `Impact of **${corr.label}** on **${corr.vsOutputLabel}**`, value, inline: false });
+        }
+    } else {
+        embed.addFields({ name: 'Impacts', value: 'No habit impact data was calculated for this report.', inline: false });
+    }
+}
+
+/**
+ * Builds the embed fields for Page 3 (Combined Effects).
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ */
+function buildCombinedEffectsPage(embed, statsReportData) {
+    embed.setTitle('🤝 Synergistic Effects (Page 3 of 3)')
+         .setDescription('*Sometimes, habits work even better when you do them together.*');
+
+    const results = statsReportData.pairwiseInteractionResults;
+    let hasMeaningfulResults = false;
+
+    if (results && typeof results === 'object' && Object.keys(results).length > 0) {
+        for (const pairKey in results) {
+            const pairData = results[pairKey];
+            const summary = pairData.summary || "";
+            const isSignificant = !summary.toLowerCase().includes("skipped") &&
+                                  !summary.toLowerCase().includes("no meaningful conclusion") &&
+                                  !summary.toLowerCase().includes("did not show any group");
+
+            if (isSignificant && pairData.input1Label && pairData.input2Label) {
+                hasMeaningfulResults = true;
+                const bestGroup = summary.includes("higher") ? /Avg.*higher \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
+                const worstGroup = summary.includes("lower") ? /Avg.*lower \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
+
+                let value = "";
+                if (bestGroup) {
+                    value += `✅ **A Winning Combo!**\nYour **'${pairData.outputMetricLabel}'** was significantly **higher** (average of **${bestGroup[1]}**) on days when:\n*${bestGroup[2]}*.`;
+                }
+                if (worstGroup) {
+                    if (value) value += "\n\n";
+                    value += `❌ **A Losing Combo!**\nYour **'${pairData.outputMetricLabel}'** was significantly **lower** (average of **${worstGroup[1]}**) on days when:\n*${worstGroup[2]}*.`;
+                }
+                embed.addFields({ name: `**${pairData.input1Label}** + **${pairData.input2Label}**`, value: value, inline: false });
+            }
+        }
+    }
+
+    if (!hasMeaningfulResults) {
+        embed.addFields({ name: 'No Clear Relationship', value: "No significant combined effects were found with the current data.", inline: false });
+    }
+}
+
+// Configuration for each page of the stats report. Makes it easy to add more pages later.
+const statsPageConfig = [
+    { page: 1, builder: buildCoreStatsPage },
+    { page: 2, builder: buildCorrelationsPage },
+    { page: 3, builder: buildCombinedEffectsPage },
+    // To add a new page (e.g., Lag Time Regression), just add an object here:
+    // { page: 4, builder: buildLagTimeRegressionPage },
+];
+
+/**
+ * Sends a specific page of the stats report to a user.
+ * This is now called by the listener for the first page, and by button handlers for navigation.
+ * @param {import('discord.js').Interaction | { user: import('discord.js').User }} interactionOrUser - The interaction object or a user object for the initial DM.
+ * @param {string} userId - The user's ID.
+ * @param {string} experimentId - The experiment's ID.
+ * @param {number} targetPage - The page number to display.
+ */
+async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage) {
+    const isInteraction = 'update' in interactionOrUser;
+    const user = isInteraction ? interactionOrUser.user : interactionOrUser;
+    
+    const reportInfo = userStatsReportData.get(userId);
+    if (!reportInfo || !reportInfo.statsReportData) {
+        const errorMessage = "Your stats report session has expired. Please request it again via the `/go` command.";
+        if (isInteraction) await interactionOrUser.update({ content: errorMessage, embeds: [], components: [] });
+        else await user.send(errorMessage);
+        return;
+    }
+
+    const { statsReportData } = reportInfo;
+    const totalPages = statsPageConfig.length;
+
+    const pageConfig = statsPageConfig.find(p => p.page === targetPage);
+    if (!pageConfig) {
+        console.error(`[sendStatsPage] Invalid targetPage requested: ${targetPage}`);
+        return;
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setFooter({ text: `Experiment ID: ${experimentId}` });
+
+    // Call the builder function for the specific page
+    pageConfig.builder(embed, statsReportData);
+
+    // Build navigation buttons
+    const row = new ActionRowBuilder();
+    if (targetPage > 1) {
+        row.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`stats_nav_back_${experimentId}_${targetPage - 1}`)
+                .setLabel('⬅️ Back')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    }
+    if (targetPage < totalPages) {
+        row.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`stats_nav_next_${experimentId}_${targetPage + 1}`)
+                .setLabel('Next ➡️')
+                .setStyle(ButtonStyle.Primary)
+        );
+    } else { // On the last page
+        row.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`stats_finish_${experimentId}`)
+                .setLabel('✅ Finish & Get Summary')
+                .setStyle(ButtonStyle.Success)
+        );
+    }
+    
+    // Send or update the message
+    if (isInteraction) {
+        await interactionOrUser.update({ embeds: [embed], components: [row] });
+    } else {
+        await user.send({ embeds: [embed], components: [row] });
+    }
+    console.log(`[sendStatsPage] Sent page ${targetPage} of stats report for experiment ${experimentId} to user ${userId}.`);
+}
+
+
 function setupStatsNotificationListener(client) {
-  console.log("<<<<< SETUP STATS LISTENER FUNCTION ENTERED - NEW CODE RUNNING >>>>>");
-  if (!admin.apps.length || !dbAdmin) { // Check if dbAdmin is initialized
+  console.log("<<<<< NEW PAGINATED STATS LISTENER IS ACTIVE >>>>>");
+  if (!admin.apps.length || !dbAdmin) {
       console.warn("Firebase Admin SDK not initialized. Stats notification listener will NOT run.");
       return;
   }
 
-  // Helper function to check against the keyword list, defined once
-  const isTimeMetric = (unit) => {
-      if (!unit) return false;
-      const lowerUnit = unit.toLowerCase().trim();
-      return TIME_OF_DAY_KEYWORDS.includes(lowerUnit);
-  };
-
-  console.log("Setting up Firestore listener for 'pendingStatsNotifications'...");
-
   const notificationsRef = dbAdmin.collection('pendingStatsNotifications');
   notificationsRef.where('status', '==', 'ready').onSnapshot(snapshot => {
-      console.log(`[StatsListener DEBUG] Snapshot received. Empty: ${snapshot.empty}. Size: ${snapshot.size}. Timestamp: ${new Date().toISOString()}`);
-          if (!snapshot.empty) {
-              console.log(`[StatsListener DEBUG] Iterating ${snapshot.docChanges().length} document changes in this snapshot:`);
-              snapshot.docChanges().forEach(change => { // Log docChanges to see what's happening
-                  console.log(`[StatsListener DEBUG]   Doc ID in snapshot: ${change.doc.id}, Change Type: ${change.type}, Status: ${change.doc.data().status}`);
-              });
-          }
+      if (snapshot.empty) return;
 
-          if (snapshot.empty) {
-              // console.log("No pending 'ready' stats notifications found."); // Can be noisy, enable if debugging
-              return;
-          }
-
-     
       snapshot.docChanges().forEach(async (change) => {
-        console.log("<<<<< SETUP STATS LISTENER FUNCTION ENTERED - NEW CODE RUNNING >>>>>");
-        if (change.type === 'added' || change.type === 'modified') { // Process new and re-processed notifications
+          if (change.type === 'added' || change.type === 'modified') {
               const notification = change.doc.data();
-              const docId = change.doc.id; // Firestore document ID (e.g., userId_experimentId)
+              const docId = change.doc.id;
               const { userId, experimentId, userTag, statsDocumentId } = notification;
-              console.log(`[StatsListener] Detected 'ready' notification for user ${userId}, experiment ${experimentId}. Doc ID: ${docId}`);
+              console.log(`[StatsListener] Detected 'ready' notification for user ${userId}, experiment ${experimentId}.`);
 
-              let discordUser = null;
+              let discordUser;
               try {
-                    discordUser = await client.users.fetch(userId);
-                    if (!discordUser) { // Defensive check, fetch usually throws on major errors but good to be safe
-                        console.error(`[StatsListener] Fetched Discord user is null or undefined for userId: ${userId}. Doc ID: ${docId}`);
-                        await change.doc.ref.update({ 
-                            status: 'error_user_not_found', 
-                            processedAt: admin.firestore.FieldValue.serverTimestamp(), 
-                            errorMessage: 'Fetched Discord user object was null or undefined for stats.' 
-                        });
-                        return; // Stop processing THIS notification
-                    }
-                    // Use discordUser.tag if available, otherwise fall back to userTag from notificationData
-                    const effectiveUserTag = discordUser.tag || userTag || 'Unknown User';
-                    console.log(`[StatsListener] Successfully fetched Discord user ${effectiveUserTag} (${userId}) for stats.`);
+                  discordUser = await client.users.fetch(userId);
               } catch (userFetchError) {
-                    console.error(`[StatsListener] Failed to fetch Discord user ${userId} for stats. Doc ID: ${docId}:`, userFetchError);
-                    await change.doc.ref.update({ 
-                        status: 'error_user_not_found', 
-                        processedAt: admin.firestore.FieldValue.serverTimestamp(), 
-                        errorMessage: `Failed to fetch Discord user for stats: ${userFetchError.message}`.substring(0, 499) 
-                    });
-                    return; // Stop processing THIS notification
-                }
+                  console.error(`[StatsListener] Failed to fetch Discord user ${userId} for stats. Doc ID: ${docId}:`, userFetchError);
+                  await change.doc.ref.update({ status: 'error_user_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: `Failed to fetch Discord user for stats: ${userFetchError.message}`.substring(0, 499) });
+                  return;
+              }
 
-               try {
-                  // 1. Fetch the full stats report from users/{userId}/experimentStats/{experimentId}
-                  //    (using statsDocumentId which should be the same as experimentId in this flow)
-                  const statsReportRef = dbAdmin.collection('users').doc(userId)
-                                           .collection('experimentStats').doc(statsDocumentId || experimentId);
+              if (!discordUser) {
+                   console.error(`[StatsListener] Fetched Discord user is null for ID: ${userId}.`);
+                   await change.doc.ref.update({ status: 'error_user_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: 'Fetched Discord user was null.' });
+                   return;
+              }
+
+              try {
+                  const statsReportRef = dbAdmin.collection('users').doc(userId).collection('experimentStats').doc(statsDocumentId || experimentId);
                   const statsReportSnap = await statsReportRef.get();
 
-                    if (statsReportSnap.exists) {
-                        const statsReportData = statsReportSnap.data();
-                        // This log was very helpful, let's keep it for now or you can remove it later
-                        console.log("<<<<< !!! STATS REPORT DATA OBJECT IS !!! >>>>>", JSON.stringify(statsReportData, null, 2));
-                        // The DEBUG logs for individual parts (optional, you can remove if the one above is sufficient)
-                        console.log(`[StatsListener] DEBUG: statsReportData.calculatedMetricStats RAW:`, statsReportData.calculatedMetricStats);
-                        console.log(`[StatsListener] DEBUG: Type of statsReportData.calculatedMetricStats: ${typeof statsReportData.calculatedMetricStats}`);
-                        console.log(`[StatsListener] DEBUG: statsReportData.correlations RAW:`, statsReportData.correlations);
-                        console.log(`[StatsListener] DEBUG: Type of statsReportData.correlations: ${typeof statsReportData.correlations}`);
-                        if (statsReportData && statsReportData.calculatedMetricStats) {
-                            console.log(`[StatsListener] DEBUG: Keys in statsReportData.calculatedMetricStats: ${Object.keys(statsReportData.calculatedMetricStats).join(', ')}`);
-                        }
+                  if (statsReportSnap.exists) {
+                      const statsReportData = statsReportSnap.data();
+                      
+                      // Store the full report data in the map for this user
+                      userStatsReportData.set(userId, { statsReportData, experimentId: statsDocumentId || experimentId });
 
-                        const statsEmbed = new EmbedBuilder()
-                            .setColor(0x0099FF)
-                            .setTitle(`Experiment Stats Ready`)
-                            .setDescription(`Estimated Read Time: 90 seconds`)
-                            .addFields(
-                                { 
-                                    name: 'Total Logs Processed', 
-                                    value: statsReportData.totalLogsInPeriodProcessed !== undefined 
-                                        ? statsReportData.totalLogsInPeriodProcessed.toString() 
-                                        : (statsReportData.totalLogsProcessed !== undefined ? statsReportData.totalLogsProcessed.toString() : 'N/A'), // Fallback to totalLogsProcessed if new one isn't there
-                                    inline: true 
-                                }
-                            )
-                            .setTimestamp()
-                            .setFooter({ text: `Experiment ID: ${statsReportData.experimentId || 'N/A'}` });
-                        // Add detailed STATISTICS fields dynamically
-                        if (statsReportData.calculatedMetricStats && typeof statsReportData.calculatedMetricStats === 'object' && Object.keys(statsReportData.calculatedMetricStats).length > 0) {
-                            statsEmbed.addFields({ name: '\u200B', value: '**📊 CORE STATISTICS**' });// Added icon for consistency
-                            for (const metricKey in statsReportData.calculatedMetricStats) {
-                            const metricDetails = statsReportData.calculatedMetricStats[metricKey];
-                            let fieldValue = '';
-                            if (metricDetails.status === 'skipped_insufficient_data') {
-                                fieldValue = `Average: N/A (Needs ${metricDetails.dataPoints !== undefined ? 5 : 'more'} data points)\nMedian: N/A\nVariation %: N/A\nData Points: ${metricDetails.dataPoints !== undefined ? metricDetails.dataPoints : 'N/A'}`;
-                            } else {
-                                // Average
-                                if (metricDetails.average !== undefined && !isNaN(metricDetails.average)) {
-                                    if (isTimeMetric(metricDetails.unit)) {
-                                        fieldValue += `Average: ${formatDecimalAsTime(metricDetails.average)}\n`;
-                                    } else {
-                                        fieldValue += `Average: ${parseFloat(metricDetails.average).toFixed(2)}\n`;
-                                    }
-                                } else {
-                                    fieldValue += 'Average: N/A\n';
-                                }
-                                // Median
-                                if (metricDetails.median !== undefined && !isNaN(metricDetails.median)) {
-                                    if (isTimeMetric(metricDetails.unit)) {
-                                        fieldValue += `Median: ${formatDecimalAsTime(metricDetails.median)}\n`;
-                                    } else {
-                                        fieldValue += `Median: ${parseFloat(metricDetails.median).toFixed(2)}\n`;
-                                    }
-                                } else {
-                                    fieldValue += 'Median: N/A\n';
-                                }
+                      // Send the FIRST page of the report directly
+                      await sendStatsPage(discordUser, userId, statsDocumentId || experimentId, 1);
 
-                                // Variation and Data Points
-                                if (metricDetails.variationPercentage !== undefined && !isNaN(metricDetails.variationPercentage)) {
-                                    fieldValue += `Variation: ${parseFloat(metricDetails.variationPercentage).toFixed(2)}%\n`;
-                                } else {
-                                    fieldValue += 'Variation: N/A\n';
-                                }
-                                if (metricDetails.dataPoints !== undefined) {
-                                    fieldValue += `Data Points: ${metricDetails.dataPoints}`;
-                                } else {
-                                    fieldValue += 'Data Points: N/A';
-                                }
-                            }
-                            
-                            if (fieldValue.trim() !== '') {
-                                const fieldName = (metricDetails.label ? metricDetails.label.charAt(0).toUpperCase() + metricDetails.label.slice(1) : metricKey.charAt(0).toUpperCase() + metricKey.slice(1));
-                                statsEmbed.addFields({ name: fieldName, value: fieldValue.trim(), inline: true });
-                            }
-                        }
-                        } else {
-                            statsEmbed.addFields({ name: '📊 Core Statistics', value: 'No detailed core statistics were found in this report.', inline: false });
-                        }
-
-                        // Add CORRELATION fields dynamically (now showing Influence as R-squared)
-                        if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
-                            statsEmbed.addFields({ name: '\u200B', value: '**Daily Habit → Outcome IMPACTS**\n\nSee how your habits correlated with your desired outcome' });
-                            for (const inputMetricKey in statsReportData.correlations) {
-                                if (Object.prototype.hasOwnProperty.call(statsReportData.correlations, inputMetricKey)) {
-                                    const corr = statsReportData.correlations[inputMetricKey];
-                                    let influenceFieldValue = `Influence: N/A\nPairs: ${corr.n_pairs || 'N/A'}\n*${(corr.interpretation || 'Not calculated')}*`;// Default text updated
-
-                                    if (corr.status === 'calculated' && corr.coefficient !== undefined && !isNaN(corr.coefficient)) {
-                                        const r = parseFloat(corr.coefficient);
-                                        const rSquared = r * r; // Calculate R-squared
-                                        // Display R-squared as a percentage with one decimal place
-                                        influenceFieldValue = `**Influence %: ${(rSquared * 100).toFixed(1)}%**\n\n*${(corr.interpretation || 'N/A')}*`;
-                                    } else if (corr.status && corr.status.startsWith('skipped_')) {
-                                        influenceFieldValue = `Influence: N/A\nPairs: ${corr.n_pairs || '0'}\n*${(corr.interpretation || 'Insufficient data for calculation.')}*`;
-                                    }
-
-                                    statsEmbed.addFields({
-                                        name: `${(corr.label || inputMetricKey)}\n→ ${(corr.vsOutputLabel || 'Desired Output')}`, // Field name shows which input influences the output
-                                        value: influenceFieldValue,
-                                        inline: true
-                                    });
-                                }
-                            }
-                        } else {
-                            statsEmbed.addFields({ name: '🔗 Influence', value: 'No influence data (correlations) was found or calculated for this report.', inline: false }); // Updated fallback text
-                        }
-
-              // ============== REPLACED SECTION: PAIRWISE INTERACTION ANALYSIS ==============
-              // This replaces the old "STRATIFIED ANALYSIS (MIXED EFFECTS) - Analysis Prep Data"
-              if (statsReportData.pairwiseInteractionResults && typeof statsReportData.pairwiseInteractionResults === 'object' && Object.keys(statsReportData.pairwiseInteractionResults).length > 0) {
-                  statsEmbed.addFields({ name: '\u200B', value: '**🤝COMBINED EFFECT ANALYSIS**' });
-                  statsEmbed.addFields({
-                    name: '\u200B',
-                    value: "Some actions can have a stronger effect on your outcome when combined with other actions. Check if that's happening here.",
-                    inline: false
-                });
-                  for (const pairKey in statsReportData.pairwiseInteractionResults) {
-                        if (Object.prototype.hasOwnProperty.call(statsReportData.pairwiseInteractionResults, pairKey)) {
-                            const pairData = statsReportData.pairwiseInteractionResults[pairKey];
-                            // Only add a field if there's a meaningful summary to show
-                            // And it's not one of the default "skipped" messages (or filter as you see fit)
-                            if (pairData && pairData.summary && pairData.summary.trim() !== "" && 
-                                 !pairData.summary.toLowerCase().includes("skipped") && 
-                                !pairData.summary.toLowerCase().includes("no meaningful conclusion") &&
-                                !pairData.summary.toLowerCase().includes("thresholds for output") &&
-                                 !pairData.summary.toLowerCase().includes("not enough days")) {
-
-                                const pairName = `${pairData.input1Label} & ${pairData.input2Label}`;
-                                statsEmbed.addFields({
-                                    name: `\n${pairName} Combined Effects?`, // Added icon and clearer title
-                                    value: pairData.summary, // Just the summary generated by Firebase
-                                    inline: false
-                                });
-                            } else if (pairData && pairData.summary && pairData.summary.toLowerCase().includes("did not show any group with an average")) {
-                                // Optionally, explicitly state no significant interaction if you want to show something for every pair
-                                // that *was* analyzed but had no standout groups.
-                                // Otherwise, the `if` condition above will skip it.
-                                const pairName = `${pairData.input1Label} & ${pairData.input2Label}`;
-                                statsEmbed.addFields({
-                                    name: `\n${pairName} Combined Effects?`,
-                                    value: "No combined effects were found for this pair with current data.", // A generic message from bot
-                                    inline: false
-                                });
-                            }
-                            // If the summary contains "skipped" or other non-result messages, it won't add a field,
-                            // making the DM cleaner. You can adjust the filter conditions as needed.
-                        }
-                    }
-              } else if (statsReportData.hasOwnProperty('pairwiseInteractionResults')) { 
-                  statsEmbed.addFields({
-                      name: '🤝 COMBINED EFFECT ANALYSIS',
-                      value: 'No input pairs were configured or had sufficient data for this analysis.',
-                      inline: false
-                  });
-              }
-              // ============== END: PAIRWISE INTERACTION ANALYSIS SECTION ==============
-                        const actionRow = new ActionRowBuilder()
-                            .addComponents(
-                                 /*
-                                new ButtonBuilder()
-                                    .setCustomId(`compare_exp_stats_btn_${statsReportData.experimentId}`) // Ensure experimentId is correctly used
-                                    .setLabel('Compare with Recent Experiments')
-                                    .setStyle(ButtonStyle.Primary),
-                                */
-                                    new ButtonBuilder() // New button for AI Insights
-                                    .setCustomId(`get_ai_insights_btn_${statsReportData.experimentId}`)
-                                    .setLabel('💡 Get AI Insights')
-                                    .setStyle(ButtonStyle.Success) // Or ButtonStyle.Primary as per your preference
-                             );
-                        // DM Sending Logic (ensure this part is outside the block you are replacing if it was separate,
-                        // or ensure it's correctly placed relative to the new code if it was part of the old block)
-                        if (discordUser) {
-                             await discordUser.send({
-                                embeds: [statsEmbed],
-                                components: [actionRow]
-                             }).then(async () => {
-                                console.log(`[StatsListener] Successfully sent stats DM (with compare button) to user ${userId} for experiment ${statsReportData.experimentId}.`);
-                                await change.doc.ref.update({
-                                     status: 'processed_by_bot',
-                                    processedAt: admin.firestore.FieldValue.serverTimestamp(),
-                                    botProcessingNode: process.env.RENDER_INSTANCE_ID || 'local_dev_stats'
-                                });
-                                console.log(`[StatsListener] Updated notification ${docId} to 'processed_by_bot'.`);
-
-                            }).catch(async (dmError) => {
-                                console.error(`[StatsListener] Failed to send stats DM to user ${userId} for experiment ${statsReportData.experimentId}:`, dmError);
-                                 await change.doc.ref.update({ status: 'error_dm_failed', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: dmError.message });
-                            });
-                        } else {
-                            // This 'else' corresponds to 'if (discordUser)'
-                            // The status update for 'error_user_not_found' should have happened earlier
-                             // if discordUser was null. We just log here that DM wasn't sent.
-                            console.log(`[StatsListener] Discord user ${userId} not found. Cannot send stats DM for experiment ${statsReportData.experimentId}. Notification status should already be 'error_user_not_found'.`);
-                        }
-                    // ================================================================================
-                    // END OF CODE BLOCK TO REPLACE
-                    // ================================================================================
-                    } else {
-                         // This 'else' corresponds to 'if (statsReportSnap.exists)'
-                        console.error(`[StatsListener] Stats report document not found for user ${userId}, experiment ${statsDocumentId || experimentId}. Doc ID: ${docId}`);
-                        await change.doc.ref.update({ status: 'error_report_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: 'Stats report document could not be found in Firestore.' });
-                    }
-
-              } catch (error) {
-                  console.error(`[StatsListener] Error processing notification ${docId} for user ${userId}, experiment ${experimentId}:`, error);
-                  try {
+                      // Mark the Firestore notification as processed
                       await change.doc.ref.update({
-                          status: 'error_processing_in_bot',
+                          status: 'processed_by_bot',
                           processedAt: admin.firestore.FieldValue.serverTimestamp(),
-                          errorMessage: error.message,
-                          errorStack: error.stack // Optional: for more detailed debugging in Firestore
+                          botProcessingNode: process.env.RENDER_INSTANCE_ID || 'local_dev_stats'
                       });
-                  } catch (updateError) {
-                      console.error(`[StatsListener] CRITICAL: Failed to update error status for notification ${docId}:`, updateError);
+                      console.log(`[StatsListener] Updated notification ${docId} to 'processed_by_bot'.`);
+
+                  } else {
+                      console.error(`[StatsListener] Stats report document not found for user ${userId}, experiment ${statsDocumentId || experimentId}.`);
+                      await change.doc.ref.update({ status: 'error_report_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: 'Stats report document could not be found in Firestore.' });
                   }
+              } catch (error) {
+                  console.error(`[StatsListener] Error processing notification ${docId} for user ${userId}:`, error);
+                  await change.doc.ref.update({ status: 'error_processing_in_bot', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: error.message });
               }
           }
       });
   }, err => {
       console.error("Error in 'pendingStatsNotifications' listener:", err);
-      // Consider re-initializing the listener or alerting.
   });
-
   console.log("Firestore listener for 'pendingStatsNotifications' is active.");
 }
 
@@ -5582,6 +5575,67 @@ client.on(Events.InteractionCreate, async interaction => {
         }
       }
       console.log(`[post_ai_log_summary_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - postPublicClickTime).toFixed(2)}ms`);
+    }
+
+    // In render/index.js, inside the `client.on(Events.InteractionCreate, ...)` handler
+
+    // --- NEW: Handlers for Stats Report Navigation ---
+    else if (interaction.isButton() && interaction.customId.startsWith('stats_nav_')) {
+        const [,, action, experimentId, targetPageStr] = interaction.customId.split('_');
+        const targetPage = parseInt(targetPageStr, 10);
+        console.log(`[StatsNav] User ${interaction.user.tag} clicked '${action}' for experiment ${experimentId}. Target page: ${targetPage}.`);
+        
+        // The sendStatsPage function now handles deferring/updating the interaction
+        await sendStatsPage(interaction, interaction.user.id, experimentId, targetPage);
+    }
+
+    else if (interaction.isButton() && interaction.customId.startsWith('stats_finish_')) {
+        const experimentId = interaction.customId.split('stats_finish_')[1];
+        const userId = interaction.user.id;
+        console.log(`[StatsFinish] User ${userId} clicked 'Finish' for experiment ${experimentId}.`);
+
+        await interaction.deferUpdate();
+
+        const reportInfo = userStatsReportData.get(userId);
+        if (!reportInfo || !reportInfo.statsReportData) {
+            await interaction.editReply({ content: "Your stats report session has expired. Please request it again.", embeds: [], components: [] });
+            return;
+        }
+
+        const { statsReportData } = reportInfo;
+
+        // Rebuild the FULL embed, reusing logic from the original listener
+        const fullEmbed = new EmbedBuilder()
+            .setColor(0x0099FF)
+            .setTitle(`Experiment Stats Summary`)
+            .setDescription(`**Scroll to the bottom to get your AI Insights!**\n\nTotal Logs Processed: ${statsReportData.totalLogsInPeriodProcessed || 'N/A'}`)
+            .setTimestamp()
+            .setFooter({ text: `Experiment ID: ${statsReportData.experimentId || 'N/A'}` });
+        
+        // Call all page builders to add all sections to the single embed
+        buildCoreStatsPage(fullEmbed, statsReportData);
+        fullEmbed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
+        buildCorrelationsPage(fullEmbed, statsReportData);
+        fullEmbed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
+        buildCombinedEffectsPage(fullEmbed, statsReportData);
+
+        const actionRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`get_ai_insights_btn_${statsReportData.experimentId}`)
+                    .setLabel('💡 Get AI Insights')
+                    .setStyle(ButtonStyle.Success)
+            );
+        
+        await interaction.editReply({
+            content: "Here is your complete experiment report:",
+            embeds: [fullEmbed],
+            components: [actionRow]
+        });
+
+        // Clean up the stored data after finishing
+        userStatsReportData.delete(userId);
+        console.log(`[StatsFinish] Sent full report and cleaned up session data for user ${userId}.`);
     }
 
 

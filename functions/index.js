@@ -1876,14 +1876,24 @@ async function _calculateAndStorePeriodStatsLogic(
                 const median = calculateMedian(values);
                 const stdDev = calculateStdDev(values, mean);
                 const variation = calculateVariationPercentage(stdDev, mean);
+                // --- NEW: Min/Max Calculation ---
+                const min = Math.min(...values);
+                const max = Math.max(...values);
+                // --- END NEW ---
+
                 calculatedMetricStats[labelKey] = {
                     label: metricDetail.label,
                     unit: metricDetail.unit,
                     dataPoints: dataPoints,
                     average: parseFloat(mean.toFixed(2)),
                     median: parseFloat(median.toFixed(2)),
+                    // --- NEW: Add min/max to the stored object ---
+                    min: parseFloat(min.toFixed(2)),
+                    max: parseFloat(max.toFixed(2)),
+                    // --- END NEW ---
                     variationPercentage: parseFloat(variation.toFixed(2))
                 };
+                
                 logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Calculated stats for metric "${labelKey}": Avg=${mean.toFixed(2)}, Med=${median.toFixed(2)}, Var%=${variation.toFixed(2)}, DP=${dataPoints}. User: ${userId}, Exp: ${experimentId}`);
             }
         }
