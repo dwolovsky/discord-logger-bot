@@ -706,7 +706,7 @@ const dmFlowConfig = {
             .setCustomId('back_to:awaiting_outcome_unit_dropdown_selection')
             .setLabel('⬅️ Back')
             .setStyle(ButtonStyle.Secondary);
-        const content = `---\n---\n**↳ ${setupData.outcomeLabel},\n${setupData.outcomeUnit}**.\n\nNow what's your daily **Target Number/Amount** for this?\n\nPlease type the number below\n(0 and up, decimals work ✅)`;
+        const content = `**↳ ${setupData.outcomeLabel},\n${setupData.outcomeUnit}**.\n\nNow what's your daily **Target Number/Amount** for this?\n\nPlease type the number below\n(0 and up, decimals work ✅)`;
         const components = [new ActionRowBuilder().addComponents(backButton)];
         return { content, components };
     },
@@ -1456,7 +1456,7 @@ client.on(Events.MessageCreate, async message => {
       const newPromptEmbed = new EmbedBuilder()
           .setColor('#5865F2') 
           .setTitle("2. Outcome To Track")
-          .setDescription("Now let's break down the wish\ninto a **measurable outcome.**\n\nTo do that, please answer 3 quick questions.\n\n### Question 1\nWhat are the biggest obstacles to progress on that wish?")
+          .setDescription("Now let's break down the wish\ninto a **measurable outcome.**\n\nTo do that, please answer 3 quick questions.\n### Question 1\nWhat are the biggest obstacles to progress on that wish?")
 
       const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
       console.log(`[MessageCreate ASK_BLOCKERS ${interactionIdForLog}] Sent new prompt for blockers as an embed.`);
@@ -1553,7 +1553,7 @@ client.on(Events.MessageCreate, async message => {
       const newPromptEmbed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle("4. Noticeable Success")
-        .setDescription("If your wish came true, what's the **1st small, positive change** you'd notice in your daily life?\n\nBe specific now!\n\n### Example\n\n**Wish**: 'More energy'\n**1st Change**: 'Not being sleepy in the afternoon'")
+        .setDescription("If your wish came true, what's the **1st small, positive change** you'd notice in your daily life?\n\nBe specific now!\n### Example\n\n**Wish**: 'More energy'\n**1st Change**: 'Not being sleepy in the afternoon'")
 
       const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
       console.log(`[MessageCreate ASK_VISION ${interactionIdForLog}] Sent new prompt for vision of success as an embed.`);
@@ -1604,7 +1604,7 @@ client.on(Events.MessageCreate, async message => {
           try {
               const oldPrompt = await message.channel.messages.fetch(oldPromptId);
               await oldPrompt.edit({
-                  content: `✅️ Vision received. \`\`\`diff\n+ Scroll down\n\`\`\``,
+                  content: `✅️ Vision received. **Scroll down**`,
                   components: [],
                   embeds: []
               });
@@ -1824,7 +1824,7 @@ client.on(Events.MessageCreate, async message => {
           try {
               const oldPrompt = await message.channel.messages.fetch(oldPromptId);
               await oldPrompt.edit({
-                  content: `✅️ Custom Label: "${customLabelText}" \`\`\`diff\n+ Scroll down\n\`\`\``,
+                  content: `✅️ Custom Label: "${customLabelText}" **Scroll down**`,
                   embeds: [],
                   components: []
               });
@@ -5733,7 +5733,7 @@ client.on(Events.InteractionCreate, async interaction => {
           // --- "Send New, Edit Old" ---
           // 1. EDIT OLD
           await originalMessage.edit({
-            content: `✅️ Custom choice selected. \`\`\`diff\n+ Scroll down\n\`\`\``,
+            content: `✅️ Custom choice selected. **Scroll down**`,
             embeds: [],
             components: []
           });
@@ -5769,7 +5769,7 @@ client.on(Events.InteractionCreate, async interaction => {
           // --- "Send New, Edit Old" ---
           // 1. EDIT OLD
           await originalMessage.edit({
-            content: `✅️ Outcome: "${outcomeLabel}" \`\`\`diff\n+ Scroll down\n\`\`\``,
+            content: `✅️ Outcome: "${outcomeLabel}" **Scroll down**`,
             embeds: [],
             components: []
           });
