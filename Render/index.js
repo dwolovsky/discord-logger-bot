@@ -2982,12 +2982,12 @@ client.on(Events.InteractionCreate, async interaction => {
               .setColor('#7F00FF') // A nice vibrant purple, change as you like
               .setTitle('⚡ Go Hub 🚀')
               .setDescription('Your experiment control panel')
-              .addFields(
+              //.addFields(
                   //{ name: '🔬 Set Experiment', value: 'Define your goals & metrics.', inline: true },
                   //{ name: '✍️ Daily Log', value: 'Log your metrics & notes.', inline: true },
                   //{ name: '🔥 Streak Stats', value: 'View your streak and the leaderboard.', inline: true },
                   //{ name: '💡 AI Insights', value: 'Get AI-powered analysis of your data.', inline: true }
-              )
+              //)
 
             // --- Build the Go Hub buttons ---
             const setExperimentButton = new ButtonBuilder()
@@ -3463,8 +3463,9 @@ client.on(Events.InteractionCreate, async interaction => {
             outcomeModal.addComponents(
                 new ActionRowBuilder().addComponents(deeperProblemInput),
                 new ActionRowBuilder().addComponents(outcomeLabelInput),
-                new ActionRowBuilder().addComponents(outcomeUnitInput),
-                new ActionRowBuilder().addComponents(outcomeGoalInput)
+                new ActionRowBuilder().addComponents(outcomeGoalInput),
+                new ActionRowBuilder().addComponents(outcomeUnitInput)
+                
             );
 
             await interaction.showModal(outcomeModal);
@@ -3547,8 +3548,9 @@ client.on(Events.InteractionCreate, async interaction => {
             
             habit1Modal.addComponents(
                 new ActionRowBuilder().addComponents(habit1LabelInput),
-                new ActionRowBuilder().addComponents(habit1UnitInput),
-                new ActionRowBuilder().addComponents(habit1GoalInput)
+                new ActionRowBuilder().addComponents(habit1GoalInput),
+                new ActionRowBuilder().addComponents(habit1UnitInput)
+                
             );
 
             await interaction.showModal(habit1Modal);
@@ -3627,8 +3629,9 @@ client.on(Events.InteractionCreate, async interaction => {
             
             habitModal.addComponents(
                 new ActionRowBuilder().addComponents(habitLabelInput),
-                new ActionRowBuilder().addComponents(habitUnitInput),
-                new ActionRowBuilder().addComponents(habitGoalInput)
+                new ActionRowBuilder().addComponents(habitGoalInput),
+                new ActionRowBuilder().addComponents(habitUnitInput)
+                
             );
 
             await interaction.showModal(habitModal);
@@ -7002,7 +7005,7 @@ client.on(Events.InteractionCreate, async interaction => {
             // Respond to the user immediately with the next step
             const defineHabit1Button = new ButtonBuilder().setCustomId('manual_define_habit1_btn').setLabel('➡️ Define Habit 1').setStyle(ButtonStyle.Success);
             const row = new ActionRowBuilder().addComponents(defineHabit1Button);
-            const outcomeEmbed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Outcome Defined!').setDescription(`**Deeper Wish:**\n${deeperProblem}\n\n**Outcome:**\nTrack **${outcomeLabel}** using **${outcomeUnit}** with a daily target of **${outcomeGoalStr}**.`);
+            const outcomeEmbed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Outcome Defined!').setDescription(`**Deeper Wish:**\n${deeperProblem}\n\n**Outcome:**\n**${outcomeGoalStr}** **${outcomeUnit}** for **${outcomeLabel}**.`);
             
             await interaction.editReply({
                 embeds: [outcomeEmbed],
@@ -7101,7 +7104,7 @@ client.on(Events.InteractionCreate, async interaction => {
             console.log(`[${interaction.customId} IN_MEMORY_UPDATE ${interactionId}] Updated in-memory state with Habit 1 data for ${userTag}.`);
 
             // Respond to the user immediately with the next step
-            const habit1Embed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Habit 1 Defined!').setDescription(`**Habit 1:**\nTrack **${habit1Label}** using **${habit1Unit}** with a daily target of **${habit1GoalStr}**.`);
+            const habit1Embed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Habit 1 Defined!').setDescription(`**Habit 1:**\n**${habit1GoalStr}** **${habit1Unit}** for **${habit1Label}**.`);
             const addAnotherButton = new ButtonBuilder().setCustomId('manual_add_another_habit_btn').setLabel('➕ Add Another Habit').setStyle(ButtonStyle.Primary);
             const finishSetupButton = new ButtonBuilder().setCustomId('manual_finish_setup_btn').setLabel('✅ Finish Setup').setStyle(ButtonStyle.Success);
             const row = new ActionRowBuilder().addComponents(addAnotherButton, finishSetupButton);
@@ -7201,7 +7204,7 @@ client.on(Events.InteractionCreate, async interaction => {
             console.log(`[${interaction.customId} IN_MEMORY_UPDATE ${interactionId}] Updated in-memory state with Habit 2 data.`);
 
             // Respond to user immediately
-            const habit2Embed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Habit 2 Defined!').setDescription(`**Habit 2:**\nTrack **${habit2Label}** using **${habit2Unit}** with a daily target of **${habit2GoalStr}**.`);
+            const habit2Embed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Habit 2 Defined!').setDescription(`**Habit 2:**\n**${habit2GoalStr}** **${habit2Unit}** for **${habit2Label}**.`);
             const addAnotherButton = new ButtonBuilder().setCustomId('manual_add_another_habit_btn').setLabel('➕ Add Habit 3').setStyle(ButtonStyle.Primary);
             const finishSetupButton = new ButtonBuilder().setCustomId('manual_finish_setup_btn').setLabel('✅ Finish Setup').setStyle(ButtonStyle.Success);
             const row = new ActionRowBuilder().addComponents(addAnotherButton, finishSetupButton);
@@ -7307,11 +7310,11 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setTitle('✅ All Habits Defined!')
                 .setDescription(`Here is the full summary of your experiment. If it looks correct, click "Finish Setup" to proceed to setting the duration.\n\n` +
                     `**Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
-                    `**Outcome:**\nTrack **${setupData.outcome.label}** using **${setupData.outcome.unit}** with a daily target of **${setupData.outcome.goal}**.\n\n` +
+                    `**Outcome:**\n**${setupData.outcome.goal}** **${setupData.outcome.unit}** for **${setupData.outcome.label}**\n\n` +
                     `**Habits:**\n` +
-                    `1. Track **${setupData.inputs[0].label}** using **${setupData.inputs[0].unit}** with a daily target of **${setupData.inputs[0].goal}**.\n` +
-                    `2. Track **${setupData.inputs[1].label}** using **${setupData.inputs[1].unit}** with a daily target of **${setupData.inputs[1].goal}**.\n` +
-                    `3. Track **${setupData.inputs[2].label}** using **${setupData.inputs[2].unit}** with a daily target of **${setupData.inputs[2].goal}**.`
+                    `1. Track **${setupData.inputs[0].goal}** **${setupData.inputs[0].unit}** for **${setupData.inputs[0].label}**.\n` +
+                    `2. Track **${setupData.inputs[1].goal}** **${setupData.inputs[1].unit}** for **${setupData.inputs[1].label}**.\n` +
+                    `3. Track **${setupData.inputs[2].goal}** **${setupData.inputs[2].unit}** for **${setupData.inputs[2].label}**.`
                 );
 
             await interaction.editReply({
