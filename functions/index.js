@@ -622,7 +622,7 @@ function parseAndValidatePriority(priorityStr, fieldName, isOptional = false) {
  * outputSetting: "Goal_out.Unit_out.Label_out"
  * }
  */
-exports.updateWeeklySettings = onCall(async (request) => {
+exports.updateWeeklySettings = onCall({ minInstances: 1 }, async (request) => {
     if (!request.auth) {
       logger.warn("updateWeeklySettings called without authentication.");
       throw new HttpsError('unauthenticated', 'You must be logged in to update your weekly settings.');
