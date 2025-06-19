@@ -3833,8 +3833,9 @@ client.on(Events.InteractionCreate, async interaction => {
             if (result && result.success) {
                 console.log(`[${interaction.customId} FIREBASE_SUCCESS ${interactionId}] updateWeeklySettings successful for ${userTag}.`);
 
-                // 3. On success, clean up the temporary states from memory and Firestore
-                userExperimentSetupData.delete(userId);
+                setupData.rawPayload = payload;
+                setupData.settingsMessage = result.message;
+
                 const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
                 setupStateRef.delete().then(() => {
                     console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Deleted temporary Firestore doc for user ${userTag}.`);
