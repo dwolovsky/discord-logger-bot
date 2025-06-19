@@ -3842,7 +3842,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 }).catch(cleanupError => {
                     console.error(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Failed to delete temporary Firestore doc for user ${userTag}:`, cleanupError);
                 });
-                
+              
+                userExperimentSetupData.set(userId, setupData);
                 // 4. Proceed to duration selection (the existing flow)
                 setupData.experimentDuration = null; // Ensure duration is fresh for the next step
                 userExperimentSetupData.set(userId, setupData); // Re-set map with minimal data for duration step.
