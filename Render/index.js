@@ -4056,7 +4056,7 @@ client.on(Events.InteractionCreate, async interaction => {
               .setDescription(
                 "Your Wish is the forest you want to grow.\nThe Outcome is the height of 1 plant.\nYour habits are the sun, water, and soil."
               )
-              .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/experiment%20lifecycle%20comic%202.jpeg');
+              .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Deeper%20Wish%20outcome%20habits%20relationship%201.png');
 
             const nextButton = new ButtonBuilder()
                 .setCustomId('ai_flow_comic_next_btn') // New ID for the next step in the flow
