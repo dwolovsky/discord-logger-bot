@@ -3718,16 +3718,12 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
 */
 
 /**
- * Generates five potential complete outcome metrics (label, unit, goal)
- * based on a user's context, supporting both a simple 'wish' and a more thorough context.
+ * Takes a user's "Deeper Wish" and generates five potential outcome metric labels
+ * with suggested unit types and brief explanations using Gemini.
  *
- * Expected request.data: { 
- * userWish: string, 
- * userBlockers?: string, 
- * userPositiveHabits?: string, 
- * userVision?: string 
- * }
- * Returns: { success: true, suggestions: [{label: string, unit: string, goal: number | string, briefExplanation: string}, ...] }
+ * Expected request.data: { userWish: string }
+ * Returns: { success: true, suggestions: [{label: string, suggestedUnitType: string, briefExplanation: string}, ...] }
+ * or { success: false, error: string, details?: any }
  */
 exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
   logger.log("[generateOutcomeLabelSuggestions] Function called. Request data:", request.data);
@@ -3739,59 +3735,65 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
   }
   const userId = request.auth.uid;
 
+  // NEW: Destructure and validate all new context fields
   const { userWish, userBlockers, userPositiveHabits, userVision } = request.data;
-  if (!userWish) {
-    logger.warn(`[generateOutcomeLabelSuggestions] Invalid argument: Missing userWish for user ${userId}.`);
-    throw new HttpsError('invalid-argument', 'The function must be called with a "userWish".');
+  if (!userWish || !userBlockers || !userPositiveHabits || !userVision) {
+    logger.warn(`[generateOutcomeLabelSuggestions] Invalid argument: Missing one or more context fields for user ${userId}.`);
+    throw new HttpsError('invalid-argument', 'The function must be called with userWish, userBlockers, userPositiveHabits, and userVision.');
   }
   
-  const isThoroughPath = userBlockers && userPositiveHabits && userVision;
-  logger.info(`[generateOutcomeLabelSuggestions] Processing request for user: ${userId}. Path: ${isThoroughPath ? 'Thorough' : 'Express'}.`);
-  
+  logger.info(`[generateOutcomeLabelSuggestions] Processing request for user: ${userId}, with full context.`);
+
   // 2. Check if Gemini Client is available
   if (!genAI) {
     logger.error("[generateOutcomeLabelSuggestions] Gemini AI client (genAI) is not initialized. Cannot generate suggestions.");
     throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
   }
 
-  // 3. Conditionally construct the USER CONTEXT block for the prompt
-  let userContextPromptBlock = `- Deeper Wish: "${userWish}"`;
-  if (isThoroughPath) {
-    userContextPromptBlock += `
-    - Biggest Blockers: "${userBlockers}"
-    - Existing Positive Habit: "${userPositiveHabits}"
-    - Vision of Success (first noticeable change): "${userVision}"`;
-  }
-
-  // 4. Construct the new, detailed prompt for the LLM
+  // 3. Construct NEW Prompt for LLM using all context
   const promptText = `
-    You are an expert at Objectives and Key Results framework, as well as Key Performance Indicators. Your task is to generate 5 distinct and relevant "Outcome Metrics" for a user's "habit experiment" to improve their daily life through self experimentation.
+    Based on the following context from a user who wants to run a self-experiment, your task is to generate 5 distinct and relevant "Outcome Metrics".
+    The metric should be a key state, feeling, or result that is simple to assess and record as a non-negative number each day.
 
-   CRITICAL REQUIREMENTS:
+    To guide your thinking, know that after you suggest labels, the user will measure them using simple scales like these:
+    - An 'out of 10' rating (e.g., for self-confidence, satisfaction, mood).
+    - A specific 'Time of Day' (e.g., for tracking mealtimes, bedtimes).
+    - A '% growth' (e.g., for tracking strength gains, no negative #s).
+    - A 'Compared to yesterday' rating (0=worse, 5=same, 10=better).
 
-    1. Each metric must be a **leading indicator** for the user's 'Deeper Wish' — a daily measure that predicts future success.
-    2. For each of the 5 suggestions, you MUST provide a JSON object with a "label" (string), "unit" (string), and a "goal" (non-negative rational number or time of day, e.g. 7:30).
-    3. The COMBINED display string from your output, formatted as "label (goal unit)", MUST be less than 44 characters. This is a strict constraint.
-    4. The "unit" MUST be a unit or scale chosen to make perfect sense with the outcome label. Use this list for reference: ['out of 10', 'Time of Day', 'hours', 'minutes', 'times', '%', 'pages', 'steps'].
-    5. The "goal" should be a sensible starting number or time string (e.g., "7:30 AM") for that metric.
-    6. Also provide a "briefExplanation" (10 words) of its relevance to the user's context.
+    Therefore, your suggested labels should be for feelings, states, or simple results that fit these measurement types. Avoid suggesting complex actions as outcomes. And DO NOT suggest these units as outcomes themselves.
 
     USER CONTEXT:
-    ${userContextPromptBlock}
+    - Deeper Wish: "${userWish}"
+    - Biggest Blockers: "${userBlockers}"
+    - Existing Positive Habit: "${userPositiveHabits}"
+    - Vision of Success (first noticeable change): "${userVision}"
 
-     Your suggestions should be directly inspired by the user's context. For example:
-    - One suggested metric could directly measure the "Vision of Success".
-    - One could be the inverse of a "Blocker" (e.g., if blocker is 'procrastination', a metric could be 'Sense of Accomplishment').
-    - 1 or 2 suggestions should be more creative interpretations of the user's context. Start their "briefExplanation" with "A different angle:".
+    Your suggestions should be directly inspired by this context. For example:
+    - The metric should directly measure the "Vision of Success".
+    - It should be the inverse of a "Blocker" (e.g., if blocker is 'procrastination', a metric could be 'Sense of Accomplishment').
+    - It might be related to the feeling the "Existing Positive Habit" provides.
 
-    Return ONLY a valid JSON array of 5 objects. Each object must strictly follow this structure:
-    { "label": "Example Label", "unit": "out of 10", "goal": 7, "briefExplanation": "Example explanation." }
+    For more context: after you provide the outcome labels, the user will choose a scale/units to measure the outcome by. Users will get scale/unit suggestions from this array (or they can enter their own):
+    { label: 'out of 10', description: 'E.g. for self-confidence, satisfaction, mood. 0-10 scale.' },
+    { label: 'Time of Day', description: 'E.g. for tracking mealtimes, bedtimes, etc.' },
+    { label: '% growth', description: 'E.g. for tracking strength gains, income, or followers (no negative #s).' },
+    { label: 'Compared to yesterday', description: '0=much Worse, 5=same, 10=much Better.' }
 
-    Do not include any other text or markdown outside of the JSON array.
+    For each of the five suggestions, you MUST provide:
+    1.  A "label": A clear, concise name for the outcome metric (e.g., 'Morning Calmness', 'Productive Focus', 'Feeling of Connection'). Max 25 characters.
+    2.  A "briefExplanation": A short (10-15 words) explanation of its relevance to the user's context.
+
+    The suggestions should be diverse, with 1 or 2 being more creative interpretations of the user's context. Start the "briefExplanation" for these creative suggestions with "A different angle:".
+
+    Return ONLY a valid JSON array containing 5 objects, where each object strictly follows the structure:
+    { "label": "Example Label", "briefExplanation": "Example explanation." }
+
+    Your entire response must be only the JSON array. Do not include any other text.
   `;
 
   logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
-  
+
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const generationResult = await model.generateContent({
@@ -3818,14 +3820,16 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
         throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
     }
 
-    if (!Array.isArray(suggestions) || suggestions.length === 0) { // Check for empty array too
-        logger.error(`[generateOutcomeLabelSuggestions] Parsed response is not a non-empty array for user ${userId}. Parsed:`, suggestions);
-        throw new HttpsError('internal', 'AI did not return any outcome suggestions.');
+    if (!Array.isArray(suggestions) || suggestions.length !== 5) {
+        logger.error(`[generateOutcomeLabelSuggestions] Parsed response is not an array of 5 elements for user ${userId}. Parsed:`, suggestions);
+        throw new HttpsError('internal', 'AI did not return five outcome suggestions as expected.');
     }
 
     // Basic validation of the array contents
     for (const suggestion of suggestions) {
-        if (!suggestion.label || !suggestion.unit || suggestion.goal === undefined || !suggestion.briefExplanation) {
+        if (!suggestion.label || !suggestion.briefExplanation ||
+            typeof suggestion.label !== 'string' || suggestion.label.length > 45 ||
+            typeof suggestion.briefExplanation !== 'string') {
             logger.error(`[generateOutcomeLabelSuggestions] One or more suggestions have an invalid structure for user ${userId}. Suggestion:`, suggestion);
             throw new HttpsError('internal', 'AI returned suggestions with an invalid or incomplete structure.');
         }
@@ -3847,6 +3851,20 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
   }
 });
 
+// Add this new Firebase Callable Function to your functions/index.js file
+
+/**
+ * Generates 3-5 potential daily habit/input labels based on a user's wish,
+ * their defined outcome metric, and any habits already defined.
+ *
+ * Expected request.data: {
+ * userWish: string,
+ * outcomeMetric: { label: string, unit: string, goal: number },
+ * definedInputs: Array<{ label: string, unit: string, goal: number }> (optional)
+ * }
+ * Returns: { success: true, suggestions: [{label: string, briefExplanation: string}, ...] }
+ * or { success: false, error: string, details?: any }
+ */
 
 exports.generateInputLabelSuggestions = onCall(async (request) => {
   logger.log("[generateInputLabelSuggestions] Function called. Request data:", request.data);
@@ -3859,71 +3877,68 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   const userId = request.auth.uid;
 
   // Validation now includes checking the format of definedInputs
-  const { userWish, outcomeMetric, definedInputs = [], userBlockers, userVision } = request.data;
+  const { userWish, outcomeMetric, definedInputs = [] } = request.data;
   if (!userWish || !outcomeMetric?.label) {
     logger.warn(`[generateInputLabelSuggestions] Invalid argument for user ${userId}. Wish or outcomeMetric is missing.`);
     throw new HttpsError('invalid-argument', 'The function must be called with a valid "userWish" and "outcomeMetric".');
   }
   
   logger.info(`[generateInputLabelSuggestions] Processing for user: ${userId}, wish: "${userWish}", outcome: "${outcomeMetric.label}", defined inputs: ${definedInputs.length}`);
-  
+
   // 2. Check if Gemini Client is available
   if (!genAI) {
     logger.error("[generateInputLabelSuggestions] Gemini AI client (genAI) is not initialized.");
     throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
   }
 
-  // 3. Construct context for the prompt
+  // 3. Construct NEW, more advanced prompt for LLM
   let definedInputsContext = "The user has not defined any habits yet.";
   if (definedInputs.length > 0) {
     definedInputsContext = "The user has already chosen the following daily habit(s):\n";
     definedInputs.forEach((input, index) => {
-      if (input.label && input.unit && input.goal !== undefined) {
-        definedInputsContext += `${index + 1}. "${input.label}" (Goal: ${input.goal} ${input.unit})\n`;
-      }
+      definedInputsContext += `${index + 1}. "${input.label}" (Goal: ${input.goal} ${input.unit})\n`;
     });
     definedInputsContext += "\nYour suggestions MUST be different from and complementary to these.";
   }
-  const isThoroughPath = userBlockers && userVision;
 
-  // 4. Construct the new, detailed prompt
   const promptText = `
     You are a behavioral analyst helping a user design a self-experiment. Your goal is to suggest insightful "Daily Habits" based on their context.
 
-    Your core principle is the "Chain of Behavior": an unwanted outcome is often a link in a long chain of preceding behaviors. Real change comes from finding and modifying weaker links earlier in the chain, not just attacking the final symptom. Think backwards from the user's wish and blockers. What could be the "link before the link"? For example, if a blocker is "afternoon energy slump," the link before that might be "a heavy lunch" or "poor sleep." The link before "poor sleep" might be "too much screen time at night."
-
-    CRITICAL REQUIREMENTS:
-        1.  Generate 5 distinct, actionable "Daily Habits". Your suggestions should include a mix of habits that directly support the outcome, address blockers, and are creative "Upstream Habits" that intervene earlier in the behavioral chain.
-        2.  For each suggestion, you MUST provide a JSON object with a "label", "unit", "goal", and "briefExplanation".
-        3.  The COMBINED display string, formatted as "label (goal unit)", MUST be less than 44 characters.
-        4.  Also provide a "briefExplanation" (max 15 words). For upstream habits, briefly state the chain of logic (e.g., "To boost afternoon energy by improving sleep quality.").
-        5.  Your suggestions should include:
-            - 2 Habits that directly support the chosen outcome. AVOID suggesting habits similar to the user's previously defined habits.
-            - 3 Creative "Upstream Habits" that intervene earlier in the potential chain of behavior. These should be your most insightful suggestions.
-    
-        Example Units
-        - out of 10 (scale from 0-10)
-        - times (e.g. per day)
-        - time of day (e.g. 5:30PM)
-        - % (e.g. progress)
-        - pages (for reading or journaling)
-        - reps (for exercise)
-        - minutes (for meditation, or other activities that happen in "sessions")
+    Your core principle is the "Chain of Behavior": an unwanted outcome is often a link in a long chain of preceding behaviors. Real change comes from finding and modifying weaker links earlier in the chain, not just attacking the final symptom.
 
     USER CONTEXT:
-        - Deeper Wish: "${userWish}"
-        - Stated Outcome Metric: They are tracking "${outcomeMetric.label}" to measure progress.
-        ${isThoroughPath ? `- Vision of Success: "${userVision}"` : ''}
-        ${isThoroughPath ? `- Biggest Blockers: "${userBlockers}"` : ''}
-        - ${definedInputsContext}
+    - Deeper Wish: "${userWish}"
+    - Stated Outcome Metric: They are tracking "${outcomeMetric.label}" to measure progress.
+    - Vision of Success: The first noticeable positive change would be "${request.data.userVision || 'Not specified'}".
+    - Biggest Blockers: "${request.data.userBlockers || 'Not specified'}".
+    - Existing Positive Habits: "${request.data.userPositiveHabits || 'Not specified'}".
+    - ${definedInputsContext}
 
-    Return ONLY a valid JSON array of 5 objects. Do not include any other text or markdown outside of the JSON array.
-    Example Response Object:
-    { "label": "Plan Tomorrow Before Laptop Closes", "unit": "yes/no", "goal": 1, "briefExplanation": "Reduces decision fatigue for a more focused morning." }
+    YOUR TASK:
+    Think backwards from the user's wish and blockers. What could be the "link before the link"? For example, if a blocker is "afternoon energy slump," the link before that might be "a heavy lunch" or "poor sleep." The link before "poor sleep" might be "too much screen time at night."
+
+    Generate 5 distinct, actionable "Daily Habits". Your suggestions should include:
+    1-2. Habits that directly support the chosen outcome. AVOID suggesting habits similar to the user's previously defined habits.
+    1-2. Habits that directly address the user's stated "Blockers".
+    1-2. Creative "Upstream Habits" that intervene earlier in the potential chain of behavior. These should be your most insightful suggestions.
+
+    For your reference, the user will track/measure these habits using simple units like:
+    - Repetitions or Count (e.g., for push-ups, tasks done).
+    - Time of Day (e.g., for a morning routine).
+    - Duration in Minutes or Hours (for 'sessions' with some duration).
+    - A simple 'Yes/No' (1 or 0).
+
+    Your suggested labels should be actions that fit these simple measurement types. DO NOT suggest the units themselves as labels.
+
+    For each of the 5 suggestions, you MUST provide:
+    1. A "label": A clear, concise name for the daily habit (e.g., "10-Min Walk After Lunch", "No Screens After 9 PM", "Plan Tomorrow Before Closing Laptop"). Max 25 characters.
+    2. A "briefExplanation": A short (10-15 words) explanation of how this habit links to their context. For upstream habits, briefly state the chain of logic (e.g., "To boost afternoon energy by improving sleep quality.").
+
+    Return ONLY a valid JSON array of 5 objects, each with a "label" and "briefExplanation". Your entire response must be only the JSON array.
   `;
 
   logger.info(`[generateInputLabelSuggestions] Sending advanced, context-rich prompt to Gemini for user ${userId}.`);
-  
+
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const generationResult = await model.generateContent({
@@ -3950,14 +3965,14 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
         throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
     }
 
-    if (!Array.isArray(suggestions) || suggestions.length === 0) {
-        logger.error(`[generateInputLabelSuggestions] Parsed response is not a non-empty array. Found ${suggestions.length}.`);
-        throw new HttpsError('internal', 'AI did not return any habit suggestions.');
+    if (!Array.isArray(suggestions) || suggestions.length !== 5) {
+        logger.error(`[generateInputLabelSuggestions] Parsed response is not an array of 5 elements. Found ${suggestions.length}.`);
+        throw new HttpsError('internal', 'AI did not return five habit suggestions as expected.');
     }
 
     // Final validation of suggestion structure
     for (const suggestion of suggestions) {
-        if (!suggestion.label || !suggestion.unit || suggestion.goal === undefined || !suggestion.briefExplanation) {
+        if (!suggestion.label || !suggestion.briefExplanation || typeof suggestion.label !== 'string' || suggestion.label.length > 45 || typeof suggestion.briefExplanation !== 'string') {
             logger.error(`[generateInputLabelSuggestions] A suggestion has an invalid structure.`, suggestion);
             throw new HttpsError('internal', 'AI returned habit suggestions with an invalid structure.');
         }

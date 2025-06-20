@@ -1341,8 +1341,8 @@ client.on(Events.MessageCreate, async message => {
           
           const newPromptEmbed = new EmbedBuilder()
             .setColor('#5865F2')
-            .setTitle("Outcome to measure")
-            .setDescription(`Let's break down your wish into a measurable outcome.\n\nTo do that, please answer 3 quick questions.\n\n### Question 1\nWhat are the biggest obstacles to progress on that wish?`);
+            .setTitle("In-depth Questions")
+            .setDescription(`Please answer 3 quick questions.\n\n### Question 1\nWhat obstacles make "${setupData.deeperWish}" hard to reach?`);
 
           const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
           setupData.lastPromptMessageId = newPromptMessage.id;
@@ -1472,8 +1472,8 @@ client.on(Events.MessageCreate, async message => {
       // 1. Send NEW prompt as an Embed
       const newPromptEmbed = new EmbedBuilder()
         .setColor('#5865F2')
-        .setTitle("4. Noticeable Success")
-        .setDescription("If your wish came true, what's the **1st positive change** you'd notice?\n### Example\n\n**If Wish** = 'More energy'\n\n**Then 1st Change** = 'Needing less coffee'")
+        .setTitle("Noticeable Success")
+        .setDescription("If your wish came true, what's the **first positive change** you'd find?\n### Example\nIf **Wish** = 'More energy'\n\nThen **1st Change** = 'Less coffee'")
 
       const newPromptMessage = await message.author.send({ embeds: [newPromptEmbed] });
       console.log(`[MessageCreate ASK_VISION ${interactionIdForLog}] Sent new prompt for vision of success as an embed.`);
@@ -1565,44 +1565,26 @@ client.on(Events.MessageCreate, async message => {
         );
         console.log(`[MessageCreate LLM_CALL_END ${interactionIdForLog}] Firebase function 'generateOutcomeLabelSuggestions' returned for ${userTag}.`);
 
-        if (llmResult && llmResult.success && llmResult.suggestions && llmResult.suggestions.length > 0) { // Check for > 0 suggestions for robustness
-            setupData.aiGeneratedOutcomeLabelSuggestions = llmResult.suggestions;
-            setupData.dmFlowState = 'awaiting_outcome_label_dropdown_selection';
-            userExperimentSetupData.set(userId, setupData);
-            
-            console.log(`[MessageCreate LLM_SUCCESS ${interactionIdForLog}] Successfully received ${llmResult.suggestions.length} outcome label suggestions from LLM for ${userTag}.`);
-            
-            const outcomeLabelSelectMenu = new StringSelectMenuBuilder()
-              .setCustomId('ai_outcome_label_select')
-              .setPlaceholder('Potential Outcomes to measure');
-            outcomeLabelSelectMenu.addOptions(
-              new StringSelectMenuOptionBuilder()
-                .setLabel("✏️ Enter my own...")
-                .setValue('custom_outcome_label')
-                .setDescription("Type your own outcome metric.")
-            );
-            llmResult.suggestions.forEach((suggestion, index) => {
-              outcomeLabelSelectMenu.addOptions(
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(suggestion.label.substring(0, 100))
-                  .setValue(`ai_suggestion_${index}`)
-                  .setDescription((suggestion.briefExplanation || 'AI Suggested Label').substring(0, 100))
-              );
-            });
-            const rowWithLabelSelect = new ActionRowBuilder().addComponents(outcomeLabelSelectMenu);
-            
-            const resultsEmbed = new EmbedBuilder()
-                .setColor('#57F287') // Green for success
-                .setTitle("Personalized Suggestions")
-                .setDescription(`Here are some ideas for a **Measurable Outcome** to support your wish:\n\n**"${setupData.deeperWish}"**.\n\nSelect one from the dropdown or choose to "Enter my own..."`);
+          if (llmResult && llmResult.success && llmResult.suggestions?.length > 0) {
+                setupData.aiGeneratedOutcomeSuggestions = llmResult.suggestions;
+                setupData.dmFlowState = 'awaiting_outcome_suggestion_selection';
+                userExperimentSetupData.set(userId, setupData);
 
-            // Edit the "thinking" message with the results
-            await thinkingMessage.edit({
-                embeds: [resultsEmbed],
-                components: [rowWithLabelSelect]
-            });
-            console.log(`[MessageCreate LABEL_DROPDOWN_SENT ${interactionIdForLog}] Edited 'thinking' message to display AI outcome label suggestions dropdown to ${userTag}. State: ${setupData.dmFlowState}.`);
-        } else {
+                // This uses the central config to build the dropdown correctly
+                const stepConfig = dmFlowConfig[setupData.dmFlowState];
+                const { content, components } = stepConfig.prompt(setupData);
+
+                const resultsEmbed = new EmbedBuilder()
+                    .setColor('#57F287')
+                    .setTitle("Personalized Suggestions")
+                    .setDescription(content);
+
+                await thinkingMessage.edit({
+                    embeds: [resultsEmbed],
+                    components: components
+                });
+                console.log(`[MessageCreate LABEL_DROPDOWN_SENT ${interactionIdForLog}] Edited 'thinking' message to display AI suggestions to ${userTag}.`);
+            } else {
             // This 'else' block handles cases where the LLM call failed or returned unexpected data.
             let failureReason = "AI failed to return valid suggestions";
             if (llmResult && llmResult.error) {
@@ -3959,7 +3941,7 @@ client.on(Events.InteractionCreate, async interaction => {
       try {
         // --- Stage 1: Acknowledge with a "loading" message ---
         await interaction.update({
-            content: '⚙️ Contacting your personal AI assistant... One moment.',
+            content: '⚙️ Contacting your AI assistant... One moment.',
             embeds: [],
             components: []
         });
@@ -3975,10 +3957,9 @@ client.on(Events.InteractionCreate, async interaction => {
             .setTitle("Let's Set Your Experiment! 🌱")
             .setDescription(
                 "An experiment has 3 parts:\n\n" +
-                "1. **A Wish** to aim for (Choosing your plant).\n" +
-                "2. **An Outcome** to measure (Watching it grow).\n" +
-                "3. **1-3 Habits** to test (How you'll care for it).\n\n" +
-                "*Your wish is the forest you want to grow.\nYour Outcome is the next plant you’re growing.\nYour habits are the sun, water, and soil.*"
+                "1. **A Wish** to aim for.\n" +
+                "2. **An Outcome** to measure.\n" +
+                "3. **1 - 3 Habits** to test out.\n\n"
             );
 
         // --- NEW: 'Start' Button ---
@@ -3992,7 +3973,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // --- Stage 3: Update the original message with the final button and perfect link ---
         const goToDmsButton = new ButtonBuilder()
-          .setLabel('➡️ Continue in DMs')
+          .setLabel('🚀 Click Here 🚀')
           .setStyle(ButtonStyle.Link)
           .setURL(`https://discord.com/channels/@me/${dmChannel.id}/${promptMessage.id}`); // The perfect link
 
@@ -4000,7 +3981,7 @@ client.on(Events.InteractionCreate, async interaction => {
         
         // Use editReply because we already responded with update()
         await interaction.editReply({
-            content: '✅ Your personal AI assistant is ready! Click below to continue.',
+            content: '✅ Your AI assistant is ready!\n\nClick below to continue.',
             components: [actionRow]
         });
 
@@ -4071,14 +4052,9 @@ client.on(Events.InteractionCreate, async interaction => {
             // This reuses the content from your previous ephemeral welcome flow for consistency
             const comicEmbed = new EmbedBuilder()
               .setColor('#57F287')
-              .setTitle('🔬 How Experiments Improve Your Life')
+              .setTitle('🔬 How Experiments Change Lives')
               .setDescription(
-                "Self Scientists run habit experiments to improve our lives.\n\nHere are the steps\n(see the comic below too).\n\n" +
-                "1. Start with a wish to improve your life.\n\n" +
-                "2. AI helps you turn it into a trackable metric.\n\n" +
-                "3. Pick 1 - 3 habits to test.\nLog your stats each day\n(takes 2 mins).\n\n" +
-                "4. At the end of the experiment,\nyou get stats and AI insights.\n\n" +
-                "5. Then you use those insights\nto make your habits\neasier and better for YOU."
+                "Your Wish is the forest you want to grow.\nThe Outcome is the height of 1 plant.\nYour habits are the sun, water, and soil."
               )
               .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/experiment%20lifecycle%20comic%202.jpeg');
 
@@ -4125,10 +4101,10 @@ client.on(Events.InteractionCreate, async interaction => {
             // Create the new embed for the Express vs. Thorough choice
             const choiceEmbed = new EmbedBuilder()
                 .setColor('#7F00FF') // Purple
-                .setTitle('How would you like to proceed?')
+                .setTitle('Express or Thorough style?')
                 .setDescription(
-                    "**🚀 Express:** Faster, with broader AI suggestions based on just your wish.\n\n" +
-                    "**🧠 Thorough:** More personalized. You'll answer 3 quick questions first for highly tailored suggestions."
+                    "**🚀 Express:** Faster, with broader AI suggestions.\n\n" +
+                    "**🧠 Thorough:** Answer 3 extra questions for highly tailored suggestions."
                 );
 
             const expressButton = new ButtonBuilder()
@@ -4176,13 +4152,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 console.warn(`[ai_flow_choice WARN ${interactionId}] User ${userId} in wrong state: ${setupData?.dmFlowState}`);
                 return;
             }
-
-            // Disable the Express/Thorough buttons on the message they clicked
-            const disabledRow = new ActionRowBuilder().addComponents(
-                ButtonBuilder.from(interaction.message.components[0].components[0]).setDisabled(true),
-                ButtonBuilder.from(interaction.message.components[0].components[1]).setDisabled(true)
-            );
-            await interaction.update({ components: [disabledRow] });
+            
+            await interaction.update({
+                  content: `✅️ ${choice} flow confirmed. **Scroll down**.`,
+                  embeds: [],      // This removes the original embed
+                  components: []   // This removes the buttons entirely
+              });
             
             // Update the state with the user's choice and advance the flow
             setupData.setupStyle = choice.toLowerCase();
@@ -4198,7 +4173,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     "● *'To be less stressed'*\n" +
                     "● *'To have more energy'*\n" +
                     "● *'To have better relationships'*\n\n" +
-                    "Type your wish in a message below."
+                    "Type your wish in a message below (click <:chaticon:1384220348685488299> on mobile)."
                 );
 
             const newPromptMessage = await interaction.user.send({ embeds: [wishEmbed] });
