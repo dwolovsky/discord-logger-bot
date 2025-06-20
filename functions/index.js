@@ -3764,17 +3764,18 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
   }
 
   // 4. Construct the new, detailed prompt for the LLM
-  const promptText = `
+const promptText = `
     You are an expert at Objectives and Key Results framework, as well as Key Performance Indicators. Your task is to generate 5 distinct and relevant "Outcome Metrics" for a user's "habit experiment" to improve their daily life through self experimentation.
+    
+    **CONCEPT DEFINITION: An Outcome Metric is a measure of a *state*, *feeling*, or *condition*. It is something the user *experiences* or *observes*, but does not directly control. It is a *result*.**
 
-   CRITICAL REQUIREMENTS:
-
-    1. Each metric must be a **leading indicator** for the user's 'Deeper Wish' — a daily measure that predicts future success.
-    2. For each of the 5 suggestions, you MUST provide a JSON object with a "label" (string), "unit" (string), and a "goal" (non-negative rational number or time of day, e.g. 7:30).
-    3. The COMBINED display string from your output, formatted as "label (goal unit)", MUST be less than 44 characters. This is a strict constraint.
-    4. The "unit" MUST be a unit or scale chosen to make perfect sense with the outcome label. Use this list for reference: ['out of 10', 'Time of Day', 'hours', 'minutes', 'times', '%', 'pages', 'steps'].
-    5. The "goal" should be a sensible starting number or time string (e.g., "7:30 AM") for that metric.
-    6. Also provide a "briefExplanation" (10 words) of its relevance to the user's context.
+    CRITICAL REQUIREMENTS:
+    1.  Each metric must be a **leading indicator** for the user's 'Deeper Wish'—a daily measure that predicts future success. **DO NOT suggest direct actions, tasks, or to-do list items.** For example, "Meditate for 10 minutes" is a habit, not an outcome. "Clarity of Mind"  or "Faith in myself" is an outcome.
+    2.  For each of the 5 suggestions, you MUST provide a JSON object with a "label" (string), "unit" (string), and a "goal" (non-negative rational number or time of day, e.g. 7:30).
+    3.  The COMBINED display string from your output, formatted as "label (goal unit)", MUST be less than 44 characters. This is a strict constraint.
+    4.  The "unit" MUST be a unit or scale chosen to make perfect sense with the outcome label. Use this list for reference: ['out of 10', 'Time of Day', 'hours', 'minutes', 'times', '%', 'pages', 'steps'].
+    5.  The "goal" should be a sensible starting number or time string (e.g., "7:30 AM") for that metric.
+    6.  Also provide a "briefExplanation" (10 words) of its relevance to the user's context.
 
     USER CONTEXT:
     ${userContextPromptBlock}
@@ -3789,6 +3790,8 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
 
     Do not include any other text or markdown outside of the JSON array.
   `;
+
+
 
   logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
   
@@ -3889,18 +3892,22 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   // 4. Construct the new, detailed prompt
   const promptText = `
     You are a behavioral analyst helping a user design a self-experiment. Your goal is to suggest insightful "Daily Habits" based on their context.
+    
+    **CONCEPT DEFINITION: A Daily Habit is a specific, controllable *action* or *decision* the user can make. It is a *lever* they can pull to influence their outcome.**
 
     Your core principle is the "Chain of Behavior": an unwanted outcome is often a link in a long chain of preceding behaviors. Real change comes from finding and modifying weaker links earlier in the chain, not just attacking the final symptom. Think backwards from the user's wish and blockers. What could be the "link before the link"? For example, if a blocker is "afternoon energy slump," the link before that might be "a heavy lunch" or "poor sleep." The link before "poor sleep" might be "too much screen time at night."
 
     CRITICAL REQUIREMENTS:
-        1.  Generate 5 distinct, actionable "Daily Habits". Your suggestions should include a mix of habits that directly support the outcome, address blockers, and are creative "Upstream Habits" that intervene earlier in the behavioral chain.
-        2.  For each suggestion, you MUST provide a JSON object with a "label", "unit", "goal", and "briefExplanation".
-        3.  The COMBINED display string, formatted as "label (goal unit)", MUST be less than 44 characters.
-        4.  Also provide a "briefExplanation" (max 15 words). For upstream habits, briefly state the chain of logic (e.g., "To boost afternoon energy by improving sleep quality.").
-        5.  Your suggestions should include:
+        1.  Generate 5 distinct, actionable "Daily Habits". **DO NOT suggest feelings, states, or general outcomes.** For example, "Feel more rested" is an outcome, not a habit. "Go for a 10-minute walk after lunch" is a habit.
+        2.  Your suggestions should include a mix of habits that directly support the outcome, address blockers, and are creative "Upstream Habits" that intervene earlier in the behavioral chain.
+        3.  For each suggestion, you MUST provide a JSON object with a "label", "unit", "goal", and "briefExplanation".
+        4.  The COMBINED display string, formatted as "label (goal unit)", MUST be less than 44 characters.
+        5.  Also provide a "briefExplanation" (max 15 words). For upstream habits, briefly state the chain of logic (e.g., "To boost afternoon energy by improving sleep quality.").
+        6.  Your suggestions should include:
             - 2 Habits that directly support the chosen outcome. AVOID suggesting habits similar to the user's previously defined habits.
             - 3 Creative "Upstream Habits" that intervene earlier in the potential chain of behavior. These should be your most insightful suggestions.
     
+
         Example Units
         - out of 10 (scale from 0-10)
         - times (e.g. per day)

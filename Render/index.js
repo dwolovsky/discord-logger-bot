@@ -61,15 +61,12 @@ if (serviceAccount) {
     console.warn("Firebase Admin SDK NOT Initialized - Firestore listener for stats notifications and other admin features will NOT work.");
 }
 
+
 // This map will temporarily hold the full stats report for a user navigating the paginated view.
 // Key: userId, Value: { statsReportData, experimentId }
 const userStatsReportData = new Map();
 
-/**
- * Builds the embed fields for Page 1 (Core Statistics).
- * @param {EmbedBuilder} embed - The embed to add fields to.
- * @param {object} statsReportData - The full stats report data from Firestore.
- */
+
 /**
  * Builds the embed fields for Page 1 (Core Statistics).
  * @param {EmbedBuilder} embed - The embed to add fields to.
@@ -77,7 +74,6 @@ const userStatsReportData = new Map();
  */
 function buildCoreStatsPage(embed, statsReportData) {
     embed.setTitle('📊 Core Statistics (Page 1 of 3)');
-
     if (statsReportData.calculatedMetricStats && typeof statsReportData.calculatedMetricStats === 'object' && Object.keys(statsReportData.calculatedMetricStats).length > 0) {
         for (const metricKey in statsReportData.calculatedMetricStats) {
             const metric = statsReportData.calculatedMetricStats[metricKey];
@@ -85,16 +81,25 @@ function buildCoreStatsPage(embed, statsReportData) {
 
             if (metric.status === 'skipped_insufficient_data') {
                 fieldValue = `*Not enough data (had ${metric.dataPoints}, needed 5).*`;
-            } else {
-                const unit = metric.unit ? ` ${metric.unit}` : '';
-                // Helper to format the value, using the bot's existing time formatter if needed.
+            } 
+            // --- NEW: Yes/No Metric Handling ---
+            else if (isYesNoMetric(metric.unit)) {
+                const percentage = (metric.average * 100).toFixed(0);
+                const completions = Math.round(metric.average * metric.dataPoints);
+                fieldValue += `**Completion:** ${percentage}%\n`;
+                fieldValue += `*Completed on ${completions} of ${metric.dataPoints} days.*`;
+            } 
+            // --- END: Yes/No Metric Handling ---
+            else {
+                // This is the original logic for all other metric types
+                const unit = metric.unit ?
+` ${metric.unit}` : '';
                 const formatValue = (val) => (isTimeMetric(metric.unit) ? formatDecimalAsTime(val) : val);
 
                 fieldValue += `**Avg:** ${formatValue(metric.average)}${unit}\n`;
                 fieldValue += `**Median:** ${formatValue(metric.median)}${unit}\n`;
                 fieldValue += `**Min:** ${formatValue(metric.min)}${unit}, **Max:** ${formatValue(metric.max)}${unit}\n`;
 
-                // --- NEW: Consistency Interpretation Logic ---
                 const variation = metric.variationPercentage;
                 let consistencyLabel = "Not enough data";
                 if (variation !== undefined && variation !== null) {
@@ -107,8 +112,6 @@ function buildCoreStatsPage(embed, statsReportData) {
                     }
                 }
                 fieldValue += `**Consistency:** ${consistencyLabel}\n`;
-                // --- END NEW ---
-
                 fieldValue += `**Data Points:** ${metric.dataPoints}`;
             }
             embed.addFields({ name: metric.label || metricKey, value: fieldValue, inline: true });
@@ -653,6 +656,18 @@ function formatDecimalAsTime(decimalHours) {
     if (hours > 12) { hours -= 12; }
     else if (hours === 0) { hours = 12; } // 0 hour is 12 AM
     return `${hours}:${paddedMinutes} ${period}`;
+}
+
+/**
+ * Checks if a metric's unit suggests it's a binary yes/no or completion task.
+ * @param {string | null} unit - The unit string from the metric.
+ * @returns {boolean} True if the unit is considered a yes/no type.
+ */
+function isYesNoMetric(unit) {
+    if (!unit) return false;
+    const lowerUnit = unit.toLowerCase().trim();
+    // Add any other variations you might use for binary tasks
+    return lowerUnit === 'yes/no' || lowerUnit === 'y/n' || lowerUnit === 'completion';
 }
 
 /**
