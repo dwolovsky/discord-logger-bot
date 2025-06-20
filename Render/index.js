@@ -1634,7 +1634,7 @@ client.on(Events.MessageCreate, async message => {
             const fallbackEmbed = new EmbedBuilder()
               .setColor('#FEE75C') // Yellow for warning/fallback
               .setTitle("Manual Input Required")
-              .setDescription("I had a bit of trouble brainstorming suggestions right now. 😕\n\nNo worries! What **Label** would you like to give your Key Outcome Metric? This is the main thing you'll track *daily*.\n\nE.g., 'Energy Level', 'Sleep Quality', 'Tasks Completed'\n\nType just the label below (max 30 characters).");
+              .setDescription("I had a bit of trouble brainstorming suggestions right now. 😕\n\nYou're gonna have to go hands on or restart at /go!\n\nWhat **Label** would you like to give your Outcome Metric? This is the main measure you want to improve.\n\nE.g., 'Energy Level', 'Sleep Quality', 'Tasks Completed'\n\nType just the label below (max 30 characters).");
             
             await thinkingMessage.edit({ embeds: [fallbackEmbed], components: [] });
 
@@ -1675,7 +1675,7 @@ client.on(Events.MessageCreate, async message => {
       const interactionIdForLog = setupData.interactionId || 'DM_FLOW';
 
       if (!outcomeLabel) {
-        await message.author.send("It looks like your response was empty. What **Label** would you give your Key Outcome Metric? (e.g., 'Energy Level', 'Sleep Quality')");
+        await message.author.send("It looks like your response was empty. What **Label** would you give your Outcome Metric? (e.g., 'Energy Level', 'Sleep Quality')");
         console.log(`[MessageCreate AWAITING_OUTCOME_LABEL_EMPTY ${interactionIdForLog}] User ${userTag} sent empty outcome label.`);
         return;
       }
