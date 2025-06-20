@@ -979,8 +979,68 @@ exports.getLeaderboard = onCall(async (request) => {
   });
 
 
-  // REPLACE the submitAndAnalyzeLog function in functions/index.js with this new version.
+// REPLACE THE PREVIOUS VERSION OF THIS HELPER FUNCTION
 
+/**
+ * Parses a value that could be a number, or a 'yes'/'no' string for binary metrics.
+ * @param {string} valueStr The raw string value from the user's log.
+ * @param {object} metricSetting The experiment setting object for this metric (containing the unit).
+ * @param {string} metricName The display name of the metric for error messages (e.g., "Input 1").
+ * @returns {{value: number | null, error: string | null}} An object with the parsed numeric value or an error message.
+ */
+function parseYesNoOrNumber(valueStr, metricSetting, metricName) {
+    if (valueStr === null || String(valueStr).trim() === '') {
+        return { value: null, error: `Value for ${metricName} (${metricSetting.label}) is required.` };
+    }
+
+    // Use the new comprehensive list of keywords to identify a yes/no type metric
+    const yesNoKeywords = [
+        'yes/no',
+        'yes / no',
+        'y/n',
+        'completion',
+        'complete',
+        'done',
+        'complete/incomplete',
+        'pass/fail',
+        'did/didn\'t',
+        'did/not',
+        'binary',
+        'true/false',
+        'check',
+        'yes or no',
+        'done/not done',
+        '1/0',
+        '1 or 0',
+        'y / n'
+    ];
+
+    const unit = metricSetting.unit?.toLowerCase().trim();
+
+    if (yesNoKeywords.includes(unit)) {
+        // If the unit indicates a binary metric, parse specific affirmative/negative inputs
+        const affirmativeInputs = ['yes', 'y', '1', 'true', 'complete', 'done', 'did', 'pass', 'check'];
+        const negativeInputs = ['no', 'n', '0', 'false', 'incomplete', 'not done', "didn't", 'fail', 'not'];
+        
+        const lowerVal = String(valueStr).toLowerCase().trim();
+
+        if (affirmativeInputs.includes(lowerVal)) {
+            return { value: 1, error: null };
+        }
+        if (negativeInputs.includes(lowerVal)) {
+            return { value: 0, error: null };
+        }
+        // If the input is not in either list, it's invalid for this type of unit
+        return { value: null, error: `For ${metricName} (${metricSetting.label}), please enter a valid yes/no value (e.g., 'yes', 'no', '1', or '0'). You entered: "${valueStr}"` };
+    } else {
+        // Original logic for purely numeric metrics
+        const num = parseFloat(valueStr);
+        if (isNaN(num)) {
+            return { value: null, error: `Value for ${metricName} (${metricSetting.label}) must be a number. You entered: "${valueStr}"` };
+        }
+        return { value: num, error: null };
+    }
+}
 /**
  * Saves a user's log and immediately triggers AI analysis, returning the result synchronously.
  * This is an onCall function.
@@ -1034,29 +1094,39 @@ exports.submitAndAnalyzeLog = onCall(async (request) => {
 
         // --- Validate and Parse Logged Values ---
         const parsedAndLoggedInputs = [];
-        if (inputValues[0] === null || String(inputValues[0]).trim() === '') { throw new HttpsError('invalid-argument', `Value for Input 1 (${settings.input1.label}) is required.`); }
-        const parsedVal1 = parseFloat(inputValues[0]);
-        if (isNaN(parsedVal1)) { throw new HttpsError('invalid-argument', `Value for Input 1 (${settings.input1.label}) must be a number. You entered: "${inputValues[0]}"`);}
-        parsedAndLoggedInputs.push({ label: settings.input1.label, unit: settings.input1.unit, value: parsedVal1, goal: settings.input1.goal });
-        
-        if (isConfigured(settings.input2)) {
-            if (inputValues[1] === null || String(inputValues[1]).trim() === '') { throw new HttpsError('invalid-argument', `Value for Input 2 (${settings.input2.label}) is required because it was configured in /exp. You cannot leave it blank.`); }
-            const parsedVal2 = parseFloat(inputValues[1]);
-            if (isNaN(parsedVal2)) { throw new HttpsError('invalid-argument', `Value for Input 2 (${settings.input2.label}) must be a number. You entered: "${inputValues[1]}"`); }
-            parsedAndLoggedInputs.push({ label: settings.input2.label, unit: settings.input2.unit, value: parsedVal2, goal: settings.input2.goal });
-        }
-  
-        if (isConfigured(settings.input3)) {
-            if (inputValues[2] === null || String(inputValues[2]).trim() === '') { throw new HttpsError('invalid-argument', `Value for Input 3 (${settings.input3.label}) is required because it was configured in /exp. You cannot leave it blank.`); }
-            const parsedVal3 = parseFloat(inputValues[2]);
-            if (isNaN(parsedVal3)) { throw new HttpsError('invalid-argument', `Value for Input 3 (${settings.input3.label}) must be a number. You entered: "${inputValues[2]}"`); }
-            parsedAndLoggedInputs.push({ label: settings.input3.label, unit: settings.input3.unit, value: parsedVal3, goal: settings.input3.goal });
-        }
+        let parsedOutputValue;
 
-        if (outputValue === null || String(outputValue).trim() === '') { throw new HttpsError('invalid-argument', `Value for Outcome (${settings.output.label}) is required and cannot be empty.`); }
-        const parsedOutputValue = parseFloat(outputValue);
-        if (isNaN(parsedOutputValue)) { throw new HttpsError('invalid-argument', `Value for Outcome (${settings.output.label}) must be a number. You entered: "${outputValue}"`); }
+        // Process Output
+        const outputResult = parseYesNoOrNumber(outputValue, settings.output, 'Outcome');
+        if (outputResult.error) {
+            throw new HttpsError('invalid-argument', outputResult.error);
+        }
+        parsedOutputValue = outputResult.value;
+
+        // Process Input 1 (always required)
+        const input1Result = parseYesNoOrNumber(inputValues[0], settings.input1, 'Input 1');
+        if (input1Result.error) {
+            throw new HttpsError('invalid-argument', input1Result.error);
+        }
+        parsedAndLoggedInputs.push({ label: settings.input1.label, unit: settings.input1.unit, value: input1Result.value, goal: settings.input1.goal });
+
+        // Process Input 2 (if configured)
+        if (isConfigured(settings.input2)) {
+            const input2Result = parseYesNoOrNumber(inputValues[1], settings.input2, 'Input 2');
+            if (input2Result.error) {
+                throw new HttpsError('invalid-argument', input2Result.error);
+            }
+            parsedAndLoggedInputs.push({ label: settings.input2.label, unit: settings.input2.unit, value: input2Result.value, goal: settings.input2.goal });
+        }
   
+        // Process Input 3 (if configured)
+        if (isConfigured(settings.input3)) {
+            const input3Result = parseYesNoOrNumber(inputValues[2], settings.input3, 'Input 3');
+            if (input3Result.error) {
+                throw new HttpsError('invalid-argument', input3Result.error);
+            }
+            parsedAndLoggedInputs.push({ label: settings.input3.label, unit: settings.input3.unit, value: input3Result.value, goal: settings.input3.goal });
+        }
         // --- Prepare Firestore Log Document Data ---
         const logEntry = {
           userId: userId,

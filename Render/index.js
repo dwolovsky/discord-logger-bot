@@ -665,9 +665,30 @@ function formatDecimalAsTime(decimalHours) {
  */
 function isYesNoMetric(unit) {
     if (!unit) return false;
+
+    const yesNoKeywords = [
+        'yes/no',
+        'yes / no',
+        'y/n',
+        'completion',
+        'complete',
+        'done',
+        'complete/incomplete',
+        'pass/fail',
+        'did/didn\'t',
+        'did/not',
+        'binary',
+        'true/false',
+        'check',
+        'yes or no',
+        'done/not done',
+        '1/0',
+        '1 or 0',
+        'y / n'
+    ];
+
     const lowerUnit = unit.toLowerCase().trim();
-    // Add any other variations you might use for binary tasks
-    return lowerUnit === 'yes/no' || lowerUnit === 'y/n' || lowerUnit === 'completion';
+    return yesNoKeywords.includes(lowerUnit);
 }
 
 /**
