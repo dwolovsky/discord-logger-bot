@@ -1247,6 +1247,111 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
   }
 }
 
+// In render/index.js, add this entire new function.
+// A good place is after the sendAppreciationDM function.
+
+/**
+ * Checks for and executes pending actions for a user from Firestore,
+ * such as sending DMs or updating roles, then clears the pending flags.
+ * @param {import('discord.js').Interaction} interaction - The interaction object, used to get guild and member info.
+ * @param {string} userId - The ID of the user to process actions for.
+ */
+async function processPendingActions(interaction, userId) {
+    const guild = interaction.guild;
+    const member = interaction.member;
+
+    // Ensure we have the necessary guild and member objects to manage roles.
+    if (!guild || !member) {
+        console.error(`[processPendingActions] Could not find Guild or Member for user ${userId}. Cannot process role updates.`);
+        return;
+    }
+
+    console.log(`[processPendingActions] Starting to process pending actions for user ${userId} in guild ${guild.name}.`);
+
+    try {
+        // Step 1: Fetch the latest user data, including any pending action flags.
+        const result = await callFirebaseFunction('getUserDataForBot', {}, userId);
+        if (!result || !result.success || !result.userData) {
+            console.error(`[processPendingActions] Failed to get user data for ${userId}. Aborting.`);
+            return;
+        }
+
+        const {
+            pendingDmMessage,
+            pendingRoleUpdate,
+            pendingFreezeRoleUpdate,
+            pendingRoleCleanup
+        } = result.userData;
+
+        let actionsProcessed = false;
+
+        // Step 2: Process pending DMs.
+        if (pendingDmMessage) {
+            actionsProcessed = true;
+            console.log(`[processPendingActions] User ${userId} has pending DM: "${pendingDmMessage}"`);
+            try {
+                await interaction.user.send(pendingDmMessage);
+                console.log(`[processPendingActions] Successfully sent pending DM to ${userId}.`);
+            } catch (dmError) {
+                console.warn(`[processPendingActions] Failed to send pending DM to user ${userId}. They may have DMs disabled.`, dmError);
+            }
+        }
+
+        // Step 3: Process role cleanup if a streak was reset.
+        if (pendingRoleCleanup) {
+            actionsProcessed = true;
+            console.log(`[processPendingActions] User ${userId} has pending role cleanup.`);
+            const rolesToRemove = member.roles.cache.filter(role => STREAK_MILESTONE_ROLE_NAMES.includes(role.name));
+            if (rolesToRemove.size > 0) {
+                await member.roles.remove(rolesToRemove, 'Streak reset cleanup');
+                console.log(`[processPendingActions] Removed ${rolesToRemove.size} milestone role(s) from ${userId}.`);
+            }
+        }
+
+        // Step 4: Process the main streak role update.
+        if (pendingRoleUpdate && pendingRoleUpdate.name) {
+            actionsProcessed = true;
+            console.log(`[processPendingActions] User ${userId} has pending role update: ${pendingRoleUpdate.name}`);
+            const newMilestoneRole = await ensureRole(guild, pendingRoleUpdate.name, pendingRoleUpdate.color);
+            if (newMilestoneRole) {
+                await member.roles.add(newMilestoneRole, 'Streak milestone achieved');
+                console.log(`[processPendingActions] Added role "${newMilestoneRole.name}" to ${userId}.`);
+            }
+        }
+
+        // Step 5: Process the streak freeze role update.
+        if (pendingFreezeRoleUpdate) {
+            actionsProcessed = true;
+            console.log(`[processPendingActions] User ${userId} has pending freeze role update: ${pendingFreezeRoleUpdate}`);
+            // Remove all old freeze roles first
+            const oldFreezeRoles = member.roles.cache.filter(role => role.name.startsWith(FREEZE_ROLE_BASENAME));
+            if (oldFreezeRoles.size > 0) {
+                await member.roles.remove(oldFreezeRoles, 'Updating freeze count role');
+                console.log(`[processPendingActions] Removed ${oldFreezeRoles.size} old freeze role(s) from ${userId}.`);
+            }
+            // Add the new one
+            if (pendingFreezeRoleUpdate.includes(": 0") || pendingFreezeRoleUpdate.includes(": 1") || pendingFreezeRoleUpdate.includes(": 2") || pendingFreezeRoleUpdate.includes(": 3") || pendingFreezeRoleUpdate.includes(": 4") || pendingFreezeRoleUpdate.includes(": 5")) {
+                 const newFreezeRole = await ensureRole(guild, pendingFreezeRoleUpdate);
+                 if (newFreezeRole) {
+                    await member.roles.add(newFreezeRole, 'Freeze count updated');
+                    console.log(`[processPendingActions] Added role "${newFreezeRole.name}" to ${userId}.`);
+                 }
+            }
+        }
+
+        // Step 6: If any action was processed, clear the flags in Firestore.
+        if (actionsProcessed) {
+            console.log(`[processPendingActions] Actions were processed for ${userId}. Calling clearPendingUserActions.`);
+            await callFirebaseFunction('clearPendingUserActions', {}, userId);
+            console.log(`[processPendingActions] Successfully cleared pending actions for ${userId}.`);
+        } else {
+            console.log(`[processPendingActions] No pending actions found for user ${userId}.`);
+        }
+
+    } catch (error) {
+        console.error(`[processPendingActions] A critical error occurred while processing pending actions for user ${userId}:`, error);
+    }
+}
 // End of Firebase initialization and helper functions block
 // Your existing bot code (const client = new Client(...), etc.) starts below this
 
@@ -7143,6 +7248,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 content: finalEphemeralMessage, 
                 components: components 
             });
+
+            processPendingActions(interaction, interaction.user.id);
 
         } catch (error) {
             const errorTime = performance.now();
