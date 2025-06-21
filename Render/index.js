@@ -601,6 +601,51 @@ const dmFlowConfig = {
       }
   },
 
+ // START OF NEW SECTION TO ADD
+  'awaiting_input2_suggestion_selection': {
+    fieldsToClear: [], // Intentionally empty to preserve habit 1 when going back
+    prompt: (setupData) => {
+        const habitLabelSelectMenu = new StringSelectMenuBuilder()
+            .setCustomId('ai_input2_label_select') // For the 2nd habit
+            .setPlaceholder('Select a Habit to edit or write your own.');
+        habitLabelSelectMenu.addOptions(
+            new StringSelectMenuOptionBuilder()
+                .setLabel("✏️ Write my own from scratch")
+                .setValue('custom_input2_label')
+        );
+        if (setupData.aiGeneratedInputSuggestions && Array.isArray(setupData.aiGeneratedInputSuggestions)) {
+            setupData.aiGeneratedInputSuggestions.forEach((suggestion, index) => {
+                const displayLabel = `${suggestion.label} (${suggestion.goal} ${suggestion.unit})`;
+                habitLabelSelectMenu.addOptions(
+                    new StringSelectMenuOptionBuilder()
+                        .setLabel(displayLabel.substring(0, 100))
+                        .setValue(`ai_input2_label_suggestion_${index}`)
+                );
+            });
+        }
+        
+        const backButton = new ButtonBuilder()
+            // Go back to the outcome confirmation modal step
+            .setCustomId('back_to:awaiting_outcome_confirmation_modal')
+            .setLabel('⬅️ Back')
+            .setStyle(ButtonStyle.Secondary);
+        const content = `Let's define your **2nd Daily Habit** to test.`;
+        const components = [
+            new ActionRowBuilder().addComponents(habitLabelSelectMenu),
+            new ActionRowRowBuilder().addComponents(backButton)
+        ];
+        return { content, components };
+    }
+  },
+
+  'awaiting_habit_2_confirmation_modal': {
+      fieldsToClear: ['inputs'], // This should now correctly target the state for habit 2
+       prompt: () => {
+        return {};
+      }
+  },
+  // END OF NEW SECTION TO ADD
+
   'awaiting_final_confirmation': {
     fieldsToClear: [], // Nothing to clear when going back from the final summary
     prompt: (setupData) => {
@@ -6597,7 +6642,7 @@ client.on(Events.InteractionCreate, async interaction => {
           if (!setupData.inputs) setupData.inputs = [];
           setupData.inputs[1] = { label: chosenSuggestion.label, unit: chosenSuggestion.unit, goal: chosenSuggestion.goal };
           
-          delete setupData.aiGeneratedInputSuggestions;
+          // NOTE: The line `delete setupData.aiGeneratedInputSuggestions;` has been REMOVED.
           delete setupData.currentInputDefinition;
           setupData.dmFlowState = 'awaiting_add_another_habit_choice';
           userExperimentSetupData.set(userId, setupData);
@@ -6681,7 +6726,7 @@ client.on(Events.InteractionCreate, async interaction => {
           if (!setupData.inputs) setupData.inputs = [];
           setupData.inputs[2] = { label: chosenSuggestion.label, unit: chosenSuggestion.unit, goal: chosenSuggestion.goal };
           
-          delete setupData.aiGeneratedInputSuggestions;
+          // NOTE: The line `delete setupData.aiGeneratedInputSuggestions;` has been REMOVED.
           delete setupData.currentInputDefinition;
           setupData.dmFlowState = 'awaiting_metrics_confirmation';
           userExperimentSetupData.set(userId, setupData);
