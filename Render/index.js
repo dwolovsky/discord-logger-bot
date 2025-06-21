@@ -537,7 +537,7 @@ const dmFlowConfig = {
         });
       }
 
-      const content = `🤖 **AI Suggestions for Your Outcome**\nHere are 5 starting points for an outcome metric to support your wish. Select one to customize it, or write your own.`;
+      const content = `Here are 5 starting points for an outcome metric to support your wish. Select 1 to customize it, or write your own from scratch.`;
       const components = [new ActionRowBuilder().addComponents(outcomeLabelSelectMenu)];
       return { content, components };
     }
@@ -1417,7 +1417,7 @@ client.on(Events.MessageCreate, async message => {
 
                   const resultsEmbed = new EmbedBuilder()
                       .setColor('#57F287') // Green
-                      .setTitle("Personalized Suggestions")
+                      .setTitle("Outcome Metric Suggestions")
                       .setDescription(content);
                   
                   await thinkingMessage.edit({
@@ -4090,7 +4090,7 @@ client.on(Events.InteractionCreate, async interaction => {
               .setColor('#57F287')
               .setTitle('🔬 How Experiments Change Lives')
               .setDescription(
-                "Your Wish is the forest you want to grow.\nThe Outcome is the height of 1 plant.\nYour habits are the sun, water, and soil."
+                "● **Your Wish** is the forest you want to grow.\n● **The Outcome** is the height of 1 plant in that forest.\n● **Your Habits** are the sun, water, and soil."
               )
               .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Deeper%20Wish%20outcome%20habits%20relationship%201.png');
 
@@ -4285,7 +4285,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 userBlockers: setupData.userBlockers,
                 userPositiveHabits: setupData.userPositiveHabits,
                 userVision: setupData.userVision,
-                outcomeMetric: { label: setupData.outcomeLabel, unit: setupData.outcomeUnit, goal: setupData.outcomeGoal },
+                outcomeMetric: setupData.outcome,
                 definedInputs: definedInputsForAI
               },
               userId
@@ -7236,10 +7236,10 @@ client.on(Events.InteractionCreate, async interaction => {
                   'generateInputLabelSuggestions',
                   {
                     userWish: setupData.deeperWish,
-                    userBlockers: setupData.userBlockers, // Will be null on Express path, which is fine
-                    userVision: setupData.userVision, // null on Express
+                    userBlockers: setupData.userBlockers, 
+                    userVision: setupData.userVision, 
                     outcomeMetric: setupData.outcome,
-                    definedInputs: [] // No habits defined yet
+                    definedInputs: [] 
                   },
                   userId
                 );
