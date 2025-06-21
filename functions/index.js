@@ -3693,9 +3693,11 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             Examples:
                 * "Today was a tough one for me with [Habit or Outcome]. Any tips for staying consistent on low-energy days [or more specific problem from notes]?"
                 * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
-                * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins! Anyone else?"
+                * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins!"
                 * "I've been wanting [Deeper Wish], and today felt a step in that direction because [reason from notes]. It's cool to see new connections."
                 * "My main takeaway from today: [brief, insightful summary of a learning]. Curious if that resonates with anyone."
+            
+            DO NOT say "Anyone else..." at the end of the message.
 
             Return your response ONLY as a JSON object with the following structure:
             {
