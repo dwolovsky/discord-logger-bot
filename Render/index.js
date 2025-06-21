@@ -2855,7 +2855,7 @@ client.on(Events.GuildMemberAdd, async member => {
   }
 
   try {
-    const welcomePromptMessage = `🎉 Welcome to the Self Science Community, ${member}! 🎉\n\nTo get started, please type the command:\n\n➡️ **/hi**\n\n...and press Send (or enter).`;
+    const welcomePromptMessage = `🎉 Welcome to the Self Science Community, ${member}! 🎉\n\nTo get started, please type this:\n\n**/go**\n\n...and press Send (or enter).\n\nThen tap "Set Experiment" and "AI Assisted".`;
 
     await welcomeChannel.send(welcomePromptMessage);
     console.log(`[GuildMemberAdd] Sent /hi prompt to channel ${SPECIFIC_WELCOME_CHANNEL_ID} for ${member.user.tag}.`);
@@ -4860,7 +4860,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
                 let finalPlaceholder = 'What did you observe? Any questions or insights?';
                 if (settings.deeperProblem) {
-                    finalPlaceholder = `What affected your goal today?\n\n ↳ "${settings.deeperProblem.substring(0, 60)}"`;
+                    finalPlaceholder = `What affected your goal today?\n↳ "${settings.deeperProblem.substring(0, 60)}"`;
                 }
                 notesInput.setPlaceholder(finalPlaceholder);
                 components.push(new ActionRowBuilder().addComponents(notesInput));
@@ -5839,7 +5839,7 @@ client.on(Events.InteractionCreate, async interaction => {
                       { name: '📊 Daily Outcome to Track', value: formatMetricForDisplay(outputSetting) },
                       { name: '🛠️ Habit 1', value: formatMetricForDisplay(inputSettings[0]) }
                   )
-                  .setFooter({ text: `Let's support them! Duration: ${setupData.experimentDuration.replace('_', ' ')}` })
+                  .setFooter({ text: `Let's support them!` })
                   .setTimestamp();
 
               if (inputSettings[1]) {
@@ -6200,9 +6200,7 @@ client.on(Events.InteractionCreate, async interaction => {
             return;
         }
 
-        const member = await targetGuild.members.fetch(userId).catch(() => null);
-        const displayUserName = member?.displayName || interaction.user.username;
-        const messageToPost = `From **${displayUserName}**: ${aiPublicPostSuggestion}`;
+        const messageToPost = `From <@${userId}>: ${aiPublicPostSuggestion}`;
         
         await publicChannel.send(messageToPost);
         console.log(`[post_ai_log_summary_btn PUBLIC_POST_SUCCESS ${interactionId}] Successfully posted AI-suggested message to <#${EXPERIMENTS_CHANNEL_ID}> for ${userTagForLog}.`);

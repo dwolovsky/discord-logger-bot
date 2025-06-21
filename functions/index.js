@@ -406,13 +406,13 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
             let tempPublicMessage = null;
             const isTrueFirstDay = (!userDoc.exists || previousStreak === 0) && newState.newStreak === 1 && !newState.streakBroken;
             if (isTrueFirstDay) {
-                dmMessageText = `🎉 Welcome to your habit tracking journey, ${displayNameForMessage}! You've just logged Day 1. Keep it up! You've also earned the 'Level 1' role. 🔥`;
-                tempPublicMessage = `🎉 Please welcome @${displayNameForMessage} to their habit tracking journey! They've just logged Day 1! Show some support! 🚀`;
+                dmMessageText = `🎉 Welcome to your Self Science journey, ${displayNameForMessage}! You've just logged Day 1. Keep it up! You've also earned the 'Level 1' role. 🔥`;
+                tempPublicMessage = `🎉 Please welcome <@${userId}> to their Self Science journey! They've just logged Day 1! Show some support! 👏👏👏`;
                 roleInfo = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
                 updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = FieldValue.delete();
             } else if (newState.streakBroken) {
                 dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
-                tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', displayNameForMessage);
+                tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', `<@${userId}>`);
                 roleInfo = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
                 updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true;
             } else if (newState.newStreak > previousStreak) {
@@ -421,11 +421,11 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                     roleInfo = milestoneRole;
                     dmMessageText = STREAK_CONFIG.MESSAGES.DM.ROLE_ACHIEVEMENT.replace('${roleName}', roleInfo.name);
                     if (roleInfo.days > 1) {
-                         tempPublicMessage = `🎉 Big congrats to ${displayNameForMessage} for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
+                         tempPublicMessage = `🎉 Big congrats to <@${userId}> for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
                     }
                 } else {
                     // This is the updated line
-                    tempPublicMessage = `🥳 ${displayNameForMessage} just extended their daily logging streak to **${newState.newStreak} days**! (Freezes: ${newState.freezesRemaining} 🧊)`;
+                    tempPublicMessage = `🥳 <@${userId}> just extended their daily logging streak to **${newState.newStreak} days**! (Freezes: ${newState.freezesRemaining} 🧊)`;
                 }
             }
 
@@ -3076,15 +3076,12 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
             const userData = userDoc.data();
 
             if (userData.experimentCurrentSchedule &&
-                typeof userData.experimentCurrentSchedule === 'object' &&
-                userData.experimentCurrentSchedule.remindersSkipped === false &&
-                userData.experimentCurrentSchedule.reminderFrequency &&
-                userData.experimentCurrentSchedule.reminderFrequency !== 'none' &&
-                userData.experimentCurrentSchedule.experimentEndTimestamp &&
-                typeof userData.experimentCurrentSchedule.experimentEndTimestamp.toDate === 'function' &&
-                userData.experimentCurrentSchedule.experimentEndTimestamp.toDate() > now) {
+            typeof userData.experimentCurrentSchedule === 'object' &&
+            userData.experimentCurrentSchedule.remindersSkipped === false &&
+            userData.experimentCurrentSchedule.reminderFrequency &&
+            userData.experimentCurrentSchedule.reminderFrequency !== 'none') {
 
-                const schedule = userData.experimentCurrentSchedule;
+            const schedule = userData.experimentCurrentSchedule;
                 
             if (typeof schedule !== 'object' || schedule === null) {
                             logger.error(`sendScheduledReminders: User ${userId} experimentCurrentSchedule (variable 'schedule') was not a valid object for destructuring. Value:`, schedule);
