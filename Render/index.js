@@ -7279,37 +7279,37 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     
     else if (interaction.customId === 'confirm_ai_outcome_modal') {
-        const modalSubmitStartTime = performance.now(); [cite: 2015]
-        const interactionId = interaction.id; [cite: 2016]
-        const userId = interaction.user.id; [cite: 2016]
-        const userTag = interaction.user.tag; [cite: 2016]
-        console.log(`[${interaction.customId} START ${interactionId}] Modal submitted by ${userTag}.`); [cite: 2016]
+        const modalSubmitStartTime = performance.now(); 
+        const interactionId = interaction.id; 
+        const userId = interaction.user.id; 
+        const userTag = interaction.user.tag;
+        console.log(`[${interaction.customId} START ${interactionId}] Modal submitted by ${userTag}.`);
         try {
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral }); [cite: 2017]
-            const setupData = userExperimentSetupData.get(userId); [cite: 2018]
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral }); 
+            const setupData = userExperimentSetupData.get(userId);
             if (!setupData || !setupData.tempSelectedOutcome) {
-                console.error(`[${interaction.customId} CRITICAL ${interactionId}] State missing or tempSelectedOutcome not found for user ${userTag}.`); [cite: 2018]
-                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] }); [cite: 2019]
-                return; [cite: 2019]
+                console.error(`[${interaction.customId} CRITICAL ${interactionId}] State missing or tempSelectedOutcome not found for user ${userTag}.`); 
+                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] }); 
+                return;
             }
 
             // Get the user's confirmed (or edited) values from the modal
-            const deeperProblem = interaction.fields.getTextInputValue('deeper_problem_manual')?.trim(); [cite: 2020]
-            const outcomeLabel = interaction.fields.getTextInputValue('outcome_label_manual')?.trim(); [cite: 2021]
-            const outcomeUnit = interaction.fields.getTextInputValue('outcome_unit_manual')?.trim(); [cite: 2021]
-            const outcomeGoalStr = interaction.fields.getTextInputValue('outcome_goal_manual')?.trim(); [cite: 2021]
+            const deeperProblem = interaction.fields.getTextInputValue('deeper_problem_manual')?.trim(); 
+            const outcomeLabel = interaction.fields.getTextInputValue('outcome_label_manual')?.trim(); 
+            const outcomeUnit = interaction.fields.getTextInputValue('outcome_unit_manual')?.trim();
+            const outcomeGoalStr = interaction.fields.getTextInputValue('outcome_goal_manual')?.trim();
             // --- Validation of user's input ---
-            const validationErrors = []; [cite: 2022]
-            if (!deeperProblem) validationErrors.push("The 'Deeper Wish' cannot be empty."); [cite: 2023]
-            if (!outcomeLabel) validationErrors.push("The 'Outcome Label' is required."); [cite: 2023]
-            if (!outcomeUnit) validationErrors.push("The 'Unit / Scale' is required."); [cite: 2024]
+            const validationErrors = []; 
+            if (!deeperProblem) validationErrors.push("The 'Deeper Wish' cannot be empty."); 
+            if (!outcomeLabel) validationErrors.push("The 'Outcome Label' is required."); 
+            if (!outcomeUnit) validationErrors.push("The 'Unit / Scale' is required."); 
             
-            let outcomeGoal = null; [cite: 2024]
-            const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => outcomeUnit.toLowerCase().includes(keyword)); [cite: 2025]
+            let outcomeGoal = null; 
+            const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => outcomeUnit.toLowerCase().includes(keyword)); 
             if (isTimeMetric) {
-                outcomeGoal = parseTimeGoal(outcomeGoalStr); [cite: 2026]
-                if (outcomeGoal === null) { [cite: 2027]
-                    validationErrors.push(`The Target ("${outcomeGoalStr}") must be a valid time (e.g., '8am', '17:30').`); [cite: 2027]
+                outcomeGoal = parseTimeGoal(outcomeGoalStr); 
+                if (outcomeGoal === null) { 
+                    validationErrors.push(`The Target ("${outcomeGoalStr}") must be a valid time (e.g., '8am', '17:30').`); 
                 }
             } else {
                 const goalResult = parseGoalValue(outcomeGoalStr);
@@ -7321,31 +7321,31 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             
             if (validationErrors.length > 0) {
-                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`); [cite: 2032]
-                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and restart the setup:\n\n' + validationErrors.map(e => `• ${e}`).join('\n')); [cite: 2033]
-                await interaction.editReply({ embeds: [errorEmbed], components: [] }); [cite: 2034]
-                return; [cite: 2034]
+                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`); 
+                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and restart the setup:\n\n' + validationErrors.map(e => `• ${e}`).join('\n')); // [cite: 2033]
+                await interaction.editReply({ embeds: [errorEmbed], components: [] }); // [cite: 2034]
+                return; // [cite: 2034]
             }
             
             // --- Validation Passed: Update state and proceed ---
-            setupData.deeperProblem = deeperProblem; [cite: 2034]
-            setupData.outcome = { label: outcomeLabel, unit: outcomeUnit, goal: outcomeGoal }; [cite: 2035]
-            delete setupData.tempSelectedOutcome; [cite: 2035]
+            setupData.deeperProblem = deeperProblem; // [cite: 2034]
+            setupData.outcome = { label: outcomeLabel, unit: outcomeUnit, goal: outcomeGoal }; // [cite: 2035]
+            delete setupData.tempSelectedOutcome; // [cite: 2035]
             
             // Transition state before the async call
-            setupData.dmFlowState = 'processing_input1_label_suggestions'; [cite: 2036]
-            userExperimentSetupData.set(userId, setupData); [cite: 2037]
-            console.log(`[${interaction.customId} OUTCOME_CONFIRMED ${interactionId}] User ${userTag} confirmed outcome. State is now '${setupData.dmFlowState}'.`); [cite: 2037]
+            setupData.dmFlowState = 'processing_input1_label_suggestions'; // [cite: 2036]
+            userExperimentSetupData.set(userId, setupData); // [cite: 2037]
+            console.log(`[${interaction.customId} OUTCOME_CONFIRMED ${interactionId}] User ${userTag} confirmed outcome. State is now '${setupData.dmFlowState}'.`); // [cite: 2037]
             // Send a "thinking" message while we fetch the next set of suggestions
             await interaction.editReply({
                 content: `✅ **Outcome Metric Confirmed!**\n\n> **${outcomeLabel}** (${outcomeGoalStr} ${outcomeUnit})\n\nGreat! Now, let's define your first **Daily Habit**.\n\n🧠 I'll brainstorm some ideas...`,
                 embeds: [],
                 components: []
-            }); [cite: 2038]
+            }); // [cite: 2038]
 
             // --- Call Firebase for Habit Suggestions ---
             try {
-                console.log(`[${interaction.customId} LLM_CALL_START ${interactionId}] Calling 'generateInputLabelSuggestions' for ${userTag}.`); [cite: 2039]
+                console.log(`[${interaction.customId} LLM_CALL_START ${interactionId}] Calling 'generateInputLabelSuggestions' for ${userTag}.`); // [cite: 2039]
                 const habitSuggestionsResult = await callFirebaseFunction(
                   'generateInputLabelSuggestions',
                   {
@@ -7356,34 +7356,34 @@ client.on(Events.InteractionCreate, async interaction => {
                     definedInputs: [] 
                   },
                   userId
-                ); [cite: 2040, 2041, 2042]
+                ); // [cite: 2040, 2041, 2042]
 
                 if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions?.length > 0) {
-                    setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions; [cite: 2042]
-                    setupData.dmFlowState = 'awaiting_input1_suggestion_selection'; [cite: 2043]
+                    setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions; // [cite: 2042]
+                    setupData.dmFlowState = 'awaiting_input1_suggestion_selection'; // [cite: 2043]
                     setupData.currentInputIndex = 1; // Starting with the first habit 
-                    userExperimentSetupData.set(userId, setupData); [cite: 2043]
+                    userExperimentSetupData.set(userId, setupData); // [cite: 2043]
                     // Use the prompt function from our config to build the next step's dropdown
-                    const stepConfig = dmFlowConfig[setupData.dmFlowState]; [cite: 2044]
-                    const { content, components } = stepConfig.prompt(setupData); [cite: 2045]
+                    const stepConfig = dmFlowConfig[setupData.dmFlowState]; // [cite: 2044]
+                    const { content, components } = stepConfig.prompt(setupData); // [cite: 2045]
 
                     // Follow up with a new message containing the habit suggestions
                     await interaction.followUp({
                         content: content,
                         components: components,
                         ephemeral: true
-                    }); [cite: 2046]
-                    console.log(`[${interaction.customId} HABIT_DROPDOWN_SENT ${interactionId}] Sent habit suggestions dropdown to ${userTag}.`); [cite: 2047]
+                    }); // [cite: 2046]
+                    console.log(`[${interaction.customId} HABIT_DROPDOWN_SENT ${interactionId}] Sent habit suggestions dropdown to ${userTag}.`); // [cite: 2047]
                 } else {
-                    throw new Error(habitSuggestionsResult?.message || 'AI failed to return valid habit suggestions.'); [cite: 2047]
+                    throw new Error(habitSuggestionsResult?.message || 'AI failed to return valid habit suggestions.'); // [cite: 2047]
                 }
             } catch (error) {
-                console.error(`[${interaction.customId} FIREBASE_FUNC_ERROR ${interactionId}] Error calling generateInputLabelSuggestions for ${userTag}:`, error); [cite: 2048]
-                await interaction.followUp({ content: 'Sorry, I had trouble brainstorming habit ideas right now. Please type `cancel` and try again.', ephemeral: true }); [cite: 2049]
+                console.error(`[${interaction.customId} FIREBASE_FUNC_ERROR ${interactionId}] Error calling generateInputLabelSuggestions for ${userTag}:`, error); // [cite: 2048]
+                await interaction.followUp({ content: 'Sorry, I had trouble brainstorming habit ideas right now. Please type `cancel` and try again.', ephemeral: true }); // [cite: 2049]
             }
 
         } catch (error) {
-            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error); [cite: 2050]
+            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error); // [cite: 2050]
         }
     }
 
