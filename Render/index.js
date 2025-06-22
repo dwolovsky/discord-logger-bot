@@ -515,20 +515,24 @@ const dmFlowConfig = {
     fieldsToClear: ['outcome', 'inputs', 'aiGeneratedInputSuggestions'], // Clears everything from this phase onward
     prompt: (setupData) => {
       const outcomeLabelSelectMenu = new StringSelectMenuBuilder()
-        .setCustomId('ai_outcome_select') // The handler for this will show the modal
+        .setCustomId('ai_outcome_select')
         .setPlaceholder('Select an Outcome or write your own');
-
       outcomeLabelSelectMenu.addOptions(
         new StringSelectMenuOptionBuilder()
           .setLabel("✏️ Write my own from scratch")
           .setValue('write_my_own_outcome')
       );
-
-      // BUG FIX: Check if suggestions exist before trying to loop
+      
       if (setupData.aiGeneratedOutcomeSuggestions && Array.isArray(setupData.aiGeneratedOutcomeSuggestions)) {
         setupData.aiGeneratedOutcomeSuggestions.forEach((suggestion, index) => {
-          // New display format: "Label (Goal Unit)"
-          const displayLabel = `${suggestion.label} (${suggestion.goal} ${suggestion.unit})`;
+          let displayLabel;
+          // Check if the goal is 'yes' or 'no' to adjust the display
+          if (typeof suggestion.goal === 'string' && (suggestion.goal.toLowerCase() === 'yes' || suggestion.goal.toLowerCase() === 'no')) {
+            displayLabel = `${suggestion.label} (${suggestion.unit})`;
+          } else {
+            displayLabel = `${suggestion.label} (${suggestion.goal} ${suggestion.unit})`;
+          }
+
           outcomeLabelSelectMenu.addOptions(
             new StringSelectMenuOptionBuilder()
               .setLabel(displayLabel.substring(0, 100))
@@ -537,7 +541,7 @@ const dmFlowConfig = {
         });
       }
 
-      const content = `Here are 5 starting points for an outcome metric to support your wish. Select 1 to customize it, or write your own from scratch.`;
+      const content = `Here are 5 starting points for an outcome metric to support your wish.\n\nSelect 1 to customize it, or write your own from scratch.`;
       const components = [new ActionRowBuilder().addComponents(outcomeLabelSelectMenu)];
       return { content, components };
     }
@@ -557,7 +561,7 @@ const dmFlowConfig = {
   // Phase 3: Habit Definition
   'awaiting_input1_suggestion_selection': {
     fieldsToClear: ['inputs', 'aiGeneratedInputSuggestions'],
-    prompt: (setupData) => {
+     prompt: (setupData) => {
         const habitLabelSelectMenu = new StringSelectMenuBuilder()
             .setCustomId('ai_input1_select') // New ID for habit 1
             .setPlaceholder('Select a Habit or write your own.');
@@ -566,11 +570,17 @@ const dmFlowConfig = {
                 .setLabel("✏️ Write my own from scratch")
                 .setValue('write_my_own_input1')
         );
-
-        // BUG FIX: Check for suggestions array
+        
         if (setupData.aiGeneratedInputSuggestions && Array.isArray(setupData.aiGeneratedInputSuggestions)) {
             setupData.aiGeneratedInputSuggestions.forEach((suggestion, index) => {
-                const displayLabel = `${suggestion.label} (${suggestion.goal} ${suggestion.unit})`;
+                let displayLabel;
+                // Check if the goal is 'yes' or 'no' to adjust the display
+                if (typeof suggestion.goal === 'string' && (suggestion.goal.toLowerCase() === 'yes' || suggestion.goal.toLowerCase() === 'no')) {
+                    displayLabel = `${suggestion.label} (${suggestion.unit})`;
+                } else {
+                    displayLabel = `${suggestion.label} (${suggestion.goal} ${suggestion.unit})`;
+                }
+
                 habitLabelSelectMenu.addOptions(
                     new StringSelectMenuOptionBuilder()
                         .setLabel(displayLabel.substring(0, 100))
@@ -584,7 +594,6 @@ const dmFlowConfig = {
             .setCustomId('back_to:awaiting_outcome_suggestion_selection')
             .setLabel('⬅️ Back')
             .setStyle(ButtonStyle.Secondary);
-
         const content = `Great! Here are some ideas for your first **Daily Habit** to test.`;
         const components = [
             new ActionRowBuilder().addComponents(habitLabelSelectMenu),
@@ -2261,10 +2270,7 @@ client.on(Events.MessageCreate, async message => {
     else if (setupData.dmFlowState === 'awaiting_input2_label_text') {
       const input2Label = messageContent.trim();
       const interactionIdForLog = setupData.interactionId || 'DM_FLOW_INPUT2_LABEL_TEXT';
-      const userId = message.author.id;
-      const userTag = message.author.tag;
-
-      console.log(`[MessageCreate AWAITING_INPUT2_LABEL_TEXT ${interactionIdForLog}] User ${userTag} (ID: ${userId}) sent Input 2 Label: "${input2Label}".`);
+      
       if (!input2Label) {
         await message.author.send(
           `It looks like your label for the second Daily Habit was empty. What **Label** would you give this habit?\n\n` +
@@ -2285,26 +2291,42 @@ client.on(Events.MessageCreate, async message => {
         return;
       }
 
-      // Custom label for Input 2 is valid
-      // Ensure currentInputDefinition is correctly scoped for Input 2
+      // --- "Send New, Edit Old" Pattern ---
+      // 1. EDIT OLD prompt
+      const oldPromptId = setupData.lastPromptMessageId;
+      if (oldPromptId) {
+          try {
+              const oldPrompt = await message.channel.messages.fetch(oldPromptId);
+              await oldPrompt.edit({
+                  content: `✅️ Custom Habit 2: "${input2Label}". **Scroll down**`,
+                  embeds: [],
+                  components: []
+              });
+              console.log(`[MessageCreate EDITED_OLD_PROMPT ${interactionIdForLog}] Edited previous 'input 2 label' prompt.`);
+          } catch (editError) {
+              console.warn(`[MessageCreate EDIT_OLD_PROMPT_FAIL ${interactionIdForLog}] Could not edit old prompt (ID: ${oldPromptId}). Error: ${editError.message}`);
+          }
+      }
+
+      // Store data and transition state
       if (setupData.currentInputIndex !== 2) {
          console.warn(`[MessageCreate INPUT2_LABEL_TEXT_WARN ${interactionIdForLog}] currentInputIndex is ${setupData.currentInputIndex}, expected 2. Resetting for Input 2.`);
          setupData.currentInputIndex = 2; // Correct the index if it's off
       }
       setupData.currentInputDefinition = { label: input2Label };
-      // ***** START: MODIFIED SECTION - TRANSITION TO INPUT 2 UNIT DROPDOWN *****
-      setupData.dmFlowState = `awaiting_input${setupData.currentInputIndex}_unit_dropdown_selection`; // e.g., awaiting_input2_unit_dropdown_selection
+      setupData.dmFlowState = `awaiting_input${setupData.currentInputIndex}_unit_dropdown_selection`;
       userExperimentSetupData.set(userId, setupData);
       console.log(`[MessageCreate INPUT2_LABEL_CONFIRMED ${interactionIdForLog}] User ${userTag} submitted Input 2 Label: "${input2Label}". State changed to '${setupData.dmFlowState}'.`);
-
+      
+      // 2. SEND NEW prompt
       const habitUnitSelectMenu = new StringSelectMenuBuilder()
           .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // Dynamic ID e.g., input_unit_select_2
           .setPlaceholder('What metric makes sense for this habit?');
       habitUnitSelectMenu.addOptions(
-                new StringSelectMenuOptionBuilder()
-                    .setLabel("✏️ Enter custom unit...")
-                    .setValue(CUSTOM_UNIT_OPTION_VALUE)
-            );
+          new StringSelectMenuOptionBuilder()
+              .setLabel("✏️ Enter custom unit...")
+              .setValue(CUSTOM_UNIT_OPTION_VALUE)
+      );
       PREDEFINED_HABIT_UNIT_SUGGESTIONS.forEach(unitSuggestion => {
           habitUnitSelectMenu.addOptions(
               new StringSelectMenuOptionBuilder()
@@ -2313,26 +2335,28 @@ client.on(Events.MessageCreate, async message => {
                   .setDescription(unitSuggestion.description.length > 100 ? unitSuggestion.description.substring(0,97) + '...' : unitSuggestion.description)
           );
       });
-      
       const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
-      const unitDropdownPromptMessage = `Okay, your 2nd Daily Habit is:\n**"${input2Label}"**.\n\n` +
-                                      `What metric makes sense for this habit?`;
 
-      await message.author.send({
-          content: unitDropdownPromptMessage,
+      const newPromptEmbed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle("📏 How to Measure Habit 2?")
+        .setDescription(`Okay, your 2nd Daily Habit is:\n**"${input2Label}"**.\n\nWhat metric makes sense for this habit?`);
+
+      const newPromptMessage = await message.author.send({
+          embeds: [newPromptEmbed],
           components: [rowWithHabitUnitSelect]
       });
-      console.log(`[MessageCreate ASK_INPUT2_UNIT_DROPDOWN ${interactionIdForLog}] DM sent to ${userTag} asking for Input 2 Unit via dropdown.`);
-      // ***** END: MODIFIED SECTION *****
+
+      // 3. Update state with the new message ID
+      setupData.lastPromptMessageId = newPromptMessage.id;
+      userExperimentSetupData.set(userId, setupData);
+      console.log(`[MessageCreate ASK_INPUT2_UNIT_DROPDOWN ${interactionIdForLog}] DM sent to ${userTag} asking for Input 2 Unit via dropdown. Stored new prompt ID ${newPromptMessage.id}.`);
     }
     
     else if (setupData.dmFlowState === 'awaiting_input3_label_text') {
       const input3Label = messageContent.trim();
       const interactionIdForLog = setupData.interactionId || 'DM_FLOW_INPUT3_LABEL_TEXT';
-      const userId = message.author.id;
-      const userTag = message.author.tag;
-
-      console.log(`[MessageCreate AWAITING_INPUT3_LABEL_TEXT ${interactionIdForLog}] User ${userTag} (ID: ${userId}) sent Input 3 Label: "${input3Label}".`);
+      
       if (!input3Label) {
         await message.author.send(
           `It looks like your label for the 3rd Daily Habit was empty. What **Label** would you give this habit?\n` +
@@ -2353,53 +2377,67 @@ client.on(Events.MessageCreate, async message => {
         return;
       }
 
-      // Custom label for Input 3 is valid
-      // Ensure currentInputDefinition is correctly scoped for Input 3
+      // --- "Send New, Edit Old" Pattern ---
+      // 1. EDIT OLD prompt
+      const oldPromptId = setupData.lastPromptMessageId;
+      if (oldPromptId) {
+          try {
+              const oldPrompt = await message.channel.messages.fetch(oldPromptId);
+              await oldPrompt.edit({
+                  content: `✅️ Custom Habit 3: "${input3Label}". **Scroll down**`,
+                  embeds: [],
+                  components: []
+              });
+              console.log(`[MessageCreate EDITED_OLD_PROMPT ${interactionIdForLog}] Edited previous 'input 3 label' prompt.`);
+          } catch (editError) {
+              console.warn(`[MessageCreate EDIT_OLD_PROMPT_FAIL ${interactionIdForLog}] Could not edit old prompt (ID: ${oldPromptId}). Error: ${editError.message}`);
+          }
+      }
+
+      // Store data and transition state
       if (setupData.currentInputIndex !== 3) {
          console.warn(`[MessageCreate INPUT3_LABEL_TEXT_WARN ${interactionIdForLog}] currentInputIndex is ${setupData.currentInputIndex}, expected 3. Resetting for Input 3.`);
-         setupData.currentInputIndex = 3; // Correct the index if it's off
-      }
-      setupData.currentInputDefinition = { label: input3Label };
-
-      // ***** START: REPLACEMENT - TRANSITION TO INPUT 3 UNIT DROPDOWN *****
-      // Ensure setupData.currentInputIndex is 3
-      if (setupData.currentInputIndex !== 3) { 
-         console.warn(`[MessageCreate INPUT3_LABEL_TEXT_WARN_BEFORE_UNIT_DROPDOWN ${interactionIdForLog}] currentInputIndex is ${setupData.currentInputIndex}, expected 3. Correcting for Input 3 unit dropdown.`);
          setupData.currentInputIndex = 3;
       }
-      setupData.dmFlowState = `awaiting_input${setupData.currentInputIndex}_unit_dropdown_selection`; // This will be 'awaiting_input3_unit_dropdown_selection'
+      setupData.currentInputDefinition = { label: input3Label };
+      setupData.dmFlowState = `awaiting_input${setupData.currentInputIndex}_unit_dropdown_selection`;
       userExperimentSetupData.set(userId, setupData);
+      console.log(`[MessageCreate INPUT3_LABEL_CONFIRMED ${interactionIdForLog}] User ${userTag} submitted Input 3 Label: "${input3Label}". State changed to '${setupData.dmFlowState}'.`);
 
+      // 2. SEND NEW prompt
       const habitUnitSelectMenu = new StringSelectMenuBuilder()
           .setCustomId(`${INPUT_UNIT_SELECT_ID_PREFIX}${setupData.currentInputIndex}`) // This will be 'input_unit_select_3'
           .setPlaceholder('What metric makes sense for this habit?');
       habitUnitSelectMenu.addOptions(
           new StringSelectMenuOptionBuilder()
               .setLabel("✏️ Enter custom unit...")
-              .setValue(CUSTOM_UNIT_OPTION_VALUE) // Your constant for this option
+              .setValue(CUSTOM_UNIT_OPTION_VALUE)
       );
-
-      // Assumes PREDEFINED_HABIT_UNIT_SUGGESTIONS is an array of objects: { label: string, description?: string }
       PREDEFINED_HABIT_UNIT_SUGGESTIONS.forEach(unitObj => {
           const option = new StringSelectMenuOptionBuilder()
               .setLabel(unitObj.label.length > 100 ? unitObj.label.substring(0, 97) + '...' : unitObj.label)
-              .setValue(unitObj.label); // The value is the concise label
+              .setValue(unitObj.label);
           if (unitObj.description) {
               option.setDescription(unitObj.description.length > 100 ? unitObj.description.substring(0, 97) + '...' : unitObj.description);
           }
           habitUnitSelectMenu.addOptions(option);
       });
-
       const rowWithHabitUnitSelect = new ActionRowBuilder().addComponents(habitUnitSelectMenu);
-      // input3Label is the custom label typed by the user earlier in this 'awaiting_input3_label_text' block
-      const unitDropdownPromptMessage = `Okay, your 3rd Daily Habit is: **"${input3Label}"**.\n\nHow will you measure this daily?.`;
       
-      await message.author.send({
-          content: unitDropdownPromptMessage,
+      const newPromptEmbed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle("📏 How to Measure Habit 3?")
+        .setDescription(`Okay, your 3rd Daily Habit is:\n**"${input3Label}"**.\n\nHow will you measure this daily?`);
+
+      const newPromptMessage = await message.author.send({
+          embeds: [newPromptEmbed],
           components: [rowWithHabitUnitSelect]
       });
-      console.log(`[MessageCreate INPUT3_LABEL_CONFIRMED_UNIT_DROPDOWN_SENT ${interactionIdForLog}] Confirmed custom Input 3 Label. Prompted ${userTag} with habit unit dropdown. State: ${setupData.dmFlowState}.`);
-      // ***** END: REPLACEMENT *****
+      
+      // 3. Update state with the new message ID
+      setupData.lastPromptMessageId = newPromptMessage.id;
+      userExperimentSetupData.set(userId, setupData);
+      console.log(`[MessageCreate ASK_INPUT3_UNIT_DROPDOWN ${interactionIdForLog}] DM sent to ${userTag} asking for Input 3 Unit via dropdown. Stored new prompt ID ${newPromptMessage.id}.`);
     }
 
     else if (setupData.dmFlowState === 'awaiting_input1_custom_unit_text') {
@@ -4268,7 +4306,7 @@ client.on(Events.InteractionCreate, async interaction => {
               .setColor('#57F287')
               .setTitle('🔬 How Experiments Change Lives')
               .setDescription(
-                "● **Your Wish** is the forest you want to grow.\n● **The Outcome** is the height of 1 plant in that forest.\n● **Your Habits** are the sun, water, and soil."
+                "● **Your Wish** is the forest you want to grow.\n● **The Outcome** is the height of 1 plant in that forest.\n● **Your Habits** are the sun, water, and soil to grow that plant."
               )
               .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Deeper%20Wish%20outcome%20habits%20relationship%201.png');
 
@@ -4478,10 +4516,17 @@ client.on(Events.InteractionCreate, async interaction => {
                   .setDescription("Choose this to write in your own.")
               );
               habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
-                const displayLabel = `${suggestion.label} (${suggestion.goal} ${suggestion.unit})`.substring(0, 100);
+                let displayLabel;
+                // Check if the goal is 'yes' or 'no' to adjust the display
+                if (typeof suggestion.goal === 'string' && (suggestion.goal.toLowerCase() === 'yes' || suggestion.goal.toLowerCase() === 'no')) {
+                    displayLabel = `${suggestion.label} (${suggestion.unit})`;
+                } else {
+                    displayLabel = `${suggestion.label} (${suggestion.goal} ${suggestion.unit})`;
+                }
+
                 habitLabelSelectMenu.addOptions(
                   new StringSelectMenuOptionBuilder()
-                    .setLabel(displayLabel)
+                    .setLabel(displayLabel.substring(0, 100))
                     .setValue(`ai_input${nextInputNumber}_label_suggestion_${index}`)
                     .setDescription((suggestion.briefExplanation || 'AI Suggested Habit').substring(0, 100))
                 );

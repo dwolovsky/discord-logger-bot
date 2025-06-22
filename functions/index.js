@@ -3359,13 +3359,14 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     const randomDefaultMessage = defaultReminderMessages[Math.floor(Math.random() * defaultReminderMessages.length)];
                     finalReminderMessage = randomDefaultMessage;
                     // Reuse scheduledSettings if already defined, or get it from schedule
-                    const currentScheduledSettings = scheduledSettings || schedule.scheduledExperimentSettings; 
+                    const currentScheduledSettings = scheduledSettings ||
+                        schedule.scheduledExperimentSettings; 
 
                     if (currentScheduledSettings) {
                         const activeInputLabelsForFallback = [];
                         if (currentScheduledSettings.input1?.label?.trim()) activeInputLabelsForFallback.push(currentScheduledSettings.input1.label);
-                        if (currentScheduledSettings.input2?.label?.trim()) activeInputLabelsForFallback.push(currentSettings.input2.label);
-                        if (currentScheduledSettings.input3?.label?.trim()) activeInputLabelsForFallback.push(currentSettings.input3.label);
+                        if (currentScheduledSettings.input2?.label?.trim()) activeInputLabelsForFallback.push(currentScheduledSettings.input2.label);
+                        if (currentScheduledSettings.input3?.label?.trim()) activeInputLabelsForFallback.push(currentScheduledSettings.input3.label);
                         
                         if (activeInputLabelsForFallback.length > 0) {
                             const randomInputLabel = activeInputLabelsForFallback[Math.floor(Math.random() * activeInputLabelsForFallback.length)];
