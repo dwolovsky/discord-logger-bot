@@ -632,7 +632,7 @@ const dmFlowConfig = {
         const content = `Let's define your **2nd Daily Habit** to test.`;
         const components = [
             new ActionRowBuilder().addComponents(habitLabelSelectMenu),
-            new ActionRowRowBuilder().addComponents(backButton)
+            new ActionRowBuilder().addComponents(backButton)
         ];
         return { content, components };
     }
