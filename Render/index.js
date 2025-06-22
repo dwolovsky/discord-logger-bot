@@ -770,6 +770,34 @@ function parseTimeGoal(timeStr) {
     return h + (m / 60);
 }
 
+// In render/index.js, after the parseTimeGoal function
+
+/**
+ * Parses a goal string that can be a number, 'yes', or 'no'.
+ * @param {string} goalStr The goal string from the modal input.
+ * @returns {{goal: number | null, error: string | null}} Parsed goal or an error object.
+ */
+function parseGoalValue(goalStr) {
+  if (!goalStr || typeof goalStr !== 'string') {
+    return { goal: null, error: "The Target cannot be empty." };
+  }
+  const lowerGoalStr = goalStr.trim().toLowerCase();
+  if (lowerGoalStr === 'yes') {
+    return { goal: 1, error: null };
+  }
+  if (lowerGoalStr === 'no') {
+    return { goal: 0, error: null };
+  }
+  const num = parseFloat(goalStr);
+  if (isNaN(num)) {
+    return { goal: null, error: `The Target ("${goalStr}") must be a valid number, 'yes', or 'no'.` };
+  }
+  if (num < 0) {
+    return { goal: null, error: "The Target Number must be 0 or a positive number." };
+  }
+  return { goal: num, error: null };
+}
+
 /**
  * Manages the sequential flow for logging time-based metrics.
  * It either prompts for the next time metric or shows a button to open the final modal.
@@ -7251,80 +7279,73 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     
     else if (interaction.customId === 'confirm_ai_outcome_modal') {
-        const modalSubmitStartTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        const userTag = interaction.user.tag;
-        console.log(`[${interaction.customId} START ${interactionId}] Modal submitted by ${userTag}.`);
-
+        const modalSubmitStartTime = performance.now(); [cite: 2015]
+        const interactionId = interaction.id; [cite: 2016]
+        const userId = interaction.user.id; [cite: 2016]
+        const userTag = interaction.user.tag; [cite: 2016]
+        console.log(`[${interaction.customId} START ${interactionId}] Modal submitted by ${userTag}.`); [cite: 2016]
         try {
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-            const setupData = userExperimentSetupData.get(userId);
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral }); [cite: 2017]
+            const setupData = userExperimentSetupData.get(userId); [cite: 2018]
             if (!setupData || !setupData.tempSelectedOutcome) {
-                console.error(`[${interaction.customId} CRITICAL ${interactionId}] State missing or tempSelectedOutcome not found for user ${userTag}.`);
-                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
-                return;
+                console.error(`[${interaction.customId} CRITICAL ${interactionId}] State missing or tempSelectedOutcome not found for user ${userTag}.`); [cite: 2018]
+                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] }); [cite: 2019]
+                return; [cite: 2019]
             }
 
             // Get the user's confirmed (or edited) values from the modal
-            const deeperProblem = interaction.fields.getTextInputValue('deeper_problem_manual')?.trim();
-            const outcomeLabel = interaction.fields.getTextInputValue('outcome_label_manual')?.trim();
-            const outcomeUnit = interaction.fields.getTextInputValue('outcome_unit_manual')?.trim();
-            const outcomeGoalStr = interaction.fields.getTextInputValue('outcome_goal_manual')?.trim();
-
+            const deeperProblem = interaction.fields.getTextInputValue('deeper_problem_manual')?.trim(); [cite: 2020]
+            const outcomeLabel = interaction.fields.getTextInputValue('outcome_label_manual')?.trim(); [cite: 2021]
+            const outcomeUnit = interaction.fields.getTextInputValue('outcome_unit_manual')?.trim(); [cite: 2021]
+            const outcomeGoalStr = interaction.fields.getTextInputValue('outcome_goal_manual')?.trim(); [cite: 2021]
             // --- Validation of user's input ---
-            const validationErrors = [];
-            if (!deeperProblem) validationErrors.push("The 'Deeper Wish' cannot be empty.");
-            if (!outcomeLabel) validationErrors.push("The 'Outcome Label' is required.");
-            if (!outcomeUnit) validationErrors.push("The 'Unit / Scale' is required.");
-            let outcomeGoal = null;
-
-            // Use the existing parseTimeGoal helper for time-based units
-            const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => outcomeUnit.toLowerCase().includes(keyword));
+            const validationErrors = []; [cite: 2022]
+            if (!deeperProblem) validationErrors.push("The 'Deeper Wish' cannot be empty."); [cite: 2023]
+            if (!outcomeLabel) validationErrors.push("The 'Outcome Label' is required."); [cite: 2023]
+            if (!outcomeUnit) validationErrors.push("The 'Unit / Scale' is required."); [cite: 2024]
+            
+            let outcomeGoal = null; [cite: 2024]
+            const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => outcomeUnit.toLowerCase().includes(keyword)); [cite: 2025]
             if (isTimeMetric) {
-                outcomeGoal = parseTimeGoal(outcomeGoalStr);
-                if (outcomeGoal === null) {
-                    validationErrors.push(`The Target ("${outcomeGoalStr}") must be a valid time (e.g., '8am', '17:30').`);
+                outcomeGoal = parseTimeGoal(outcomeGoalStr); [cite: 2026]
+                if (outcomeGoal === null) { [cite: 2027]
+                    validationErrors.push(`The Target ("${outcomeGoalStr}") must be a valid time (e.g., '8am', '17:30').`); [cite: 2027]
                 }
             } else {
-                const goal = parseFloat(outcomeGoalStr);
-                if (isNaN(goal)) {
-                    validationErrors.push(`The Target Number ("${outcomeGoalStr}") must be a valid number.`);
-                } else if (goal < 0) {
-                    validationErrors.push("The Target Number must be 0 or a positive number.");
+                const goalResult = parseGoalValue(outcomeGoalStr);
+                if (goalResult.error) {
+                    validationErrors.push(goalResult.error);
                 } else {
-                    outcomeGoal = goal;
+                    outcomeGoal = goalResult.goal;
                 }
             }
             
             if (validationErrors.length > 0) {
-                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`);
-                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and restart the setup:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
-                await interaction.editReply({ embeds: [errorEmbed], components: [] });
-                return;
+                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`); [cite: 2032]
+                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and restart the setup:\n\n' + validationErrors.map(e => `• ${e}`).join('\n')); [cite: 2033]
+                await interaction.editReply({ embeds: [errorEmbed], components: [] }); [cite: 2034]
+                return; [cite: 2034]
             }
             
             // --- Validation Passed: Update state and proceed ---
-            setupData.deeperProblem = deeperProblem;
-            setupData.outcome = { label: outcomeLabel, unit: outcomeUnit, goal: outcomeGoal };
-            delete setupData.tempSelectedOutcome; // Clean up temp state
+            setupData.deeperProblem = deeperProblem; [cite: 2034]
+            setupData.outcome = { label: outcomeLabel, unit: outcomeUnit, goal: outcomeGoal }; [cite: 2035]
+            delete setupData.tempSelectedOutcome; [cite: 2035]
             
             // Transition state before the async call
-            setupData.dmFlowState = 'processing_input1_label_suggestions';
-            userExperimentSetupData.set(userId, setupData);
-            console.log(`[${interaction.customId} OUTCOME_CONFIRMED ${interactionId}] User ${userTag} confirmed outcome. State is now '${setupData.dmFlowState}'.`);
-
+            setupData.dmFlowState = 'processing_input1_label_suggestions'; [cite: 2036]
+            userExperimentSetupData.set(userId, setupData); [cite: 2037]
+            console.log(`[${interaction.customId} OUTCOME_CONFIRMED ${interactionId}] User ${userTag} confirmed outcome. State is now '${setupData.dmFlowState}'.`); [cite: 2037]
             // Send a "thinking" message while we fetch the next set of suggestions
             await interaction.editReply({
                 content: `✅ **Outcome Metric Confirmed!**\n\n> **${outcomeLabel}** (${outcomeGoalStr} ${outcomeUnit})\n\nGreat! Now, let's define your first **Daily Habit**.\n\n🧠 I'll brainstorm some ideas...`,
                 embeds: [],
                 components: []
-            });
+            }); [cite: 2038]
 
             // --- Call Firebase for Habit Suggestions ---
             try {
-                console.log(`[${interaction.customId} LLM_CALL_START ${interactionId}] Calling 'generateInputLabelSuggestions' for ${userTag}.`);
+                console.log(`[${interaction.customId} LLM_CALL_START ${interactionId}] Calling 'generateInputLabelSuggestions' for ${userTag}.`); [cite: 2039]
                 const habitSuggestionsResult = await callFirebaseFunction(
                   'generateInputLabelSuggestions',
                   {
@@ -7335,35 +7356,34 @@ client.on(Events.InteractionCreate, async interaction => {
                     definedInputs: [] 
                   },
                   userId
-                );
+                ); [cite: 2040, 2041, 2042]
 
                 if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions?.length > 0) {
-                    setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions;
-                    setupData.dmFlowState = 'awaiting_input1_suggestion_selection';
-                    setupData.currentInputIndex = 1; // Starting with the first habit
-                    userExperimentSetupData.set(userId, setupData);
-
+                    setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions; [cite: 2042]
+                    setupData.dmFlowState = 'awaiting_input1_suggestion_selection'; [cite: 2043]
+                    setupData.currentInputIndex = 1; // Starting with the first habit 
+                    userExperimentSetupData.set(userId, setupData); [cite: 2043]
                     // Use the prompt function from our config to build the next step's dropdown
-                    const stepConfig = dmFlowConfig[setupData.dmFlowState];
-                    const { content, components } = stepConfig.prompt(setupData);
+                    const stepConfig = dmFlowConfig[setupData.dmFlowState]; [cite: 2044]
+                    const { content, components } = stepConfig.prompt(setupData); [cite: 2045]
 
                     // Follow up with a new message containing the habit suggestions
                     await interaction.followUp({
                         content: content,
                         components: components,
                         ephemeral: true
-                    });
-                    console.log(`[${interaction.customId} HABIT_DROPDOWN_SENT ${interactionId}] Sent habit suggestions dropdown to ${userTag}.`);
+                    }); [cite: 2046]
+                    console.log(`[${interaction.customId} HABIT_DROPDOWN_SENT ${interactionId}] Sent habit suggestions dropdown to ${userTag}.`); [cite: 2047]
                 } else {
-                    throw new Error(habitSuggestionsResult?.message || 'AI failed to return valid habit suggestions.');
+                    throw new Error(habitSuggestionsResult?.message || 'AI failed to return valid habit suggestions.'); [cite: 2047]
                 }
             } catch (error) {
-                console.error(`[${interaction.customId} FIREBASE_FUNC_ERROR ${interactionId}] Error calling generateInputLabelSuggestions for ${userTag}:`, error);
-                await interaction.followUp({ content: 'Sorry, I had trouble brainstorming habit ideas right now. Please type `cancel` and try again.', ephemeral: true });
+                console.error(`[${interaction.customId} FIREBASE_FUNC_ERROR ${interactionId}] Error calling generateInputLabelSuggestions for ${userTag}:`, error); [cite: 2048]
+                await interaction.followUp({ content: 'Sorry, I had trouble brainstorming habit ideas right now. Please type `cancel` and try again.', ephemeral: true }); [cite: 2049]
             }
 
         } catch (error) {
-            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error);
+            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error); [cite: 2050]
         }
     }
 
@@ -7373,10 +7393,8 @@ client.on(Events.InteractionCreate, async interaction => {
         const userId = interaction.user.id;
         const userTag = interaction.user.tag;
         console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 1 submitted by ${userTag}.`);
-
         try {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
             const setupData = userExperimentSetupData.get(userId);
             // We check for `aiGeneratedInputSuggestions` because it confirms the user came from the AI path for habits.
             if (!setupData || !setupData.aiGeneratedInputSuggestions) {
@@ -7393,8 +7411,8 @@ client.on(Events.InteractionCreate, async interaction => {
             const validationErrors = [];
             if (!habitLabel) validationErrors.push("The 'Habit Label' is required.");
             if (!habitUnit) validationErrors.push("The 'Unit / Scale' is required.");
+            
             let habitGoal = null;
-
             const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => habitUnit.toLowerCase().includes(keyword));
             if (isTimeMetric) {
                 habitGoal = parseTimeGoal(habitGoalStr);
@@ -7402,13 +7420,11 @@ client.on(Events.InteractionCreate, async interaction => {
                     validationErrors.push(`The Target ("${habitGoalStr}") must be a valid time (e.g., '8am', '17:30').`);
                 }
             } else {
-                const goal = parseFloat(habitGoalStr);
-                if (isNaN(goal)) {
-                    validationErrors.push(`The Target Number ("${habitGoalStr}") must be a valid number.`);
-                } else if (goal < 0) {
-                    validationErrors.push("The Target Number must be 0 or a positive number.");
+                const goalResult = parseGoalValue(habitGoalStr);
+                if (goalResult.error) {
+                    validationErrors.push(goalResult.error);
                 } else {
-                    habitGoal = goal;
+                    habitGoal = goalResult.goal;
                 }
             }
             
@@ -7420,22 +7436,18 @@ client.on(Events.InteractionCreate, async interaction => {
             // --- Validation Passed: Update state and proceed ---
             if (!setupData.inputs) setupData.inputs = [];
             setupData.inputs[0] = { label: habitLabel, unit: habitUnit, goal: habitGoal };
-            
             // Clean up temp state for this step
             delete setupData.tempSelectedInput;
-            
             // Transition state
             setupData.dmFlowState = 'awaiting_add_another_habit_choice';
             userExperimentSetupData.set(userId, setupData);
             console.log(`[${interaction.customId} HABIT1_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 1. State is now '${setupData.dmFlowState}'.`);
-
             // --- Ask to add another habit or finish ---
             const confirmationEmbed = new EmbedBuilder()
                 .setColor('#57F287')
                 .setTitle('✅ Habit 1 Confirmed!')
                 .setDescription(`**${habitGoalStr} ${habitUnit}, ${habitLabel}**`)
                 .addFields({ name: '\u200B', value: "Would you like to add another daily habit to test (up to 3 total)?" });
-
             const addHabitButtons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
@@ -7447,13 +7459,11 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setLabel('⏭️ No More Habits')
                         .setStyle(ButtonStyle.Primary)
                 );
-
             await interaction.editReply({
                 embeds: [confirmationEmbed],
                 components: [addHabitButtons]
             });
             console.log(`[${interaction.customId} PROMPT_ADD_ANOTHER_SENT ${interactionId}] Prompted user to add another habit or finish.`);
-
         } catch (error) {
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error);
         }

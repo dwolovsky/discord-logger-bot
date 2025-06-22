@@ -558,58 +558,62 @@ function parseAndValidatePriority(priorityStr, fieldName, isOptional = false) {
       }
     }
 
-    // Regex updated to only use comma as a separator:
-    // ^(.*?)      - Capture Group 1 (Goal): Non-greedy, any characters up to the first comma.
-    // \s*,\s* - Separator 1: A comma, with optional whitespace.
-    // (.*?)      - Capture Group 2 (Unit): Non-greedy, any characters up to the second comma.
-    // \s*,\s* - Separator 2: A comma, with optional whitespace.
-    // (.+)$       - Capture Group 3 (Label): Any characters until the end.
-    const priorityPattern = /^(.*?)\s*,\s*(.*?)\s*,\s*(.+)$/; // MODIFIED REGEX
+    const priorityPattern = /^(.*?)\s*,\s*(.*?)\s*,\s*(.+)$/;
     const match = trimmedStr.match(priorityPattern);
-
     if (!match) {
       throw new HttpsError(
         'invalid-argument',
-        `${fieldName} ("${trimmedStr}") must be in "Goal #, Unit, Label" format. Use a comma as separator (e.g., "15.5, minutes, meditation" or "10, pages, Reading"). Note: Decimals in goals are fine.`
+        `${fieldName} ("${trimmedStr}") must be in "Goal #, Unit, Label" format. Use a comma as separator (e.g., "15.5, minutes, meditation" or "yes, yes/no, Take Vitamins").`
       );
     }
 
     const goalStr = match[1].trim();
     const unit = match[2].trim();
     const label = match[3].trim();
-
     if (!goalStr || !unit || !label) {
-      // This case should ideally be caught by the main regex, but as a fallback:
       throw new HttpsError(
         'invalid-argument',
-        `${fieldName} ("${trimmedStr}") must be in "Goal #, Unit, Label" format. Use a comma as separator (e.g., "15.5, minutes, meditation" or "10, pages, Reading").`
+        `${fieldName} ("${trimmedStr}") must be in "Goal #, Unit, Label" format. Use a comma as separator (e.g., "15.5, minutes, meditation" or "yes, yes/no, Take Vitamins").`
       );
     }
 
-    // Validate Goal Number (allows decimals)
-    const goal = parseFloat(goalStr);
-    if (isNaN(goal)) {
-      throw new HttpsError(
-        'invalid-argument',
-        `Goal for ${fieldName} ("${goalStr}") must be a number (e.g., 15 or 8.5).`
-      );
+    //-- START OF MODIFIED SECTION --//
+
+    let goal;
+    const lowerGoalStr = goalStr.toLowerCase();
+
+    if (lowerGoalStr === 'yes') {
+        goal = 1;
+    } else if (lowerGoalStr === 'no') {
+        goal = 0;
+    } else {
+        // Original logic for purely numeric goals
+        goal = parseFloat(goalStr);
+        if (isNaN(goal)) {
+          throw new HttpsError(
+            'invalid-argument',
+            `Goal for ${fieldName} ("${goalStr}") must be a number, 'yes', or 'no'.`
+          );
+        }
+        if (goal < 0) {
+          throw new HttpsError(
+            'invalid-argument',
+            `Goal for ${fieldName} ("${goalStr}") must be 0 or a positive number.`
+          );
+        }
     }
-    if (goal < 0) {
-      throw new HttpsError(
-        'invalid-argument',
-        `Goal for ${fieldName} ("${goalStr}") must be 0 or a positive number.`
-      );
-    }
+    
+    //-- END OF MODIFIED SECTION --//
+
 
     // Validate Label Length
-    const MAX_LABEL_LENGTH = 45; // As per previous discussions
+    const MAX_LABEL_LENGTH = 45;
     if (label.length > MAX_LABEL_LENGTH) {
       throw new HttpsError(
         'invalid-argument',
         `Label for ${fieldName} ("${label}") must be ${MAX_LABEL_LENGTH} characters or less.`
       );
     }
-    // Unit length validation can be added if needed.
 
     return { goal: goal, unit: unit, label: label };
 }
@@ -1000,6 +1004,7 @@ function parseYesNoOrNumber(valueStr, metricSetting, metricName) {
         'y/n',
         'completion',
         'complete',
+        'completed',
         'done',
         'complete/incomplete',
         'pass/fail',
@@ -3839,12 +3844,23 @@ const promptText = `
     **CONCEPT DEFINITION: An Outcome Metric is a measure of a *state*, *feeling*, or *condition*. It is something the user *experiences* or *observes*, but does not directly control. It is a *result*.**
 
     CRITICAL REQUIREMENTS:
-    1.  Each metric must be a **leading indicator** for the user's 'Deeper Wish'—a daily measure that predicts future success. **DO NOT suggest direct actions, tasks, or to-do list items.** For example, "Meditate for 10 minutes" is a habit, not an outcome. "Clarity of Mind"  or "Faith in myself" is an outcome.
-    2.  For each of the 5 suggestions, you MUST provide a JSON object with a "label" (string), "unit" (string), and a "goal" (non-negative rational number or time of day, e.g. 7:30).
-    3.  The COMBINED display string from your output, formatted as "label (goal unit)", MUST be less than 44 characters. This is a strict constraint.
-    4.  The "unit" MUST be a unit or scale chosen to make perfect sense with the outcome label. Use this list for reference: ['out of 10', 'Time of Day', 'hours', 'minutes', 'times', '%', 'pages', 'steps'].
-    5.  The "goal" should be a sensible starting number or time string (e.g., "7:30 AM") for that metric.
-    6.  Also provide a "briefExplanation" (10 words) of its relevance to the user's context.
+        1.  Each metric must be a **leading indicator** for the user's 'Deeper Wish'—a daily measure that predicts future success. **DO NOT suggest direct actions, tasks, or to-do list items.** For example, "Meditate for 10 minutes" is a habit, not an outcome. "Clarity of Mind" or "Faith in myself" is an outcome.
+        2.  For each of the 5 suggestions, you MUST provide a JSON object with a "label" (string), "unit" (string), and a "goal" (non-negative rational number or time of day, e.g. 7:30).
+        3.  The COMBINED display string from your output, formatted as "label (goal unit)", MUST be less than 44 characters. This is a strict constraint.
+        4.  The "unit" MUST be logically paired with the "label" by following these principles:
+            - **First, identify the *category* of the metric:**
+             - **For Subjective Qualities or Levels** (e.g., 'Energy Level', 'Mood', 'Focus'), use a scale unit like: 'out of 10'.
+             - **For Durations** (e.g., 'Screen Time', 'Sleep'), use a time unit like: 'hours', 'minutes'.
+             - **For Frequencies of internal states or observed events** (how often something happens *to the user*), use a frequency unit like: 'times per day', 'occurrences'.
+             - **For a Specific Moment in Time** (e.g., 'Eating Breakfast', 'Bedtime'), use the timestamp unit: 'Time of Day'.
+             - **For Proportions of a Whole** (e.g., 'Healthy Food Ratio', 'Workday Deep Focus Ratio') use the percentage unit: '%'.
+
+           - **Second, avoid incorrect pairings by distinguishing between Outcomes and Inputs.**
+            - **The key distinction is direct user control.** If the user can *directly cause* an action (e.g., 'start a conversation'), its frequency is an Input/Habit. If an event happens *to* the user as a result of other factors (e.g., 'receive a compliment'), its frequency is a valid Outcome.
+            - **Example:** Measuring the *quality* of an event is a great Outcome (e.g., "Conversation Quality", unit: 'out of 10'). Measuring the *frequency* of an event you do not control is also a great Outcome (e.g., "Spontaneous Insights", unit: 'occurrences').
+                
+        5.  The "goal" should be a sensible number or time string (e.g., "7:30 AM") that fits with the label and unit.
+        6.  Also provide a "briefExplanation" (10 words) of its relevance to the user's context.
 
     USER CONTEXT:
     ${userContextPromptBlock}
@@ -3968,23 +3984,21 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
 
     CRITICAL REQUIREMENTS:
         1.  Generate 5 distinct, actionable "Daily Habits". **DO NOT suggest feelings, states, or general outcomes.** For example, "Feel more rested" is an outcome, not a habit. "Go for a 10-minute walk after lunch" is a habit.
-        2.  Your suggestions should include a mix of habits that directly support the outcome, address blockers, and are creative "Upstream Habits" that intervene earlier in the behavioral chain.
-        3.  For each suggestion, you MUST provide a JSON object with a "label", "unit", "goal", and "briefExplanation".
-        4.  The COMBINED display string, formatted as "label (goal unit)", MUST be less than 44 characters.
-        5.  Also provide a "briefExplanation" (max 15 words). For upstream habits, briefly state the chain of logic (e.g., "To boost afternoon energy by improving sleep quality.").
-        6.  Your suggestions should include:
-            - 2 Habits that directly support the chosen outcome. AVOID suggesting habits similar to the user's previously defined habits.
-            - 3 Creative "Upstream Habits" that intervene earlier in the potential chain of behavior. These should be your most insightful suggestions.
-    
-
-        Example Units
-        - out of 10 (scale from 0-10)
-        - times (e.g. per day)
-        - time of day (e.g. 5:30PM)
-        - % (e.g. progress)
-        - pages (for reading or journaling)
-        - reps (for exercise)
-        - minutes (for meditation, or other activities that happen in "sessions")
+        2.  For each suggestion, you MUST provide a JSON object with a "label" (string), "unit" (string), "goal" (non-negative number or time string), and "briefExplanation" (string).
+        3.  The COMBINED display string from your output, formatted as "label (goal unit)", MUST be less than 44 characters.
+        4.  The "unit" MUST be logically paired with the "label" based on the type of action:
+            - **For Durations of an Action** (e.g., 'Meditation', 'Deep Work'), use a time unit like: 'minutes', 'hours'.
+            - **For Binary Completion of a Task** (it's either done or not), use a completion unit like: 'yes/no'.
+            - **For Counting Repetitions or Items** (e.g., 'Pushups', 'Pages Read', 'Connecting with people'), use a relevant count-based unit like: 'reps', 'pages', 'words', 'items', 'steps', 'conversations'.
+            - **For Frequency of a Controllable Action**, use: 'times per day'.
+            - **For Rating Effort or Quality of an Action**, use a scale like: 'out of 10'.
+            - **For Timing a Specific Action**, use a timestamp like: 'Time of Day'.
+        5.  The "goal" MUST be a sensible number, time string, 'yes', or 'no' that fits the label and unit (e.g., '15' for unit=minutes, 'yes' for unit="completed", '7:30 AM' for unit=Time of Day).
+        6.  The "briefExplanation" MUST be a concise explanation (max 15 words) of the habit's relevance. For "Upstream Habits," briefly state the chain of logic (e.g., "To boost afternoon energy by improving sleep quality.").
+        7.  The 5 suggestions MUST include a mix of:
+            - 2 Habits that directly support the chosen outcome.
+            - 3 creative "Upstream Habits" that intervene earlier in the behavioral chain.
+            - AVOID suggesting habits similar to any the user has already defined in their context.
 
     USER CONTEXT:
         - Deeper Wish: "${userWish}"
