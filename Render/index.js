@@ -746,6 +746,17 @@ function isYesNoMetric(unit) {
 }
 
 /**
+ * Checks if a metric's unit suggests it's a time-of-day metric.
+ * @param {string | null} unit - The unit string from the metric.
+ * @returns {boolean} True if the unit is considered a time-of-day type.
+ */
+function isTimeMetric(unit) {
+    if (!unit) return false;
+    // This reuses the TIME_OF_DAY_KEYWORDS constant already defined in your code 
+    return TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
+}
+
+/**
  * Parses a flexible time string (e.g., "8pm", "22:30", "8:30") into decimal hours.
  * @param {string} timeStr - The time string to parse.
  * @returns {number | null} The time as a decimal number (e.g., 20.5) or null if invalid.
@@ -5154,6 +5165,61 @@ client.on(Events.InteractionCreate, async interaction => {
 
         } catch (error) {
             console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show final modal for ${userId}:`, error);
+        }
+    }
+
+    else if (interaction.customId === 'show_standard_log_modal_btn') {
+        const showLogModalClickTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing standard log modal.`);
+
+        try {
+            const setupData = userExperimentSetupData.get(userId);
+            const settings = setupData?.logFlowSettings;
+
+            if (!settings) {
+                console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
+                await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Data' again.", ephemeral: true });
+                return;
+            }
+
+            // This logic is adapted from your 'log_daily_progress_btn' handler 
+            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
+            const components = [settings.output, settings.input1, settings.input2, settings.input3]
+                .filter(metric => metric && metric.label)
+                .map(metric => {
+                    let customId;
+                    if (metric.label === settings.output.label) customId = 'log_output_value';
+                    else if (metric.label === settings.input1.label) customId = 'log_input1_value';
+                    else if (metric.label === settings.input2.label) customId = 'log_input2_value';
+                    else if (metric.label === settings.input3.label) customId = 'log_input3_value';
+
+                    return new ActionRowBuilder().addComponents(
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                    );
+                });
+            const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
+            let finalPlaceholder = 'What did you observe? Any questions or insights?';
+            if (settings.deeperProblem) {
+                finalPlaceholder = `What affected your goal today?\\n↳ "${settings.deeperProblem.substring(0, 60)}"`;
+            }
+            notesInput.setPlaceholder(finalPlaceholder);
+            components.push(new ActionRowBuilder().addComponents(notesInput));
+            modal.addComponents(components);
+
+            await interaction.showModal(modal);
+            console.log(`[${interaction.customId} SUCCESS ${interactionId}] Standard log modal shown to ${userId}.`);
+
+        } catch (error) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show standard log modal for ${userId}:`, error);
+            if (!interaction.replied && !interaction.deferred) {
+                try {
+                    await interaction.reply({ content: "An error occurred while opening the log form. Please try again.", ephemeral: true });
+                } catch (e) {
+                    // ignore further errors
+                }
+            }
         }
     }
 
