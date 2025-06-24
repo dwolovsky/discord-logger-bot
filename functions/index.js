@@ -267,6 +267,38 @@ Again, keep the total response under 1890 characters.
 };
 // ============== END OF AI INSIGHTS SETUP ==================
 
+const METRIC_SUMMARY_PROMPT_TEMPLATE = (metricData) => {
+  return `
+    You are a mindful self-science coach. Your goal is to help a user witness their life's data with non-judgmental curiosity.
+    The user is looking at a single metric from their recent experiment.
+
+    **USER'S PHILOSOPHY:**
+    "These stats are not for being a 'perfect' or 'better' version of myself, but to witness my life while I'm alive. They don't predict my future. They are simply a way of paying attention."
+
+    **METRIC DATA TO ANALYZE:**
+    - Metric Label: "${metricData.label}"
+    - Metric Type: ${metricData.type}
+    - Average Value: ${metricData.average?.toFixed(2) ?? 'N/A'}
+    - Median Value: ${metricData.median?.toFixed(2) ?? 'N/A'}
+    - Consistency (Variation %): ${metricData.variationPercentage?.toFixed(1) ?? 'N/A'}%
+    - Data Points: ${metricData.dataPoints}
+
+    **YOUR TASK:**
+    Based ONLY on the metric data provided and embodying the user's philosophy, generate a SINGLE, gentle, encouraging sentence (under 140 characters).
+    - Frame the data as something to be observed.
+    - If consistency is high (variation < 25%), acknowledge the stability.
+    - If consistency is low (variation > 40%), frame it as a dynamic pattern to be curious about.
+    - Avoid words like "good," "bad," "improve," or "progress." Use words like "notice," "pattern," "rhythm," "story," "observe," "witness."
+    - DO NOT give advice. Just provide a calm, one-sentence observation about the data's story.
+
+    **EXAMPLE OUTPUTS:**
+    - "Here's the story of your [Metric Label] for this period; a steady rhythm to observe."
+    - "Notice the dynamic pattern of your [Metric Label] across these ${metricData.dataPoints} days."
+    - "This is the data for your [Metric Label], a simple reflection of this moment in time."
+
+    Generate ONLY the single sentence.
+  `;
+};
 
 // Initialize the Firebase Admin SDK
 admin.initializeApp();
@@ -1324,7 +1356,8 @@ exports.setExperimentSchedule = onCall(async (request) => {
 
     const userId = request.auth.uid;
     const data = request.data;
-    const db = admin.firestore(); // Ensure db is initialized
+    const db = admin.firestore();
+    const userDocRef = db.collection('users').doc(userId);
 
     logger.log(`setExperimentSchedule called by user: ${userId} with data:`, data);
 
@@ -1340,163 +1373,110 @@ exports.setExperimentSchedule = onCall(async (request) => {
         throw new HttpsError('invalid-argument', 'skippedReminders flag is required and must be a boolean.');
     }
 
-    if (data.skippedReminders === false) {
-        if (data.reminderFrequency === 'none') {
-            if (data.userCurrentTime !== null || data.reminderWindowStartHour !== null || data.reminderWindowEndHour !== null) {
-                logger.warn(`[setExperimentSchedule] User ${userId} has reminderFrequency 'none' but also provided some time details. Frequency 'none' will take precedence.`, data);
-            }
-        } else {
-            if (typeof data.userCurrentTime !== 'string' || data.userCurrentTime.trim() === '') {
-                throw new HttpsError('invalid-argument', 'User current time is required when setting active reminders.');
-            }
-            if (typeof data.reminderWindowStartHour !== 'string' || data.reminderWindowStartHour.trim() === '') {
-                throw new HttpsError('invalid-argument', 'Reminder window start hour is required when setting active reminders.');
-            }
-            if (typeof data.reminderWindowEndHour !== 'string' || data.reminderWindowEndHour.trim() === '') {
-                throw new HttpsError('invalid-argument', 'Reminder window end hour is required when setting active reminders.');
-            }
-        }
-    }
-
-    // --- Generate unique experimentId ---
-    // Using Firestore's auto-ID for a new document in a temporary path to get an ID,
-    // then we'll use this ID. This is a robust way to get a unique ID.
-    const tempExperimentDocRef = db.collection('users').doc(userId).collection('_tempExperimentIds').doc();
-    const experimentId = tempExperimentDocRef.id; // This is the unique ID
-
-    // --- Fetch current weeklySettings to snapshot ---
-    const userDocRef = db.collection('users').doc(userId);
-    let scheduledExperimentSettings = null;
+    // --- Transaction to generate ExperimentId and save settings ---
     try {
-        const userDocSnap = await userDocRef.get();
-        if (userDocSnap.exists && userDocSnap.data().weeklySettings) {
-            scheduledExperimentSettings = userDocSnap.data().weeklySettings;
-            logger.log(`[setExperimentSchedule] User ${userId}: Found weeklySettings to snapshot.`);
-        } else {
-            logger.warn(`[setExperimentSchedule] User ${userId}: weeklySettings not found. Cannot snapshot settings for the experiment.`);
-            // Depending on strictness, you might throw an error or allow proceeding without settings snapshot
-            // For now, we'll allow it, but stats calculation might need to handle missing settings.
-            // throw new HttpsError('not-found', 'Weekly settings not found. Please set up your experiment metrics first using /go -> Set Experiment.');
-        }
-    } catch (error) {
-        logger.error(`[setExperimentSchedule] User ${userId}: Error fetching weeklySettings:`, error);
-        throw new HttpsError('internal', 'Failed to retrieve existing experiment settings.');
-    }
-
-
-    // --- Calculate experimentEndTimestamp ---
-    const now = new Date(); // Current server time
-    const experimentSetAtTimestamp = admin.firestore.Timestamp.fromDate(now); // Convert to Firestore Timestamp
-
-    let daysToAdd = 0;
-    switch (data.experimentDuration) {
-        case "1_week": daysToAdd = 7; break;
-        case "2_weeks": daysToAdd = 14; break;
-        case "3_weeks": daysToAdd = 21; break;
-        case "4_weeks": daysToAdd = 28; break;
-        default: throw new HttpsError('invalid-argument', `Invalid experiment duration: ${data.experimentDuration}`); // Should be caught by validation above
-    }
-
-    const experimentEndDate = new Date(now.getTime());
-    experimentEndDate.setDate(now.getDate() + daysToAdd);
-    // To ensure the report happens *after* the full last day, set time to end of that day or start of next.
-    // For simplicity in query later, let's aim for the same time of day, `daysToAdd` later.
-    // Or, to be more precise for "end of experiment", consider setting it to the end of the chosen day.
-    // For now, same time of day `daysToAdd` later is fine.
-    // NEW: Subtract a few hours to make stats available sooner
-    const hoursToSubtract = 3; // Adjust as needed (e.g., 3 to 6 hours)
-    experimentEndDate.setHours(experimentEndDate.getHours() - hoursToSubtract);
-
-    logger.log(`[setExperimentSchedule] User: ${userId}. Original rollover time would have been roughly ${new Date(now.getTime() + daysToAdd * 24*60*60*1000).toISOString()}. Adjusted experimentEndTimestamp (target for stats processing) to be ~${hoursToSubtract} hours sooner: ${experimentEndDate.toISOString()}`);
-    const experimentEndTimestamp = admin.firestore.Timestamp.fromDate(experimentEndDate);
-
-    // --- Calculate UTC reminder window if reminders are active ---
-    let reminderWindowStartUTC = null;
-    let reminderWindowEndUTC = null;
-    let initialUTCOffsetHours = null; // For potential future reference or debugging
-
-    if (!data.skippedReminders && data.reminderFrequency !== 'none' && data.userCurrentTime) {
-        try {
-            const nowUtcDate = new Date(); // Server's current UTC time
-            const serverCurrentUTCHour = nowUtcDate.getUTCHours();
-
-            const [timePart, ampmPart] = data.userCurrentTime.split(' '); // e.g., "2:30", "PM"
-            let [userReportedLocalHour, userReportedLocalMinute] = timePart.split(':').map(Number);
-
-            if (ampmPart.toUpperCase() === 'PM' && userReportedLocalHour !== 12) {
-                userReportedLocalHour += 12;
-            } else if (ampmPart.toUpperCase() === 'AM' && userReportedLocalHour === 12) { // 12 AM is hour 0
-                userReportedLocalHour = 0;
+        const experimentId = await db.runTransaction(async (transaction) => {
+            const userDoc = await transaction.get(userDocRef);
+            if (!userDoc.exists) {
+                throw new Error("User document not found. Cannot create experiment.");
             }
-            // userReportedLocalHour is now 0-23
 
-            // Offset = UTC_Hour - Local_Hour_Normalized_To_Same_Day_As_UTC_For_Calc
-            // This offset, when added to a local hour, gives the UTC hour.
-            initialUTCOffsetHours = serverCurrentUTCHour - userReportedLocalHour;
-            // Note: This offset can be > +12 or < -12 if there's a date boundary,
-            // but for converting window hours, we primarily care about the hour shift.
-            // The (hour + offset + 24) % 24 handles this correctly for hours.
+            const userData = userDoc.data();
+            const userTag = userData.userTag || `user${userId.substring(0, 4)}`;
+            const username = userTag.split('#')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'user';
+            
+            const currentCounter = userData.experimentCounter || 0;
+            const newCounter = currentCounter + 1;
+            const newExperimentId = `${username}${String(newCounter).padStart(6, '0')}`;
 
-            const localStartHourInt = parseInt(data.reminderWindowStartHour, 10); // "00" - "23"
-            const localEndHourInt = parseInt(data.reminderWindowEndHour, 10);   // "00" - "23"
+            // --- Fetch current weeklySettings to snapshot ---
+            const scheduledExperimentSettings = userData.weeklySettings || null;
+            if (!scheduledExperimentSettings) {
+                logger.warn(`[setExperimentSchedule] User ${userId}: weeklySettings not found for snapshotting.`);
+                // Allow proceeding, but stats calculation must handle missing settings.
+            }
+            
+            // --- Calculate experimentEndTimestamp ---
+            const now = new Date();
+            const experimentSetAtTimestamp = admin.firestore.Timestamp.fromDate(now);
 
-            reminderWindowStartUTC = (localStartHourInt + initialUTCOffsetHours + 24) % 24;
-            reminderWindowEndUTC = (localEndHourInt + initialUTCOffsetHours + 24) % 24;
+            let daysToAdd = 0;
+            switch (data.experimentDuration) {
+                case "1_week": daysToAdd = 7; break;
+                case "2_weeks": daysToAdd = 14; break;
+                case "3_weeks": daysToAdd = 21; break;
+                case "4_weeks": daysToAdd = 28; break;
+            }
 
-            logger.log(`[setExperimentSchedule] User: ${userId}. Local time provided: ${data.userCurrentTime} (parsed as hour ${userReportedLocalHour}). Server UTC hour: ${serverCurrentUTCHour}. Calculated initial offset to get UTC: ${initialUTCOffsetHours} hours. Local window ${data.reminderWindowStartHour}-${data.reminderWindowEndHour} maps to UTC window: ${reminderWindowStartUTC}-${reminderWindowEndUTC}.`);
+            const experimentEndDate = new Date(now.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
+            experimentEndDate.setHours(experimentEndDate.getHours() - 3); // Adjust for earlier processing
+            const experimentEndTimestamp = admin.firestore.Timestamp.fromDate(experimentEndDate);
 
-        } catch (e) {
-            logger.error(`[setExperimentSchedule] User ${userId}: Error calculating UTC reminder window details. Reminders might not work correctly. Error:`, e);
-            // Keep UTC fields null if calculation fails
-            reminderWindowStartUTC = null;
-            reminderWindowEndUTC = null;
-            initialUTCOffsetHours = null;
-        }
-    }
+            // --- Calculate UTC reminder window if reminders are active ---
+            let reminderWindowStartUTC = null;
+            let reminderWindowEndUTC = null;
+            let initialUTCOffsetHours = null;
 
-    const experimentScheduleData = {
-        experimentId: experimentId,
-        experimentDuration: data.experimentDuration,
-        experimentSetAt: experimentSetAtTimestamp,
-        experimentEndTimestamp: experimentEndTimestamp,
-        statsProcessed: false,
-        scheduledExperimentSettings: scheduledExperimentSettings,
+            if (!data.skippedReminders && data.reminderFrequency !== 'none' && data.userCurrentTime) {
+                try {
+                    const nowUtcDate = new Date();
+                    const serverCurrentUTCHour = nowUtcDate.getUTCHours();
+                    const [timePart, ampmPart] = data.userCurrentTime.split(' ');
+                    let [userReportedLocalHour, userReportedLocalMinute] = timePart.split(':').map(Number);
+                    if (ampmPart.toUpperCase() === 'PM' && userReportedLocalHour !== 12) userReportedLocalHour += 12;
+                    if (ampmPart.toUpperCase() === 'AM' && userReportedLocalHour === 12) userReportedLocalHour = 0;
+                    
+                    initialUTCOffsetHours = serverCurrentUTCHour - userReportedLocalHour;
+                    const localStartHourInt = parseInt(data.reminderWindowStartHour, 10);
+                    const localEndHourInt = parseInt(data.reminderWindowEndHour, 10);
+                    reminderWindowStartUTC = (localStartHourInt + initialUTCOffsetHours + 24) % 24;
+                    reminderWindowEndUTC = (localEndHourInt + initialUTCOffsetHours + 24) % 24;
+                } catch (e) {
+                    logger.error(`[setExperimentSchedule] User ${userId}: Error calculating UTC reminder window. Reminders might not work. Error:`, e);
+                }
+            }
 
-        // Original reminder fields (can be kept for reference or if bot UX uses them)
-        userCurrentTimeAtSetup: data.skippedReminders ? null : data.userCurrentTime,
-        reminderWindowStartLocal: data.skippedReminders || data.reminderFrequency === 'none' ? null : data.reminderWindowStartHour,
-        reminderWindowEndLocal: data.skippedReminders || data.reminderFrequency === 'none' ? null : data.reminderWindowEndHour,
-        reminderFrequency: data.reminderFrequency,
-        remindersSkipped: data.skippedReminders,
+            const experimentScheduleData = {
+                experimentId: newExperimentId,
+                experimentDuration: data.experimentDuration,
+                experimentSetAt: experimentSetAtTimestamp,
+                experimentEndTimestamp: experimentEndTimestamp,
+                statsProcessed: false,
+                scheduledExperimentSettings: scheduledExperimentSettings,
+                userCurrentTimeAtSetup: data.skippedReminders ? null : data.userCurrentTime,
+                reminderWindowStartLocal: data.skippedReminders || data.reminderFrequency === 'none' ? null : data.reminderWindowStartHour,
+                reminderWindowEndLocal: data.skippedReminders || data.reminderFrequency === 'none' ? null : data.reminderWindowEndHour,
+                reminderFrequency: data.reminderFrequency,
+                remindersSkipped: data.skippedReminders,
+                reminderWindowStartUTC: reminderWindowStartUTC,
+                reminderWindowEndUTC: reminderWindowEndUTC,
+                initialUTCOffsetHours: initialUTCOffsetHours,
+                lastReminderSentDayOfYearUTC: null,
+                remindersSentOnLastDay: 0
+            };
 
-        // NEW/MODIFIED fields for reminder processing
-        reminderWindowStartUTC: reminderWindowStartUTC,       // Integer hour (0-23) in UTC
-        reminderWindowEndUTC: reminderWindowEndUTC,         // Integer hour (0-23) in UTC
-        initialUTCOffsetHours: initialUTCOffsetHours,       // The calculated offset at setup (for debugging/info)
-        lastReminderSentDayOfYearUTC: null,                 // e.g., 135 (for the 135th day of the year in UTC)
-        remindersSentOnLastDay: 0                         // Counter for how many sent on that UTC day
-    };
+            // Update user document with new counter and experiment schedule
+            transaction.update(userDocRef, {
+                experimentCounter: newCounter,
+                experimentCurrentSchedule: experimentScheduleData
+            });
 
-    try {
-        logger.log(`Overwriting experiment schedule for user ${userId}. New experiment ID: ${experimentId}. This will stop any prior 'continuous mode' reports.`);
-        await userDocRef.update({
-            experimentCurrentSchedule: experimentScheduleData
+            return newExperimentId; // Return the new ID from the transaction
         });
-        logger.log(`Successfully saved experiment schedule for user ${userId}:`, experimentScheduleData);
 
+        logger.log(`Successfully saved experiment schedule for user ${userId}. New experiment ID: ${experimentId}.`);
         let message = `✅ Experiment (ID: ${experimentId}) duration set to ${data.experimentDuration.replace('_', ' ')}.`;
         if (data.skippedReminders) {
             message += " Reminders were skipped.";
         } else if (data.reminderFrequency === 'none') {
             message += " No reminders will be sent.";
         } else {
-            message += ` Reminders scheduled (frequency: ${data.reminderFrequency.replace('_', ' ')}, window: ${data.reminderWindowStartHour}:00-${data.reminderWindowEndHour}:00 based on your local time).`;
+            message += ` Reminders scheduled (frequency: ${data.reminderFrequency.replace(/_/g, ' ')}, window: ${data.reminderWindowStartHour}:00-${data.reminderWindowEndHour}:00 based on your local time).`;
         }
-
         return { success: true, message: message, experimentId: experimentId };
 
     } catch (error) {
-        logger.error("Error writing experiment schedule to Firestore for user:", userId, error);
+        logger.error("Error running setExperimentSchedule transaction for user:", userId, error);
         throw new HttpsError('internal', 'Could not save experiment schedule due to a server error.', error.message);
     }
 });
@@ -2290,6 +2270,115 @@ async function _calculateAndStorePeriodStatsLogic(
             }
             // ============== END: Pairwise Interaction Analysis Logic ==============
 
+            // ============== START: Lag Time Correlation Analysis Logic ==============
+            logger.log(`[${callingFunction}] [LagTimeCorrelation] Starting lag time analysis for user ${userId}, experiment ${experimentId}.`);
+            const lagTimeCorrelations = {};
+            const MIN_PAIRS_FOR_LAG_CORRELATION = 5; // Use the same minimum as regular correlations
+
+            if (totalLogsInPeriodProcessed >= MIN_PAIRS_FOR_LAG_CORRELATION + 1) { // Need at least 6 logs for 5 pairs
+                // Create a map of logDate -> logData for easy lookup
+                const logsByDate = new Map();
+                fetchedLogs.forEach(log => {
+                    const logDate = new Date(log.timestamp).toISOString().split('T')[0];
+                    logsByDate.set(logDate, log);
+                });
+
+                // Get a sorted list of unique dates
+                const sortedDates = Array.from(logsByDate.keys()).sort();
+                const lagDataPairs = [];
+
+                // Create pairs of data from consecutive days
+                for (let i = 0; i < sortedDates.length - 1; i++) {
+                    const dayT_str = sortedDates[i];
+                    const dayT_plus_1_str = sortedDates[i + 1];
+
+                    // Check if days are truly consecutive
+                    const dayT_date = new Date(dayT_str);
+                    const dayT_plus_1_date = new Date(dayT_plus_1_str);
+                    const diffTime = Math.abs(dayT_plus_1_date - dayT_date);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                    if (diffDays === 1) {
+                        const logT = logsByDate.get(dayT_str);
+                        const logT_plus_1 = logsByDate.get(dayT_plus_1_str);
+                        lagDataPairs.push({ dayT: logT, dayT_plus_1: logT_plus_1 });
+                    }
+                }
+                logger.log(`[${callingFunction}] [LagTimeCorrelation] Created ${lagDataPairs.length} consecutive day data pairs.`);
+
+                if (lagDataPairs.length >= MIN_PAIRS_FOR_LAG_CORRELATION) {
+                    const allMetrics = [
+                        { ...activeExperimentSettings.output, type: 'output' },
+                        ...[activeExperimentSettings.input1, activeExperimentSettings.input2, activeExperimentSettings.input3]
+                            .filter(m => m && m.label)
+                            .map(m => ({ ...m, type: 'input' }))
+                    ];
+
+                    // Loop through every metric vs every other metric
+                    for (const metricYesterday of allMetrics) {
+                        for (const metricToday of allMetrics) {
+                            const pairedValues = { yesterday: [], today: [] };
+
+                            // Gather the paired data for this specific metric combination
+                            lagDataPairs.forEach(pair => {
+                                const yesterdayValue = getMetricValueFromLog(pair.dayT, metricYesterday.label, metricYesterday.unit);
+                                const todayValue = getMetricValueFromLog(pair.dayT_plus_1, metricToday.label, metricToday.unit);
+
+                                if (yesterdayValue !== null && todayValue !== null) {
+                                    pairedValues.yesterday.push(yesterdayValue);
+                                    pairedValues.today.push(todayValue);
+                                }
+                            });
+
+                            if (pairedValues.yesterday.length >= MIN_PAIRS_FOR_LAG_CORRELATION) {
+                                const coefficient = jStat.corrcoeff(pairedValues.yesterday, pairedValues.today);
+                                const rSquared = coefficient * coefficient;
+
+                                // Only store if the relationship is moderate or stronger (r-squared >= 9%)
+                                if (rSquared >= 0.09) {
+                                    const tStat = coefficient * Math.sqrt((pairedValues.yesterday.length - 2) / (1 - rSquared));
+                                    const pValue = isFinite(tStat) ? 2 * (1 - jStat.studentt.cdf(Math.abs(tStat), pairedValues.yesterday.length - 2)) : 1.0;
+                                    const lagKey = `yesterday_${metricYesterday.label}_vs_today_${metricToday.label}`.replace(/\s+/g, '_');
+                                    
+                                    lagTimeCorrelations[lagKey] = {
+                                        yesterdayMetricLabel: metricYesterday.label,
+                                        todayMetricLabel: metricToday.label,
+                                        coefficient: parseFloat(coefficient.toFixed(3)),
+                                        pValue: parseFloat(pValue.toFixed(3)),
+                                        n_pairs: pairedValues.yesterday.length
+                                    };
+                                    logger.log(`[${callingFunction}] [LagTimeCorrelation] Found significant lag correlation for key ${lagKey}: r=${coefficient.toFixed(3)}`);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                 logger.log(`[${callingFunction}] [LagTimeCorrelation] Skipped analysis due to insufficient total logs (${totalLogsInPeriodProcessed}).`);
+            }
+            // Helper function to extract a metric's value from a raw log object
+            function getMetricValueFromLog(log, label, unit) {
+                if (!log) return null;
+                const normLabel = normalizeLabel(label);
+                const normUnit = normalizeUnit(unit);
+
+                // Check output metric
+                if (log.output && normalizeLabel(log.output.label) === normLabel && normalizeUnit(log.output.unit) === normUnit) {
+                    const val = parseFloat(log.output.value);
+                    return isNaN(val) ? null : val;
+                }
+                // Check input metrics
+                if (log.inputs && Array.isArray(log.inputs)) {
+                    const foundInput = log.inputs.find(inp => inp && normalizeLabel(inp.label) === normLabel && normalizeUnit(inp.unit) === normUnit);
+                    if (foundInput) {
+                        const val = parseFloat(foundInput.value);
+                        return isNaN(val) ? null : val;
+                    }
+                }
+                return null;
+            }
+            // ============== END: Lag Time Correlation Analysis Logic ==============
+
     // Step 7: Assemble, Store, and Return Results
     logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Assembling final stats object for user ${userId}, experiment ${experimentId}.`);
     const finalStatsObject = {
@@ -2306,6 +2395,7 @@ async function _calculateAndStorePeriodStatsLogic(
         correlations: correlations,
         stratifiedAnalysisPrep: stratifiedAnalysisPrep,
         pairwiseInteractionResults: pairwiseInteractionResults,
+        lagTimeCorrelations: lagTimeCorrelations,
         status: 'stats_calculated_and_stored'
     };
     try {
@@ -2472,6 +2562,18 @@ exports.checkForEndedExperimentsAndTriggerStats = onSchedule("every 1 hours", as
                     "checkForEndedExperimentsAndTriggerStats_Defined"
                 )
                 .then(async (statsResult) => {
+                    // --- START of CHANGE ---
+                    // First, check if the result indicates insufficient data and stop the workflow if so.
+                    if (statsResult && statsResult.status === 'insufficient_overall_data') {
+                        logger.log(`Skipping notification for user ${userId}, experiment ${statsResult.experimentId} due to insufficient data.`);
+                        // Mark as processed to prevent retries, but do not send a notification.
+                        await userDoc.ref.update({
+                            'experimentCurrentSchedule.statsProcessed': true,
+                            'experimentCurrentSchedule.statsProcessingError': 'insufficient_data'
+                        });
+                        return; // Stop execution for this user
+                    }
+                    // --- END of CHANGE ---
                     if (statsResult && statsResult.success) {
                         logger.log(`checkForEndedExperimentsAndTriggerStats: Successfully processed defined experiment for user ${userId}. Stored Doc ID: ${statsResult.experimentId}. Setting up for continuous mode.`);
                         
@@ -2539,6 +2641,19 @@ exports.checkForEndedExperimentsAndTriggerStats = onSchedule("every 1 hours", as
                     "checkForEndedExperimentsAndTriggerStats_Continuous"
                 )
                 .then(async (statsResult) => {
+                    
+                     // --- START of CHANGE ---
+                    if (statsResult && statsResult.status === 'insufficient_overall_data') {
+                        logger.log(`Skipping continuous notification for user ${userId} due to insufficient data for this period.`);
+                        // Push the next check out by a week to avoid retrying immediately, but send no report.
+                        const nextWeeklyTimestamp = new Date(nowJs.getTime() + 7 * 24 * 60 * 60 * 1000);
+                        await userDoc.ref.update({
+                            'experimentCurrentSchedule.nextWeeklyStatsTimestamp': admin.firestore.Timestamp.fromDate(nextWeeklyTimestamp),
+                            'experimentCurrentSchedule.statsProcessingError': 'insufficient_data'
+                        });
+                        return; // Stop execution
+                    }
+                    // --- END of CHANGE ---
                     if (statsResult && statsResult.success) {
                         logger.log(`checkForEndedExperimentsAndTriggerStats: Successfully processed continuous stats for user ${userId}. Stored Doc ID: ${statsResult.experimentId}.`);
                         
@@ -3688,8 +3803,8 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             **Your Task:**
             1.  **Acknowledge Experience (25-50 characters):** Based on the notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme.
             It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
-            2.  **Comfort/Support Message (50-100 characters):** Provide a short, positive, and uplifting message that normalizes their experience or gently encourages them.
-            Try to encourage a growth mindset and realistic optimism.
+            2.  **Comfort/Support Message (50-100 characters):** Provide a short, uplifting, and mindfulness inspiring message that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
+            Try to encourage mindfulness, a growth mindset, or realistic optimism.
             3.  **Public Post Suggestion (80-130 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group.
             This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
             It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
@@ -4070,5 +4185,73 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   }
 });
 
+exports.getStatsSummaryForMetric = onCall(async (request) => {
+    logger.log("[getStatsSummaryForMetric] Function called. Request data:", request.data);
+
+    if (!request.auth) {
+        logger.warn("[getStatsSummaryForMetric] Unauthenticated access attempt.");
+        throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
+    }
+    const userId = request.auth.uid;
+    const { experimentId, metricKey, habitNumber } = request.data;
+
+    if (!experimentId || !metricKey) {
+        throw new HttpsError('invalid-argument', 'Missing required parameters: experimentId and metricKey.');
+    }
+
+    if (!genAI) {
+        logger.error("[getStatsSummaryForMetric] Gemini AI client is not initialized.");
+        return { success: false, summary: "AI client not ready." };
+    }
+
+    try {
+        const statsDocRef = db.collection('users').doc(userId).collection('experimentStats').doc(experimentId);
+        const statsDocSnap = await statsDocRef.get();
+
+        if (!statsDocSnap.exists) {
+            throw new HttpsError('not-found', 'Target experiment statistics not found.');
+        }
+        const statsData = statsDocSnap.data();
+        const metricStats = statsData?.calculatedMetricStats?.[metricKey];
+
+        if (!metricStats || metricStats.status === 'skipped_insufficient_data') {
+            return { success: true, summary: "Not enough data to generate a summary for this metric." };
+        }
+
+        const promptData = {
+            ...metricStats,
+            type: metricKey === 'output' ? 'Outcome' : `Habit ${habitNumber}`
+        };
+
+        const prompt = METRIC_SUMMARY_PROMPT_TEMPLATE(promptData);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const generationResult = await model.generateContent({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: { ...GEMINI_CONFIG, temperature: 0.7, maxOutputTokens: 50 },
+        });
+
+        const response = await generationResult.response;
+        const summaryText = response.text()?.trim().replace(/\"/g, ''); // Remove quotes
+
+        if (!summaryText) {
+            return { success: true, summary: "AI returned an empty summary." };
+        }
+        
+        // Cache the summary back to the Firestore document for future views
+        await statsDocRef.update({
+            [`calculatedMetricStats.${metricKey}.aiSummary`]: summaryText,
+            [`calculatedMetricStats.${metricKey}.aiSummaryGeneratedAt`]: FieldValue.serverTimestamp()
+        });
+
+        return { success: true, summary: summaryText };
+
+    } catch (error) {
+        logger.error(`[getStatsSummaryForMetric] Critical error for user ${userId}, experiment ${experimentId}:`, error);
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        throw new HttpsError('internal', `An unexpected error occurred while generating the metric summary.`);
+    }
+});
 
 // Final blank line below this comment

@@ -66,59 +66,100 @@ if (serviceAccount) {
 // Key: userId, Value: { statsReportData, experimentId }
 const userStatsReportData = new Map();
 
+/**
+ * Builds the embed for the introductory "Cover Page".
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ */
+function buildCoverPage(embed) {
+    embed.setTitle('Paying Attention Without Judgment')
+         .setDescription(
+            "Here are your latest stats!\n\nThink of them as a menu of dishes you might eat." +
+            "\n\nIf you don't like a stat 🤢, keep in mind that it's just a tiny piece of data.\n\nIf you love 💖 a stat, give yourself a placebo 💊. Acknowledge that you're healing and growing. Your acknowledgment will make it even more true." +
+            "\n\nDon't worry about being a \"perfect\" or even \"better\" version of yourself.\n\nYou're alive, and that's a beautiful thing 🌻."
+         );
+}
 
 /**
- * Builds the embed fields for Page 1 (Core Statistics).
+ * Builds the embed fields for the Outcome Statistics page.
  * @param {EmbedBuilder} embed - The embed to add fields to.
- * @param {object} statsReportData - The full stats report data from Firestore.
+ * @param {object} metricData - The specific metric data object for the outcome.
+ * @param {string} aiSummary - The AI-generated summary for this metric.
  */
-function buildCoreStatsPage(embed, statsReportData) {
-    embed.setTitle('📊 Core Statistics (Page 1 of 3)');
-    if (statsReportData.calculatedMetricStats && typeof statsReportData.calculatedMetricStats === 'object' && Object.keys(statsReportData.calculatedMetricStats).length > 0) {
-        for (const metricKey in statsReportData.calculatedMetricStats) {
-            const metric = statsReportData.calculatedMetricStats[metricKey];
-            let fieldValue = '';
+function buildOutcomeStatsPage(embed, metricData, aiSummary) {
+    embed.setTitle('📊 Outcome: ' + (metricData.label || 'N/A'));
 
-            if (metric.status === 'skipped_insufficient_data') {
-                fieldValue = `*Not enough data (had ${metric.dataPoints}, needed 5).*`;
-            } 
-            // --- NEW: Yes/No Metric Handling ---
-            else if (isYesNoMetric(metric.unit)) {
-                const percentage = (metric.average * 100).toFixed(0);
-                const completions = Math.round(metric.average * metric.dataPoints);
-                fieldValue += `**Completion:** ${percentage}%\n`;
-                fieldValue += `*Completed on ${completions} of ${metric.dataPoints} days.*`;
-            } 
-            // --- END: Yes/No Metric Handling ---
-            else {
-                // This is the original logic for all other metric types
-                const unit = metric.unit ?
-` ${metric.unit}` : '';
-                const formatValue = (val) => (isTimeMetric(metric.unit) ? formatDecimalAsTime(val) : val);
+    let description = `*${aiSummary || "Here are the stats for your outcome metric."}*\n\n---\n`;
 
-                fieldValue += `**Avg:** ${formatValue(metric.average)}${unit}\n`;
-                fieldValue += `**Median:** ${formatValue(metric.median)}${unit}\n`;
-                fieldValue += `**Min:** ${formatValue(metric.min)}${unit}, **Max:** ${formatValue(metric.max)}${unit}\n`;
-
-                const variation = metric.variationPercentage;
-                let consistencyLabel = "Not enough data";
-                if (variation !== undefined && variation !== null) {
-                    if (variation < 20) {
-                        consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
-                    } else if (variation <= 35) {
-                        consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
-                    } else {
-                        consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
-                    }
-                }
-                fieldValue += `**Consistency:** ${consistencyLabel}\n`;
-                fieldValue += `**Data Points:** ${metric.dataPoints}`;
-            }
-            embed.addFields({ name: metric.label || metricKey, value: fieldValue, inline: true });
-        }
+    if (!metricData || metricData.status === 'skipped_insufficient_data') {
+        description += `*Not enough data (had ${metricData.dataPoints || 0}, needed 5).*`;
+    } else if (isYesNoMetric(metricData.unit)) {
+        const percentage = (metricData.average * 100).toFixed(0);
+        const completions = Math.round(metricData.average * metricData.dataPoints);
+        description += `**Completion:** ${percentage}% (*${completions} of ${metricData.dataPoints} days*)`;
     } else {
-        embed.addFields({ name: 'Statistics', value: 'No core statistics were calculated for this report.', inline: false });
+        const unit = metricData.unit ? ` ${metricData.unit}` : '';
+        const formatValue = (val) => (isTimeMetric(metricData.unit) ? formatDecimalAsTime(val) : val);
+        const variation = metricData.variationPercentage;
+        let consistencyLabel = "Not enough data";
+        if (variation !== undefined && variation !== null) {
+            if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
+            else if (variation <= 35) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
+            else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
+        }
+        
+        embed.addFields(
+            { name: 'Average', value: `${formatValue(metricData.average)}${unit}`, inline: true },
+            { name: 'Median', value: `${formatValue(metricData.median)}${unit}`, inline: true },
+            { name: 'Consistency', value: consistencyLabel, inline: true },
+            { name: 'Min', value: `${formatValue(metricData.min)}${unit}`, inline: true },
+            { name: 'Max', value: `${formatValue(metricData.max)}${unit}`, inline: true },
+            { name: 'Data Points', value: String(metricData.dataPoints), inline: true }
+        );
     }
+    
+    embed.setDescription(description);
+}
+
+/**
+ * Builds the embed fields for a Habit Statistics page.
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} metricData - The specific metric data object for the habit.
+ * @param {number} habitNumber - The number of the habit (1, 2, or 3).
+ * @param {string} aiSummary - The AI-generated summary for this metric.
+ */
+function buildHabitStatsPage(embed, metricData, habitNumber, aiSummary) {
+    embed.setTitle(`🛠️ Habit ${habitNumber}: ` + (metricData.label || 'N/A'));
+
+    let description = `*${aiSummary || `Here are the stats for habit #${habitNumber}.`}*\n\n---\n`;
+
+    if (!metricData || metricData.status === 'skipped_insufficient_data') {
+        description += `*Not enough data (had ${metricData.dataPoints || 0}, needed 5).*`;
+    } else if (isYesNoMetric(metricData.unit)) {
+        const percentage = (metricData.average * 100).toFixed(0);
+        const completions = Math.round(metricData.average * metricData.dataPoints);
+        description += `**Completion:** ${percentage}% (*${completions} of ${metricData.dataPoints} days*)`;
+    } else {
+        const unit = metricData.unit ? ` ${metricData.unit}` : '';
+        const formatValue = (val) => (isTimeMetric(metricData.unit) ? formatDecimalAsTime(val) : val);
+        const variation = metricData.variationPercentage;
+        let consistencyLabel = "Not enough data";
+        if (variation !== undefined && variation !== null) {
+            if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
+            else if (variation <= 35) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
+            else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
+        }
+
+        embed.addFields(
+            { name: 'Average', value: `${formatValue(metricData.average)}${unit}`, inline: true },
+            { name: 'Median', value: `${formatValue(metricData.median)}${unit}`, inline: true },
+            { name: 'Consistency', value: consistencyLabel, inline: true },
+            { name: 'Min', value: `${formatValue(metricData.min)}${unit}`, inline: true },
+            { name: 'Max', value: `${formatValue(metricData.max)}${unit}`, inline: true },
+            { name: 'Data Points', value: String(metricData.dataPoints), inline: true }
+        );
+    }
+    
+    embed.setDescription(description);
 }
 
 /**
@@ -168,8 +209,7 @@ function buildCorrelationsPage(embed, statsReportData) {
  * @param {object} statsReportData - The full stats report data from Firestore.
  */
 function buildCombinedEffectsPage(embed, statsReportData) {
-    embed.setTitle('🤝 Synergistic Effects (Page 3 of 3)')
-         .setDescription('*Sometimes, habits work even better when you do them together.*');
+    embed.setTitle('✅ Stats Summary (Page 3 of 3)');
 
     const results = statsReportData.pairwiseInteractionResults;
     let hasMeaningfulResults = false;
@@ -205,14 +245,92 @@ function buildCombinedEffectsPage(embed, statsReportData) {
     }
 }
 
-// Configuration for each page of the stats report. Makes it easy to add more pages later.
-const statsPageConfig = [
-    { page: 1, builder: buildCoreStatsPage },
-    { page: 2, builder: buildCorrelationsPage },
-    { page: 3, builder: buildCombinedEffectsPage },
-    // To add a new page (e.g., Lag Time Regression), just add an object here:
-    // { page: 4, builder: buildLagTimeRegressionPage },
-];
+/**
+ * Builds the embed fields for Page 4 (Lag Time Correlations).
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ */
+function buildLagTimePage(embed, statsReportData) {
+    embed.setTitle('⏳ Day-to-Day Connections (Page 4 of 4)')
+         .setDescription("How do your actions and feelings on one day carry over to the next?");
+
+    const results = statsReportData.lagTimeCorrelations;
+    if (results && typeof results === 'object' && Object.keys(results).length > 0) {
+        for (const key in results) {
+            const lag = results[key];
+            if (!lag || lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
+
+            const rSquared = lag.coefficient * lag.coefficient;
+            const direction = lag.coefficient >= 0 ? 'higher' : 'lower';
+            const isConfident = lag.pValue !== null && lag.pValue < 0.05;
+            const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data may be needed to confirm this connection.";
+
+            let strengthText = "No detectable";
+            let strengthEmoji = "🟦";
+            const absCoeff = Math.abs(lag.coefficient);
+            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+            else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+            else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+            
+            const value = `When **${lag.yesterdayMetricLabel}** was higher on one day...\n` +
+                          `...your **${lag.todayMetricLabel}** tended to be **${direction}** on the **next day**.\n\n` +
+                          `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
+                          `*${confidenceText}*`;
+
+            embed.addFields({ name: `Yesterday's ${lag.yesterdayMetricLabel} → Today's ${lag.todayMetricLabel}`, value, inline: false });
+        }
+    } else {
+        // This else block might not be strictly necessary if the page is skipped, but it's good for robustness.
+        embed.addFields({ name: 'No Connections Found', value: 'No significant day-to-day connections were found in this experiment.', inline: false });
+    }
+}
+
+/**
+ * Builds the embed for the final summary page.
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @param {Array<object>} pageConfig - The dynamically generated page configuration for this specific report.
+ */
+function buildSummaryPage(embed, statsReportData, pageConfig) {
+    embed.setTitle('📊 Experiment Summary')
+         .setDescription(`Here is a complete summary of your experiment report. You can now get AI-powered insights based on this data.\n\nTotal Logs Processed: ${statsReportData.totalLogsInPeriodProcessed || 'N/A'}`);
+
+    // Helper to find if a page was included in the config
+    const wasPageIncluded = (builderFunction) => pageConfig.some(p => p.builder === builderFunction);
+
+    // --- Core Stats (Always included) ---
+    buildCoreStatsPage(embed, statsReportData);
+    embed.setTitle('📊 Core Statistics'); // Reset title for summary view
+
+    // --- Correlations ---
+    embed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
+    if (wasPageIncluded(buildCorrelationsPage)) {
+        buildCorrelationsPage(embed, statsReportData);
+        embed.setTitle('🔗 Habit Impacts'); // Reset title
+    } else {
+        embed.addFields({ name: '🔗 Habit Impacts', value: 'No significant correlations were found in this experiment.', inline: false });
+    }
+
+    // --- Combined Effects ---
+    embed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
+    if (wasPageIncluded(buildCombinedEffectsPage)) {
+        buildCombinedEffectsPage(embed, statsReportData);
+        embed.setTitle('✅ Stats Summary'); // Reset title
+    } else {
+        embed.addFields({ name: '✅ Combined Effects', value: 'No significant combined effects were found with the current data.', inline: false });
+    }
+
+    // --- Lag Time Correlations ---
+    embed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
+    if (wasPageIncluded(buildLagTimePage)) {
+        buildLagTimePage(embed, statsReportData);
+        embed.setTitle('⏳ Day-to-Day Connections'); // Reset title
+    } else {
+        embed.addFields({ name: '⏳ Day-to-Day Connections', value: 'No significant day-to-day connections were found in this experiment.', inline: false });
+    }
+}
+
+
 
 /**
  * Sends a specific page of the stats report to a user.
@@ -220,35 +338,96 @@ const statsPageConfig = [
  * @param {import('discord.js').Interaction | { user: import('discord.js').User }} interactionOrUser - The interaction object or a user object for the initial DM.
  * @param {string} userId - The user's ID.
  * @param {string} experimentId - The experiment's ID.
- * @param {number} targetPage - The page number to display.
+ * @param {number} targetPage - The 1-based page number to display.
  */
+// REPLACE the existing sendStatsPage function with this one.
+
 async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage) {
     const isInteraction = 'update' in interactionOrUser;
     const user = isInteraction ? interactionOrUser.user : interactionOrUser;
-    
+
+    if (isInteraction && !interactionOrUser.deferred) {
+        await interactionOrUser.deferUpdate();
+    }
+
     const reportInfo = userStatsReportData.get(userId);
-    if (!reportInfo || !reportInfo.statsReportData) {
-        const errorMessage = "Your stats report session has expired. Please request it again via the `/go` command.";
-        if (isInteraction) await interactionOrUser.update({ content: errorMessage, embeds: [], components: [] });
+    if (!reportInfo || !reportInfo.statsReportData || !reportInfo.pageConfig) {
+        const errorMessage = "Your stats report session has expired or is invalid. Please request it again via the `/go` command.";
+        if (isInteraction) await interactionOrUser.editReply({ content: errorMessage, embeds: [], components: [] });
         else await user.send(errorMessage);
         return;
     }
 
-    const { statsReportData } = reportInfo;
-    const totalPages = statsPageConfig.length;
+    const { statsReportData, pageConfig } = reportInfo;
+    const totalPages = pageConfig.length;
+    const pageIndex = targetPage - 1;
 
-    const pageConfig = statsPageConfig.find(p => p.page === targetPage);
-    if (!pageConfig) {
-        console.error(`[sendStatsPage] Invalid targetPage requested: ${targetPage}`);
+    if (pageIndex < 0 || pageIndex >= totalPages) {
+        console.error(`[sendStatsPage] Invalid targetPage requested: ${targetPage}.`);
+        if (isInteraction) await interactionOrUser.editReply({ content: "An error occurred while navigating the report.", embeds: [], components: [] });
         return;
     }
 
+    const currentPageConfig = pageConfig[pageIndex];
     const embed = new EmbedBuilder()
         .setColor(0x0099FF)
         .setFooter({ text: `Experiment ID: ${experimentId}` });
 
-    // Call the builder function for the specific page
-    pageConfig.builder(embed, statsReportData);
+    // --- AI Summary & Page Building Logic ---
+    let aiSummary = null;
+    const metricKey = currentPageConfig.metricKey;
+
+    // Check if we need to fetch an AI summary for this page type.
+    if ((currentPageConfig.type === 'outcome' || currentPageConfig.type === 'habit') && metricKey) {
+        const metricData = statsReportData.calculatedMetricStats[metricKey];
+        // First, check if summary is already cached on the stats object from a previous call
+        if (metricData?.aiSummary) {
+            aiSummary = metricData.aiSummary;
+            console.log(`[sendStatsPage] Using cached AI summary for metric: ${metricKey}`);
+        } else if (metricData) {
+            try {
+                console.log(`[sendStatsPage] Fetching new AI summary for metric: ${metricKey}`);
+                const result = await callFirebaseFunction('getStatsSummaryForMetric', {
+                    experimentId: experimentId,
+                    metricKey: metricKey,
+                    habitNumber: currentPageConfig.habitNumber || 0
+                }, userId);
+                if (result && result.success) {
+                    aiSummary = result.summary;
+                    // Cache it back to our in-memory object to prevent re-fetching during this session
+                    if (statsReportData.calculatedMetricStats[metricKey]) {
+                        statsReportData.calculatedMetricStats[metricKey].aiSummary = aiSummary;
+                    }
+                }
+            } catch (error) {
+                console.error(`[sendStatsPage] Failed to get AI summary for metric ${metricKey}:`, error);
+                aiSummary = "Could not load AI summary at this time.";
+            }
+        }
+    }
+    
+    // Call the correct builder function with the necessary arguments
+    switch (currentPageConfig.type) {
+        case 'cover':
+            currentPageConfig.builder(embed);
+            break;
+        case 'outcome':
+            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats.output, aiSummary);
+            break;
+        case 'habit':
+            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats[metricKey], currentPageConfig.habitNumber, aiSummary);
+            break;
+        case 'correlations':
+        case 'combined':
+        case 'lag':
+             currentPageConfig.builder(embed, statsReportData);
+             break;
+        default:
+             console.error("Unknown page type in pageConfig:", currentPageConfig.type);
+             embed.setDescription("Error: Could not determine the content for this page.");
+    }
+    
+    embed.setTitle(`${embed.data.title} (Page ${targetPage} of ${totalPages})`);
 
     // Build navigation buttons
     const row = new ActionRowBuilder();
@@ -267,24 +446,23 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
                 .setLabel('Next ➡️')
                 .setStyle(ButtonStyle.Primary)
         );
-    } else { // On the last page
+    } else {
         row.addComponents(
             new ButtonBuilder()
-                .setCustomId(`stats_finish_${experimentId}`)
-                .setLabel('✅ Finish & Get Summary')
+                .setCustomId(`get_ai_insights_btn_${experimentId}`)
+                .setLabel('💡 Get Final AI Insights')
                 .setStyle(ButtonStyle.Success)
         );
     }
-    
-    // Send or update the message
-    if (isInteraction) {
-        await interactionOrUser.update({ embeds: [embed], components: [row] });
-    } else {
-        await user.send({ embeds: [embed], components: [row] });
-    }
-    console.log(`[sendStatsPage] Sent page ${targetPage} of stats report for experiment ${experimentId} to user ${userId}.`);
-}
 
+    const messagePayload = { embeds: [embed], components: [row] };
+    if (isInteraction) {
+        await interactionOrUser.editReply(messagePayload);
+    } else {
+        await user.send(messagePayload);
+    }
+    console.log(`[sendStatsPage] Sent page ${targetPage}/${totalPages} of stats report for experiment ${experimentId} to user ${userId}.`);
+}
 
 function setupStatsNotificationListener(client) {
   console.log("<<<<< NEW PAGINATED STATS LISTENER IS ACTIVE >>>>>");
@@ -301,8 +479,8 @@ function setupStatsNotificationListener(client) {
           if (change.type === 'added' || change.type === 'modified') {
               const notification = change.doc.data();
               const docId = change.doc.id;
-              const { userId, experimentId, userTag, statsDocumentId } = notification;
-              console.log(`[StatsListener] Detected 'ready' notification for user ${userId}, experiment ${experimentId}.`);
+              const { userId, experimentId, statsDocumentId } = notification;
+              console.log(`[StatsListener] Detected 'ready' notification for user ${userId}, experiment ${statsDocumentId || experimentId}.`);
 
               let discordUser;
               try {
@@ -320,19 +498,60 @@ function setupStatsNotificationListener(client) {
               }
 
               try {
-                  const statsReportRef = dbAdmin.collection('users').doc(userId).collection('experimentStats').doc(statsDocumentId || experimentId);
+                  const finalExperimentId = statsDocumentId || experimentId;
+                  const statsReportRef = dbAdmin.collection('users').doc(userId).collection('experimentStats').doc(finalExperimentId);
                   const statsReportSnap = await statsReportRef.get();
 
                   if (statsReportSnap.exists) {
                       const statsReportData = statsReportSnap.data();
+
+                      // --- DYNAMIC PAGE CONFIGURATION ---
+                      // This dynamically builds the report structure based on available data.
+                      const pageConfig = [];
                       
-                      // Store the full report data in the map for this user
-                      userStatsReportData.set(userId, { statsReportData, experimentId: statsDocumentId || experimentId });
+                      // 1. Cover Page (Always first)
+                      pageConfig.push({ builder: buildCoverPage, type: 'cover' });
 
-                      // Send the FIRST page of the report directly
-                      await sendStatsPage(discordUser, userId, statsDocumentId || experimentId, 1);
+                      // 2. Outcome Metric Page
+                      if (statsReportData.calculatedMetricStats?.output) {
+                          pageConfig.push({ builder: buildOutcomeStatsPage, type: 'outcome', metricKey: 'output' });
+                      }
 
-                      // Mark the Firestore notification as processed
+                      // 3. Habit Metric Pages
+                      for (let i = 1; i <= 3; i++) {
+                          const inputKey = `input${i}`;
+                          if (statsReportData.calculatedMetricStats?.[inputKey]) {
+                              pageConfig.push({ builder: buildHabitStatsPage, type: 'habit', metricKey: inputKey, habitNumber: i });
+                          }
+                      }
+                      
+                      // 4. Correlations/Impacts Page
+                      if (statsReportData.correlations && Object.keys(statsReportData.correlations).length > 0) {
+                          pageConfig.push({ builder: buildCorrelationsPage, type: 'correlations' });
+                      }
+
+                      // 5. Combined Effects Page
+                      if (statsReportData.pairwiseInteractionResults && Object.keys(statsReportData.pairwiseInteractionResults).length > 0) {
+                          const hasMeaningfulResults = Object.values(statsReportData.pairwiseInteractionResults).some(pairData => {
+                            const summary = pairData.summary || "";
+                            return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion");
+                          });
+                          if(hasMeaningfulResults) {
+                            pageConfig.push({ builder: buildCombinedEffectsPage, type: 'combined' });
+                          }
+                      }
+
+                      // 6. Lag Time Correlations Page
+                      if (statsReportData.lagTimeCorrelations && Object.keys(statsReportData.lagTimeCorrelations).length > 0) {
+                          pageConfig.push({ builder: buildLagTimePage, type: 'lag' });
+                      }
+
+                      // Store the full report data AND the dynamic page configuration in the map
+                      userStatsReportData.set(userId, { statsReportData, experimentId: finalExperimentId, pageConfig });
+
+                      // Send the FIRST page of the report
+                      await sendStatsPage(discordUser, userId, finalExperimentId, 1);
+
                       await change.doc.ref.update({
                           status: 'processed_by_bot',
                           processedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -341,7 +560,7 @@ function setupStatsNotificationListener(client) {
                       console.log(`[StatsListener] Updated notification ${docId} to 'processed_by_bot'.`);
 
                   } else {
-                      console.error(`[StatsListener] Stats report document not found for user ${userId}, experiment ${statsDocumentId || experimentId}.`);
+                      console.error(`[StatsListener] Stats report document not found for user ${userId}, experiment ${finalExperimentId}.`);
                       await change.doc.ref.update({ status: 'error_report_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: 'Stats report document could not be found in Firestore.' });
                   }
               } catch (error) {
@@ -5351,6 +5570,20 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
+    // --- Handler for Stats Report Navigation ---
+    else if (interaction.isButton() && interaction.customId.startsWith('stats_nav_')) {
+        // This single handler manages both 'next' and 'back' navigation.
+        // Format: stats_nav_back_EXPERIMENTID_TARGETPAGE or stats_nav_next_EXPERIMENTID_TARGETPAGE
+        const parts = interaction.customId.split('_');
+        const experimentId = parts[3];
+        const targetPage = parseInt(parts[4], 10);
+
+        console.log(`[StatsNav] User ${interaction.user.tag} navigating for experiment ${experimentId}. Target page: ${targetPage}.`);
+        
+        // The sendStatsPage function now handles deferring/updating the interaction
+        await sendStatsPage(interaction, interaction.user.id, experimentId, targetPage);
+    }
+
         // --- Handler for "AI Insights" Button (from /go hub) ---
     else if (interaction.isButton() && interaction.customId === 'ai_insights_btn') {
       const goInsightsButtonStartTime = performance.now();
@@ -6404,67 +6637,6 @@ client.on(Events.InteractionCreate, async interaction => {
         }
       }
       console.log(`[post_ai_log_summary_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - postPublicClickTime).toFixed(2)}ms`);
-    }
-
-    // In render/index.js, inside the `client.on(Events.InteractionCreate, ...)` handler
-
-    // --- NEW: Handlers for Stats Report Navigation ---
-    else if (interaction.isButton() && interaction.customId.startsWith('stats_nav_')) {
-        const [,, action, experimentId, targetPageStr] = interaction.customId.split('_');
-        const targetPage = parseInt(targetPageStr, 10);
-        console.log(`[StatsNav] User ${interaction.user.tag} clicked '${action}' for experiment ${experimentId}. Target page: ${targetPage}.`);
-        
-        // The sendStatsPage function now handles deferring/updating the interaction
-        await sendStatsPage(interaction, interaction.user.id, experimentId, targetPage);
-    }
-
-    else if (interaction.isButton() && interaction.customId.startsWith('stats_finish_')) {
-        const experimentId = interaction.customId.split('stats_finish_')[1];
-        const userId = interaction.user.id;
-        console.log(`[StatsFinish] User ${userId} clicked 'Finish' for experiment ${experimentId}.`);
-
-        await interaction.deferUpdate();
-
-        const reportInfo = userStatsReportData.get(userId);
-        if (!reportInfo || !reportInfo.statsReportData) {
-            await interaction.editReply({ content: "Your stats report session has expired. Please request it again.", embeds: [], components: [] });
-            return;
-        }
-
-        const { statsReportData } = reportInfo;
-
-        // Rebuild the FULL embed, reusing logic from the original listener
-        const fullEmbed = new EmbedBuilder()
-            .setColor(0x0099FF)
-            .setTitle(`Experiment Stats Summary`)
-            .setDescription(`**Scroll to the bottom to get your AI Insights!**\n\nTotal Logs Processed: ${statsReportData.totalLogsInPeriodProcessed || 'N/A'}`)
-            .setTimestamp()
-            .setFooter({ text: `Experiment ID: ${statsReportData.experimentId || 'N/A'}` });
-        
-        // Call all page builders to add all sections to the single embed
-        buildCoreStatsPage(fullEmbed, statsReportData);
-        fullEmbed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
-        buildCorrelationsPage(fullEmbed, statsReportData);
-        fullEmbed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
-        buildCombinedEffectsPage(fullEmbed, statsReportData);
-
-        const actionRow = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`get_ai_insights_btn_${statsReportData.experimentId}`)
-                    .setLabel('💡 Get AI Insights')
-                    .setStyle(ButtonStyle.Success)
-            );
-        
-        await interaction.editReply({
-            content: "Here is your complete experiment report:",
-            embeds: [fullEmbed],
-            components: [actionRow]
-        });
-
-        // Clean up the stored data after finishing
-        userStatsReportData.delete(userId);
-        console.log(`[StatsFinish] Sent full report and cleaned up session data for user ${userId}.`);
     }
 
 
