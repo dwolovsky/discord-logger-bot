@@ -168,9 +168,8 @@ function buildHabitStatsPage(embed, metricData, habitNumber, aiSummary) {
  * @param {object} statsReportData - The full stats report data from Firestore.
  */
 function buildCorrelationsPage(embed, statsReportData) {
-    embed.setTitle('🔗 Habit Impacts (Page 2 of 3)')
+    embed.setTitle('🔗 Habit Impacts')
          .setDescription('How did your daily habits influence your outcome?');
-
     if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
         for (const key in statsReportData.correlations) {
             const corr = statsReportData.correlations[key];
@@ -183,7 +182,6 @@ function buildCorrelationsPage(embed, statsReportData) {
             const direction = corr.coefficient >= 0 ? 'went up' : 'went down';
             const isConfident = corr.pValue !== null && corr.pValue < 0.05;
             const confidenceText = isConfident ? "We're 95% confident in this relationship." : "This may be worth getting more data to confirm.";
-
             let strengthText = "No detectable";
             let strengthEmoji = "🟦";
             const absCoeff = Math.abs(corr.coefficient);
@@ -195,7 +193,6 @@ function buildCorrelationsPage(embed, statsReportData) {
             const value = `When you increased **${corr.label}**...\n...your **${corr.vsOutputLabel}** ${direction}.\n\n` +
                           `**Influence Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                           `*${confidenceText}*`;
-
             embed.addFields({ name: `Impact of **${corr.label}** on **${corr.vsOutputLabel}**`, value, inline: false });
         }
     } else {
@@ -209,7 +206,7 @@ function buildCorrelationsPage(embed, statsReportData) {
  * @param {object} statsReportData - The full stats report data from Firestore.
  */
 function buildCombinedEffectsPage(embed, statsReportData) {
-    embed.setTitle('✅ Stats Summary (Page 3 of 3)');
+    embed.setTitle('✅ Combined Effects');
 
     const results = statsReportData.pairwiseInteractionResults;
     let hasMeaningfulResults = false;
@@ -221,8 +218,7 @@ function buildCombinedEffectsPage(embed, statsReportData) {
             const isSignificant = !summary.toLowerCase().includes("skipped") &&
                                   !summary.toLowerCase().includes("no meaningful conclusion") &&
                                   !summary.toLowerCase().includes("did not show any group");
-
-            if (isSignificant && pairData.input1Label && pairData.input2Label) {
+            if (isSignificant && pairData.input1Label && pairA.input2Label) {
                 hasMeaningfulResults = true;
                 const bestGroup = summary.includes("higher") ? /Avg.*higher \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
                 const worstGroup = summary.includes("lower") ? /Avg.*lower \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
@@ -251,9 +247,8 @@ function buildCombinedEffectsPage(embed, statsReportData) {
  * @param {object} statsReportData - The full stats report data from Firestore.
  */
 function buildLagTimePage(embed, statsReportData) {
-    embed.setTitle('⏳ Day-to-Day Connections (Page 4 of 4)')
+    embed.setTitle('⏳ Day-to-Day Connections')
          .setDescription("How do your actions and feelings on one day carry over to the next?");
-
     const results = statsReportData.lagTimeCorrelations;
     if (results && typeof results === 'object' && Object.keys(results).length > 0) {
         for (const key in results) {
@@ -276,7 +271,6 @@ function buildLagTimePage(embed, statsReportData) {
                           `...your **${lag.todayMetricLabel}** tended to be **${direction}** on the **next day**.\n\n` +
                           `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                           `*${confidenceText}*`;
-
             embed.addFields({ name: `Yesterday's ${lag.yesterdayMetricLabel} → Today's ${lag.todayMetricLabel}`, value, inline: false });
         }
     } else {
@@ -412,7 +406,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
             currentPageConfig.builder(embed);
             break;
         case 'outcome':
-            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats.output, aiSummary);
+            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats[metricKey], aiSummary);
             break;
         case 'habit':
             currentPageConfig.builder(embed, statsReportData.calculatedMetricStats[metricKey], currentPageConfig.habitNumber, aiSummary);
@@ -508,20 +502,23 @@ function setupStatsNotificationListener(client) {
                       // --- DYNAMIC PAGE CONFIGURATION ---
                       // This dynamically builds the report structure based on available data.
                       const pageConfig = [];
+                      const settings = statsReportData.activeExperimentSettings;
                       
                       // 1. Cover Page (Always first)
                       pageConfig.push({ builder: buildCoverPage, type: 'cover' });
-
+                      
                       // 2. Outcome Metric Page
-                      if (statsReportData.calculatedMetricStats?.output) {
-                          pageConfig.push({ builder: buildOutcomeStatsPage, type: 'outcome', metricKey: 'output' });
+                      const outcomeLabel = settings?.output?.label;
+                      if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
+                          pageConfig.push({ builder: buildOutcomeStatsPage, type: 'outcome', metricKey: outcomeLabel });
                       }
 
                       // 3. Habit Metric Pages
                       for (let i = 1; i <= 3; i++) {
-                          const inputKey = `input${i}`;
-                          if (statsReportData.calculatedMetricStats?.[inputKey]) {
-                              pageConfig.push({ builder: buildHabitStatsPage, type: 'habit', metricKey: inputKey, habitNumber: i });
+                          const inputSetting = settings?.[`input${i}`];
+                          const inputLabel = inputSetting?.label;
+                          if (inputLabel && statsReportData.calculatedMetricStats?.[inputLabel]) {
+                              pageConfig.push({ builder: buildHabitStatsPage, type: 'habit', metricKey: inputLabel, habitNumber: i });
                           }
                       }
                       

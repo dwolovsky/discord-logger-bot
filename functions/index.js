@@ -3213,15 +3213,12 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
             if (now > weeklyEndDate) {
                 // The 7-day period is over. Reset for the next 7-day cycle.
                 logger.log(`[sendScheduledReminders] Weekly reminder period ended for user ${userId}. Resetting for next week.`);
-                
-                // Create a new promise to handle the async update
                 const resetPromise = userDoc.ref.update({
                     'experimentCurrentSchedule.remindersLeftToSend': totalWeeklyReminders, // Reset the counter
-                    'experimentCurrentSchedule.weeklyReminderPeriodStart': weeklyReminderPeriodStart // The new period starts where the old one began
+                    'experimentCurrentSchedule.weeklyReminderPeriodStart': admin.firestore.Timestamp.fromDate(now) // The new period starts now
                 }).catch(err => {
                     logger.error(`[sendScheduledReminders] Failed to reset weekly reminder schedule for user ${userId}:`, err);
                 });
-
                 reminderPromises.push(resetPromise); // Add this operation to the list of promises to wait for
                 return; // Stop processing this user for *this* run, as their new period just started.
             }
