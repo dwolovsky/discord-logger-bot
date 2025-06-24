@@ -4289,46 +4289,45 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (result && result.success) {
                 console.log(`[${interaction.customId} FIREBASE_SUCCESS ${interactionId}] updateWeeklySettings successful for ${userTag}.`);
-
                 setupData.rawPayload = payload;
                 setupData.settingsMessage = result.message;
-
+                
+                // Also clean up the temporary Firestore doc for the manual flow
                 const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
-                setupStateRef.delete().then(() => {
-                    console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Deleted temporary Firestore doc for user ${userTag}.`);
-                }).catch(cleanupError => {
+                setupStateRef.delete().catch(cleanupError => {
                     console.error(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Failed to delete temporary Firestore doc for user ${userTag}:`, cleanupError);
                 });
-              
-                userExperimentSetupData.set(userId, setupData);
-                // 4. Proceed to duration selection (the existing flow)
-                setupData.experimentDuration = null; // Ensure duration is fresh for the next step
-                userExperimentSetupData.set(userId, setupData); // Re-set map with minimal data for duration step.
+                
+                // Preemptively save schedule with 'no reminders' and default 7-day duration
+                console.log(`[${interaction.customId} PREEMPTIVE_SAVE ${interactionId}] Saving default 7-day schedule for ${userTag}.`);
+                const preemptivePayload = {
+                    experimentDuration: "1_week", // Default to 7 days
+                    skippedReminders: true,
+                    reminderFrequency: '0'
+                };
 
-                const durationEmbed = new EmbedBuilder()
-                    .setColor('#47d264')
-                    .setTitle('✅ Metrics Saved! Final Step...')
-                    .setDescription("Your experiment metrics have been saved. Now, set the duration for your experiment.\n\nWhen do you want your first comprehensive stats report?")
-                    .setTimestamp();
+                const scheduleResult = await callFirebaseFunction('setExperimentSchedule', payload, userId);
+                if (scheduleResult && scheduleResult.success) {
+                    console.log(`[${interaction.customId} PREEMPTIVE_SAVE_SUCCESS ${interactionId}] Successfully saved default schedule. Exp ID: ${scheduleResult.experimentId}`);
+                    setupData.experimentId = scheduleResult.experimentId;
+                    setupData.experimentDuration = "1_week"; // Store the default duration
+                    userExperimentSetupData.set(userId, setupData);
 
-                const durationSelect = new StringSelectMenuBuilder()
-                    .setCustomId('experiment_duration_select')
-                    .setPlaceholder('Get your 1st stats report in...')
-                    .addOptions(
-                        new StringSelectMenuOptionBuilder().setLabel('1 Week').setValue('1_week').setDescription('Report in 7 days.'),
-                        new StringSelectMenuOptionBuilder().setLabel('2 Weeks').setValue('2_weeks').setDescription('Report in 14 days.'),
-                        new StringSelectMenuOptionBuilder().setLabel('3 Weeks').setValue('3_weeks').setDescription('Report in 21 days.'),
-                        new StringSelectMenuOptionBuilder().setLabel('4 Weeks').setValue('4_weeks').setDescription('Report in 28 days.')
-                    );
-                const durationRow = new ActionRowBuilder().addComponents(durationSelect);
-
-                await interaction.editReply({
-                    content: '', 
-                    embeds: [durationEmbed],
-                    components: [durationRow]
-                });
-                console.log(`[${interaction.customId} DURATION_PROMPT_SENT ${interactionId}] Prompted ${userTag} for experiment duration.`);
-
+                    // Now show the reminder buttons
+                    const reminderButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder().setCustomId('show_reminders_setup_modal_btn').setLabel('⏰ Set Reminders').setStyle(ButtonStyle.Primary),
+                            new ButtonBuilder().setCustomId('skip_reminders_btn').setLabel('🔕 No Reminders').setStyle(ButtonStyle.Secondary)
+                        );
+                    await interaction.editReply({
+                        content: `✅ Your experiment metrics are saved for a 7-day cycle. Want to set up reminders?`,
+                        embeds: [],
+                        components: [reminderButtons]
+                    });
+                    console.log(`[${interaction.customId} REMINDER_PROMPT_SENT ${interactionId}] Prompted for reminders.`);
+                } else {
+                    throw new Error(scheduleResult?.message || "Failed to save the default experiment schedule.");
+                }
             } else {
                 // Handle Firebase function failure
                 console.error(`[${interaction.customId} FIREBASE_FAIL ${interactionId}] updateWeeklySettings failed for ${userTag}. Result:`, result);
@@ -4925,56 +4924,49 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const updateSettingsResultFirebase = await callFirebaseFunction('updateWeeklySettings', firebasePayload, userId);
 
-        if (updateSettingsResultFirebase && updateSettingsResultFirebase.success === true && typeof updateSettingsResultFirebase.message === 'string') {
-          console.log(`[confirm_metrics_proceed_btn FIREBASE_SUCCESS ${interactionId}] updateWeeklySettings successful for ${userTagForLog}.`);
-          setupData.settingsMessage = updateSettingsResultFirebase.message; // Store for later
+        if (updateSettingsResultFirebase && updateSettingsResultFirebase.success) {
+            console.log(`[confirm_metrics_proceed_btn FIREBASE_SUCCESS ${interactionId}] updateWeeklySettings successful for ${userTagForLog}.`);
+            setupData.settingsMessage = updateSettingsResultFirebase.message;
+            setupData.rawPayload = {
+                deeperProblem: firebasePayload.deeperProblem,
+                outputSetting: firebasePayload.outputSetting,
+                inputSettings: firebasePayload.inputSettings
+            };
+            userExperimentSetupData.set(userId, setupData);
 
-          setupData.rawPayload = { // firebasePayload contains the strings ready for posting
-            deeperProblem: firebasePayload.deeperProblem,
-            outputSetting: firebasePayload.outputSetting, // This is the "Goal #, Unit, Label" string
-            inputSettings: firebasePayload.inputSettings // Array of "Goal #, Unit, Label" strings
+            // Preemptively save schedule with 'no reminders' and default 7-day duration
+            console.log(`[confirm_metrics_proceed_btn PREEMPTIVE_SAVE ${interactionId}] Saving default 7-day schedule for ${userTagForLog}.`);
+            const preemptivePayload = {
+                experimentDuration: "1_week", // Default to 7 days
+                skippedReminders: true,
+                reminderFrequency: '0' // Explicitly set to no reminders for this default save
             };
 
-          setupData.dmFlowState = 'awaiting_duration_selection'; // Transition to duration
-          userExperimentSetupData.set(userId, setupData);
-          console.log(`[confirm_metrics_proceed_btn SETUP_DATA_UPDATED ${interactionId}] Updated setupData for user ${userId} in AI flow.`);
+            const scheduleResult = await callFirebaseFunction('setExperimentSchedule', preemptivePayload, userId);
+            if (scheduleResult && scheduleResult.success) {
+                console.log(`[confirm_metrics_proceed_btn PREEMPTIVE_SAVE_SUCCESS ${interactionId}] Successfully saved default schedule. Exp ID: ${scheduleResult.experimentId}`);
+                setupData.experimentId = scheduleResult.experimentId;
+                setupData.experimentDuration = "1_week"; // Store the default duration
+                userExperimentSetupData.set(userId, setupData);
 
-              // ===== START: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE (AI Flow) =====
-                if (setupData) { // setupData was retrieved and updated just above
-                    delete setupData.preFetchedWeeklySettings;
-                    delete setupData.preFetchedWeeklySettingsTimestamp;
-                    delete setupData.logFlowHasTimeMetrics;
-                    userExperimentSetupData.set(userId, setupData); // Save the changes to setupData
-                    console.log(`[confirm_metrics_proceed_btn CACHE_CLEARED ${interactionId}] Cleared pre-fetched weekly settings for user ${userTagForLog} after settings update (AI flow).`);
-                }
-                // ===== END: CLEAR PRE-FETCHED SETTINGS AFTER SUCCESSFUL UPDATE (AI Flow) =====
-
-          const durationEmbed = new EmbedBuilder()
-              .setColor('#47d264')
-              .setTitle('🔬 Experiment Metrics Confirmed & Saved!')
-              .setDescription("Your Deeper Wish and daily metrics have been saved.\n\nNow, when do you want your first comprehensive stats report?")
-              .setTimestamp();
-
-          const durationSelect = new StringSelectMenuBuilder()
-              .setCustomId('experiment_duration_select') // Existing handler for this ID
-              .setPlaceholder('Get your 1st stats report in...')
-              .addOptions(
-                  new StringSelectMenuOptionBuilder().setLabel('1 Week').setValue('1_week').setDescription('Report in 7 days.'),
-                  new StringSelectMenuOptionBuilder().setLabel('2 Weeks').setValue('2_weeks').setDescription('Report in 14 days.'),
-                  new StringSelectMenuOptionBuilder().setLabel('3 Weeks').setValue('3_weeks').setDescription('Report in 21 days.'),
-                  new StringSelectMenuOptionBuilder().setLabel('4 Weeks').setValue('4_weeks').setDescription('Report in 28 days.')
-              );
-          const durationRow = new ActionRowBuilder().addComponents(durationSelect);
-
-          await interaction.editReply({
-              content: '', 
-              embeds: [durationEmbed],
-              components: [durationRow]
-          });
-          console.log(`[confirm_metrics_proceed_btn DURATION_PROMPT_SENT ${interactionId}] Metrics saved. Prompted ${userTagForLog} for experiment duration. State: '${setupData.dmFlowState}'.`);
+                // Now show the reminder buttons
+                const reminderButtons = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder().setCustomId('show_reminders_setup_modal_btn').setLabel('⏰ Set Reminders').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId('skip_reminders_btn').setLabel('🔕 No Reminders').setStyle(ButtonStyle.Secondary)
+                    );
+                await interaction.editReply({
+                    content: `✅ Your experiment metrics are saved for a 7-day cycle. Want to set up reminders?`,
+                    embeds: [],
+                    components: [reminderButtons]
+                });
+                console.log(`[confirm_metrics_proceed_btn REMINDER_PROMPT_SENT ${interactionId}] Prompted for reminders.`);
+            } else {
+                throw new Error(scheduleResult?.message || "Failed to save the default experiment schedule.");
+            }
         } else {
-          console.error(`[confirm_metrics_proceed_btn FIREBASE_FAIL ${interactionId}] updateWeeklySettings failed for ${userTagForLog}. Result:`, updateSettingsResultFirebase);
-          await interaction.editReply({ content: `❌ Error saving your experiment settings: ${updateSettingsResultFirebase?.error || 'Unknown server error.'}. Please try clicking 'Looks Good' again, or 'Edit' if you see issues.`, components: [], embeds: [] });
+            console.error(`[confirm_metrics_proceed_btn FIREBASE_FAIL ${interactionId}] updateWeeklySettings failed for ${userTagForLog}. Result:`, updateSettingsResultFirebase);
+            await interaction.editReply({ content: `❌ Error saving your experiment settings: ${updateSettingsResultFirebase?.error || 'Unknown server error.'}. Please try again.`, components: [], embeds: [] });
         }
       } catch (error) {
         const errorTime = performance.now();
@@ -5795,42 +5787,38 @@ client.on(Events.InteractionCreate, async interaction => {
 
       // --- Build Step 1 Components (Time Selects + New "Next" Button) ---
       const timeHourSelect = new StringSelectMenuBuilder()
-        .setCustomId(REMINDER_SELECT_TIME_H_ID)
-        .setPlaceholder('Current time - HOUR (e.g., 2 PM)')
+        .setCustomId(REMINDER_SELECT_TIME_H_ID) // Re-using the hour ID
+        .setPlaceholder('Select your CURRENT LOCAL HOUR')
         .addOptions(
-          Array.from({ length: 12 }, (_, i) => new StringSelectMenuOptionBuilder()
-            .setLabel(String(i + 1))
-            .setValue(String(i + 1)))
+          Array.from({ length: 24 }, (_, i) => {
+            const hour12 = i % 12 === 0 ? 12 : i % 12;
+            const period = i < 12 ? 'AM' : 'PM';
+            if (i === 24) period = 'AM'; // Should not happen with length 24, but for safety
+            const label = i === 0 ? `12 AM (Midnight)` : `${hour12} ${period}`;
+            // The value is the 24-hour number, which the backend already expects
+            return new StringSelectMenuOptionBuilder().setLabel(label).setValue(String(i));
+          })
         );
       const rowTimeH = new ActionRowBuilder().addComponents(timeHourSelect);
 
       const timeMinuteSelect = new StringSelectMenuBuilder()
         .setCustomId(REMINDER_SELECT_TIME_M_ID)
-        .setPlaceholder('Current time - MINUTE (e.g., :30)')
+        .setPlaceholder('Select the MINUTE')
         .addOptions(
-          new StringSelectMenuOptionBuilder().setLabel('00').setValue('00'),
-          new StringSelectMenuOptionBuilder().setLabel('05').setValue('05'),
-          new StringSelectMenuOptionBuilder().setLabel('10').setValue('10'),
-          new StringSelectMenuOptionBuilder().setLabel('15').setValue('15'),
-          new StringSelectMenuOptionBuilder().setLabel('20').setValue('20'),
-          new StringSelectMenuOptionBuilder().setLabel('25').setValue('25'),
-          new StringSelectMenuOptionBuilder().setLabel('30').setValue('30'),
-          new StringSelectMenuOptionBuilder().setLabel('35').setValue('35'),
-          new StringSelectMenuOptionBuilder().setLabel('40').setValue('40'),
-          new StringSelectMenuOptionBuilder().setLabel('45').setValue('45'),
-          new StringSelectMenuOptionBuilder().setLabel('50').setValue('50'),
-          new StringSelectMenuOptionBuilder().setLabel('55').setValue('55')
+          new StringSelectMenuOptionBuilder().setLabel(':00').setValue('00'),
+          new StringSelectMenuOptionBuilder().setLabel(':05').setValue('05'),
+          new StringSelectMenuOptionBuilder().setLabel(':10').setValue('10'),
+          new StringSelectMenuOptionBuilder().setLabel(':15').setValue('15'),
+          new StringSelectMenuOptionBuilder().setLabel(':20').setValue('20'),
+          new StringSelectMenuOptionBuilder().setLabel(':25').setValue('25'),
+          new StringSelectMenuOptionBuilder().setLabel(':30').setValue('30'),
+          new StringSelectMenuOptionBuilder().setLabel(':35').setValue('35'),
+          new StringSelectMenuOptionBuilder().setLabel(':40').setValue('40'),
+          new StringSelectMenuOptionBuilder().setLabel(':45').setValue('45'),
+          new StringSelectMenuOptionBuilder().setLabel(':50').setValue('50'),
+          new StringSelectMenuOptionBuilder().setLabel(':55').setValue('55')
         );
       const rowTimeM = new ActionRowBuilder().addComponents(timeMinuteSelect);
-
-      const timeAmPmSelect = new StringSelectMenuBuilder()
-        .setCustomId(REMINDER_SELECT_TIME_AP_ID)
-        .setPlaceholder('Current time - AM or PM')
-        .addOptions(
-          new StringSelectMenuOptionBuilder().setLabel('AM').setValue('AM'),
-          new StringSelectMenuOptionBuilder().setLabel('PM').setValue('PM')
-        );
-      const rowTimeAP = new ActionRowBuilder().addComponents(timeAmPmSelect);
 
       // New "Next" button for this step
       const nextButtonSetTime = new ButtonBuilder()
@@ -5843,7 +5831,7 @@ client.on(Events.InteractionCreate, async interaction => {
       await interaction.editReply({
         content: 'Please select your current local time using the dropdowns below, then click "Next".',
         embeds: [timeEmbed],
-        components: [rowTimeH, rowTimeM, rowTimeAP, rowNextButton]
+        components: [rowTimeH, rowTimeM, rowNextButton]
       });
       const editReplyTime = performance.now();
       console.log(`[${interaction.customId} EDIT_REPLY_SUCCESS ${interactionId}] Displayed reminder step 1 for ${userId}. Took: ${(editReplyTime - deferTime).toFixed(2)}ms.`);
@@ -5874,8 +5862,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const nextStepClickTime = performance.now();
       const interactionId = interaction.id;
       const userId = interaction.user.id;
-      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing reminder step 2 (window/frequency). Time: ${nextStepClickTime.toFixed(2)}ms`);
-
+      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing reminder step 2 (window/total count). Time: ${nextStepClickTime.toFixed(2)}ms`);
       try {
         await interaction.deferUpdate({ flags: MessageFlags.Ephemeral });
         const deferTime = performance.now();
@@ -5893,71 +5880,71 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         // Validate that selections for step 1 (current time) have been made
-        if (!setupData.reminderTimeH || !setupData.reminderTimeM || !setupData.reminderTimeAP) {
+        if (!setupData.reminderTimeH || !setupData.reminderTimeM) {
           console.error(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] Missing current time selections for ${userId}. Data:`, setupData);
           await interaction.editReply({
-            content: "⚠️ Please select your current Hour, Minute, and AM/PM from the dropdowns before proceeding.",
+            content: "⚠️ Please select your current Hour and Minute from the dropdowns before proceeding.",
             embeds: [interaction.message.embeds[0]], // Keep the previous embed (current time embed)
             components: interaction.message.components // Keep the previous components for correction
           });
           return;
         }
-        const reconstructedTime = `${setupData.reminderTimeH}:${setupData.reminderTimeM} ${setupData.reminderTimeAP}`;
+        // Helper to format the 24-hour value for display
+        const hour24 = parseInt(setupData.reminderTimeH, 10);
+        const minuteStr = setupData.reminderTimeM;
+        const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+        const period = hour24 < 12 ? 'AM' : 'PM';
+        const reconstructedTime = `${hour12}:${minuteStr} ${period}`;
+
         console.log(`[${interaction.customId} INFO ${interactionId}] User ${userId} current time set to: "${reconstructedTime}"`);
-
-
-        // --- Build Embed for Step 2 (Reminder Window & Frequency) ---
+        // --- Build Embed for Step 2 (Reminder Window & Total Count) ---
         const reminderEmbedStep2 = new EmbedBuilder()
           .setColor('#47d264') // Greenish
           .setTitle('⏰ Reminder Setup - Step 2 of 2')
-          .setDescription(`Current time approximately **${reconstructedTime}**.\n\nNow, set your **daily reminder window** and **frequency**.`)
+          .setDescription(`Current time approximately **${reconstructedTime}**.\n\nNow, set your **daily reminder window** and the **total number of reminders** you want for the week.`)
           .addFields(
             { name: '**Reminder Window** (e.g., 9 AM - 5 PM)', value: 'Reminders will only be sent between these hours.', inline: false },
-            { name: '**Frequency**', value: 'How often you receive reminders within that window.', inline: false }
+            { name: '**Total Reminders**', value: 'How many random reminders you want within that window over the next 7 days.', inline: false }
           )
           .setFooter({ text: 'Make selections below, then click Confirm All.' });
-
-        // --- Build Step 2 Components: Window (Start/End) & Frequency Selects + Final Confirm Button ---
+        // --- Build Step 2 Components: Window (Start/End) & Total Count Selects + Final Confirm Button ---
         const startHourSelect = new StringSelectMenuBuilder()
-          .setCustomId(REMINDER_SELECT_START_HOUR_ID)
-          .setPlaceholder('Reminder window START hour')
-          .addOptions(
-            Array.from({ length: 24 }, (_, i) => {
-              const hour12 = i % 12 === 0 ? 12 : i % 12;
-              const period = i < 12 || i === 24 ? 'AM' : 'PM'; // Corrected for 24 = 12 AM next day
-              if (i === 0) return new StringSelectMenuOptionBuilder().setLabel(`12 AM (Midnight Start)`).setValue(String(i).padStart(2, '0'));
-              return new StringSelectMenuOptionBuilder()
-                .setLabel(`${hour12} ${period} (${String(i).padStart(2, '0')}:00)`)
-                .setValue(String(i).padStart(2, '0'));
-            })
-          );
+            .setCustomId(REMINDER_SELECT_START_HOUR_ID)
+            .setPlaceholder('Reminder window START time')
+            .addOptions(
+                Array.from({ length: 24 }, (_, i) => {
+                    const hour12 = i % 12 === 0 ? 12 : i % 12;
+                    const period = i < 12 ? 'AM' : 'PM';
+                    const label = i === 0 ? `12 AM (Midnight)` : `${hour12} ${period}`;
+                    return new StringSelectMenuOptionBuilder().setLabel(label).setValue(String(i));
+                })
+            );
         const rowStartHour = new ActionRowBuilder().addComponents(startHourSelect);
 
         const endHourSelect = new StringSelectMenuBuilder()
-          .setCustomId(REMINDER_SELECT_END_HOUR_ID)
-          .setPlaceholder('Reminder window END hour')
-          .addOptions(
-            Array.from({ length: 24 }, (_, i) => {
-              const hour12 = i % 12 === 0 ? 12 : i % 12;
-              const period = i < 12 || i === 24 ? 'AM' : 'PM';
-              if (i === 0) return new StringSelectMenuOptionBuilder().setLabel(`12 AM (Midnight End)`).setValue(String(i).padStart(2, '0'));
-              return new StringSelectMenuOptionBuilder()
-                .setLabel(`${hour12} ${period} (${String(i).padStart(2, '0')}:00)`)
-                .setValue(String(i).padStart(2, '0'));
-            })
-          );
+            .setCustomId(REMINDER_SELECT_END_HOUR_ID)
+            .setPlaceholder('Reminder window END time')
+            .addOptions(
+                Array.from({ length: 24 }, (_, i) => {
+                    const hour12 = i % 12 === 0 ? 12 : i % 12;
+                    const period = i < 12 ? 'AM' : 'PM';
+                    const label = i === 0 ? `12 AM (Midnight)` : `${hour12} ${period}`;
+                    return new StringSelectMenuOptionBuilder().setLabel(label).setValue(String(i));
+                })
+            );
         const rowEndHour = new ActionRowBuilder().addComponents(endHourSelect);
-
-        const freqSelect = new StringSelectMenuBuilder()
-          .setCustomId(REMINDER_SELECT_FREQUENCY_ID)
-          .setPlaceholder('How often for reminders?')
+        
+        // --- NEW: Total Reminders Select Menu ---
+        const totalRemindersSelect = new StringSelectMenuBuilder()
+          .setCustomId(REMINDER_SELECT_FREQUENCY_ID) // We can reuse the ID, its meaning is now "total reminders"
+          .setPlaceholder('How many total reminders per week?')
           .addOptions(
-            new StringSelectMenuOptionBuilder().setLabel('No Reminders').setValue('none').setDescription("I'll log on my own. Skips next step."),
-            new StringSelectMenuOptionBuilder().setLabel('Once a day').setValue('daily_1').setDescription('One random reminder per day within window.'),
-            new StringSelectMenuOptionBuilder().setLabel('Twice a day').setValue('daily_2').setDescription('Two random reminders per day within window.'),
-            new StringSelectMenuOptionBuilder().setLabel('Every other day').setValue('every_other_day').setDescription('One random reminder, every other day.')
+            new StringSelectMenuOptionBuilder().setLabel('No Reminders').setValue('0').setDescription("I'll log on my own."),
+            new StringSelectMenuOptionBuilder().setLabel('3 Reminders per week').setValue('3').setDescription('~1 every other day.'),
+            new StringSelectMenuOptionBuilder().setLabel('7 Reminders per week').setValue('7').setDescription('About 1 per day, randomly timed.'),
+            new StringSelectMenuOptionBuilder().setLabel('14 Reminders per week').setValue('14').setDescription('About 2 per day, randomly timed.')
           );
-        const rowFreq = new ActionRowBuilder().addComponents(freqSelect);
+        const rowTotalReminders = new ActionRowBuilder().addComponents(totalRemindersSelect);
 
         const confirmAllButton = new ButtonBuilder()
           .setCustomId(CONFIRM_REMINDER_BTN_ID) // This is the existing final confirm button
@@ -5965,15 +5952,14 @@ client.on(Events.InteractionCreate, async interaction => {
           .setStyle(ButtonStyle.Success);
         const rowConfirm = new ActionRowBuilder().addComponents(confirmAllButton);
 
-        console.log(`[${interaction.customId} EDIT_REPLY ${interactionId}] Editing reply to display reminder step 2 (window/frequency) for ${userId}.`);
+        console.log(`[${interaction.customId} EDIT_REPLY ${interactionId}] Editing reply to display reminder step 2 (window/total count) for ${userId}.`);
         await interaction.editReply({
-          content: 'Great! Now set your preferred reminder window and frequency.',
+          content: 'Great! Now set your preferred reminder window and the total number of reminders you want.',
           embeds: [reminderEmbedStep2],
-          components: [rowStartHour, rowEndHour, rowFreq, rowConfirm]
+          components: [rowStartHour, rowEndHour, rowTotalReminders, rowConfirm]
         });
         const editReplyTime = performance.now();
         console.log(`[${interaction.customId} EDIT_REPLY_SUCCESS ${interactionId}] Displayed reminder step 2 for ${userId}. Took: ${(editReplyTime - deferTime).toFixed(2)}ms`);
-
       } catch (error) {
         const errorTime = performance.now();
         console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing button for user ${userId} at ${errorTime.toFixed(2)}ms:`, error);
@@ -5993,7 +5979,7 @@ client.on(Events.InteractionCreate, async interaction => {
       }
       const processEndTime = performance.now();
       console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - nextStepClickTime).toFixed(2)}ms`);
-   }
+    }
     // --- END: Handler for "Next: Set Reminder Window & Frequency" button ---
     // --- END: Unified Handler for Reminder Select Menus ---
 
@@ -6013,14 +5999,13 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // --- Validation: Check if all required selections are made ---
         // Also need experimentDuration from the very first steps.
-        const requiredKeys = [
+       const requiredKeys = [
             'experimentDuration', // From earlier step
             'reminderStartHour',
             'reminderEndHour',
             'reminderFrequency',
             'reminderTimeH',      // Current Time Hour
-            'reminderTimeM',      // Current Time Minute
-            'reminderTimeAP'      // Current Time AM/PM
+            'reminderTimeM'       // Current Time Minute
         ];
 
         if (!setupData) {
@@ -6045,9 +6030,13 @@ client.on(Events.InteractionCreate, async interaction => {
             return;
         }
 
-        // --- Reconstruct Current Time String (e.g., "2:30 PM") ---
-        // The backend 'setExperimentSchedule' expects a single string for userCurrentTime.
-        const reconstructedTime = `${setupData.reminderTimeH}:${setupData.reminderTimeM} ${setupData.reminderTimeAP}`;
+        // Helper to format the 24-hour value for display
+        const hour24 = parseInt(setupData.reminderTimeH, 10);
+        const minuteStr = setupData.reminderTimeM;
+        const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+        const period = hour24 < 12 ? 'AM' : 'PM';
+        const reconstructedTime = `${hour12}:${minuteStr} ${period}`;
+
         console.log(`[${interaction.customId} INFO ${interactionId}] Reconstructed current time for ${userId}: "${reconstructedTime}"`);
 
         // --- Validation: Check Start/End Hour Logic ---
@@ -7266,102 +7255,6 @@ client.on(Events.InteractionCreate, async interaction => {
       const processEndTime = performance.now();
       console.log(`[${interaction.customId} END ${interactionId}] Finished processing Input ${inputIndex} Unit selection. Total time: ${(processEndTime - habitUnitSelectSubmitTime).toFixed(2)}ms`);
     }
-
-       // --- START: NEW Handler for Duration Select Menu Interaction ---
-    else if (interaction.isStringSelectMenu() && interaction.customId === 'experiment_duration_select') {
-      const selectMenuSubmitTime = performance.now();
-      const interactionId = interaction.id;
-      console.log(`[experiment_duration_select START ${interactionId}] Received selection from ${interaction.user.tag}.`);
-
-      try {
-          // --- Habit 1: Defer Update ---
-          await interaction.deferUpdate({ flags: MessageFlags.Ephemeral }); // Keep it ephemeral
-          const deferTime = performance.now();
-          console.log(`[experiment_duration_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - selectMenuSubmitTime).toFixed(2)}ms`);
-
-          // --- Habit 2: Get Selected Value ---
-          const selectedDuration = interaction.values[0];
-          console.log(`[experiment_duration_select DATA ${interactionId}] Selected duration value: "${selectedDuration}"`);
-
-          // --- ACTION 3: Retrieve Stored Setup Data ---
-          const setupData = userExperimentSetupData.get(interaction.user.id);
-          if (!setupData) {
-              console.error(`[experiment_duration_select CRITICAL ${interactionId}] Missing setup data for user ${interaction.user.id}.`);
-              await interaction.editReply({
-                  content: "⚠️ Error: Could not retrieve your initial experiment settings. Please start over using `/go`.",
-                  embeds: [],
-                  components: []
-              });
-              return;
-          }
-
-          // --- ACTION 4: Store Duration and Update Map ---
-          setupData.experimentDuration = selectedDuration;
-          userExperimentSetupData.set(interaction.user.id, setupData);
-          console.log(`[experiment_duration_select DATA_STORED ${interactionId}] Stored duration: ${selectedDuration}`);
-
-          // ****** NEW MINIMAL CHANGE STARTS HERE ******
-          console.log(`[experiment_duration_select PREEMPTIVE_SAVE ${interactionId}] Preemptively saving schedule with 'no reminders' for ${interaction.user.id}`);
-          const preemptivePayload = {
-              experimentDuration: setupData.experimentDuration,
-              userCurrentTime: null, // Not needed for skipped reminders
-              reminderWindowStartHour: null,
-              reminderWindowEndHour: null,
-              reminderFrequency: 'none',
-              skippedReminders: true,
-          };
-          try {
-              // IMPORTANT: Ensure `callFirebaseFunction` is defined and accessible here.
-              const preemptiveResult = await callFirebaseFunction('setExperimentSchedule', preemptivePayload, interaction.user.id);
-              if (preemptiveResult && preemptiveResult.success && preemptiveResult.experimentId) {
-                  console.log(`[experiment_duration_select PREEMPTIVE_SAVE_SUCCESS ${interactionId}] Successfully saved default 'no reminder' schedule. Exp ID: ${preemptiveResult.experimentId}`);
-                  if (setupData) { // Store experimentId if available, useful for later steps
-                      setupData.experimentId = preemptiveResult.experimentId;
-                      userExperimentSetupData.set(interaction.user.id, setupData);
-                  }
-              } else {
-                  console.warn(`[experiment_duration_select PREEMPTIVE_SAVE_FAIL ${interactionId}] Failed to save default 'no reminder' schedule. Result:`, preemptiveResult);
-                  // Non-critical failure, user can still proceed to set reminders explicitly or skip again.
-                  // You might want to log this more formally or alert if it happens often.
-              }
-          } catch (preemptiveError) {
-              console.error(`[experiment_duration_select PREEMPTIVE_SAVE_ERROR ${interactionId}] Error during preemptive save of schedule:`, preemptiveError);
-              // Also non-critical for the flow to continue, but good to log.
-          }
-
-          // --- ACTION 5: Show Reminder Buttons (Edit the message again) ---
-          // This part confirms your point 5: it leads to the reminder buttons.
-          const reminderButtons = new ActionRowBuilder()
-              .addComponents(
-                  new ButtonBuilder().setCustomId('show_reminders_setup_modal_btn').setLabel('⏰ Set Reminders').setStyle(ButtonStyle.Primary),
-                  new ButtonBuilder().setCustomId('skip_reminders_btn').setLabel('🔕 No Reminders').setStyle(ButtonStyle.Secondary)
-              );
-
-          console.log(`[experiment_duration_select EDIT_REPLY ${interactionId}] Editing reply to show reminder buttons.`);
-          await interaction.editReply({
-              content: `✅ Duration set to **${selectedDuration.replace('_', ' ')}**. Want to set up reminders?`,
-              embeds: [],
-              components: [reminderButtons]
-          });
-          console.log(`[experiment_duration_select EDIT_REPLY_SUCCESS ${interactionId}] Successfully showed reminder buttons.`);
-
-      } catch (error) {
-          const errorTime = performance.now();
-          console.error(`[experiment_duration_select ERROR ${interactionId}] Error processing selection at ${errorTime.toFixed(2)}ms:`, error);
-          try {
-              await interaction.editReply({
-                  content: '❌ An error occurred while processing your duration selection. Please try selecting again.',
-                  embeds: [],
-                  components: []
-              });
-          } catch (editError) {
-              console.error(`[experiment_duration_select FALLBACK_ERROR ${interactionId}] Failed to send error editReply:`, editError);
-          }
-      }
-      const selectMenuProcessEndTime = performance.now();
-      console.log(`[experiment_duration_select END ${interactionId}] Processing finished. Total time: ${(selectMenuProcessEndTime - selectMenuSubmitTime).toFixed(2)}ms`);
-    }
-       // --- END: NEW Handler for Duration Select Menu Interaction ---
 
       else if (interaction.isStringSelectMenu() && interaction.customId.startsWith('reminder_select_')) {
       const selectSubmitTime = performance.now();
