@@ -242,40 +242,52 @@ function buildCombinedEffectsPage(embed, statsReportData) {
 }
 
 /**
- * Builds the embed fields for Page 4 (Lag Time Correlations).
+ * Builds the embed fields for Lag Time Correlations from Habits to the main Outcome.
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} statsReportData - The full stats report data from Firestore.
  */
 function buildLagTimePage(embed, statsReportData) {
-    embed.setTitle('⏳ Day-to-Day Connections')
-         .setDescription("How do your actions and feelings on one day carry over to the next?");
+    embed.setTitle('⏳ Yesterday\'s Habits → Today\'s Outcome')
+         .setDescription("How do your habits on one day carry over to your outcome the next day?");
+
     const results = statsReportData.lagTimeCorrelations;
-    if (results && typeof results === 'object' && Object.keys(results).length > 0) {
+    const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
+    let hasHabitToOutcomeLag = false;
+
+    if (results && typeof results === 'object' && Object.keys(results).length > 0 && outcomeMetricLabel) {
         for (const key in results) {
             const lag = results[key];
-            if (!lag || lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
-
-            const rSquared = lag.coefficient * lag.coefficient;
-            const direction = lag.coefficient >= 0 ? 'higher' : 'lower';
-            const isConfident = lag.pValue !== null && lag.pValue < 0.05;
-            const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data may be needed to confirm this connection.";
-
-            let strengthText = "No detectable";
-            let strengthEmoji = "🟦";
-            const absCoeff = Math.abs(lag.coefficient);
-            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
-            else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
-            else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
             
-            const value = `When **${lag.yesterdayMetricLabel}** was higher on one day...\n` +
-                          `...your **${lag.todayMetricLabel}** tended to be **${direction}** on the **next day**.\n\n` +
-                          `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
-                          `*${confidenceText}*`;
-            embed.addFields({ name: `Yesterday's ${lag.yesterdayMetricLabel} → Today's ${lag.todayMetricLabel}`, value, inline: false });
+            // ONLY show if the "today" metric is the main outcome metric.
+            if (lag && lag.todayMetricLabel === outcomeMetricLabel) {
+                if (lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
+
+                hasHabitToOutcomeLag = true; // We found a relevant correlation to display.
+
+                const rSquared = lag.coefficient * lag.coefficient;
+                const direction = lag.coefficient >= 0 ? 'higher' : 'lower';
+                const isConfident = lag.pValue !== null && lag.pValue < 0.05;
+                const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data may be needed to confirm this connection.";
+                
+                let strengthText = "No detectable";
+                let strengthEmoji = "🟦";
+                const absCoeff = Math.abs(lag.coefficient);
+                if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+                else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+                else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+
+                const value = `When **${lag.yesterdayMetricLabel}** was higher on one day...\n` +
+                              `...your **${lag.todayMetricLabel}** tended to be **${direction}** on the **next day**.\n\n` +
+                              `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
+                              `*${confidenceText}*`;
+
+                embed.addFields({ name: `Yesterday's ${lag.yesterdayMetricLabel} → Today's ${lag.todayMetricLabel}`, value, inline: false });
+            }
         }
-    } else {
-        // This else block might not be strictly necessary if the page is skipped, but it's good for robustness.
-        embed.addFields({ name: 'No Connections Found', value: 'No significant day-to-day connections were found in this experiment.', inline: false });
+    }
+
+    if (!hasHabitToOutcomeLag) {
+        embed.addFields({ name: 'No Connections Found', value: 'No significant day-to-day connections to your main outcome were found in this experiment.', inline: false });
     }
 }
 
