@@ -384,6 +384,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
                 const result = await callFirebaseFunction('getStatsSummaryForMetric', {
                     experimentId: experimentId,
                     metricKey: metricKey,
+                    metricType: currentPageConfig.type,
                     habitNumber: currentPageConfig.habitNumber || 0
                 }, userId);
                 if (result && result.success) {
@@ -7406,7 +7407,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (result.aiResponse) {
                 // When AI gives feedback, the message is direct and does NOT include an inspirational quote.
-                finalEphemeralMessage = `✅ **Log Saved!**\n\n${result.aiResponse.acknowledgment}\n\n${result.aiResponse.comfortMessage}\n\nI've got a thought about sharing your journey. Would you like to see it?`;
+                finalEphemeralMessage = `**Now Let Today Go!**\n\n${result.aiResponse.acknowledgment}\n\n${result.aiResponse.comfortMessage}\n\nI've got another thought. Would you like to see it?`;
                 
                 const currentSetupData = userExperimentSetupData.get(interaction.user.id) || {};
                 userExperimentSetupData.set(interaction.user.id, {

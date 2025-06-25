@@ -3963,34 +3963,33 @@ exports.getStatsSummaryForMetric = onCall(async (request) => {
         throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
     }
     const userId = request.auth.uid;
-    const { experimentId, metricKey, habitNumber } = request.data;
+    const { experimentId, metricKey, metricType, habitNumber } = request.data;
 
-    if (!experimentId || !metricKey) {
-        throw new HttpsError('invalid-argument', 'Missing required parameters: experimentId and metricKey.');
+    if (!experimentId || !metricKey || !metricType) {
+        throw new HttpsError('invalid-argument', 'Missing required parameters: experimentId, metricKey, and metricType.');
     }
 
-    if (!genAI) {
+   if (!genAI) {
         logger.error("[getStatsSummaryForMetric] Gemini AI client is not initialized.");
         return { success: false, summary: "AI client not ready." };
     }
 
+    const db = admin.firestore();
     try {
         const statsDocRef = db.collection('users').doc(userId).collection('experimentStats').doc(experimentId);
         const statsDocSnap = await statsDocRef.get();
-
         if (!statsDocSnap.exists) {
             throw new HttpsError('not-found', 'Target experiment statistics not found.');
         }
         const statsData = statsDocSnap.data();
         const metricStats = statsData?.calculatedMetricStats?.[metricKey];
-
         if (!metricStats || metricStats.status === 'skipped_insufficient_data') {
             return { success: true, summary: "Not enough data to generate a summary for this metric." };
         }
 
         const promptData = {
             ...metricStats,
-            type: metricKey === 'output' ? 'Outcome' : `Habit ${habitNumber}`
+            type: metricType === 'outcome' ? 'Outcome' : `Habit ${habitNumber}`
         };
 
         const prompt = METRIC_SUMMARY_PROMPT_TEMPLATE(promptData);
@@ -3999,7 +3998,6 @@ exports.getStatsSummaryForMetric = onCall(async (request) => {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: { ...GEMINI_CONFIG, temperature: 0.7, maxOutputTokens: 50 },
         });
-
         const response = await generationResult.response;
         const summaryText = response.text()?.trim().replace(/\"/g, ''); // Remove quotes
 
