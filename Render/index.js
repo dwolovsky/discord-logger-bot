@@ -525,23 +525,36 @@ function setupStatsNotificationListener(client) {
                       
                       // 4. Correlations/Impacts Page
                       if (statsReportData.correlations && Object.keys(statsReportData.correlations).length > 0) {
-                          pageConfig.push({ builder: buildCorrelationsPage, type: 'correlations' });
+                          const hasMeaningfulCorrelation = Object.values(statsReportData.correlations).some(corr =>
+                              corr && corr.status === 'calculated' && corr.coefficient !== undefined && !isNaN(corr.coefficient) && Math.abs(corr.coefficient) >= 0.15
+                          );
+                          if (hasMeaningfulCorrelation) {
+                              pageConfig.push({ builder: buildCorrelationsPage, type: 'correlations' });
+                          }
                       }
 
                       // 5. Combined Effects Page
                       if (statsReportData.pairwiseInteractionResults && Object.keys(statsReportData.pairwiseInteractionResults).length > 0) {
                           const hasMeaningfulResults = Object.values(statsReportData.pairwiseInteractionResults).some(pairData => {
-                            const summary = pairData.summary || "";
-                            return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion");
+                              const summary = pairData.summary || "";
+                              return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion");
                           });
                           if(hasMeaningfulResults) {
                             pageConfig.push({ builder: buildCombinedEffectsPage, type: 'combined' });
                           }
                       }
 
-                      // 6. Lag Time Correlations Page
-                      if (statsReportData.lagTimeCorrelations && Object.keys(statsReportData.lagTimeCorrelations).length > 0) {
-                          pageConfig.push({ builder: buildLagTimePage, type: 'lag' });
+                     // 6. Lag Time Correlations Page
+                      if (statsReportData.lagTimeCorrelations && Object.keys(statsReportData.lagTimeCorrelations).length > 0 && settings?.output?.label) {
+                          const outcomeMetricLabel = settings.output.label;
+                          // Only add the page if there is a meaningful correlation from any habit to the main outcome.
+                          const hasMeaningfulLagToOutcome = Object.values(statsReportData.lagTimeCorrelations).some(lag =>
+                              lag && lag.todayMetricLabel === outcomeMetricLabel &&
+                              lag.coefficient !== undefined && !isNaN(lag.coefficient) && Math.abs(lag.coefficient) >= 0.15
+                          );
+                          if (hasMeaningfulLagToOutcome) {
+                              pageConfig.push({ builder: buildLagTimePage, type: 'lag' });
+                          }
                       }
 
                       // Store the full report data AND the dynamic page configuration in the map
