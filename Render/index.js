@@ -73,8 +73,8 @@ const userStatsReportData = new Map();
 function buildCoverPage(embed) {
     embed.setTitle('Paying Attention Without Judgment')
          .setDescription(
-            "Here are your latest stats!\n\nThink of them as a menu of dishes you might eat." +
-            "\n\nIf you don't like a stat 🤢, keep in mind that it's just a tiny piece of data.\n\nIf you love 💖 a stat, give yourself a placebo 💊. Acknowledge that you're healing and growing. Your acknowledgment will make it even more true." +
+            "Here are your latest stats!\n\nThink of them as a menu of data." +
+            "\n\nIf you don't like a stat 🤢, keep in mind that it's just a tiny piece of data.\n\nIf you love 💖 a stat, give yourself the gift of cknowledging your healing and growth. it will make it even more true." +
             "\n\nDon't worry about being a \"perfect\" or even \"better\" version of yourself.\n\nYou're alive, and that's a beautiful thing 🌻."
          );
 }
@@ -353,7 +353,19 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     const user = isInteraction ? interactionOrUser.user : interactionOrUser;
 
     if (isInteraction && !interactionOrUser.deferred) {
-        await interactionOrUser.deferUpdate();
+        try {
+            await interactionOrUser.deferUpdate();
+        } catch (error) {
+            // This error (10062) is common on cold starts.
+            if (error.code === 10062) {
+                console.warn(`[sendStatsPage] Failed to defer update for interaction (likely expired): ${error.message}`);
+                // Abort the function, as we can't respond to an unknown interaction.
+                // This prevents the bot from crashing. The user may need to click again.
+                return;
+            }
+            // For other errors, re-throw them to be handled by the global handler
+            throw error;
+        }
     }
 
     const reportInfo = userStatsReportData.get(userId);
