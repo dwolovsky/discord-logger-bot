@@ -1983,7 +1983,7 @@ async function _calculateAndStorePeriodStatsLogic(
                         label: inputLabel,
                         vsOutputLabel: outputMetricLabel,
                         coefficient: null,
-                         pValue: null,
+                        pValue: null,
                         interpretation: "Insufficient data for this input metric.",
                         n_pairs: inputStats ? inputStats.dataPoints : 0,
                         status: "skipped_insufficient_input_data"
@@ -1996,17 +1996,25 @@ async function _calculateAndStorePeriodStatsLogic(
                         label: inputLabel,
                         vsOutputLabel: outputMetricLabel,
                         coefficient: null,
-                         pValue: null,
+                        pValue: null,
                         interpretation: `Insufficient aligned data pairs (${n_pairs}) for correlation.`,
                         n_pairs: n_pairs,
                         status: "skipped_insufficient_aligned_pairs"
-                     };
+                    };
                     continue;
                 }
                 const pairedInputValues = inputValues.slice(0, n_pairs);
                 const pairedOutputValues = outputValues.slice(0, n_pairs);
                 try {
                     const coefficient = jStat.corrcoeff(pairedInputValues, pairedOutputValues);
+                    const rSquared = coefficient * coefficient; // Calculate R-squared
+
+                    // Only store if the relationship is at least "weak" (R-squared >= 2.25%, i.e., abs(coefficient) >= 0.15)
+                    if (rSquared < 0.0225) { // 0.15 * 0.15 = 0.0225
+                        logger.log(`[${callingFunction}] [Correlation] Skipping storage for "${inputLabel}" vs "${outputMetricLabel}" due to weak correlation (R²=${rSquared.toFixed(4)}). User: ${userId}, Exp: ${experimentId}`);
+                        continue; // Skip storing this correlation
+                    }
+
                     let pValue = null;
 
                     if (n_pairs > 2 && Math.abs(coefficient) < 1 && Math.abs(coefficient) > 1e-9) {
@@ -2032,14 +2040,12 @@ async function _calculateAndStorePeriodStatsLogic(
                     else if (absCoeff >= 0.45) strength = "🟧 strong";
                     else if (absCoeff >= 0.3) strength = "🟨 moderate";
                     else if (absCoeff >= 0.15) strength = "🟩 weak";
-                    else strength = "🟦 no detectable";
-
+                    else strength = "🟦 no detectable"; // This case should now be filtered out by rSquared check
                     const direction = coefficient >= 0 ? "positive" : "negative";
 
                     const isSignificant = pValue !== null && pValue < 0.05;
-                    if (strength === "🟦 no detectable") {
-                        interpretation = `There appears to be\n${strength} correlation between\n${inputLabel} and ${outputMetricLabel}.`;
-                    } else if (isSignificant) {
+                    // The "no detectable" case is now handled by the rSquared filter above
+                    if (isSignificant) {
                         interpretation = `You can be 95% confident that there is a\n${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.`;
                     } else {
                         interpretation = `It appears there may be a\n${strength} ${direction} correlation between ${inputLabel} and ${outputMetricLabel}.\nWorth getting more data?`;
@@ -2053,7 +2059,7 @@ async function _calculateAndStorePeriodStatsLogic(
                         interpretation: interpretation,
                         n_pairs: n_pairs,
                         status: "calculated"
-                     };
+                    };
                     logger.log(`[${callingFunction}] [Correlation] For "${inputLabel}" vs "${outputMetricLabel}": Coeff=${coefficient.toFixed(3)}, PVal=${pValue !== null && isFinite(pValue) ? pValue.toFixed(3) : 'N/A'}, N=${n_pairs}. User: ${userId}, Exp: ${experimentId}`);
                 } catch (corrError) {
                     logger.error(`[${callingFunction}] [calculateAndStorePeriodStats] Error calculating correlation for "${inputLabel}" vs "${outputMetricLabel}". User: ${userId}, Exp: ${experimentId}`, corrError);
@@ -2061,7 +2067,7 @@ async function _calculateAndStorePeriodStatsLogic(
                         label: inputLabel,
                         vsOutputLabel: outputMetricLabel,
                         coefficient: null,
-                         pValue: null,
+                        pValue: null,
                         interpretation: "Error during calculation.",
                         n_pairs: n_pairs,
                         status: "error_during_calculation",
@@ -2285,7 +2291,6 @@ async function _calculateAndStorePeriodStatsLogic(
                     const logDate = new Date(log.timestamp).toISOString().split('T')[0];
                     logsByDate.set(logDate, log);
                 });
-
                 // Get a sorted list of unique dates
                 const sortedDates = Array.from(logsByDate.keys()).sort();
                 const lagDataPairs = [];
@@ -2300,7 +2305,6 @@ async function _calculateAndStorePeriodStatsLogic(
                     const dayT_plus_1_date = new Date(dayT_plus_1_str);
                     const diffTime = Math.abs(dayT_plus_1_date - dayT_date);
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
                     if (diffDays === 1) {
                         const logT = logsByDate.get(dayT_str);
                         const logT_plus_1 = logsByDate.get(dayT_plus_1_str);
@@ -2308,7 +2312,6 @@ async function _calculateAndStorePeriodStatsLogic(
                     }
                 }
                 logger.log(`[${callingFunction}] [LagTimeCorrelation] Created ${lagDataPairs.length} consecutive day data pairs.`);
-
                 if (lagDataPairs.length >= MIN_PAIRS_FOR_LAG_CORRELATION) {
                     const allMetrics = [
                         { ...activeExperimentSettings.output, type: 'output' },
@@ -2316,12 +2319,10 @@ async function _calculateAndStorePeriodStatsLogic(
                             .filter(m => m && m.label)
                             .map(m => ({ ...m, type: 'input' }))
                     ];
-
                     // Loop through every metric vs every other metric
                     for (const metricYesterday of allMetrics) {
                         for (const metricToday of allMetrics) {
                             const pairedValues = { yesterday: [], today: [] };
-
                             // Gather the paired data for this specific metric combination
                             lagDataPairs.forEach(pair => {
                                 const yesterdayValue = getMetricValueFromLog(pair.dayT, metricYesterday.label, metricYesterday.unit);
@@ -2332,7 +2333,6 @@ async function _calculateAndStorePeriodStatsLogic(
                                     pairedValues.today.push(todayValue);
                                 }
                             });
-
                             if (pairedValues.yesterday.length >= MIN_PAIRS_FOR_LAG_CORRELATION) {
                                 const coefficient = jStat.corrcoeff(pairedValues.yesterday, pairedValues.today);
                                 const rSquared = coefficient * coefficient;

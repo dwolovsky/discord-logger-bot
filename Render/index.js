@@ -171,29 +171,44 @@ function buildCorrelationsPage(embed, statsReportData) {
     embed.setTitle('🔗 Habit Impacts')
          .setDescription('How did your daily habits influence your outcome?');
     if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
+        let hasDisplayedAnyCorrelation = false; // Flag to track if any meaningful correlation is displayed
         for (const key in statsReportData.correlations) {
             const corr = statsReportData.correlations[key];
             if (!corr || corr.status !== 'calculated' || corr.coefficient === undefined || isNaN(corr.coefficient)) {
-                embed.addFields({ name: `Impact of **${corr.label || key}**`, value: `*Not enough data to determine an impact.*`, inline: false });
+                // Skip if not calculated or coefficient is invalid. The dynamic page config already handles "not enough data" at a higher level.
                 continue;
             }
 
             const rSquared = corr.coefficient * corr.coefficient;
+            // Only display correlations that have at least a "weak" strength (R-squared >= 0.0225, i.e., abs(coefficient) >= 0.15)
+            if (rSquared < 0.0225) { // 0.15 * 0.15 = 0.0225
+                continue; // Skip if strength is "no detectable"
+            }
+
             const direction = corr.coefficient >= 0 ? 'went up' : 'went down';
             const isConfident = corr.pValue !== null && corr.pValue < 0.05;
-            const confidenceText = isConfident ? "We're 95% confident in this relationship." : "This may be worth getting more data to confirm.";
+            const confidenceText = isConfident ?
+"We're 95% confident in this relationship." : "This may be worth getting more data to confirm.";
             let strengthText = "No detectable";
             let strengthEmoji = "🟦";
             const absCoeff = Math.abs(corr.coefficient);
-            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
-            else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
-            else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
-            else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
+            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥";
+}
+            else if (absCoeff >= 0.45) { strengthText = "Strong";
+strengthEmoji = "🟧"; }
+            else if (absCoeff >= 0.3) { strengthText = "Moderate";
+strengthEmoji = "🟨"; }
+            else if (absCoeff >= 0.15) { strengthText = "Weak";
+strengthEmoji = "🟩"; }
             
             const value = `When you increased **${corr.label}**...\n...your **${corr.vsOutputLabel}** ${direction}.\n\n` +
                           `**Influence Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                           `*${confidenceText}*`;
             embed.addFields({ name: `Impact of **${corr.label}** on **${corr.vsOutputLabel}**`, value, inline: false });
+            hasDisplayedAnyCorrelation = true; // Set flag to true as we displayed something
+        }
+        if (!hasDisplayedAnyCorrelation) {
+            embed.addFields({ name: 'Impacts', value: 'No significant habit impact data was calculated or found for this report.', inline: false });
         }
     } else {
         embed.addFields({ name: 'Impacts', value: 'No habit impact data was calculated for this report.', inline: false });
@@ -249,38 +264,43 @@ function buildCombinedEffectsPage(embed, statsReportData) {
 function buildLagTimePage(embed, statsReportData) {
     embed.setTitle('⏳ Yesterday\'s Habits → Today\'s Outcome')
          .setDescription("How do your habits on one day carry over to your outcome the next day?");
-
     const results = statsReportData.lagTimeCorrelations;
     const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
     let hasHabitToOutcomeLag = false;
-
     if (results && typeof results === 'object' && Object.keys(results).length > 0 && outcomeMetricLabel) {
         for (const key in results) {
             const lag = results[key];
-            
             // ONLY show if the "today" metric is the main outcome metric.
             if (lag && lag.todayMetricLabel === outcomeMetricLabel) {
                 if (lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
 
+                const rSquared = lag.coefficient * lag.coefficient;
+                // Only display correlations that have at least a "weak" strength (R-squared >= 0.0225, i.e., abs(coefficient) >= 0.15)
+                if (rSquared < 0.0225) { // 0.15 * 0.15 = 0.0225
+                    continue; // Skip if strength is "no detectable"
+                }
+                
                 hasHabitToOutcomeLag = true; // We found a relevant correlation to display.
 
-                const rSquared = lag.coefficient * lag.coefficient;
                 const direction = lag.coefficient >= 0 ? 'higher' : 'lower';
                 const isConfident = lag.pValue !== null && lag.pValue < 0.05;
-                const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data may be needed to confirm this connection.";
+                const confidenceText = isConfident ? "This is a statistically significant relationship."
+: "More data may be needed to confirm this connection.";
                 
                 let strengthText = "No detectable";
                 let strengthEmoji = "🟦";
                 const absCoeff = Math.abs(lag.coefficient);
-                if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
-                else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
-                else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+                if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥";
+}
+                else if (absCoeff >= 0.45) { strengthText = "Strong";
+strengthEmoji = "🟧"; }
+                else if (absCoeff >= 0.3) { strengthText = "Moderate";
+strengthEmoji = "🟨"; }
 
                 const value = `When **${lag.yesterdayMetricLabel}** was higher on one day...\n` +
                               `...your **${lag.todayMetricLabel}** tended to be **${direction}** on the **next day**.\n\n` +
                               `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                               `*${confidenceText}*`;
-
                 embed.addFields({ name: `Yesterday's ${lag.yesterdayMetricLabel} → Today's ${lag.todayMetricLabel}`, value, inline: false });
             }
         }
@@ -348,6 +368,14 @@ function buildSummaryPage(embed, statsReportData, pageConfig) {
  */
 // REPLACE the existing sendStatsPage function with this one.
 
+/**
+ * Sends a specific page of the stats report to a user.
+ * This is now called by the listener for the first page, and by button handlers for navigation.
+ * @param {import('discord.js').Interaction | { user: import('discord.js').User }} interactionOrUser - The interaction object or a user object for the initial DM.
+ * @param {string} userId - The user's ID.
+ * @param {string} experimentId - The experiment's ID.
+ * @param {number} targetPage - The 1-based page number to display.
+ */
 async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage) {
     const isInteraction = 'update' in interactionOrUser;
     const user = isInteraction ? interactionOrUser.user : interactionOrUser;
@@ -390,11 +418,9 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     const embed = new EmbedBuilder()
         .setColor(0x0099FF)
         .setFooter({ text: `Experiment ID: ${experimentId}` });
-
     // --- AI Summary & Page Building Logic ---
     let aiSummary = null;
     const metricKey = currentPageConfig.metricKey;
-
     // Check if we need to fetch an AI summary for this page type.
     if ((currentPageConfig.type === 'outcome' || currentPageConfig.type === 'habit') && metricKey) {
         const metricData = statsReportData.calculatedMetricStats[metricKey];
@@ -440,14 +466,13 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
         case 'combined':
         case 'lag':
              currentPageConfig.builder(embed, statsReportData);
-             break;
+            break;
         default:
              console.error("Unknown page type in pageConfig:", currentPageConfig.type);
-             embed.setDescription("Error: Could not determine the content for this page.");
+            embed.setDescription("Error: Could not determine the content for this page.");
     }
     
     embed.setTitle(`${embed.data.title} (Page ${targetPage} of ${totalPages})`);
-
     // Build navigation buttons
     const row = new ActionRowBuilder();
     if (targetPage > 1) {
@@ -483,6 +508,11 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     console.log(`[sendStatsPage] Sent page ${targetPage}/${totalPages} of stats report for experiment ${experimentId} to user ${userId}.`);
 }
 
+/**
+ * Sets up a Firestore listener for 'pendingStatsNotifications' to send stats reports.
+ * This dynamically builds the report pages based on available data and meaningfulness.
+ * @param {import('discord.js').Client} client - The Discord client instance.
+ */
 function setupStatsNotificationListener(client) {
   console.log("<<<<< NEW PAGINATED STATS LISTENER IS ACTIVE >>>>>");
   if (!admin.apps.length || !dbAdmin) {
@@ -520,10 +550,8 @@ function setupStatsNotificationListener(client) {
                   const finalExperimentId = statsDocumentId || experimentId;
                   const statsReportRef = dbAdmin.collection('users').doc(userId).collection('experimentStats').doc(finalExperimentId);
                   const statsReportSnap = await statsReportRef.get();
-
                   if (statsReportSnap.exists) {
                       const statsReportData = statsReportSnap.data();
-
                       // --- DYNAMIC PAGE CONFIGURATION ---
                       // This dynamically builds the report structure based on available data.
                       const pageConfig = [];
@@ -531,7 +559,7 @@ function setupStatsNotificationListener(client) {
                       
                       // 1. Cover Page (Always first)
                       pageConfig.push({ builder: buildCoverPage, type: 'cover' });
-                      
+
                       // 2. Outcome Metric Page
                       const outcomeLabel = settings?.output?.label;
                       if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
@@ -561,7 +589,7 @@ function setupStatsNotificationListener(client) {
                       if (statsReportData.pairwiseInteractionResults && Object.keys(statsReportData.pairwiseInteractionResults).length > 0) {
                           const hasMeaningfulResults = Object.values(statsReportData.pairwiseInteractionResults).some(pairData => {
                               const summary = pairData.summary || "";
-                              return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion");
+                              return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion") && !summary.toLowerCase().includes("did not show any group");
                           });
                           if(hasMeaningfulResults) {
                             pageConfig.push({ builder: buildCombinedEffectsPage, type: 'combined' });
@@ -583,17 +611,14 @@ function setupStatsNotificationListener(client) {
 
                       // Store the full report data AND the dynamic page configuration in the map
                       userStatsReportData.set(userId, { statsReportData, experimentId: finalExperimentId, pageConfig });
-
                       // Send the FIRST page of the report
                       await sendStatsPage(discordUser, userId, finalExperimentId, 1);
-
                       await change.doc.ref.update({
                           status: 'processed_by_bot',
                           processedAt: admin.firestore.FieldValue.serverTimestamp(),
                           botProcessingNode: process.env.RENDER_INSTANCE_ID || 'local_dev_stats'
                       });
                       console.log(`[StatsListener] Updated notification ${docId} to 'processed_by_bot'.`);
-
                   } else {
                       console.error(`[StatsListener] Stats report document not found for user ${userId}, experiment ${finalExperimentId}.`);
                       await change.doc.ref.update({ status: 'error_report_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: 'Stats report document could not be found in Firestore.' });
