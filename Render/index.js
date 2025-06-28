@@ -320,51 +320,81 @@ function buildLagTimePage(embed, statsReportData) {
 }
 
 /**
- * Builds the embed for the final summary page.
+ * Builds the CORE stats fields (Outcome/Habits) for the summary page.
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} statsReportData - The full stats report data from Firestore.
- * @param {Array<object>} pageConfig - The dynamically generated page configuration for this specific report.
  */
-function buildSummaryPage(embed, statsReportData, pageConfig) {
-    embed.setTitle('📊 Experiment Summary')
-         .setDescription(`Here is a complete summary of your experiment report. You can now get AI-powered insights based on this data.\n\nTotal Logs Processed: ${statsReportData.totalLogsInPeriodProcessed || 'N/A'}`);
+function buildCoreStatsSummary(embed, statsReportData) {
+    const settings = statsReportData.activeExperimentSettings;
+    if (!settings) return;
 
-    // Helper to find if a page was included in the config
-    const wasPageIncluded = (builderFunction) => pageConfig.some(p => p.builder === builderFunction);
+    // Helper to format a single metric line
+    const formatMetricLine = (metricData) => {
+        if (!metricData || metricData.status === 'skipped_insufficient_data') {
+            return `*Not enough data (had ${metricData.dataPoints || 0}, needed 5).*`;
+        } else if (isYesNoMetric(metricData.unit)) {
+            const percentage = (metricData.average * 100).toFixed(0);
+            return `**Completion:** ${percentage}%`;
+        } else {
+            const unit = metricData.unit ? ` ${metricData.unit}` : '';
+            const formatValue = (val) => (isTimeMetric(metricData.unit) ? formatDecimalAsTime(val) : val);
+            return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}`;
+        }
+    };
 
-    // --- Core Stats (Always included) ---
-    buildCoreStatsPage(embed, statsReportData);
-    embed.setTitle('📊 Core Statistics'); // Reset title for summary view
-
-    // --- Correlations ---
-    embed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
-    if (wasPageIncluded(buildCorrelationsPage)) {
-        buildCorrelationsPage(embed, statsReportData);
-        embed.setTitle('🔗 Habit Impacts'); // Reset title
-    } else {
-        embed.addFields({ name: '🔗 Habit Impacts', value: 'No significant correlations were found in this experiment.', inline: false });
+    // Add Outcome
+    const outcomeLabel = settings.output?.label;
+    if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
+        embed.addFields({ name: `📊 Outcome: ${outcomeLabel}`, value: formatMetricLine(statsReportData.calculatedMetricStats[outcomeLabel]) });
     }
 
-    // --- Combined Effects ---
-    embed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
-    if (wasPageIncluded(buildCombinedEffectsPage)) {
-        buildCombinedEffectsPage(embed, statsReportData);
-        embed.setTitle('✅ Stats Summary'); // Reset title
-    } else {
-        embed.addFields({ name: '✅ Combined Effects', value: 'No significant combined effects were found with the current data.', inline: false });
-    }
-
-    // --- Lag Time Correlations ---
-    embed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
-    if (wasPageIncluded(buildLagTimePage)) {
-        buildLagTimePage(embed, statsReportData);
-        embed.setTitle('⏳ Day-to-Day Connections'); // Reset title
-    } else {
-        embed.addFields({ name: '⏳ Day-to-Day Connections', value: 'No significant day-to-day connections were found in this experiment.', inline: false });
+    // Add Habits
+    for (let i = 1; i <= 3; i++) {
+        const inputLabel = settings[`input${i}`]?.label;
+        if (inputLabel && statsReportData.calculatedMetricStats?.[inputLabel]) {
+            embed.addFields({ name: `🛠️ Habit ${i}: ${inputLabel}`, value: formatMetricLine(statsReportData.calculatedMetricStats[inputLabel]) });
+        }
     }
 }
 
+/**
+ * Builds the embed for the final summary page.
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @param {Array<object>} pageConfig - The dynamically generated page configuration.
+ */
+function buildFinalSummaryPage(embed, statsReportData, pageConfig) {
+    embed.setTitle('📊 Experiment Summary')
+         .setDescription(`This is a complete overview of your experiment. Click "Next" to plan your next steps.\n\nTotal Logs Processed: **${statsReportData.totalLogsInPeriodProcessed || 'N/A'}**`);
 
+    // Helper to check if a specific analysis page was included in this report
+    const wasPageIncluded = (builderFunction) => pageConfig.some(p => p.builder === builderFunction);
+
+    // --- 1. Core Statistics ---
+    buildCoreStatsSummary(embed, statsReportData);
+
+    // --- 2. Habit Impacts ---
+    embed.addFields({ name: '\u200B', value: '**ANALYSIS**' }); // Section break
+    if (wasPageIncluded(buildCorrelationsPage)) {
+        buildCorrelationsPage(embed, statsReportData); // This function will add its fields under the "Habit Impacts" title
+    } else {
+        embed.addFields({ name: '🔗 Habit Impacts', value: 'No significant habit impacts were found.', inline: false });
+    }
+
+    // --- 3. Combined Effects ---
+    if (wasPageIncluded(buildCombinedEffectsPage)) {
+        buildCombinedEffectsPage(embed, statsReportData); // Adds fields under "Combined Effects" title
+    } else {
+        embed.addFields({ name: '✅ Combined Effects', value: 'No significant combined effects were found.', inline: false });
+    }
+
+    // --- 4. Day-to-Day Connections ---
+    if (wasPageIncluded(buildLagTimePage)) {
+        buildLagTimePage(embed, statsReportData); // Adds fields under "Yesterday's Habits..." title
+    } else {
+        embed.addFields({ name: '⏳ Day-to-Day Connections', value: 'No significant day-to-day connections were found.', inline: false });
+    }
+}
 
 /**
  * Sends a specific page of the stats report to a user.
@@ -614,6 +644,8 @@ function setupStatsNotificationListener(client) {
                           }
                       }
 
+                      pageConfig.push({ builder: buildFinalSummaryPage, type: 'summary' });
+                      
                       // Store the full report data AND the page config for later use
                       userStatsReportData.set(userId, { statsReportData, experimentId: finalExperimentId, pageConfig });
                       

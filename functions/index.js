@@ -261,7 +261,6 @@ Small, sustainable adjustments often lead to the biggest long-term shifts. Sugge
 4. The first 3 suggestions should focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. The last one should explicitly be mentioned as "something a bit different." It should give them an idea that's highly relevant but which they may not have thought of before.
 
 Again, keep the total response under 1890 characters.
----
 `;
   return prompt;
 };
