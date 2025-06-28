@@ -2628,49 +2628,43 @@ exports.checkForEndedExperimentsAndTriggerStats = onSchedule("every 1 hours", as
 
             // BRANCH 2: User is in continuous mode and their next weekly report is due.
             } else if (schedule.statsMode === 'continuous' && schedule.nextWeeklyStatsTimestamp && schedule.nextWeeklyStatsTimestamp.toDate() <= nowJs) {
-                
-                // Generate a new unique ID for this weekly stats report
-                const weeklyExperimentId = db.collection('users').doc(userId).collection('experimentStats').doc().id;
-                
-                logger.log(`checkForEndedExperimentsAndTriggerStats: Found user ${userId} due for CONTINUOUS weekly stats. Generating report with new ID: ${weeklyExperimentId}`);
+
+                // REUSE the ID from the last defined experiment
+                const experimentIdToReuse = schedule.statsDocumentId;
+                if (!experimentIdToReuse) {
+                    logger.error(`checkForEndedExperimentsAndTriggerStats: User ${userId} is in continuous mode but has no statsDocumentId to reuse. Skipping.`);
+                    return; // Skip this user until the state is corrected
+                }
+
+                logger.log(`checkForEndedExperimentsAndTriggerStats: Found user ${userId} due for CONTINUOUS weekly stats. Reusing experiment ID: ${experimentIdToReuse}`);
 
                 const processingPromise = _calculateAndStorePeriodStatsLogic(
                     userId,
                     userTag,
-                    weeklyExperimentId, // The new ID for this specific report
-                    schedule.continuousStatsStartDate, // The START date from their last defined experiment
-                    nowJs.toISOString(),               // The END date is right now
-                    schedule.scheduledExperimentSettings, // Use the settings from their last defined experiment
+                    experimentIdToReuse, // The reused ID for this specific report
+                    schedule.continuousStatsStartDate,
+                    nowJs.toISOString(),
+                    schedule.scheduledExperimentSettings,
                     "checkForEndedExperimentsAndTriggerStats_Continuous"
                 )
                 .then(async (statsResult) => {
-                    
-                     // --- START of CHANGE ---
                     if (statsResult && statsResult.status === 'insufficient_overall_data') {
                         logger.log(`Skipping continuous notification for user ${userId} due to insufficient data for this period.`);
-                        // Push the next check out by a week to avoid retrying immediately, but send no report.
                         const nextWeeklyTimestamp = new Date(nowJs.getTime() + 7 * 24 * 60 * 60 * 1000);
                         await userDoc.ref.update({
-                            'experimentCurrentSchedule.nextWeeklyStatsTimestamp': admin.firestore.Timestamp.fromDate(nextWeeklyTimestamp),
-                            'experimentCurrentSchedule.statsProcessingError': 'insufficient_data'
+                            'experimentCurrentSchedule.nextWeeklyStatsTimestamp': admin.firestore.Timestamp.fromDate(nextWeeklyTimestamp)
                         });
-                        return; // Stop execution
+                        return; 
                     }
-                    // --- END of CHANGE ---
                     if (statsResult && statsResult.success) {
-                        logger.log(`checkForEndedExperimentsAndTriggerStats: Successfully processed continuous stats for user ${userId}. Stored Doc ID: ${statsResult.experimentId}.`);
-                        
-                        // Schedule the *next* weekly report
-                        const nextWeeklyTimestamp = new Date(nowJs.getTime() + 7 * 24 * 60 * 60 * 1000);
+                        logger.log(`Successfully processed continuous stats for user ${userId}. Overwrote Doc ID: ${statsResult.experimentId}.`);
 
-                        // Update the timestamp for the next run
+                        const nextWeeklyTimestamp = new Date(nowJs.getTime() + 7 * 24 * 60 * 60 * 1000);
                         await userDoc.ref.update({
                             'experimentCurrentSchedule.nextWeeklyStatsTimestamp': admin.firestore.Timestamp.fromDate(nextWeeklyTimestamp),
-                            'experimentCurrentSchedule.lastWeeklyStatsId': statsResult.experimentId, // Optional: track the last generated ID
-                            'experimentCurrentSchedule.statsProcessingError': FieldValue.delete() // Clear previous error on success
+                            'experimentCurrentSchedule.statsProcessingError': FieldValue.delete()
                         });
 
-                        // Create notification for the user (same as the other branch)
                         const notificationRef = db.collection('pendingStatsNotifications').doc(`${userId}_${statsResult.experimentId}`);
                         await notificationRef.set({
                             userId: userId,
@@ -2681,21 +2675,16 @@ exports.checkForEndedExperimentsAndTriggerStats = onSchedule("every 1 hours", as
                             generatedAt: FieldValue.serverTimestamp(),
                             message: `Your weekly stats report is ready!`
                         });
-
-                        logger.log(`checkForEndedExperimentsAndTriggerStats: Continuous notification created for user ${userId}, experiment ${statsResult.experimentId}.`);
+                        logger.log(`Continuous notification created for user ${userId}, experiment ${statsResult.experimentId}.`);
                         processedCount++;
                     } else {
-                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to calculate continuous stats for user ${userId}. Result:`, statsResult);
+                        logger.error(`Failed to calculate continuous stats for user ${userId}. Result:`, statsResult);
                         await userDoc.ref.update({ 'experimentCurrentSchedule.statsProcessingError': statsResult?.message || 'Unknown error during continuous stats calculation.' });
                     }
                 })
                 .catch(async (error) => {
-                    logger.error(`checkForEndedExperimentsAndTriggerStats: Critical error processing continuous stats for user ${userId}:`, error);
-                    try {
-                        await userDoc.ref.update({ 'experimentCurrentSchedule.statsProcessingError': `Critical error during continuous processing: ${error.message}` });
-                    } catch (updateError) {
-                        logger.error(`checkForEndedExperimentsAndTriggerStats: Failed to update continuous status to critical_error for ${userId}`, updateError);
-                    }
+                    logger.error(`Critical error processing continuous stats for user ${userId}:`, error);
+                    await userDoc.ref.update({ 'experimentCurrentSchedule.statsProcessingError': `Critical error during continuous processing: ${error.message}` });
                 });
                 promises.push(processingPromise);
             }

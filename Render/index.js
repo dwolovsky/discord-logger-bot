@@ -108,12 +108,12 @@ function buildOutcomeStatsPage(embed, metricData, aiSummary) {
         }
         
         embed.addFields(
-            { name: 'Average', value: `${formatValue(metricData.average)}${unit}`, inline: true },
-            { name: 'Median', value: `${formatValue(metricData.median)}${unit}`, inline: true },
+            { name: `Average: **${formatValue(metricData.average)}**${unit}`, value: '\u200B', inline: true },
+            { name: `Median: **${formatValue(metricData.median)}**${unit}`, value: '\u200B', inline: true },
             { name: 'Consistency', value: consistencyLabel, inline: true },
-            { name: 'Min', value: `${formatValue(metricData.min)}${unit}`, inline: true },
-            { name: 'Max', value: `${formatValue(metricData.max)}${unit}`, inline: true },
-            { name: 'Data Points', value: String(metricData.dataPoints), inline: true }
+            { name: `Min: **${formatValue(metricData.min)}**${unit}`, value: '\u200B', inline: true },
+            { name: `Max: **${formatValue(metricData.max)}**${unit}`, value: '\u200B', inline: true },
+            { name: `Data Points: **${String(metricData.dataPoints)}**`, value: '\u200B', inline: true }
         );
     }
     
@@ -171,41 +171,44 @@ function buildCorrelationsPage(embed, statsReportData) {
     embed.setTitle('🔗 Habit Impacts')
          .setDescription('How did your habits influence your outcome?');
     if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
-        let hasDisplayedAnyCorrelation = false; // Flag to track if any meaningful correlation is displayed
+        let hasDisplayedAnyCorrelation = false;
         for (const key in statsReportData.correlations) {
             const corr = statsReportData.correlations[key];
             if (!corr || corr.status !== 'calculated' || corr.coefficient === undefined || isNaN(corr.coefficient)) {
-                // Skip if not calculated or coefficient is invalid. The dynamic page config already handles "not enough data" at a higher level.
                 continue;
             }
 
             const rSquared = corr.coefficient * corr.coefficient;
-            // Only display correlations that have at least a "weak" strength (R-squared >= 0.0225, i.e., abs(coefficient) >= 0.15)
-            if (rSquared < 0.0225) { // 0.15 * 0.15 = 0.0225
-                continue; // Skip if strength is "no detectable"
+            if (rSquared < 0.0225) { 
+                continue; 
             }
 
-            const direction = corr.coefficient >= 0 ? 'went up' : 'went down';
+            const habitArrow = '⤴️';
+            const outcomeArrow = corr.coefficient >= 0 ? '⤴️' : '⤵️';
+
             const isConfident = corr.pValue !== null && corr.pValue < 0.05;
-            const confidenceText = isConfident ?
-"We're 95% confident in this relationship." : "This may be worth getting more data to confirm.";
+            const confidenceText = isConfident ? "This is a statistically significant relationship." : "We need more data to confirm this.";
+            
             let strengthText = "No detectable";
             let strengthEmoji = "🟦";
             const absCoeff = Math.abs(corr.coefficient);
             if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥";
-}
+            }
             else if (absCoeff >= 0.45) { strengthText = "Strong";
-strengthEmoji = "🟧"; }
+                strengthEmoji = "🟧"; }
             else if (absCoeff >= 0.3) { strengthText = "Moderate";
-strengthEmoji = "🟨"; }
+                strengthEmoji = "🟨"; }
             else if (absCoeff >= 0.15) { strengthText = "Weak";
-strengthEmoji = "🟩"; }
+                strengthEmoji = "🟩"; }
             
-            const value = `When you increased **${corr.label}**...\n...your **${corr.vsOutputLabel}** ${direction}.\n\n` +
+            const title = `When **${corr.label}** ${habitArrow}`;
+            const value = `Your **${corr.vsOutputLabel}** ${outcomeArrow}\n\n` +
                           `**Influence Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                           `*${confidenceText}*`;
-            embed.addFields({ name: `Impact of **${corr.label}** on **${corr.vsOutputLabel}**`, value, inline: false });
-            hasDisplayedAnyCorrelation = true; // Set flag to true as we displayed something
+
+            embed.addFields({ name: title, value, inline: false });
+            
+            hasDisplayedAnyCorrelation = true;
         }
         if (!hasDisplayedAnyCorrelation) {
             embed.addFields({ name: 'Impacts', value: 'No significant habit impact data was calculated or found for this report.', inline: false });
@@ -215,93 +218,98 @@ strengthEmoji = "🟩"; }
     }
 }
 
-/**
- * Builds the embed fields for Page 3 (Combined Effects).
- * @param {EmbedBuilder} embed - The embed to add fields to.
- * @param {object} statsReportData - The full stats report data from Firestore.
- */
 function buildCombinedEffectsPage(embed, statsReportData) {
-    embed.setTitle('✅ Combined Effects');
+    embed.setTitle('✅ Habit Combo Effects');
 
     const results = statsReportData.pairwiseInteractionResults;
     let hasMeaningfulResults = false;
 
     if (results && typeof results === 'object' && Object.keys(results).length > 0) {
+        // Helper function to format the text into the new visual style
+        const formatCondition = (conditionString) => {
+            const parts = conditionString.split(' & ');
+            return parts.map(part => {
+                const label = part.substring(0, part.lastIndexOf(' was '));
+                const state = part.endsWith('High') ? '⤴️' : '⤵️';
+                return `**${label}** ${state}`;
+            }).join(' + ');
+        };
+
         for (const pairKey in results) {
             const pairData = results[pairKey];
             const summary = pairData.summary || "";
             const isSignificant = !summary.toLowerCase().includes("skipped") &&
                                   !summary.toLowerCase().includes("no meaningful conclusion") &&
                                   !summary.toLowerCase().includes("did not show any group");
-            if (isSignificant && pairData.input1Label && pairA.input2Label) {
-                hasMeaningfulResults = true;
+
+            if (isSignificant && pairData.input1Label && pairData.input2Label) {
                 const bestGroup = summary.includes("higher") ? /Avg.*higher \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
                 const worstGroup = summary.includes("lower") ? /Avg.*lower \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
 
-                let value = "";
                 if (bestGroup) {
-                    value += `✅ **A Winning Combo!**\nYour **'${pairData.outputMetricLabel}'** was significantly **higher** (average of **${bestGroup[1]}**) on days when:\n*${bestGroup[2]}*.`;
+                    hasMeaningfulResults = true;
+                    const comboTitle = formatCondition(bestGroup[2]);
+                    const value = `→ Your **'${pairData.outputMetricLabel}'** was significantly **higher** (average of **${bestGroup[1]}**).`;
+                    embed.addFields({ name: comboTitle, value: value, inline: false });
                 }
                 if (worstGroup) {
-                    if (value) value += "\n\n";
-                    value += `❌ **A Losing Combo!**\nYour **'${pairData.outputMetricLabel}'** was significantly **lower** (average of **${worstGroup[1]}**) on days when:\n*${worstGroup[2]}*.`;
+                    hasMeaningfulResults = true;
+                    const comboTitle = formatCondition(worstGroup[2]);
+                    const value = `→ Your **'${pairData.outputMetricLabel}'** was significantly **lower** (average of **${worstGroup[1]}**).`;
+                    embed.addFields({ name: comboTitle, value: value, inline: false });
                 }
-                embed.addFields({ name: `**${pairData.input1Label}** + **${pairData.input2Label}**`, value: value, inline: false });
             }
         }
     }
 
     if (!hasMeaningfulResults) {
-        embed.addFields({ name: 'No Clear Relationship', value: "No significant combined effects were found with the current data.", inline: false });
+        embed.addFields({ name: 'No Clear Combined Effects', value: "We couldn't find any statistically significant effects from combining habits in this experiment.", inline: false });
     }
 }
 
-/**
- * Builds the embed fields for Lag Time Correlations from Habits to the main Outcome.
- * @param {EmbedBuilder} embed - The embed to add fields to.
- * @param {object} statsReportData - The full stats report data from Firestore.
- */
 function buildLagTimePage(embed, statsReportData) {
     embed.setTitle('⏳ Yesterday\'s Habits → Today\'s Outcome')
          .setDescription("How do your habits on one day carry over to your outcome the next day?");
+
     const results = statsReportData.lagTimeCorrelations;
     const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
     let hasHabitToOutcomeLag = false;
+
     if (results && typeof results === 'object' && Object.keys(results).length > 0 && outcomeMetricLabel) {
         for (const key in results) {
             const lag = results[key];
-            // ONLY show if the "today" metric is the main outcome metric.
             if (lag && lag.todayMetricLabel === outcomeMetricLabel) {
                 if (lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
-
+                
                 const rSquared = lag.coefficient * lag.coefficient;
-                // Only display correlations that have at least a "weak" strength (R-squared >= 0.0225, i.e., abs(coefficient) >= 0.15)
-                if (rSquared < 0.0225) { // 0.15 * 0.15 = 0.0225
-                    continue; // Skip if strength is "no detectable"
+                if (rSquared < 0.0225) {
+                    continue; 
                 }
                 
-                hasHabitToOutcomeLag = true; // We found a relevant correlation to display.
+                hasHabitToOutcomeLag = true;
 
-                const direction = lag.coefficient >= 0 ? 'higher' : 'lower';
+                const yesterdayArrow = '⤴️';
+                const todayArrow = lag.coefficient >= 0 ? '⤴️' : '⤵️';
+
                 const isConfident = lag.pValue !== null && lag.pValue < 0.05;
-                const confidenceText = isConfident ? "This is a statistically significant relationship."
-: "More data may be needed to confirm this connection.";
+                const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data may be needed to confirm this connection.";
                 
                 let strengthText = "No detectable";
                 let strengthEmoji = "🟦";
                 const absCoeff = Math.abs(lag.coefficient);
                 if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥";
-}
+                }
                 else if (absCoeff >= 0.45) { strengthText = "Strong";
-strengthEmoji = "🟧"; }
+                    strengthEmoji = "🟧"; }
                 else if (absCoeff >= 0.3) { strengthText = "Moderate";
-strengthEmoji = "🟨"; }
-
-                const value = `When **${lag.yesterdayMetricLabel}** was higher on one day...\n` +
-                              `...your **${lag.todayMetricLabel}** tended to be **${direction}** on the **next day**.\n\n` +
+                    strengthEmoji = "🟨"; }
+                
+                const title = `Yesterday's **${lag.yesterdayMetricLabel}** ${yesterdayArrow}`;
+                const value = `→ Today's **${lag.todayMetricLabel}** ${todayArrow}\n\n` +
                               `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                               `*${confidenceText}*`;
-                embed.addFields({ name: `Yesterday's ${lag.yesterdayMetricLabel} → Today's ${lag.todayMetricLabel}`, value, inline: false });
+
+                embed.addFields({ name: title, value, inline: false });
             }
         }
     }
