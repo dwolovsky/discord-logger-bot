@@ -2424,6 +2424,8 @@ async function _calculateAndStorePeriodStatsLogic(
 }
 // ============== END OF INTERNAL HELPER FUNCTION ==============
 
+
+
 // ============== NEW onCall WRAPPER for calculateAndStorePeriodStats ==============
 exports.calculateAndStorePeriodStats = onCall(async (request) => {
     // Step 1: Authentication

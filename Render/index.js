@@ -4465,7 +4465,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     reminderFrequency: '0'
                 };
 
-                const scheduleResult = await callFirebaseFunction('setExperimentSchedule', payload, userId);
+                const scheduleResult = await callFirebaseFunction('setExperimentSchedule', preemptivePayload, userId);
                 if (scheduleResult && scheduleResult.success) {
                     console.log(`[${interaction.customId} PREEMPTIVE_SAVE_SUCCESS ${interactionId}] Successfully saved default schedule. Exp ID: ${scheduleResult.experimentId}`);
                     setupData.experimentId = scheduleResult.experimentId;
