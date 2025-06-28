@@ -149,7 +149,7 @@ function buildHabitStatsPage(embed, metricData, habitNumber) {
             { name: `Average: ${formatValue(metricData.average)}${unit}`, value: '\u200B', inline: true },
             { name: `Median: ${formatValue(metricData.median)}${unit}`, value: '\u200B', inline: true },
             { name: 'Consistency', value: consistencyLabel, inline: true },
-            { name: `Min: **${formatValue(metricData.min)}${unit}`, value: '\u200B', inline: true },
+            { name: `Min: ${formatValue(metricData.min)}${unit}`, value: '\u200B', inline: true },
             { name: `Max: ${formatValue(metricData.max)}${unit}`, value: '\u200B', inline: true },
             { name: `Data Points: ${String(metricData.dataPoints)}`, value: '\u200B', inline: true }
         );
@@ -400,16 +400,6 @@ function buildFinalSummaryPage(embed, statsReportData, pageConfig) {
  * @param {string} experimentId - The experiment's ID.
  * @param {number} targetPage - The 1-based page number to display.
  */
-// REPLACE the existing sendStatsPage function with this one.
-
-/**
- * Sends a specific page of the stats report to a user.
- * This is now called by the listener for the first page, and by button handlers for navigation.
- * @param {import('discord.js').Interaction | { user: import('discord.js').User }} interactionOrUser - The interaction object or a user object for the initial DM.
- * @param {string} userId - The user's ID.
- * @param {string} experimentId - The experiment's ID.
- * @param {number} targetPage - The 1-based page number to display.
- */
 async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage) {
     const isInteraction = 'update' in interactionOrUser;
     const user = isInteraction ? interactionOrUser.user : interactionOrUser;
@@ -426,7 +416,52 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
         }
     }
 
-    const reportInfo = userStatsReportData.get(userId);
+    let reportInfo = userStatsReportData.get(userId);
+
+    // --- FIRESTORE FALLBACK LOGIC ---
+    if (!reportInfo || !reportInfo.statsReportData || !reportInfo.pageConfig) {
+        console.warn(`[sendStatsPage] In-memory stats report data not found for user ${userId}. Attempting Firestore fallback.`);
+        if (dbAdmin) {
+            try {
+                const statsReportFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('statsReport');
+                const docSnap = await statsReportFlowRef.get();
+
+                if (docSnap.exists) {
+                    const persistedData = docSnap.data();
+                    
+                    // Re-attach builder functions
+                    const pageConfigWithBuilders = persistedData.pageConfig.map(p => {
+                          const builders = {
+                            cover: buildCoverPage,
+                            outcome: buildOutcomeStatsPage,
+                            habit: buildHabitStatsPage,
+                            correlations: buildCorrelationsPage,
+                            combined: buildCombinedEffectsPage,
+                            lag: buildLagTimePage,
+                            summary: buildFinalSummaryPage
+                          };
+                          const builderFunc = builders[p.type];
+                          return { ...p, builder: builderFunc };
+                      });
+
+                    reportInfo = {
+                        statsReportData: persistedData.statsReportData,
+                        experimentId: persistedData.experimentId,
+                        pageConfig: pageConfigWithBuilders
+                    };
+                    
+                    // Repopulate in-memory map for subsequent navigations
+                    userStatsReportData.set(userId, reportInfo);
+                    console.log(`[sendStatsPage] Successfully restored stats report session from Firestore for user ${userId}.`);
+                }
+            } catch (fbError) {
+                console.error(`[sendStatsPage] Error during Firestore fallback for user ${userId}:`, fbError);
+                // Proceed to show error message below
+            }
+        }
+    }
+    // --- END FIRESTORE FALLBACK ---
+
     if (!reportInfo || !reportInfo.statsReportData || !reportInfo.pageConfig) {
         const errorMessage = "Your stats report session has expired or is invalid. Please request it again via the `/go` command.";
         if (isInteraction) await interactionOrUser.editReply({ content: errorMessage, embeds: [], components: [] });
@@ -508,9 +543,6 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     console.log(`[sendStatsPage] Sent page ${targetPage}/${totalPages} of stats report for experiment ${experimentId} to user ${userId}.`);
 }
 
-// In render index.txt
-// REPLACE the entire existing setupStatsNotificationListener function with this one.
-
 /**
  * Sets up a Firestore listener for 'pendingStatsNotifications'.
  * This now sends an initial prompt to get AI insights, rather than the full report.
@@ -554,25 +586,29 @@ function setupStatsNotificationListener(client) {
                   const statsReportRef = dbAdmin.collection('users').doc(userId).collection('experimentStats').doc(finalExperimentId);
                   const statsReportSnap = await statsReportRef.get();
 
+                  // Fetch the main user document to check for an email
+                  const userDocRef = dbAdmin.collection('users').doc(userId);
+                  const userDocSnap = await userDocRef.get();
+
                   if (statsReportSnap.exists) {
                       const statsReportData = statsReportSnap.data();
 
-                      // --- DYNAMIC PAGE CONFIGURATION (Still needed for when user requests stats later) ---
+                      // --- DYNAMIC PAGE CONFIGURATION (Now JSON serializable) ---
                       const pageConfig = [];
                       const settings = statsReportData.activeExperimentSettings;
                       
-                      pageConfig.push({ builder: buildCoverPage, type: 'cover' });
+                      pageConfig.push({ type: 'cover' });
 
                       const outcomeLabel = settings?.output?.label;
                       if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
-                          pageConfig.push({ builder: buildOutcomeStatsPage, type: 'outcome', metricKey: outcomeLabel });
+                          pageConfig.push({ type: 'outcome', metricKey: outcomeLabel });
                       }
 
                       for (let i = 1; i <= 3; i++) {
                           const inputSetting = settings?.[`input${i}`];
                           const inputLabel = inputSetting?.label;
                           if (inputLabel && statsReportData.calculatedMetricStats?.[inputLabel]) {
-                              pageConfig.push({ builder: buildHabitStatsPage, type: 'habit', metricKey: inputLabel, habitNumber: i });
+                              pageConfig.push({ type: 'habit', metricKey: inputLabel, habitNumber: i });
                           }
                       }
                       
@@ -581,7 +617,7 @@ function setupStatsNotificationListener(client) {
                               corr && corr.status === 'calculated' && corr.coefficient !== undefined && !isNaN(corr.coefficient) && Math.abs(corr.coefficient) >= 0.15
                           );
                           if (hasMeaningfulCorrelation) {
-                              pageConfig.push({ builder: buildCorrelationsPage, type: 'correlations' });
+                              pageConfig.push({ type: 'correlations' });
                           }
                       }
 
@@ -591,7 +627,7 @@ function setupStatsNotificationListener(client) {
                               return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion") && !summary.toLowerCase().includes("did not show any group");
                            });
                            if(hasMeaningfulResults) {
-                                pageConfig.push({ builder: buildCombinedEffectsPage, type: 'combined' });
+                                pageConfig.push({ type: 'combined' });
                            }
                       }
 
@@ -602,24 +638,58 @@ function setupStatsNotificationListener(client) {
                               lag.coefficient !== undefined && !isNaN(lag.coefficient) && Math.abs(lag.coefficient) >= 0.15
                            );
                           if (hasMeaningfulLagToOutcome) {
-                              pageConfig.push({ builder: buildLagTimePage, type: 'lag' });
+                              pageConfig.push({ type: 'lag' });
                           }
                       }
 
-                      pageConfig.push({ builder: buildFinalSummaryPage, type: 'summary' });
+                      pageConfig.push({ type: 'summary' });
 
-                      // Store the full report data AND the page config for later use
-                      userStatsReportData.set(userId, { statsReportData, experimentId: finalExperimentId, pageConfig });
+                      // Add the builder functions back in for the in-memory map version
+                      const pageConfigWithBuilders = pageConfig.map(p => {
+                          const builders = {
+                            cover: buildCoverPage,
+                            outcome: buildOutcomeStatsPage,
+                            habit: buildHabitStatsPage,
+                            correlations: buildCorrelationsPage,
+                            combined: buildCombinedEffectsPage,
+                            lag: buildLagTimePage,
+                            summary: buildFinalSummaryPage
+                          };
+                          // Find the correct builder function based on the 'type' property
+                          const builderFunc = builders[p.type];
+                          return { ...p, builder: builderFunc };
+                      });
                       
-                      // --- NEW: Send the "Insights First" prompt ---
+                      // Store in-memory for immediate use
+                      userStatsReportData.set(userId, { statsReportData, experimentId: finalExperimentId, pageConfig: pageConfigWithBuilders });
+                      
+                      // --- PERSIST TO FIRESTORE ---
+                      // We store the version WITHOUT the builder functions
+                      const statsReportFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('statsReport');
+                      await statsReportFlowRef.set({
+                          statsReportData: statsReportData,
+                          experimentId: finalExperimentId,
+                          pageConfig: pageConfig, // The serializable version
+                          lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+                      });
+                      console.log(`[StatsListener] Persisted serializable stats report flow data to Firestore for user ${userId}.`);
+                      
+                      // --- ALIGNMENT FOR FUTURE EMAIL FEATURE ---
+                      if (userDocSnap.exists && userDocSnap.data()?.email) {
+                        const userEmail = userDocSnap.data().email;
+                        console.log(`[StatsListener] User ${userId} has email on file (${userEmail}). FUTURE: This is where an experiment summary email would be queued.`);
+                        // Placeholder for future email queuing logic.
+                      }
+                      
+                      // --- SEND DISCORD DM PROMPT ---
                       const insightsPromptEmbed = new EmbedBuilder()
                         .setColor('#7F00FF')
-                        .setTitle('📊 Your New Experiment Report is Ready!')
+                        .setTitle('📊 Your New Stats and Insights!')
                         .setDescription("I've analyzed your data and have some insights for you. Would you like to see them now?");
                       
                       const insightsButton = new ButtonBuilder()
                         .setCustomId(`request_ai_insights_initial_${finalExperimentId}`)
-                        .setLabel('💡 Yes, Get AI Insights')
+                        .setLabel('💡 Get AI Insights')
                         .setStyle(ButtonStyle.Primary);
 
                       const row = new ActionRowBuilder().addComponents(insightsButton);
@@ -6423,9 +6493,14 @@ client.on(Events.InteractionCreate, async interaction => {
       // This is robust because the bot owns the message and can edit it at any time.
       // It also removes the button, preventing multiple clicks.
       try {
+        const workingEmbed = new EmbedBuilder()
+            .setColor('#5865F2') // A neutral "working on it" color
+            .setTitle('📊 Your New Experiment Report')
+            .setDescription("🧠 Generating your AI insights... one moment!");
+
         await interaction.message.edit({
-            content: "🧠 Generating your AI insights... one moment!",
-            embeds: interaction.message.embeds, // Keep the original embed
+            content: "", // Remove the old text content
+            embeds: [workingEmbed], // Replace with the new "working" embed
             components: [] // Remove the button
         });
         console.log(`[request_ai_insights_initial INFO ${interactionId}] Edited original prompt to 'working' state and removed button.`);
@@ -6519,7 +6594,54 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[show_raw_stats_ END ${interactionId}] Finished processing. Total time: ${(processEndTime - showStatsButtonStartTime).toFixed(2)}ms`);
     }
 
-// --- NEW ---
+    else if (interaction.isButton() && interaction.customId.startsWith('stats_show_continuous_mode_prompt_')) {
+      const nextButtonClickTime = performance.now();
+      const interactionId = interaction.id;
+      const userId = interaction.user.id;
+      console.log(`[stats_continuous_prompt START ${interactionId}] User ${userId} clicked 'Next' on the final stats page.`);
+
+      try {
+        // Acknowledge the interaction by removing the button from the stats report message
+        await interaction.update({
+            components: []
+        });
+
+        // --- NEW: Clean up the temporary flow document from Firestore ---
+        if (dbAdmin) {
+            const statsReportFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('statsReport');
+            await statsReportFlowRef.delete();
+            console.log(`[stats_continuous_prompt] Cleaned up temporary stats report from Firestore for user ${userId}.`);
+        }
+        // --- END NEW ---
+
+        // Create the "Start New Experiment" button
+        const startNewExpButton = new ButtonBuilder()
+            .setCustomId('start_new_experiment_prompt_btn') 
+            .setLabel('🚀 Start a New Experiment')
+            .setStyle(ButtonStyle.Success);
+        
+        const followUpActionRow = new ActionRowBuilder().addComponents(startNewExpButton);
+
+        // Define the content for the follow-up message
+        const finalMessageContent = `Your experiment has concluded! You now have 2 options:\n\n` +
+            `1. **Start a new experiment**\nUse your insights to design a new experiment. Click the button below to begin.\n\n` +
+            `2. **Continue with the same experiment**\nKeep logging as usual. You'll get a fresh stats report and new AI insights each week!`;
+
+        // Send the follow-up message as a new DM
+        await interaction.user.send({
+            content: finalMessageContent,
+            components: [followUpActionRow]
+        });
+
+        console.log(`[stats_continuous_prompt SUCCESS ${interactionId}] Sent continuous mode prompt to user ${userId}.`);
+
+      } catch (error) {
+        console.error(`[stats_continuous_prompt ERROR ${interactionId}] Error processing 'Next' button for user ${userId}:`, error);
+        // Since the interaction is already updated, we can't send a reply.
+        // The error is logged for debugging.
+      }
+    }
+
     else if (interaction.isButton() && interaction.customId === 'ai_show_share_prompt_btn') {
     const showSharePromptClickTime = performance.now();
     const interactionId = interaction.id;
