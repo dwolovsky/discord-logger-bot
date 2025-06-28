@@ -2550,8 +2550,7 @@ exports.checkForEndedExperimentsAndTriggerStats = onSchedule("every 1 hours", as
             const userTag = userData.userTag || `User_${userId}`;
 
             // BRANCH 1: A defined experiment has just ended.
-            if (schedule.experimentEndTimestamp && schedule.experimentEndTimestamp.toDate() <= nowJs && (schedule.statsProcessed === undefined || schedule.statsProcessed === false)) {
-
+            if (schedule.statsMode !== 'continuous' && schedule.experimentEndTimestamp && schedule.experimentEndTimestamp.toDate() <= nowJs && (schedule.statsProcessed === undefined || schedule.statsProcessed === false)) {
                 logger.log(`checkForEndedExperimentsAndTriggerStats: Found ended DEFINED experiment for user ${userId}, experimentId: ${schedule.experimentId}`);
                 
                 const processingPromise = _calculateAndStorePeriodStatsLogic(
