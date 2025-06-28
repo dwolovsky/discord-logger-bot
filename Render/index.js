@@ -107,12 +107,12 @@ function buildOutcomeStatsPage(embed, metricData) {
         }
         
         embed.addFields(
-            { name: 'Average', value: `${formatValue(metricData.average)}${unit}`, inline: true },
-            { name: 'Median', value: `${formatValue(metricData.median)}${unit}`, inline: true },
+            { name: `Average: ${formatValue(metricData.average)}${unit}`, value: '\u200B', inline: true },
+            { name: `Median: ${formatValue(metricData.median)}${unit}`, value: '\u200B', inline: true },
             { name: 'Consistency', value: consistencyLabel, inline: true },
-            { name: 'Min', value: `${formatValue(metricData.min)}${unit}`, inline: true },
-            { name: 'Max', value: `${formatValue(metricData.max)}${unit}`, inline: true },
-            { name: 'Data Points', value: String(metricData.dataPoints), inline: true }
+            { name: `Min: **${formatValue(metricData.min)}${unit}`, value: '\u200B', inline: true },
+            { name: `Max: ${formatValue(metricData.max)}${unit}`, value: '\u200B', inline: true },
+            { name: `Data Points: ${String(metricData.dataPoints)}`, value: '\u200B', inline: true }
         );
     }
     
@@ -146,12 +146,12 @@ function buildHabitStatsPage(embed, metricData, habitNumber) {
         }
 
         embed.addFields(
-            { name: `Average: **${formatValue(metricData.average)}**${unit}`, value: '\u200B', inline: true },
-            { name: `Median: **${formatValue(metricData.median)}**${unit}`, value: '\u200B', inline: true },
+            { name: `Average: ${formatValue(metricData.average)}${unit}`, value: '\u200B', inline: true },
+            { name: `Median: ${formatValue(metricData.median)}${unit}`, value: '\u200B', inline: true },
             { name: 'Consistency', value: consistencyLabel, inline: true },
-            { name: `Min: **${formatValue(metricData.min)}**${unit}`, value: '\u200B', inline: true },
-            { name: `Max: **${formatValue(metricData.max)}**${unit}`, value: '\u200B', inline: true },
-            { name: `Data Points: **${String(metricData.dataPoints)}**`, value: '\u200B', inline: true }
+            { name: `Min: **${formatValue(metricData.min)}${unit}`, value: '\u200B', inline: true },
+            { name: `Max: ${formatValue(metricData.max)}${unit}`, value: '\u200B', inline: true },
+            { name: `Data Points: ${String(metricData.dataPoints)}`, value: '\u200B', inline: true }
         );
     }
     
