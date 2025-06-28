@@ -8191,42 +8191,45 @@ client.on(Events.InteractionCreate, async interaction => {
  });  // end of client.on(Events.InteractionCreate)
 
 /**
- * Ensures a role exists in the guild, creating it if necessary.
- * @param {Guild} guild - The guild object.
+ * Ensures a role exists in the guild, creating or updating it as necessary.
+ * @param {import('discord.js').Guild} guild - The guild object.
  * @param {string} roleName - The desired role name.
  * @param {import('discord.js').ColorResolvable} [color] - Optional color for the role.
- * @returns {Promise<import('discord.js').Role>} The found or created role.
+ * @returns {Promise<import('discord.js').Role>} The found, created, or updated role.
  */
 async function ensureRole(guild, roleName, color) {
   if (!guild) throw new Error("Guild is required for ensureRole.");
   if (!roleName) throw new Error("Role name is required for ensureRole.");
-
   try {
-    // Attempt to find the role by name
+    // Attempt to find the role by name from the cache or by fetching
     let role = guild.roles.cache.find(r => r.name === roleName);
-
     if (!role) {
-      console.log(`Role "${roleName}" not found in cache, attempting to fetch...`);
-      // If not in cache, fetch all roles and try again (more robust)
       await guild.roles.fetch();
       role = guild.roles.cache.find(r => r.name === roleName);
     }
 
-    if (!role) {
-      console.log(`Role "${roleName}" not found, creating...`);
-      // If still not found, create it
+    if (role) {
+      // Role exists, check if the color matches and update if necessary.
+      // The color from config is a hex string (e.g., '#FF0000').
+      // The role.hexColor is also a hex string (e.g., '#ff0000').
+      if (color && role.hexColor.toLowerCase() !== color.toLowerCase()) {
+        console.log(`Role "${roleName}" exists but color is outdated. Updating color to ${color}.`);
+        await role.setColor(color, 'Updating role color to match configuration.');
+      }
+    } else {
+      // Role does not exist, create it.
+      console.log(`Role "${roleName}" not found, creating with color ${color}...`);
       role = await guild.roles.create({
         name: roleName,
-        color: color, // Use provided color or default
-        permissions: [], // No permissions needed for cosmetic roles
+        color: color,
+        permissions: [], 
         reason: `Creating role for bot feature (e.g., streaks, freezes).`,
       });
       console.log(`Role "${roleName}" created successfully.`);
     }
     return role;
   } catch (error) {
-    console.error(`Error finding or creating role "${roleName}" in guild ${guild.id}:`, error);
-    // Rethrow or handle as appropriate for your error strategy
+    console.error(`Error finding, creating, or updating role "${roleName}" in guild ${guild.id}:`, error);
     throw new Error(`Failed to ensure role "${roleName}": ${error.message}`);
   }
 }
