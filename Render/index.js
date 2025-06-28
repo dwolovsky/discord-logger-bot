@@ -1146,7 +1146,20 @@ async function sendNextTimeLogPrompt(interaction, userId) {
       .setDescription(`Please select the time you are logging for this specific metric. ${stepIndicator}`)
       .setFooter({ text: 'Make your selection, then click Next.' });
 
-    const timeHourSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_H_ID).setPlaceholder('Select the HOUR').addOptions(Array.from({ length: 12 }, (_, i) => new StringSelectMenuOptionBuilder().setLabel(String(i + 1)).setValue(String(i + 1))));
+    // --- UPDATED: Hour select now includes AM/PM and has 24-hour values ---
+    const timeHourSelect = new StringSelectMenuBuilder()
+        .setCustomId(LOG_TIME_SELECT_H_ID)
+        .setPlaceholder('Select the HOUR')
+        .addOptions(
+            Array.from({ length: 24 }, (_, i) => {
+                const hour12 = i % 12 === 0 ? 12 : i % 12;
+                const period = i < 12 ? 'AM' : 'PM';
+                const label = i === 0 ? `12 AM (Midnight)` : `${hour12} ${period}`;
+                // The value is the 24-hour format string (e.g., "0", "1", ... "23")
+                return new StringSelectMenuOptionBuilder().setLabel(label).setValue(String(i));
+            })
+        );
+
     const timeMinuteSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_M_ID).setPlaceholder('Select the MINUTE').addOptions(
       new StringSelectMenuOptionBuilder().setLabel(':00').setValue('00'),
       new StringSelectMenuOptionBuilder().setLabel(':05').setValue('05'),
@@ -1162,8 +1175,6 @@ async function sendNextTimeLogPrompt(interaction, userId) {
       new StringSelectMenuOptionBuilder().setLabel(':55').setValue('55')
     );
     
-    
-    const timeAmPmSelect = new StringSelectMenuBuilder().setCustomId(LOG_TIME_SELECT_AP_ID).setPlaceholder('Select AM or PM').addOptions(new StringSelectMenuOptionBuilder().setLabel('AM').setValue('AM'), new StringSelectMenuOptionBuilder().setLabel('PM').setValue('PM'));
     const nextButton = new ButtonBuilder().setCustomId(LOG_TIME_NEXT_BTN_ID).setLabel('Next →').setStyle(ButtonStyle.Primary);
 
     await interaction.editReply({
@@ -1171,7 +1182,6 @@ async function sendNextTimeLogPrompt(interaction, userId) {
       components: [
         new ActionRowBuilder().addComponents(timeHourSelect),
         new ActionRowBuilder().addComponents(timeMinuteSelect),
-        new ActionRowBuilder().addComponents(timeAmPmSelect),
         new ActionRowBuilder().addComponents(nextButton)
       ]
     });
@@ -1180,7 +1190,7 @@ async function sendNextTimeLogPrompt(interaction, userId) {
     console.log(`[sendNextTimeLogPrompt] All ${logFlowTimeMetrics.length} time metrics logged for ${userId}. Prompting to open final modal.`);
     
     const finalButton = new ButtonBuilder()
-        .setCustomId('continue_to_final_log_btn') // New Custom ID
+        .setCustomId('continue_to_final_log_btn')
         .setLabel('✍️ Continue to Final Step')
         .setStyle(ButtonStyle.Success);
 
@@ -5369,8 +5379,9 @@ client.on(Events.InteractionCreate, async interaction => {
             await interaction.deferUpdate();
 
             const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || !setupData.logTimeH || !setupData.logTimeM || !setupData.logTimeAP) {
-                await interaction.editReply({ content: '⚠️ Please select an Hour, Minute, and AM/PM before clicking "Next".' });
+            // UPDATED: Check for Hour and Minute selections only
+            if (!setupData || !setupData.logTimeH || !setupData.logTimeM) {
+                await interaction.editReply({ content: '⚠️ Please select an Hour and Minute before clicking "Next".' });
                 return;
             }
 
@@ -5378,11 +5389,9 @@ client.on(Events.InteractionCreate, async interaction => {
             const timeLogIndex = setupData.timeLogIndex || 0;
             const currentMetric = setupData.logFlowTimeMetrics[timeLogIndex];
 
-            // Convert time to decimal
-            let hour = parseInt(setupData.logTimeH, 10);
+            // UPDATED: Convert 24-hour format to decimal
+            const hour = parseInt(setupData.logTimeH, 10); // Value is already 0-23
             const minute = parseInt(setupData.logTimeM, 10);
-            if (setupData.logTimeAP === 'PM' && hour !== 12) hour += 12;
-            if (setupData.logTimeAP === 'AM' && hour === 12) hour = 0;
             const decimalTime = hour + (minute / 60);
 
             // Store the result
@@ -5393,7 +5402,7 @@ client.on(Events.InteractionCreate, async interaction => {
             setupData.timeLogIndex = timeLogIndex + 1;
             delete setupData.logTimeH;
             delete setupData.logTimeM;
-            delete setupData.logTimeAP;
+            // REMOVED: No more logTimeAP to delete
             userExperimentSetupData.set(userId, setupData);
 
             // Call the helper to show the next prompt or the final button
@@ -6804,9 +6813,6 @@ client.on(Events.InteractionCreate, async interaction => {
                         break;
                     case LOG_TIME_SELECT_M_ID:
                         setupData.logTimeM = selectedValue;
-                        break;
-                    case LOG_TIME_SELECT_AP_ID:
-                        setupData.logTimeAP = selectedValue;
                         break;
                     default:
                         console.warn(`[TimeLogSelect WARN ${interactionId}] Unrecognized log_time_select_ menu ID: ${menuId}`);
