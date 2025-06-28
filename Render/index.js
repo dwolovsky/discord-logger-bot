@@ -83,12 +83,11 @@ function buildCoverPage(embed) {
  * Builds the embed fields for the Outcome Statistics page.
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} metricData - The specific metric data object for the outcome.
- * @param {string} aiSummary - The AI-generated summary for this metric.
  */
-function buildOutcomeStatsPage(embed, metricData, aiSummary) {
+function buildOutcomeStatsPage(embed, metricData) {
     embed.setTitle('📊 Outcome: ' + (metricData.label || 'N/A'));
 
-    let description = `*${aiSummary || "Here are the stats for your outcome metric."}*\n`;
+    let description = "Here are the stats for your outcome metric.\n";
 
     if (!metricData || metricData.status === 'skipped_insufficient_data') {
         description += `*Not enough data (had ${metricData.dataPoints || 0}, needed 5).*`;
@@ -108,12 +107,12 @@ function buildOutcomeStatsPage(embed, metricData, aiSummary) {
         }
         
         embed.addFields(
-            { name: `Average: **${formatValue(metricData.average)}**${unit}`, value: '\u200B', inline: true },
-            { name: `Median: **${formatValue(metricData.median)}**${unit}`, value: '\u200B', inline: true },
+            { name: 'Average', value: `${formatValue(metricData.average)}${unit}`, inline: true },
+            { name: 'Median', value: `${formatValue(metricData.median)}${unit}`, inline: true },
             { name: 'Consistency', value: consistencyLabel, inline: true },
-            { name: `Min: **${formatValue(metricData.min)}**${unit}`, value: '\u200B', inline: true },
-            { name: `Max: **${formatValue(metricData.max)}**${unit}`, value: '\u200B', inline: true },
-            { name: `Data Points: **${String(metricData.dataPoints)}**`, value: '\u200B', inline: true }
+            { name: 'Min', value: `${formatValue(metricData.min)}${unit}`, inline: true },
+            { name: 'Max', value: `${formatValue(metricData.max)}${unit}`, inline: true },
+            { name: 'Data Points', value: String(metricData.dataPoints), inline: true }
         );
     }
     
@@ -125,13 +124,10 @@ function buildOutcomeStatsPage(embed, metricData, aiSummary) {
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} metricData - The specific metric data object for the habit.
  * @param {number} habitNumber - The number of the habit (1, 2, or 3).
- * @param {string} aiSummary - The AI-generated summary for this metric.
  */
-function buildHabitStatsPage(embed, metricData, habitNumber, aiSummary) {
+function buildHabitStatsPage(embed, metricData, habitNumber) {
     embed.setTitle(`🛠️ Habit ${habitNumber}: ` + (metricData.label || 'N/A'));
-
-    let description = `*${aiSummary || `Here are the stats for habit #${habitNumber}.`}*\n`;
-
+    let description = `Here are the stats for habit #${habitNumber}.\n`;
     if (!metricData || metricData.status === 'skipped_insufficient_data') {
         description += `*Not enough data (had ${metricData.dataPoints || 0}, needed 5).*`;
     } else if (isYesNoMetric(metricData.unit)) {
@@ -422,14 +418,10 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
         try {
             await interactionOrUser.deferUpdate();
         } catch (error) {
-            // This error (10062) is common on cold starts.
             if (error.code === 10062) {
                 console.warn(`[sendStatsPage] Failed to defer update for interaction (likely expired): ${error.message}`);
-                // Abort the function, as we can't respond to an unknown interaction.
-                // This prevents the bot from crashing. The user may need to click again.
                 return;
             }
-            // For other errors, re-throw them to be handled by the global handler
             throw error;
         }
     }
@@ -456,38 +448,6 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     const embed = new EmbedBuilder()
         .setColor(0x0099FF)
         .setFooter({ text: `Experiment ID: ${experimentId}` });
-    // --- AI Summary & Page Building Logic ---
-    let aiSummary = null;
-    const metricKey = currentPageConfig.metricKey;
-    // Check if we need to fetch an AI summary for this page type.
-    if ((currentPageConfig.type === 'outcome' || currentPageConfig.type === 'habit') && metricKey) {
-        const metricData = statsReportData.calculatedMetricStats[metricKey];
-        // First, check if summary is already cached on the stats object from a previous call
-        if (metricData?.aiSummary) {
-            aiSummary = metricData.aiSummary;
-            console.log(`[sendStatsPage] Using cached AI summary for metric: ${metricKey}`);
-        } else if (metricData) {
-            try {
-                console.log(`[sendStatsPage] Fetching new AI summary for metric: ${metricKey}`);
-                const result = await callFirebaseFunction('getStatsSummaryForMetric', {
-                    experimentId: experimentId,
-                    metricKey: metricKey,
-                    metricType: currentPageConfig.type,
-                    habitNumber: currentPageConfig.habitNumber || 0
-                }, userId);
-                if (result && result.success) {
-                    aiSummary = result.summary;
-                    // Cache it back to our in-memory object to prevent re-fetching during this session
-                    if (statsReportData.calculatedMetricStats[metricKey]) {
-                        statsReportData.calculatedMetricStats[metricKey].aiSummary = aiSummary;
-                    }
-                }
-            } catch (error) {
-                console.error(`[sendStatsPage] Failed to get AI summary for metric ${metricKey}:`, error);
-                aiSummary = "Could not load AI summary at this time.";
-            }
-        }
-    }
     
     // Call the correct builder function with the necessary arguments
     switch (currentPageConfig.type) {
@@ -495,22 +455,24 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
             currentPageConfig.builder(embed);
             break;
         case 'outcome':
-            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats[metricKey], aiSummary);
+            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats[currentPageConfig.metricKey]);
             break;
         case 'habit':
-            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats[metricKey], currentPageConfig.habitNumber, aiSummary);
+            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats[currentPageConfig.metricKey], currentPageConfig.habitNumber);
             break;
         case 'correlations':
         case 'combined':
         case 'lag':
-             currentPageConfig.builder(embed, statsReportData);
-            break;
+        case 'summary': // Added 'summary' to the case for the new final page
+             currentPageConfig.builder(embed, statsReportData, pageConfig);
+             break;
         default:
              console.error("Unknown page type in pageConfig:", currentPageConfig.type);
-            embed.setDescription("Error: Could not determine the content for this page.");
+             embed.setDescription("Error: Could not determine the content for this page.");
     }
     
     embed.setTitle(`${embed.data.title} (Page ${targetPage} of ${totalPages})`);
+    
     // Build navigation buttons
     const row = new ActionRowBuilder();
     if (targetPage > 1) {
@@ -645,7 +607,7 @@ function setupStatsNotificationListener(client) {
                       }
 
                       pageConfig.push({ builder: buildFinalSummaryPage, type: 'summary' });
-                      
+
                       // Store the full report data AND the page config for later use
                       userStatsReportData.set(userId, { statsReportData, experimentId: finalExperimentId, pageConfig });
                       
@@ -7617,12 +7579,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 sendAppreciationDM(interaction, null, settings, payload);
             }
             
-            await interaction.editReply({ 
-                content: finalEphemeralMessage, 
-                components: components 
-            });
+              // First, process any pending streak/milestone messages
+              await processPendingActions(interaction, interaction.user.id);
 
-            processPendingActions(interaction, interaction.user.id);
+              // Then, show the AI response and prompt
+              await interaction.editReply({ 
+                  content: finalEphemeralMessage, 
+                  components: components 
+              });
 
         } catch (error) {
             const errorTime = performance.now();
