@@ -8177,9 +8177,24 @@ client.on(Events.InteractionCreate, async interaction => {
             
             const validationErrors = [];
             if (!deeperProblem) validationErrors.push("The 'Deeper Wish' cannot be empty.");
-            if (!outcomeLabel) validationErrors.push("The 'Measurable Outcome' label is required.");
-            if (!outcomeUnit) validationErrors.push("The 'Unit / Scale' is required.");
             
+            if (!outcomeLabel) {
+                validationErrors.push("The 'Measurable Outcome' label is required.");
+            } else if (outcomeLabel.length > 30) {
+                validationErrors.push(`The Outcome Label is too long (max 30 characters).`);
+            }
+
+            if (!outcomeUnit) {
+                validationErrors.push("The 'Unit / Scale' is required.");
+            } else if (outcomeUnit.length > 15) {
+                validationErrors.push(`The Unit/Scale is too long (max 15 characters).`);
+            }
+
+            // THIS VALIDATION BLOCK IS THE NEW PART
+            if (outcomeLabel && outcomeUnit && (outcomeLabel.length + outcomeUnit.length + 1) > 45) {
+                validationErrors.push(`The combined Label and Unit are too long for the daily log form (max 45 chars). Please shorten one or both.`);
+            }
+
             let outcomeGoal = null;
             if (!outcomeGoalStr) {
                 validationErrors.push("The 'Target Number' is required.");
@@ -8201,13 +8216,11 @@ client.on(Events.InteractionCreate, async interaction => {
                 return;
             }
             
-            // Update the in-memory map immediately
             setupData.deeperProblem = deeperProblem;
             setupData.outcome = { label: outcomeLabel, unit: outcomeUnit, goal: outcomeGoal };
             userExperimentSetupData.set(userId, setupData);
             console.log(`[${interaction.customId} IN_MEMORY_UPDATE ${interactionId}] Updated in-memory state with outcome data for ${userTag}.`);
-
-            // Save the update to Firestore and AWAIT completion
+            
             const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
             const outcomeDataForFirestore = {
                 deeperProblem: deeperProblem,
@@ -8216,8 +8229,7 @@ client.on(Events.InteractionCreate, async interaction => {
             };
             await setupStateRef.set(outcomeDataForFirestore, { merge: true });
             console.log(`[${interaction.customId} FIRESTORE_UPDATE_SUCCESS ${interactionId}] Successfully saved outcome data to Firestore for ${userTag}.`);
-
-            // Respond to the user with the next step button
+            
             const continueToHabit1Button = new ButtonBuilder().setCustomId('manual_continue_to_habit1_btn').setLabel('➡️ Define Habit 1').setStyle(ButtonStyle.Success);
             const row = new ActionRowBuilder().addComponents(continueToHabit1Button);
             const outcomeEmbed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Outcome Saved!').setDescription(`**Deeper Wish:**\n${deeperProblem}\n\n**Outcome:**\n**${outcomeGoalStr}** **${outcomeUnit}** for **${outcomeLabel}**.`);
@@ -8226,7 +8238,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 components: [row]
             });
             console.log(`[${interaction.customId} SUCCESS_REPLY_SENT ${interactionId}] Confirmed outcome and sent button to define Habit 1.`);
-
         } catch (error) {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing outcome modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
@@ -8240,98 +8251,111 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
-    else if (interaction.customId === 'manual_setup_habit1_modal') {
+    else if (interaction.customId === 'confirm_ai_habit_modal_1') {
         const modalSubmitStartTime = performance.now();
+        const interactionId = interaction.id;
         const userId = interaction.user.id;
         const userTag = interaction.user.tag;
-        const interactionId = interaction.id;
         console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 1 submitted by ${userTag}.`);
-
-        if (!dbAdmin) {
-            console.error(`[${interaction.customId} CRITICAL ${interactionId}] dbAdmin not initialized.`);
-            try {
-                await interaction.reply({ content: "Error: The bot cannot connect to the database. Please contact support.", ephemeral: true });
-            } catch (e) { console.error(`[${interaction.customId} CRITICAL_REPLY_FAIL ${interactionId}]`, e); }
-            return;
-        }
 
         try {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-            const deferTime = performance.now();
-            console.log(`[${interaction.customId} DEFERRED ${interactionId}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
-
             const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || !setupData.outcome) {
-                console.error(`[${interaction.customId} CRITICAL ${interactionId}] In-memory state missing outcome data for ${userTag}.`);
-                await interaction.editReply({ content: '❌ Error: Your session data is out of sync. Please restart the setup.', components: [], embeds: [] });
+
+            if (!setupData || !setupData.aiGeneratedInputSuggestions) {
+                console.error(`[${interaction.customId} CRITICAL ${interactionId}] State missing or invalid for user ${userTag}.`);
+                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
                 return;
             }
 
-            const habit1Label = interaction.fields.getTextInputValue('habit1_label_manual')?.trim();
-            const habit1Unit = interaction.fields.getTextInputValue('habit1_unit_manual')?.trim();
-            const habit1GoalStr = interaction.fields.getTextInputValue('habit1_goal_manual')?.trim();
-            
+            const habitLabel = interaction.fields.getTextInputValue('habit_label_manual')?.trim();
+            const habitUnit = interaction.fields.getTextInputValue('habit_unit_manual')?.trim();
+            const habitGoalStr = interaction.fields.getTextInputValue('habit_goal_manual')?.trim();
+
+            // --- Validation of user's input ---
             const validationErrors = [];
-            if (!habit1Label) validationErrors.push("The 'Habit 1' label is required.");
-            if (!habit1Unit) validationErrors.push("The 'Unit / Scale' for Habit 1 is required.");
-            
-            let habit1Goal = null;
-            if (!habit1GoalStr) {
-                validationErrors.push("The 'Target Number' for Habit 1 is required.");
-            } else {
-                const goal = parseFloat(habit1GoalStr);
-                if (isNaN(goal)) {
-                    validationErrors.push(`The Target Number for Habit 1 ("${habit1GoalStr}") must be a valid number.`);
-                } else if (goal < 0) {
-                    validationErrors.push("The Target Number for Habit 1 must be 0 or a positive number.");
-                } else {
-                    habit1Goal = goal;
-                }
+            if (!habitLabel) {
+                validationErrors.push("The 'Habit Label' is required.");
+            } else if (habitLabel.length > 30) {
+                 validationErrors.push(`The Habit Label is too long (max 30 characters).`);
             }
 
+            if (!habitUnit) {
+                validationErrors.push("The 'Unit / Scale' is required.");
+            } else if (habitUnit.length > 15) {
+                validationErrors.push(`The Unit/Scale is too long (max 15 characters).`);
+            }
+            
+            // NEW: Combined Length Validation
+            if (habitLabel && habitUnit && (habitLabel.length + habitUnit.length + 1) > 45) {
+                validationErrors.push(`The combined Label and Unit are too long for the daily log form (max 45 chars). Please shorten one or both.`);
+            }
+
+            let habitGoal = null;
+            const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => habitUnit.toLowerCase().includes(keyword));
+            if (isTimeMetric) {
+                habitGoal = parseTimeGoal(habitGoalStr);
+                if (habitGoal === null) {
+                    validationErrors.push(`The Target ("${habitGoalStr}") must be a valid time (e.g., '8am', '17:30').`);
+                }
+            } else {
+                const goalResult = parseGoalValue(habitGoalStr);
+                if (goalResult.error) {
+                    validationErrors.push(goalResult.error);
+                } else {
+                    habitGoal = goalResult.goal;
+                }
+            }
+            
             if (validationErrors.length > 0) {
-                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 1.`);
-                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 1').setDescription('Please correct the following issues and try again by clicking the "Define Habit 1" button:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
+                 const errorEmbed = new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setTitle('Validation Error')
+                    .setDescription('Please correct the following issues:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'))
+                    .setFooter({text: "Click the 'Edit' button on the summary screen to try again."});
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
-
-            // Update the in-memory map immediately
-            if (!setupData.inputs) setupData.inputs = [];
-            setupData.inputs[0] = { label: habit1Label, unit: habit1Unit, goal: habit1Goal };
-            userExperimentSetupData.set(userId, setupData);
-            console.log(`[${interaction.customId} IN_MEMORY_UPDATE ${interactionId}] Updated in-memory state with Habit 1 data for ${userTag}.`);
-
-            // Await the Firestore save to guarantee data integrity
-            const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
-            await setupStateRef.update({
-                inputs: setupData.inputs,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-            console.log(`[${interaction.customId} FIRESTORE_UPDATE_SUCCESS ${interactionId}] Successfully saved Habit 1 data to Firestore for ${userTag}.`);
             
-            // Respond to the user with the next step choices
-            const habit1Embed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Habit 1 Saved!').setDescription(`**Habit 1:**\n**${habit1GoalStr}** **${habit1Unit}** for **${habit1Label}**.`);
-            const addAnotherButton = new ButtonBuilder().setCustomId('manual_add_another_habit_btn').setLabel('➕ Add Another Habit').setStyle(ButtonStyle.Primary);
-            const finishSetupButton = new ButtonBuilder().setCustomId('manual_finish_setup_btn').setLabel('✅ Finish Setup').setStyle(ButtonStyle.Success);
-            const row = new ActionRowBuilder().addComponents(addAnotherButton, finishSetupButton);
+            // --- Validation Passed: Update state and proceed ---
+            if (!setupData.inputs) setupData.inputs = [];
+            setupData.inputs[0] = { label: habitLabel, unit: habitUnit, goal: habitGoal };
+            
+            delete setupData.tempSelectedInput; // Clean up temp state
+            
+            // This is the correct next step after confirming the first habit
+            setupData.dmFlowState = 'awaiting_add_another_habit_choice';
+            userExperimentSetupData.set(userId, setupData);
+
+            console.log(`[${interaction.customId} HABIT1_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 1. State is now '${setupData.dmFlowState}'.`);
+            
+            // --- Ask to add another habit or finish ---
+            const confirmationEmbed = new EmbedBuilder()
+                .setColor('#57F287')
+                .setTitle('✅ Habit 1 Confirmed!')
+                .setDescription(`**${formatGoalForDisplay(habitGoal, habitUnit)} ${habitUnit}, ${habitLabel}**`)
+                .addFields({ name: '\u200B', value: "Would you like to add another daily habit to test (up to 3 total)?" });
+
+            const addHabitButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('add_another_habit_yes_btn')
+                        .setLabel('➕ Yes, Add Another')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('add_another_habit_no_btn')
+                        .setLabel('⏭️ No More Habits')
+                        .setStyle(ButtonStyle.Primary)
+                );
 
             await interaction.editReply({
-                embeds: [habit1Embed],
-                components: [row]
+                embeds: [confirmationEmbed],
+                components: [addHabitButtons]
             });
-            console.log(`[${interaction.customId} SUCCESS_REPLY_SENT ${interactionId}] Confirmed Habit 1 and sent 'Add Another / Finish' buttons.`);
 
+            console.log(`[${interaction.customId} PROMPT_ADD_ANOTHER_SENT ${interactionId}] Prompted user to add another habit or finish.`);
         } catch (error) {
-            const errorTime = performance.now();
-            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing Habit 1 modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
-            if (interaction.deferred || interaction.replied) {
-                try {
-                    await interaction.editReply({ content: '❌ An unexpected error occurred while saving Habit 1. Please try again.', components: [], embeds: [] });
-                } catch (editError) {
-                    console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback editReply failed:`, editError);
-                }
-            }
+            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error);
         }
     }
 
@@ -8341,7 +8365,6 @@ client.on(Events.InteractionCreate, async interaction => {
         const userTag = interaction.user.tag;
         const interactionId = interaction.id;
         console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 2 submitted by ${userTag}.`);
-
         if (!dbAdmin) {
             console.error(`[${interaction.customId} CRITICAL ${interactionId}] dbAdmin not initialized.`);
             try {
@@ -8367,8 +8390,21 @@ client.on(Events.InteractionCreate, async interaction => {
             const habit2GoalStr = interaction.fields.getTextInputValue('habit2_goal_manual')?.trim();
             
             const validationErrors = [];
-            if (!habit2Label) validationErrors.push("The 'Habit 2' label is required.");
-            if (!habit2Unit) validationErrors.push("The 'Unit / Scale' for Habit 2 is required.");
+            if (!habit2Label) {
+                validationErrors.push("The 'Habit 2' label is required.");
+            } else if (habit2Label.length > 30) {
+                validationErrors.push(`The Habit 2 Label is too long (max 30 characters).`);
+            }
+
+            if (!habit2Unit) {
+                validationErrors.push("The 'Unit / Scale' for Habit 2 is required.");
+            } else if (habit2Unit.length > 15) {
+                validationErrors.push(`The Unit/Scale for Habit 2 is too long (max 15 characters).`);
+            }
+
+            if (habit2Label && habit2Unit && (habit2Label.length + habit2Unit.length + 1) > 45) {
+                validationErrors.push(`The combined Label and Unit for Habit 2 are too long for the daily log form (max 45 chars).`);
+            }
             
             let habit2Goal = null;
             if (!habit2GoalStr) {
@@ -8391,20 +8427,17 @@ client.on(Events.InteractionCreate, async interaction => {
                 return;
             }
 
-            // Update in-memory map immediately
             setupData.inputs[1] = { label: habit2Label, unit: habit2Unit, goal: habit2Goal };
             userExperimentSetupData.set(userId, setupData);
             console.log(`[${interaction.customId} IN_MEMORY_UPDATE ${interactionId}] Updated in-memory state with Habit 2 data.`);
             
-            // Await the Firestore save
             const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
             await setupStateRef.update({
                 inputs: setupData.inputs,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
             console.log(`[${interaction.customId} FIRESTORE_UPDATE_SUCCESS ${interactionId}] Successfully saved Habit 2 data to Firestore.`);
-
-            // Respond to user immediately
+            
             const habit2Embed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Habit 2 Saved!').setDescription(`**Habit 2:**\n**${habit2GoalStr}** **${habit2Unit}** for **${habit2Label}**.`);
             const addAnotherButton = new ButtonBuilder().setCustomId('manual_add_another_habit_btn').setLabel('➕ Add Habit 3').setStyle(ButtonStyle.Primary);
             const finishSetupButton = new ButtonBuilder().setCustomId('manual_finish_setup_btn').setLabel('✅ Finish Setup').setStyle(ButtonStyle.Success);
@@ -8415,7 +8448,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 components: [row]
             });
             console.log(`[${interaction.customId} SUCCESS_REPLY_SENT ${interactionId}] Confirmed Habit 2.`);
-
         } catch (error) {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing Habit 2 modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
@@ -8435,7 +8467,6 @@ client.on(Events.InteractionCreate, async interaction => {
         const userTag = interaction.user.tag;
         const interactionId = interaction.id;
         console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 3 submitted by ${userTag}.`);
-
         if (!dbAdmin) {
             console.error(`[${interaction.customId} CRITICAL ${interactionId}] dbAdmin not initialized.`);
             try {
@@ -8461,9 +8492,22 @@ client.on(Events.InteractionCreate, async interaction => {
             const habit3GoalStr = interaction.fields.getTextInputValue('habit3_goal_manual')?.trim();
             
             const validationErrors = [];
-            if (!habit3Label) validationErrors.push("The 'Habit 3' label is required.");
-            if (!habit3Unit) validationErrors.push("The 'Unit / Scale' for Habit 3 is required.");
+            if (!habit3Label) {
+                validationErrors.push("The 'Habit 3' label is required.");
+            } else if (habit3Label.length > 30) {
+                validationErrors.push(`The Habit 3 Label is too long (max 30 characters).`);
+            }
 
+            if (!habit3Unit) {
+                validationErrors.push("The 'Unit / Scale' for Habit 3 is required.");
+            } else if (habit3Unit.length > 15) {
+                validationErrors.push(`The Unit/Scale for Habit 3 is too long (max 15 characters).`);
+            }
+
+            if (habit3Label && habit3Unit && (habit3Label.length + habit3Unit.length + 1) > 45) {
+                validationErrors.push(`The combined Label and Unit for Habit 3 are too long for the daily log form (max 45 chars).`);
+            }
+            
             let habit3Goal = null;
             if (!habit3GoalStr) {
                 validationErrors.push("The 'Target Number' for Habit 3 is required.");
@@ -8485,28 +8529,25 @@ client.on(Events.InteractionCreate, async interaction => {
                 return;
             }
 
-            // Update in-memory map immediately
             setupData.inputs[2] = { label: habit3Label, unit: habit3Unit, goal: habit3Goal };
             userExperimentSetupData.set(userId, setupData);
             console.log(`[${interaction.customId} IN_MEMORY_UPDATE ${interactionId}] Updated in-memory state with Habit 3 data.`);
             
-            // Await the Firestore save
             const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
             await setupStateRef.update({
                 inputs: setupData.inputs,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
             console.log(`[${interaction.customId} FIRESTORE_UPDATE_SUCCESS ${interactionId}] Successfully saved Habit 3 data to Firestore.`);
-
-            // Respond to user with the final review and the Back/Finish buttons
+            
             const finishSetupButton = new ButtonBuilder().setCustomId('manual_finish_setup_btn').setLabel('✅ Looks Good, Finish Setup').setStyle(ButtonStyle.Success);
             const backToStartButton = new ButtonBuilder().setCustomId('manual_back_to_outcome_modal_btn').setLabel('⬅️ Edit Outcome').setStyle(ButtonStyle.Secondary);
             const row = new ActionRowBuilder().addComponents(backToStartButton, finishSetupButton);
-            
             const fullSummaryEmbed = new EmbedBuilder()
                 .setColor('#57F287')
                 .setTitle('✅ All Habits Saved!')
-                .setDescription(`Here is the full summary of your experiment. If it looks correct, click "Finish Setup" to proceed. You can also go back to edit the Outcome.\n\n` +
+                .setDescription(
+                    `Here is the full summary of your experiment. If it looks correct, click "Finish Setup" to proceed. You can also go back to edit the Outcome.\n\n` +
                     `**Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
                     `**Outcome:**\n**${setupData.outcome.goal}** **${setupData.outcome.unit}** for **${setupData.outcome.label}**\n\n` +
                     `**Habits:**\n` +
@@ -8514,13 +8555,11 @@ client.on(Events.InteractionCreate, async interaction => {
                     `2. Track **${setupData.inputs[1].goal}** **${setupData.inputs[1].unit}** for **${setupData.inputs[1].label}**.\n` +
                     `3. Track **${setupData.inputs[2].goal}** **${setupData.inputs[2].unit}** for **${setupData.inputs[2].label}**.`
                 );
-
             await interaction.editReply({
                 embeds: [fullSummaryEmbed],
                 components: [row]
             });
             console.log(`[${interaction.customId} SUCCESS_REPLY_SENT ${interactionId}] Confirmed Habit 3 and sent final review with Finish/Back buttons.`);
-
         } catch (error) {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing Habit 3 modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
