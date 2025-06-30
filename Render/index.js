@@ -6602,48 +6602,45 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.isButton() && interaction.customId.startsWith('show_raw_stats_')) {
-      const showStatsButtonStartTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const experimentId = interaction.customId.split('show_raw_stats_')[1];
-      console.log(`[show_raw_stats_ START ${interactionId}] Clicked by ${userId} for experiment ${experimentId}.`);
+    const showStatsButtonStartTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    const experimentId = interaction.customId.split('show_raw_stats_')[1];
+    console.log(`[show_raw_stats_ START ${interactionId}] Clicked by ${userId} for experiment ${experimentId}.`);
 
-      if (!experimentId) {
-        await interaction.reply({ content: "Error: Could not identify the experiment for the stats report.", ephemeral: true });
+    if (!experimentId) {
+        try {
+            await interaction.reply({ content: "Error: Could not identify the experiment for the stats report.", ephemeral: true });
+        } catch(e) { console.error(`[show_raw_stats_ ERROR ${interactionId}] Reply failed for missing experimentId.`, e); }
         return;
-      }
+    }
 
-      try {
-        // Acknowledge the button click. This prevents the "interaction failed" message.
+    try {
+        // Acknowledge the button click immediately.
+        // This prevents the "interaction failed" message on cold starts.
         await interaction.deferUpdate();
+        console.log(`[show_raw_stats_ DEFERRED ${interactionId}] Interaction deferred successfully.`);
 
-        // The userStatsReportData map was populated by the listener.
-        // Now we use it to send the first page.
-        const reportInfo = userStatsReportData.get(userId);
-        if (!reportInfo || reportInfo.experimentId !== experimentId) {
-            console.warn(`[show_raw_stats_ WARN ${interactionId}] Could not find matching report data in cache for user ${userId}, experiment ${experimentId}.`);
-            await interaction.user.send({ content: "Your stats report session seems to have expired. Please wait for the next report notification." });
-            return;
-        }
-
-        // Pass the user object to sendStatsPage. This will cause it to send a NEW message in the DM,
-        // which is the correct behavior for starting the report.
+        // The sendStatsPage function is now correctly responsible for ALL logic,
+        // including the in-memory check AND the Firestore fallback.
         await sendStatsPage(interaction.user, userId, experimentId, 1);
         console.log(`[show_raw_stats_ SUCCESS ${interactionId}] Call to sendStatsPage completed for ${userId}.`);
-
-      } catch (error) {
+        
+    } catch (error) {
         console.error(`[show_raw_stats_ ERROR ${interactionId}] Error processing stats request for exp ${experimentId}:`, error);
-        try {
-            // Since the original interaction was only deferred, we can't reply to it.
-            // We must send a new message to the user to inform them of the error.
-            await interaction.user.send({ content: `❌ An error occurred while loading your stats report: ${error.message || 'Please try again.'}`});
-        } catch (dmError) {
-            console.error(`[show_raw_stats_ CATCH_ERROR_DM_FAIL ${interactionId}]`, dmError);
+
+        // This error message is now more generic because the user may not have DMs open.
+        // The sendStatsPage function itself does not have access to the interaction to reply.
+        if (error.code === 10062) { // Specifically handle the "Unknown Interaction" on a cold start
+            console.warn(`[show_raw_stats_ WARN ${interactionId}] Cold start detected. Interaction expired before processing.`);
         }
-      }
-      const processEndTime = performance.now();
-      console.log(`[show_raw_stats_ END ${interactionId}] Finished processing. Total time: ${(processEndTime - showStatsButtonStartTime).toFixed(2)}ms`);
+        
+        // We cannot reliably reply to the interaction here if deferUpdate failed,
+        // but the error is logged for debugging.
     }
+    const processEndTime = performance.now();
+    console.log(`[show_raw_stats_ END ${interactionId}] Finished processing. Total time: ${(processEndTime - showStatsButtonStartTime).toFixed(2)}ms`);
+}
 
     else if (interaction.isButton() && interaction.customId.startsWith('stats_show_continuous_mode_prompt_')) {
       const nextButtonClickTime = performance.now();
