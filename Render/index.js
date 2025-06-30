@@ -7079,91 +7079,82 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.customId === 'ai_outcome_select') {
-    const selectMenuSubmitTime = performance.now();
-    const interactionId = interaction.id;
-    const userId = interaction.user.id;
-    const userTag = interaction.user.tag;
-    console.log(`[${interaction.customId} START ${interactionId}] Received selection from ${userTag}.`);
-
-    try {
-        const setupData = userExperimentSetupData.get(userId);
-        if (!setupData || setupData.dmFlowState !== 'awaiting_outcome_suggestion_selection') {
-            await interaction.reply({ content: "This selection has expired or your session is out of sync. Please restart using `/go`.", ephemeral: true });
-            console.warn(`[${interaction.customId} WARN ${interactionId}] User ${userTag} in wrong state: ${setupData?.dmFlowState}`);
-            return;
-        }
-
-        const selectedValue = interaction.values[0];
-
-        // PATH 1: User wants to write their own metric. This path remains unchanged.
-        if (selectedValue === 'write_my_own_outcome') {
-            console.log(`[${interaction.customId} CUSTOM_PATH ${interactionId}] User ${userTag} selected 'Write my own'.`);
-            
-            const manualOutcomeModal = new ModalBuilder()
-                .setCustomId('manual_setup_outcome_modal')
-                .setTitle('🧪 Custom Outcome Metric');
-            
-            const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setStyle(TextInputStyle.Paragraph).setValue(setupData.deeperWish || "").setRequired(true);
-            const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setRequired(true);
-            const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setRequired(true);
-            const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setRequired(true);
-            
-            manualOutcomeModal.addComponents(
-                new ActionRowBuilder().addComponents(deeperProblemInput),
-                new ActionRowBuilder().addComponents(outcomeLabelInput),
-                new ActionRowBuilder().addComponents(outcomeGoalInput),
-                new ActionRowBuilder().addComponents(outcomeUnitInput)
-            );
-            
-            await interaction.showModal(manualOutcomeModal);
-            console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed manual_setup_outcome_modal for custom entry.`);
-            return;
-        }
-
-        // PATH 2: User selected an AI suggestion. This path is NEW.
-        if (selectedValue.startsWith('ai_outcome_suggestion_')) {
-            await interaction.deferUpdate();
-            const suggestionIndex = parseInt(selectedValue.split('_').pop(), 10);
-            const chosenSuggestion = setupData.aiGeneratedOutcomeSuggestions?.[suggestionIndex];
-
-            if (!chosenSuggestion) {
-                console.error(`[${interaction.customId} ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for ${userTag}.`);
-                await interaction.editReply({ content: "Sorry, I couldn't process that selection. Please try choosing again or restarting the setup.", components: [], embeds: [] });
+        const selectMenuSubmitTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        const userTag = interaction.user.tag;
+        console.log(`[${interaction.customId} START ${interactionId}] Received selection from ${userTag}.`);
+        try {
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || setupData.dmFlowState !== 'awaiting_outcome_suggestion_selection') {
+                await interaction.reply({ content: "This selection has expired or your session is out of sync. Please restart using `/go`.", ephemeral: true });
+                console.warn(`[${interaction.customId} WARN ${interactionId}] User ${userTag} in wrong state: ${setupData?.dmFlowState}`);
                 return;
             }
 
-            console.log(`[${interaction.customId} AI_PATH ${interactionId}] User ${userTag} selected suggestion:`, chosenSuggestion);
-            // Store the selection in the user's state so the next handler can use it.
-            setupData.tempSelectedOutcome = chosenSuggestion;
-            userExperimentSetupData.set(userId, setupData);
+            const selectedValue = interaction.values[0];
+            // PATH 1: User wants to write their own metric.
+            if (selectedValue === 'write_my_own_outcome') {
+                console.log(`[${interaction.customId} CUSTOM_PATH ${interactionId}] User ${userTag} selected 'Write my own'.`);
+                const manualOutcomeModal = new ModalBuilder()
+                    .setCustomId('manual_setup_outcome_modal')
+                    .setTitle('🧪 Custom Outcome Metric');
+                const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setStyle(TextInputStyle.Paragraph).setValue(setupData.deeperWish || "").setRequired(true);
+                const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setRequired(true);
+                const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setRequired(true);
+                const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setRequired(true);
+                manualOutcomeModal.addComponents(
+                    new ActionRowBuilder().addComponents(deeperProblemInput),
+                    new ActionRowBuilder().addComponents(outcomeLabelInput),
+                    new ActionRowBuilder().addComponents(outcomeGoalInput),
+                    new ActionRowBuilder().addComponents(outcomeUnitInput)
+                );
+                await interaction.showModal(manualOutcomeModal);
+                console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed manual_setup_outcome_modal for custom entry.`);
+                return;
+            }
 
-            // Prepare the message with the explanatory image and the continue button
-            const explainerEmbed = new EmbedBuilder()
-                .setColor('#5865F2')
-                .setTitle('How to Define a Metric')
-                .setDescription("Each metric you track needs three things:")
-                .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale.png'); // Replace with your actual image URL
+            // PATH 2: User selected an AI suggestion. This path is NEW.
+            if (selectedValue.startsWith('ai_outcome_suggestion_')) {
+                const suggestionIndex = parseInt(selectedValue.split('_').pop(), 10);
+                const chosenSuggestion = setupData.aiGeneratedOutcomeSuggestions?.[suggestionIndex];
 
-            const continueButton = new ButtonBuilder()
-                .setCustomId('ai_show_outcome_modal_btn')
-                .setLabel('✍️ Confirm or Edit Metric')
-                .setStyle(ButtonStyle.Success);
-            
-            const row = new ActionRowBuilder().addComponents(continueButton);
+                if (!chosenSuggestion) {
+                    console.error(`[${interaction.customId} ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for ${userTag}.`);
+                    await interaction.reply({ content: "Sorry, I couldn't process that selection. Please try choosing again or restarting the setup.", ephemeral: true });
+                    return;
+                }
 
-            // Update the message that had the dropdown
-            await interaction.editReply({
-                content: `You selected: **${chosenSuggestion.label}**. Let's confirm the details.`,
-                embeds: [explainerEmbed],
-                components: [row]
-            });
-            console.log(`[${interaction.customId} EXPLAINER_SHOWN ${interactionId}] Showed metric explainer to ${userTag}.`);
+                console.log(`[${interaction.customId} AI_PATH ${interactionId}] User ${userTag} selected suggestion:`, chosenSuggestion);
+                // Store the selection in the user's state so the next handler can use it.
+                setupData.tempSelectedOutcome = chosenSuggestion;
+                userExperimentSetupData.set(userId, setupData);
+                // Prepare the message with the explanatory image and the continue button
+                const explainerEmbed = new EmbedBuilder()
+                    .setColor('#5865F2')
+                    .setTitle('How to Define a Metric')
+                    .setDescription("Each metric you track needs three things:")
+                    .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale.png');
+
+                const continueButton = new ButtonBuilder()
+                    .setCustomId('ai_show_outcome_modal_btn')
+                    .setLabel('✍️ Confirm or Edit Metric')
+                    .setStyle(ButtonStyle.Success);
+                const row = new ActionRowBuilder().addComponents(continueButton);
+
+                // Update the message that had the dropdown
+                await interaction.update({
+                    content: `You selected: **${chosenSuggestion.label}**. Let's confirm the details.`,
+                    embeds: [explainerEmbed],
+                    components: [row]
+                });
+                console.log(`[${interaction.customId} EXPLAINER_SHOWN ${interactionId}] Showed metric explainer to ${userTag}.`);
+            }
+
+        } catch (error) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing select menu for ${userTag}:`, error);
         }
-
-    } catch (error) {
-        console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing select menu for ${userTag}:`, error);
     }
-}
     
     else if (interaction.customId === 'ai_input1_select') {
         const selectMenuSubmitTime = performance.now();
