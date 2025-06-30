@@ -4059,7 +4059,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setColor('#5865F2')
             .setTitle('How to Define a Metric')
             .setDescription("Each metric you track needs three things:")
-            .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/main/Active%20Pictures/Label%2C%20Unit%2C%20Goal.png'); // Replace with your actual image URL
+            .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale.png'); // Replace with your actual image URL
 
         const continueButton = new ButtonBuilder()
             .setCustomId('manual_show_outcome_form_btn')
@@ -7146,7 +7146,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setColor('#5865F2')
                 .setTitle('How to Define a Metric')
                 .setDescription("Each metric you track needs three things:")
-                .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/main/Active%20Pictures/Label%2C%20Unit%2C%20Goal.png'); // Replace with your actual image URL
+                .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale.png'); // Replace with your actual image URL
 
             const continueButton = new ButtonBuilder()
                 .setCustomId('ai_show_outcome_modal_btn')
