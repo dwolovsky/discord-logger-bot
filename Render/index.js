@@ -1082,12 +1082,11 @@ function formatDecimalAsTime(decimalHours) {
 
 /**
  * Checks if a metric's unit suggests it's a binary yes/no or completion task.
- * @param {string | null} unit - The unit string from the metric.
+ * @param {string | null | undefined} unit - The unit string from the metric.
  * @returns {boolean} True if the unit is considered a yes/no type.
  */
 function isYesNoMetric(unit) {
     if (!unit) return false;
-
     const yesNoKeywords = [
         'yes/no',
         'yes / no',
@@ -1108,20 +1107,51 @@ function isYesNoMetric(unit) {
         '1 or 0',
         'y / n'
     ];
-
     const lowerUnit = unit.toLowerCase().trim();
     return yesNoKeywords.includes(lowerUnit);
 }
 
 /**
  * Checks if a metric's unit suggests it's a time-of-day metric.
- * @param {string | null} unit - The unit string from the metric.
+ * @param {string | null | undefined} unit - The unit string from the metric.
  * @returns {boolean} True if the unit is considered a time-of-day type.
  */
 function isTimeMetric(unit) {
     if (!unit) return false;
-    // This reuses the TIME_OF_DAY_KEYWORDS constant already defined in your code 
+    [cite_start]// This reuses the TIME_OF_DAY_KEYWORDS constant already defined in your code [cite: 1499, 1500]
     return TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
+}
+
+/**
+ * Formats a goal value for display, handling time-based units and yes/no.
+ * @param {number | string | null | undefined} goal - The goal value.
+ * @param {string | null | undefined} unit - The unit of the metric.
+ * @returns {string} The formatted goal string.
+ */
+function formatGoalForDisplay(goal, unit) {
+    if (goal === null || goal === undefined) return 'N/A';
+    if (typeof goal === 'string' && goal.trim() === '') return 'N/A'; // Handle empty strings
+
+    // Check for time metric first
+    if (isTimeMetric(unit)) { // isTimeMetric now handles undefined 'unit'
+        // Attempt to parse string time (e.g. "8pm") into decimal hours if it's a string
+        const parsedTime = typeof goal === 'string' ? parseTimeGoal(goal) : goal;
+        return formatDecimalAsTime(parsedTime);
+    }
+
+    // Check for yes/no metric
+    if (isYesNoMetric(unit)) { // isYesNoMetric now handles undefined 'unit'
+        return goal === 1 ? 'Yes' : 'No';
+    }
+
+    // For other numeric metrics, just return the number.
+    const numGoal = parseFloat(goal);
+    if (!isNaN(numGoal)) {
+        return String(numGoal);
+    }
+
+    // Fallback for unexpected formats
+    return String(goal);
 }
 
 /**
@@ -4955,13 +4985,13 @@ client.on(Events.InteractionCreate, async interaction => {
       const interactionId = interaction.id;
       const userId = interaction.user.id;
       const userTagForLog = interaction.user.tag;
-      
+
       console.log(`[add_another_habit_no_btn START ${interactionId}] Clicked by ${userTagForLog}.`);
       try {
         await interaction.deferUpdate();
-        
+
         const setupData = userExperimentSetupData.get(userId);
-        if (!setupData || !setupData.deeperProblem || !setupData.outcomeLabel || !setupData.inputs || setupData.inputs.length === 0) {
+        if (!setupData || !setupData.deeperProblem || !setupData.outcome || !setupData.inputs || setupData.inputs.length === 0) {
           console.warn(`[add_another_habit_no_btn WARN ${interactionId}] User ${userTagForLog} had incomplete setupData.`);
           await interaction.editReply({ content: "It seems some experiment details are missing. Please restart the setup with `/go`.", components: [], embeds: [] });
           return;
@@ -4971,46 +5001,38 @@ client.on(Events.InteractionCreate, async interaction => {
         setupData.dmFlowState = 'awaiting_metrics_confirmation';
         userExperimentSetupData.set(userId, setupData);
 
-        // Helper to format the goal for display (handles time)
-        const formatGoalForDisplay = (goal, unit) => {
-            const isTime = TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
-            return isTime ? formatDecimalAsTime(goal) : goal;
-        };
-
+        // This now calls the globally available formatGoalForDisplay
         let summaryDescription = `**🌠 Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
-                                `**📊 Daily Outcome to Track:**\n\`${formatGoalForDisplay(setupData.outcomeGoal, setupData.outcomeUnit)}, ${setupData.outcomeUnit}, ${setupData.outcomeLabel}\`\n\n` +
+                                `**📊 Daily Outcome to Track:**\n\`${formatGoalForDisplay(setupData.outcome.goal, setupData.outcome.unit)}, ${setupData.outcome.unit}, ${setupData.outcome.label}\`\n\n` +
                                 `**🛠️ Daily Habits to Test:**\n`;
         setupData.inputs.forEach((input, index) => {
             if (input && input.label) {
                 summaryDescription += `${index + 1}. \`${formatGoalForDisplay(input.goal, input.unit)}, ${input.unit}, ${input.label}\`\n`;
             }
         });
-
         const confirmEmbed = new EmbedBuilder()
             .setColor('#FFBF00') // Amber
             .setTitle('🔬 Review Your Experiment Metrics')
             .setDescription(summaryDescription + "\n\nDo these look correct? You can edit them now if needed.")
             .setFooter({ text: "Your settings are not saved until you select a duration."});
-
         const confirmButtons = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
                     .setCustomId('confirm_metrics_proceed_btn')
                     .setLabel('✅ Looks Good')
                     .setStyle(ButtonStyle.Success),
-                 new ButtonBuilder()
+
+                new ButtonBuilder()
                     .setCustomId('request_edit_metrics_modal_btn')
                     .setLabel('✏️ Edit Metrics')
                     .setStyle(ButtonStyle.Primary)
             );
-
         // This now correctly edits the message the button was on.
         await interaction.editReply({
             content: "All habits defined! Here's the full summary of your experiment's metrics:",
             embeds: [confirmEmbed],
             components: [confirmButtons]
         });
-        
         console.log(`[add_another_habit_no_btn CONFIRM_EDIT_PROMPT_SENT ${interactionId}] Edited message to show confirm/edit prompt.`);
 
       } catch (error) {
@@ -7167,185 +7189,137 @@ client.on(Events.InteractionCreate, async interaction => {
     
 
     else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input2_label_select') {
-      const input2LabelSelectSubmitTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const userTagForLog = interaction.user.tag;
-      console.log(`[ai_input2_label_select START ${interactionId}] Received Input 2 HABIT LABEL selection from ${userTagForLog}.`);
-      try {
-        await interaction.deferUpdate();
-        const deferTime = performance.now();
-        console.log(`[ai_input2_label_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - input2LabelSelectSubmitTime).toFixed(2)}ms`);
+        const input2LabelSelectSubmitTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        const userTagForLog = interaction.user.tag;
+        console.log(`[ai_input2_label_select START ${interactionId}] Received Input 2 HABIT LABEL selection from ${userTagForLog}.`);
+        
+        try {
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || setupData.dmFlowState !== 'awaiting_input2_label_dropdown_selection') {
+                await interaction.reply({ content: "This selection has expired or your session is out of sync. Please restart using `/go`.", ephemeral: true });
+                console.warn(`[ai_input2_label_select WARN ${interactionId}] User ${userTagForLog} in wrong state: ${setupData?.dmFlowState}`);
+                return;
+            }
 
-        const setupData = userExperimentSetupData.get(userId);
-        if (!setupData || setupData.dmFlowState !== 'awaiting_input2_label_dropdown_selection' || setupData.currentInputIndex !== 2) {
-          console.warn(`[ai_input2_label_select WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState || 'no setupData'}, Index: ${setupData?.currentInputIndex}.`);
-          await interaction.followUp({ content: "It seems there was a mix-up with selecting your second habit. Please try restarting the experiment setup with `/go`.", ephemeral: true });
-          return;
+            const selectedValue = interaction.values[0];
+
+            if (selectedValue === 'custom_input2_label') {
+                console.log(`[ai_input2_label_select CUSTOM_PATH ${interactionId}] User selected 'Write my own'.`);
+                const manualHabit2Modal = new ModalBuilder()
+                    .setCustomId('manual_setup_habit2_modal')
+                    .setTitle('🧪 Custom Daily Habit 2');
+                const habit2LabelInput = new TextInputBuilder().setCustomId('habit2_label_manual').setLabel("🛠️ Daily Habit 2 (The Label)").setPlaceholder("e.g., 'Evening Review'").setStyle(TextInputStyle.Short).setRequired(true);
+                const habit2UnitInput = new TextInputBuilder().setCustomId('habit2_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'yes/no', 'pages read'").setStyle(TextInputStyle.Short).setRequired(true);
+                const habit2GoalInput = new TextInputBuilder().setCustomId('habit2_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '1', '10'").setStyle(TextInputStyle.Short).setRequired(true);
+                manualHabit2Modal.addComponents(
+                    new ActionRowBuilder().addComponents(habit2LabelInput),
+                    new ActionRowBuilder().addComponents(habit2GoalInput),
+                    new ActionRowBuilder().addComponents(habit2UnitInput)
+                );
+                await interaction.showModal(manualHabit2Modal);
+                console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed manual_setup_habit2_modal for custom entry.`);
+
+            } else if (selectedValue.startsWith('ai_input2_label_suggestion_')) {
+                const suggestionIndex = parseInt(selectedValue.split('_').pop(), 10);
+                const chosenSuggestion = setupData.aiGeneratedInputSuggestions?.[suggestionIndex];
+
+                if (!chosenSuggestion) {
+                    console.error(`[${interaction.customId} ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found.`);
+                    await interaction.reply({ content: "Sorry, I couldn't process that selection. Please try choosing again.", ephemeral: true });
+                    return;
+                }
+
+                console.log(`[${interaction.customId} AI_PATH ${interactionId}] User selected suggestion for Habit 2:`, chosenSuggestion);
+                setupData.tempSelectedInput = chosenSuggestion;
+                userExperimentSetupData.set(userId, setupData);
+
+                const confirmHabitModal = new ModalBuilder()
+                    .setCustomId('confirm_ai_habit_modal_2') // New modal ID for habit 2
+                    .setTitle('Confirm Your 2nd Habit');
+                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Daily Habit Label").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
+                const habitGoalInput = new TextInputBuilder().setCustomId('habit_goal_manual').setLabel("🎯 Daily Target").setStyle(TextInputStyle.Short).setValue(String(chosenSuggestion.goal)).setRequired(true);
+                const habitUnitInput = new TextInputBuilder().setCustomId('habit_unit_manual').setLabel("📏 Unit / Scale").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.unit).setRequired(true);
+                
+                confirmHabitModal.addComponents(
+                    new ActionRowBuilder().addComponents(habitLabelInput),
+                    new ActionRowBuilder().addComponents(habitGoalInput),
+                    new ActionRowBuilder().addComponents(habitUnitInput)
+                );
+                await interaction.showModal(confirmHabitModal);
+                console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed confirm_ai_habit_modal_2 with pre-filled suggestion.`);
+            }
+        } catch (error) {
+            console.error(`[ai_input2_label_select ERROR ${interactionId}]`, error);
         }
-
-        const selectedValue = interaction.values[0];
-        if (selectedValue === 'custom_input2_label') {
-          console.log(`[ai_input2_label_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'custom habit label' for Input 2.`);
-          setupData.dmFlowState = 'awaiting_input2_label_text';
-          userExperimentSetupData.set(userId, setupData);
-
-          const customLabelEmbed = new EmbedBuilder()
-            .setColor('#5865F2')
-            .setTitle("✏️ Custom Daily Habit 2")
-            .setDescription("Please type your 2nd habit below.\n\n**Examples:**\n● \"Evening Review\"\n● \"Limit Screen Time\"\n\n(max 30 characters)");
-          await interaction.editReply({
-              embeds: [customLabelEmbed],
-              components: []
-          });
-          console.log(`[ai_input2_label_select CUSTOM_LABEL_PROMPT_SENT ${interactionId}] Prompted for custom Input 2 label text.`);
-          return;
-
-        } else if (selectedValue.startsWith('ai_input2_label_suggestion_')) {
-          const suggestionIndex = parseInt(selectedValue.split('_').pop(), 10);
-          const chosenSuggestion = setupData.aiGeneratedInputSuggestions?.[suggestionIndex];
-
-          if (!chosenSuggestion) {
-            console.error(`[ai_input2_label_select ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for user ${userTagForLog}.`);
-            await interaction.followUp({ content: "Sorry, I couldn't process that habit selection. Please try choosing again or restarting.", ephemeral: true });
-            return;
-          }
-
-          console.log(`[ai_input2_label_select] User selected full habit 2:`, chosenSuggestion);
-          if (!setupData.inputs) setupData.inputs = [];
-          setupData.inputs[1] = { label: chosenSuggestion.label, unit: chosenSuggestion.unit, goal: chosenSuggestion.goal };
-          
-          // NOTE: The line `delete setupData.aiGeneratedInputSuggestions;` has been REMOVED.
-          delete setupData.currentInputDefinition;
-          setupData.dmFlowState = 'awaiting_add_another_habit_choice';
-          userExperimentSetupData.set(userId, setupData);
-
-          const confirmationEmbed = new EmbedBuilder()
-            .setColor('#57F287')
-            .setTitle('✅ Habit 2 Confirmed!')
-            .setDescription(`**${chosenSuggestion.goal} ${chosenSuggestion.unit}, ${chosenSuggestion.label}**`)
-            .addFields({ name: '\u200B', value: "Would you like to add a 3rd (and final) habit to test?" });
-
-          const addHabitButtons = new ActionRowBuilder()
-            .addComponents(
-              new ButtonBuilder().setCustomId('add_another_habit_yes_btn').setLabel('➕ Yes, Add Habit 3').setStyle(ButtonStyle.Success),
-              new ButtonBuilder().setCustomId('add_another_habit_no_btn').setLabel('⏭️ No More Habits').setStyle(ButtonStyle.Primary)
-            );
-          
-          await interaction.editReply({
-            embeds: [confirmationEmbed],
-            components: [addHabitButtons]
-          });
-          console.log(`[ai_input2_label_select] Confirmed full habit 2 and prompted for next step.`);
-        }
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[ai_input2_label_select ERROR ${interactionId}] Error processing select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
-        if (interaction.deferred || interaction.replied) {
-            try { await interaction.editReply({ content: "Sorry, something went wrong processing your second habit choice. You might need to try selecting again or restart the setup.", components: [] }); }
-            catch (e) { console.error(`[ai_input2_label_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); }
-        }
-      }
-      const processEndTime = performance.now();
-      console.log(`[ai_input2_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - input2LabelSelectSubmitTime).toFixed(2)}ms`);
     }
 
     else if (interaction.isStringSelectMenu() && interaction.customId === 'ai_input3_label_select') {
-      const input3LabelSelectSubmitTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const userTagForLog = interaction.user.tag;
-      console.log(`[ai_input3_label_select START ${interactionId}] Received Input 3 HABIT LABEL selection from ${userTagForLog}.`);
-      try {
-        await interaction.deferUpdate();
-        const deferTime = performance.now();
-        console.log(`[ai_input3_label_select DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - input3LabelSelectSubmitTime).toFixed(2)}ms`);
+        const input3LabelSelectSubmitTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        const userTagForLog = interaction.user.tag;
+        console.log(`[ai_input3_label_select START ${interactionId}] Received Input 3 HABIT LABEL selection from ${userTagForLog}.`);
+        
+        try {
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || setupData.dmFlowState !== 'awaiting_input3_label_dropdown_selection') {
+                await interaction.reply({ content: "This selection has expired or your session is out of sync. Please restart using `/go`.", ephemeral: true });
+                console.warn(`[ai_input3_label_select WARN ${interactionId}] User ${userTagForLog} in wrong state: ${setupData?.dmFlowState}`);
+                return;
+            }
 
-        const setupData = userExperimentSetupData.get(userId);
-        if (!setupData || setupData.dmFlowState !== 'awaiting_input3_label_dropdown_selection' || setupData.currentInputIndex !== 3) {
-          console.warn(`[ai_input3_label_select WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState || 'no setupData'}, Index: ${setupData?.currentInputIndex}.`);
-          await interaction.followUp({ content: "It seems there was a mix-up with selecting your third habit's label. Please try restarting the experiment setup with `/go`.", ephemeral: true });
-          return;
+            const selectedValue = interaction.values[0];
+
+            if (selectedValue === 'custom_input3_label') {
+                console.log(`[ai_input3_label_select CUSTOM_PATH ${interactionId}] User selected 'Write my own'.`);
+                const manualHabit3Modal = new ModalBuilder()
+                    .setCustomId('manual_setup_habit3_modal')
+                    .setTitle('🧪 Custom Daily Habit 3');
+                const habit3LabelInput = new TextInputBuilder().setCustomId('habit3_label_manual').setLabel("🛠️ Daily Habit 3 (The Label)").setPlaceholder("e.g., 'Journaling'").setStyle(TextInputStyle.Short).setRequired(true);
+                const habit3UnitInput = new TextInputBuilder().setCustomId('habit3_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'minutes', 'pages'").setStyle(TextInputStyle.Short).setRequired(true);
+                const habit3GoalInput = new TextInputBuilder().setCustomId('habit3_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '5', '1'").setStyle(TextInputStyle.Short).setRequired(true);
+                manualHabit3Modal.addComponents(
+                    new ActionRowBuilder().addComponents(habit3LabelInput),
+                    new ActionRowBuilder().addComponents(habit3GoalInput),
+                    new ActionRowBuilder().addComponents(habit3UnitInput)
+                );
+                await interaction.showModal(manualHabit3Modal);
+                console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed manual_setup_habit3_modal for custom entry.`);
+
+            } else if (selectedValue.startsWith('ai_input3_label_suggestion_')) {
+                const suggestionIndex = parseInt(selectedValue.split('_').pop(), 10);
+                const chosenSuggestion = setupData.aiGeneratedInputSuggestions?.[suggestionIndex];
+
+                if (!chosenSuggestion) {
+                    console.error(`[${interaction.customId} ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found.`);
+                    await interaction.reply({ content: "Sorry, I couldn't process that selection. Please try choosing again.", ephemeral: true });
+                    return;
+                }
+
+                console.log(`[${interaction.customId} AI_PATH ${interactionId}] User selected suggestion for Habit 3:`, chosenSuggestion);
+                setupData.tempSelectedInput = chosenSuggestion;
+                userExperimentSetupData.set(userId, setupData);
+
+                const confirmHabitModal = new ModalBuilder()
+                    .setCustomId('confirm_ai_habit_modal_3') // New modal ID for habit 3
+                    .setTitle('Confirm Your 3rd Habit');
+                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Daily Habit Label").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
+                const habitGoalInput = new TextInputBuilder().setCustomId('habit_goal_manual').setLabel("🎯 Daily Target").setStyle(TextInputStyle.Short).setValue(String(chosenSuggestion.goal)).setRequired(true);
+                const habitUnitInput = new TextInputBuilder().setCustomId('habit_unit_manual').setLabel("📏 Unit / Scale").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.unit).setRequired(true);
+                
+                confirmHabitModal.addComponents(
+                    new ActionRowBuilder().addComponents(habitLabelInput),
+                    new ActionRowBuilder().addComponents(habitGoalInput),
+                    new ActionRowBuilder().addComponents(habitUnitInput)
+                );
+                await interaction.showModal(confirmHabitModal);
+                console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed confirm_ai_habit_modal_3 with pre-filled suggestion.`);
+            }
+        } catch (error) {
+            console.error(`[ai_input3_label_select ERROR ${interactionId}]`, error);
         }
-
-        const selectedValue = interaction.values[0];
-        if (selectedValue === 'custom_input3_label') {
-          console.log(`[ai_input3_label_select CUSTOM_PATH ${interactionId}] User ${userTagForLog} selected 'custom habit label' for Input 3.`);
-          setupData.dmFlowState = 'awaiting_input3_label_text';
-          userExperimentSetupData.set(userId, setupData);
-
-          const customLabelEmbed = new EmbedBuilder()
-            .setColor('#5865F2')
-            .setTitle("✏️ Custom Daily Habit 3")
-            .setDescription("Please type your 3rd and final habit below.\n\n(max 30 characters)");
-          await interaction.editReply({
-              embeds: [customLabelEmbed],
-              components: []
-          });
-          console.log(`[ai_input3_label_select CUSTOM_LABEL_PROMPT_SENT ${interactionId}] Prompted for custom Input 3 label text.`);
-          return;
-
-        } else if (selectedValue.startsWith('ai_input3_label_suggestion_')) {
-          const suggestionIndex = parseInt(selectedValue.split('_').pop(), 10);
-          const chosenSuggestion = setupData.aiGeneratedInputSuggestions?.[suggestionIndex];
-
-          if (!chosenSuggestion) {
-            console.error(`[ai_input3_label_select ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for user ${userTagForLog}.`);
-            await interaction.followUp({ content: "Sorry, I couldn't process that habit selection. Please try choosing again or restarting.", ephemeral: true });
-            return;
-          }
-
-          console.log(`[ai_input3_label_select] User selected full habit 3:`, chosenSuggestion);
-          if (!setupData.inputs) setupData.inputs = [];
-          setupData.inputs[2] = { label: chosenSuggestion.label, unit: chosenSuggestion.unit, goal: chosenSuggestion.goal };
-          
-          // NOTE: The line `delete setupData.aiGeneratedInputSuggestions;` has been REMOVED.
-          delete setupData.currentInputDefinition;
-          setupData.dmFlowState = 'awaiting_metrics_confirmation';
-          userExperimentSetupData.set(userId, setupData);
-          console.log(`[ai_input3_label_select HABIT3_CONFIRMED ${interactionId}] User ${userTagForLog} confirmed Habit 3. State is now '${setupData.dmFlowState}'.`);
-          
-          const formatGoalForDisplay = (goal, unit) => {
-              const isTime = TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
-              return isTime ? formatDecimalAsTime(goal) : goal;
-          };
-
-          let summaryDescription = `**🌠 Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
-                                  `**📊 Daily Outcome to Track:**\n\`${formatGoalForDisplay(setupData.outcomeGoal, setupData.outcomeUnit)}, ${setupData.outcomeUnit}, ${setupData.outcomeLabel}\`\n\n` +
-                                  `**🛠️ Daily Habits to Test:**\n`;
-          setupData.inputs.forEach((input, index) => {
-              if (input && input.label) {
-                  summaryDescription += `${index + 1}. \`${formatGoalForDisplay(input.goal, input.unit)}, ${input.unit}, ${input.label}\`\n`;
-              }
-          });
-          const confirmEmbed = new EmbedBuilder()
-              .setColor('#FFBF00')
-              .setTitle('🔬 Review Your Experiment Metrics')
-              .setDescription(summaryDescription + "\n\nDo these look correct? You can edit them now if needed.")
-              .setFooter({ text: "Your settings are not saved until you select a duration."});
-          const confirmButtons = new ActionRowBuilder()
-              .addComponents(
-                  new ButtonBuilder().setCustomId('confirm_metrics_proceed_btn').setLabel('✅ Looks Good').setStyle(ButtonStyle.Success),
-                  new ButtonBuilder().setCustomId('request_edit_metrics_modal_btn').setLabel('✏️ Edit Metrics').setStyle(ButtonStyle.Primary)
-              );
-
-          await interaction.editReply({
-              content: "Amazing, all 3 daily habits are defined! Here's the full summary of your experiment's metrics:",
-              embeds: [confirmEmbed],
-              components: [confirmButtons]
-          });
-          console.log(`[ai_input3_label_select CONFIRM_EDIT_PROMPT_SENT ${interactionId}] Edited message to show confirm/edit prompt.`);
-        }
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[ai_input3_label_select ERROR ${interactionId}] Error processing select menu for ${userTagForLog} at ${errorTime.toFixed(2)}ms:`, error);
-        if (interaction.deferred || interaction.replied) {
-            try { await interaction.editReply({ content: "Sorry, something went wrong processing your third habit choice. You might need to try selecting again or restart the setup.", components: [] }); }
-            catch (e) { console.error(`[ai_input3_label_select ERROR_EDITREPLY_FAIL ${interactionId}]`, e); }
-        }
-      }
-      const processEndTime = performance.now();
-      console.log(`[ai_input3_label_select END ${interactionId}] Finished processing. Total time: ${(processEndTime - input3LabelSelectSubmitTime).toFixed(2)}ms`);
     }
     
     else if (interaction.customId === OUTCOME_UNIT_SELECT_ID) {
@@ -7844,10 +7818,11 @@ client.on(Events.InteractionCreate, async interaction => {
         const userId = interaction.user.id;
         const userTag = interaction.user.tag;
         console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 1 submitted by ${userTag}.`);
+
         try {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const setupData = userExperimentSetupData.get(userId);
-            // We check for `aiGeneratedInputSuggestions` because it confirms the user came from the AI path for habits.
+
             if (!setupData || !setupData.aiGeneratedInputSuggestions) {
                 console.error(`[${interaction.customId} CRITICAL ${interactionId}] State missing or invalid for user ${userTag}.`);
                 await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
@@ -7860,9 +7835,23 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // --- Validation of user's input ---
             const validationErrors = [];
-            if (!habitLabel) validationErrors.push("The 'Habit Label' is required.");
-            if (!habitUnit) validationErrors.push("The 'Unit / Scale' is required.");
+            if (!habitLabel) {
+                validationErrors.push("The 'Habit Label' is required.");
+            } else if (habitLabel.length > 30) {
+                 validationErrors.push(`The Habit Label is too long (max 30 characters).`);
+            }
+
+            if (!habitUnit) {
+                validationErrors.push("The 'Unit / Scale' is required.");
+            } else if (habitUnit.length > 15) {
+                validationErrors.push(`The Unit/Scale is too long (max 15 characters).`);
+            }
             
+            // NEW: Combined Length Validation
+            if (habitLabel && habitUnit && (habitLabel.length + habitUnit.length + 1) > 45) {
+                validationErrors.push(`The combined Label and Unit are too long for the daily log form (max 45 chars). Please shorten one or both.`);
+            }
+
             let habitGoal = null;
             const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => habitUnit.toLowerCase().includes(keyword));
             if (isTimeMetric) {
@@ -7880,25 +7869,34 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             
             if (validationErrors.length > 0) {
-                await interaction.editReply({ content: 'There were issues with your input:\n- ' + validationErrors.join('\n- ') + '\n\nPlease restart the setup.', components: [], embeds: [] });
+                 const errorEmbed = new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setTitle('Validation Error')
+                    .setDescription('Please correct the following issues:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'))
+                    .setFooter({text: "Click the 'Edit' button on the summary screen to try again."});
+                await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
             
             // --- Validation Passed: Update state and proceed ---
             if (!setupData.inputs) setupData.inputs = [];
             setupData.inputs[0] = { label: habitLabel, unit: habitUnit, goal: habitGoal };
-            // Clean up temp state for this step
-            delete setupData.tempSelectedInput;
-            // Transition state
+            
+            delete setupData.tempSelectedInput; // Clean up temp state
+            
+            // This is the correct next step after confirming the first habit
             setupData.dmFlowState = 'awaiting_add_another_habit_choice';
             userExperimentSetupData.set(userId, setupData);
+
             console.log(`[${interaction.customId} HABIT1_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 1. State is now '${setupData.dmFlowState}'.`);
+            
             // --- Ask to add another habit or finish ---
             const confirmationEmbed = new EmbedBuilder()
                 .setColor('#57F287')
                 .setTitle('✅ Habit 1 Confirmed!')
-                .setDescription(`**${habitGoalStr} ${habitUnit}, ${habitLabel}**`)
+                .setDescription(`**${formatGoalForDisplay(habitGoal, habitUnit)} ${habitUnit}, ${habitLabel}**`)
                 .addFields({ name: '\u200B', value: "Would you like to add another daily habit to test (up to 3 total)?" });
+
             const addHabitButtons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
@@ -7910,11 +7908,236 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setLabel('⏭️ No More Habits')
                         .setStyle(ButtonStyle.Primary)
                 );
+
             await interaction.editReply({
                 embeds: [confirmationEmbed],
                 components: [addHabitButtons]
             });
+
             console.log(`[${interaction.customId} PROMPT_ADD_ANOTHER_SENT ${interactionId}] Prompted user to add another habit or finish.`);
+        } catch (error) {
+            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error);
+        }
+    }
+
+    else if (interaction.customId === 'confirm_ai_habit_modal_2') {
+        const modalSubmitStartTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        const userTag = interaction.user.tag;
+        console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 2 submitted by ${userTag}.`);
+
+        try {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            const setupData = userExperimentSetupData.get(userId);
+
+            if (!setupData || !setupData.aiGeneratedInputSuggestions) {
+                console.error(`[${interaction.customId} CRITICAL ${interactionId}] State missing or invalid for user ${userTag}.`);
+                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
+                return;
+            }
+
+            const habitLabel = interaction.fields.getTextInputValue('habit_label_manual')?.trim();
+            const habitUnit = interaction.fields.getTextInputValue('habit_unit_manual')?.trim();
+            const habitGoalStr = interaction.fields.getTextInputValue('habit_goal_manual')?.trim();
+
+            // --- Validation of user's input ---
+            const validationErrors = [];
+            if (!habitLabel) {
+                validationErrors.push("The 'Habit Label' is required.");
+            } else if (habitLabel.length > 30) {
+                 validationErrors.push(`The Habit Label is too long (max 30 characters).`);
+            }
+
+            if (!habitUnit) {
+                validationErrors.push("The 'Unit / Scale' is required.");
+            } else if (habitUnit.length > 15) {
+                validationErrors.push(`The Unit/Scale is too long (max 15 characters).`);
+            }
+            
+            if (habitLabel && habitUnit && (habitLabel.length + habitUnit.length + 1) > 45) {
+                validationErrors.push(`The combined Label and Unit are too long for the daily log form (max 45 chars). Please shorten one or both.`);
+            }
+
+            let habitGoal = null;
+            const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => habitUnit.toLowerCase().includes(keyword));
+            if (isTimeMetric) {
+                habitGoal = parseTimeGoal(habitGoalStr);
+                if (habitGoal === null) {
+                    validationErrors.push(`The Target ("${habitGoalStr}") must be a valid time (e.g., '8am', '17:30').`);
+                }
+            } else {
+                const goalResult = parseGoalValue(habitGoalStr);
+                if (goalResult.error) {
+                    validationErrors.push(goalResult.error);
+                } else {
+                    habitGoal = goalResult.goal;
+                }
+            }
+            
+            if (validationErrors.length > 0) {
+                 const errorEmbed = new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setTitle('Validation Error')
+                    .setDescription('Please correct the following issues:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'))
+                    .setFooter({text: "Click the 'Edit' button on the summary screen to try again."});
+                await interaction.editReply({ embeds: [errorEmbed], components: [] });
+                return;
+            }
+            
+            // --- Validation Passed: Update state and proceed ---
+            if (!setupData.inputs) setupData.inputs = [];
+            setupData.inputs[1] = { label: habitLabel, unit: habitUnit, goal: habitGoal }; // Save to index 1
+            
+            delete setupData.tempSelectedInput; // Clean up temp state
+            
+            setupData.dmFlowState = 'awaiting_add_another_habit_choice';
+            userExperimentSetupData.set(userId, setupData);
+
+            console.log(`[${interaction.customId} HABIT2_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 2. State is now '${setupData.dmFlowState}'.`);
+            
+            // --- Ask to add another habit or finish ---
+            const confirmationEmbed = new EmbedBuilder()
+                .setColor('#57F287')
+                .setTitle('✅ Habit 2 Confirmed!')
+                .setDescription(`**${formatGoalForDisplay(habitGoal, habitUnit)} ${habitUnit}, ${habitLabel}**`)
+                .addFields({ name: '\u200B', value: "Would you like to add a 3rd (and final) habit to test?" });
+
+            const addHabitButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('add_another_habit_yes_btn')
+                        .setLabel('➕ Yes, Add Habit 3')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('add_another_habit_no_btn')
+                        .setLabel('⏭️ No More Habits')
+                        .setStyle(ButtonStyle.Primary)
+                );
+
+            await interaction.editReply({
+                embeds: [confirmationEmbed],
+                components: [addHabitButtons]
+            });
+
+            console.log(`[${interaction.customId} PROMPT_ADD_ANOTHER_SENT ${interactionId}] Prompted user to add another habit or finish.`);
+        } catch (error) {
+            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error);
+        }
+    }
+
+    else if (interaction.customId === 'confirm_ai_habit_modal_3') {
+        const modalSubmitStartTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        const userTag = interaction.user.tag;
+        console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 3 submitted by ${userTag}.`);
+
+        try {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            const setupData = userExperimentSetupData.get(userId);
+
+            if (!setupData || !setupData.aiGeneratedInputSuggestions) {
+                console.error(`[${interaction.customId} CRITICAL ${interactionId}] State missing or invalid for user ${userTag}.`);
+                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
+                return;
+            }
+
+            const habitLabel = interaction.fields.getTextInputValue('habit_label_manual')?.trim();
+            const habitUnit = interaction.fields.getTextInputValue('habit_unit_manual')?.trim();
+            const habitGoalStr = interaction.fields.getTextInputValue('habit_goal_manual')?.trim();
+
+            // --- Validation of user's input ---
+            const validationErrors = [];
+            if (!habitLabel) {
+                validationErrors.push("The 'Habit Label' is required.");
+            } else if (habitLabel.length > 30) {
+                 validationErrors.push(`The Habit Label is too long (max 30 characters).`);
+            }
+
+            if (!habitUnit) {
+                validationErrors.push("The 'Unit / Scale' is required.");
+            } else if (habitUnit.length > 15) {
+                validationErrors.push(`The Unit/Scale is too long (max 15 characters).`);
+            }
+            
+            if (habitLabel && habitUnit && (habitLabel.length + habitUnit.length + 1) > 45) {
+                validationErrors.push(`The combined Label and Unit are too long for the daily log form (max 45 chars). Please shorten one or both.`);
+            }
+
+            let habitGoal = null;
+            const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => habitUnit.toLowerCase().includes(keyword));
+            if (isTimeMetric) {
+                habitGoal = parseTimeGoal(habitGoalStr);
+                if (habitGoal === null) {
+                    validationErrors.push(`The Target ("${habitGoalStr}") must be a valid time (e.g., '8am', '17:30').`);
+                }
+            } else {
+                const goalResult = parseGoalValue(habitGoalStr);
+                if (goalResult.error) {
+                    validationErrors.push(goalResult.error);
+                } else {
+                    habitGoal = goalResult.goal;
+                }
+            }
+            
+            if (validationErrors.length > 0) {
+                 const errorEmbed = new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setTitle('Validation Error')
+                    .setDescription('Please correct the following issues:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'))
+                    .setFooter({text: "Click the 'Edit' button on the summary screen to try again."});
+                await interaction.editReply({ embeds: [errorEmbed], components: [] });
+                return;
+            }
+            
+            // --- Validation Passed: Update state and proceed ---
+            if (!setupData.inputs) setupData.inputs = [];
+            setupData.inputs[2] = { label: habitLabel, unit: habitUnit, goal: habitGoal }; // Save to index 2
+            
+            delete setupData.tempSelectedInput;
+            
+            // This is the final step, so we go to the confirmation screen
+            setupData.dmFlowState = 'awaiting_metrics_confirmation';
+            userExperimentSetupData.set(userId, setupData);
+
+            console.log(`[${interaction.customId} HABIT3_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 3. State is now '${setupData.dmFlowState}'.`);
+            
+            // --- Show the Final Review / Confirmation Screen ---
+            let summaryDescription = `**🌠 Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
+                                     `**📊 Daily Outcome to Track:**\n\`${formatGoalForDisplay(setupData.outcome.goal, setupData.outcome.unit)}, ${setupData.outcome.unit}, ${setupData.outcome.label}\`\n\n` +
+                                     `**🛠️ Daily Habits to Test:**\n`;
+            setupData.inputs.forEach((input, index) => {
+                if (input && input.label) {
+                    summaryDescription += `${index + 1}. \`${formatGoalForDisplay(input.goal, input.unit)}, ${input.unit}, ${input.label}\`\n`;
+                }
+            });
+
+            const confirmEmbed = new EmbedBuilder()
+                .setColor('#FFBF00') // Amber
+                .setTitle('🔬 Review Your Experiment Metrics')
+                .setDescription(summaryDescription + "\n\nDo these look correct? You can edit them now if needed.")
+                .setFooter({ text: "Your settings are not saved until you select a duration."});
+
+            const confirmButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('confirm_metrics_proceed_btn')
+                        .setLabel('✅ Looks Good')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('request_edit_metrics_modal_btn')
+                        .setLabel('✏️ Edit Metrics')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            await interaction.editReply({
+                content: "Amazing, all 3 daily habits are defined! Here's the full summary of your experiment's metrics:",
+                embeds: [confirmEmbed],
+                components: [confirmButtons]
+            });
+
+            console.log(`[${interaction.customId} CONFIRM_EDIT_PROMPT_SENT ${interactionId}] Sent final confirm/edit prompt.`);
         } catch (error) {
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error);
         }
