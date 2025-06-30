@@ -1118,10 +1118,9 @@ function isYesNoMetric(unit) {
  */
 function isTimeMetric(unit) {
     if (!unit) return false;
-    [cite_start]// This reuses the TIME_OF_DAY_KEYWORDS constant already defined in your code [cite: 1499, 1500]
+    // This reuses the TIME_OF_DAY_KEYWORDS constant already defined in your code
     return TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
 }
-
 /**
  * Formats a goal value for display, handling time-based units and yes/no.
  * @param {number | string | null | undefined} goal - The goal value.
