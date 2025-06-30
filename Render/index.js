@@ -6990,6 +6990,8 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
+
+
   } // End of "if (interaction.isButton())" block
 
   else if (interaction.isStringSelectMenu()) {
@@ -8411,6 +8413,122 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
+    else if (interaction.customId === 'manual_setup_habit1_modal') {
+        const modalSubmitStartTime = performance.now();
+        const userId = interaction.user.id;
+        const userTag = interaction.user.tag;
+        const interactionId = interaction.id;
+        console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 1 submitted by ${userTag}.`);
+
+        if (!dbAdmin) {
+            console.error(`[${interaction.customId} CRITICAL ${interactionId}] dbAdmin not initialized.`);
+            try {
+                await interaction.reply({ content: "Error: The bot cannot connect to the database. Please contact support.", ephemeral: true });
+            } catch (e) { console.error(`[${interaction.customId} CRITICAL_REPLY_FAIL ${interactionId}]`, e); }
+            return;
+        }
+
+        try {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            const deferTime = performance.now();
+            console.log(`[${interaction.customId} DEFERRED ${interactionId}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
+
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || !setupData.outcome) {
+                console.error(`[${interaction.customId} CRITICAL ${interactionId}] In-memory setup state missing outcome for user ${userTag}.`);
+                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
+                return;
+            }
+
+            const habit1Label = interaction.fields.getTextInputValue('habit1_label_manual')?.trim();
+            const habit1Unit = interaction.fields.getTextInputValue('habit1_unit_manual')?.trim();
+            const habit1GoalStr = interaction.fields.getTextInputValue('habit1_goal_manual')?.trim();
+            
+            const validationErrors = [];
+            if (!habit1Label) {
+                validationErrors.push("The 'Habit 1' label is required.");
+            } else if (habit1Label.length > 30) {
+                validationErrors.push(`The Habit 1 Label is too long (max 30 characters).`);
+            }
+
+            if (!habit1Unit) {
+                validationErrors.push("The 'Unit / Scale' for Habit 1 is required.");
+            } else if (habit1Unit.length > 15) {
+                validationErrors.push(`The Unit/Scale for Habit 1 is too long (max 15 characters).`);
+            }
+            
+            if (habit1Label && habit1Unit && (habit1Label.length + habit1Unit.length + 1) > 45) {
+                validationErrors.push(`The combined Label and Unit for Habit 1 are too long for the daily log form (max 45 chars).`);
+            }
+            
+            let habit1Goal = null;
+            if (!habit1GoalStr) {
+                validationErrors.push("The 'Target Number' for Habit 1 is required.");
+            } else {
+                const goal = parseFloat(habit1GoalStr);
+                if (isNaN(goal)) {
+                    validationErrors.push(`The Target Number for Habit 1 ("${habit1GoalStr}") must be a valid number.`);
+                } else if (goal < 0) {
+                    validationErrors.push("The Target Number for Habit 1 must be 0 or a positive number.");
+                } else {
+                    habit1Goal = goal;
+                }
+            }
+
+            if (validationErrors.length > 0) {
+                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 1.`);
+                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 1').setDescription('Please correct the following issues and try defining Habit 1 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
+                await interaction.editReply({ embeds: [errorEmbed], components: [] });
+                return;
+            }
+
+            if (!setupData.inputs) setupData.inputs = [];
+            setupData.inputs[0] = { label: habit1Label, unit: habit1Unit, goal: habit1Goal };
+            
+            // This is the correct next step after confirming the first habit in the AI flow
+            setupData.dmFlowState = 'awaiting_add_another_habit_choice';
+            userExperimentSetupData.set(userId, setupData);
+            
+            console.log(`[${interaction.customId} HABIT1_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 1. State is now '${setupData.dmFlowState}'.`);
+            
+            // --- Ask to add another habit or finish ---
+            const confirmationEmbed = new EmbedBuilder()
+                .setColor('#57F287')
+                .setTitle('✅ Habit 1 Confirmed!')
+                .setDescription(`**${formatGoalForDisplay(habit1Goal, habit1Unit)} ${habit1Unit}, ${habit1Label}**`)
+                .addFields({ name: '\u200B', value: "Would you like to add another daily habit to test (up to 3 total)?" });
+            
+            const addHabitButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('add_another_habit_yes_btn')
+                        .setLabel('➕ Yes, Add Another')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('add_another_habit_no_btn')
+                        .setLabel('⏭️ No More Habits')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            
+            await interaction.editReply({
+                embeds: [confirmationEmbed],
+                components: [addHabitButtons]
+            });
+            console.log(`[${interaction.customId} PROMPT_ADD_ANOTHER_SENT ${interactionId}] Prompted user to add another habit or finish.`);
+
+        } catch (error) {
+            const errorTime = performance.now();
+            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing Habit 1 modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
+            if (interaction.deferred || interaction.replied) {
+                try {
+                    await interaction.editReply({ content: '❌ An unexpected error occurred while saving Habit 1. Please try again.', components: [], embeds: [] });
+                } catch (editError) {
+                    console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback editReply failed:`, editError);
+                }
+            }
+        }
+    }
+
     else if (interaction.customId === 'manual_setup_habit2_modal') {
         const modalSubmitStartTime = performance.now();
         const userId = interaction.user.id;
@@ -8462,13 +8580,11 @@ client.on(Events.InteractionCreate, async interaction => {
             if (!habit2GoalStr) {
                 validationErrors.push("The 'Target Number' for Habit 2 is required.");
             } else {
-                const goal = parseFloat(habit2GoalStr);
-                if (isNaN(goal)) {
-                    validationErrors.push(`The Target Number for Habit 2 ("${habit2GoalStr}") must be a valid number.`);
-                } else if (goal < 0) {
-                    validationErrors.push("The Target Number for Habit 2 must be 0 or a positive number.");
+                const goalResult = parseGoalValue(habit2GoalStr);
+                if (goalResult.error) {
+                    validationErrors.push(goalResult.error);
                 } else {
-                    habit2Goal = goal;
+                    habit2Goal = goalResult.goal;
                 }
             }
 
@@ -8480,26 +8596,33 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             setupData.inputs[1] = { label: habit2Label, unit: habit2Unit, goal: habit2Goal };
+            setupData.dmFlowState = 'awaiting_add_another_habit_choice';
             userExperimentSetupData.set(userId, setupData);
-            console.log(`[${interaction.customId} IN_MEMORY_UPDATE ${interactionId}] Updated in-memory state with Habit 2 data.`);
+            console.log(`[${interaction.customId} HABIT2_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 2. State is now '${setupData.dmFlowState}'.`);
             
-            const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
-            await setupStateRef.update({
-                inputs: setupData.inputs,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-            console.log(`[${interaction.customId} FIRESTORE_UPDATE_SUCCESS ${interactionId}] Successfully saved Habit 2 data to Firestore.`);
-            
-            const habit2Embed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Habit 2 Saved!').setDescription(`**Habit 2:**\n**${habit2GoalStr}** **${habit2Unit}** for **${habit2Label}**.`);
-            const addAnotherButton = new ButtonBuilder().setCustomId('manual_add_another_habit_btn').setLabel('➕ Add Habit 3').setStyle(ButtonStyle.Primary);
-            const finishSetupButton = new ButtonBuilder().setCustomId('manual_finish_setup_btn').setLabel('✅ Finish Setup').setStyle(ButtonStyle.Success);
-            const row = new ActionRowBuilder().addComponents(addAnotherButton, finishSetupButton);
+            const confirmationEmbed = new EmbedBuilder()
+                .setColor('#57F287')
+                .setTitle('✅ Habit 2 Confirmed!')
+                .setDescription(`**${formatGoalForDisplay(habit2Goal, habit2Unit)} ${habit2Unit}, ${habit2Label}**`)
+                .addFields({ name: '\u200B', value: "Would you like to add a 3rd (and final) habit to test?" });
+
+            const addHabitButtons = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('add_another_habit_yes_btn')
+                        .setLabel('➕ Yes, Add Habit 3')
+                        .setStyle(ButtonStyle.Success),
+                    new ButtonBuilder()
+                        .setCustomId('add_another_habit_no_btn')
+                        .setLabel('⏭️ No More Habits')
+                        .setStyle(ButtonStyle.Primary)
+                );
 
             await interaction.editReply({
-                embeds: [habit2Embed],
-                components: [row]
+                embeds: [confirmationEmbed],
+                components: [addHabitButtons]
             });
-            console.log(`[${interaction.customId} SUCCESS_REPLY_SENT ${interactionId}] Confirmed Habit 2.`);
+            console.log(`[${interaction.customId} PROMPT_ADD_ANOTHER_SENT ${interactionId}] Prompted user to add another habit or finish.`);
         } catch (error) {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing Habit 2 modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
