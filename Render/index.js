@@ -485,21 +485,28 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
         .setFooter({ text: `Experiment ID: ${experimentId}` });
     
     // Call the correct builder function with the necessary arguments
+    // Call the correct builder function with the necessary arguments
     switch (currentPageConfig.type) {
         case 'cover':
-            currentPageConfig.builder(embed);
+            buildCoverPage(embed);
             break;
         case 'outcome':
-            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats[currentPageConfig.metricKey]);
+            buildOutcomeStatsPage(embed, statsReportData.calculatedMetricStats[currentPageConfig.metricKey]);
             break;
         case 'habit':
-            currentPageConfig.builder(embed, statsReportData.calculatedMetricStats[currentPageConfig.metricKey], currentPageConfig.habitNumber);
+            buildHabitStatsPage(embed, statsReportData.calculatedMetricStats[currentPageConfig.metricKey], currentPageConfig.habitNumber);
             break;
         case 'correlations':
+            buildCorrelationsPage(embed, statsReportData);
+            break;
         case 'combined':
+            buildCombinedEffectsPage(embed, statsReportData);
+            break;
         case 'lag':
-        case 'summary': // Added 'summary' to the case for the new final page
-             currentPageConfig.builder(embed, statsReportData, pageConfig);
+            buildLagTimePage(embed, statsReportData);
+            break;
+        case 'summary':
+             buildFinalSummaryPage(embed, statsReportData, pageConfig);
              break;
         default:
              console.error("Unknown page type in pageConfig:", currentPageConfig.type);
@@ -4179,40 +4186,38 @@ client.on(Events.InteractionCreate, async interaction => {
         const userTag = interaction.user.tag;
         const interactionId = interaction.id;
         console.log(`[${interaction.customId} START ${interactionId}] Button clicked by ${userTag}.`);
-        
         try {
-            // Get state from the in-memory map first for speed.
             let setupData = userExperimentSetupData.get(userId);
 
-            // Fallback: If in-memory map is empty (e.g., bot restarted), read from Firestore.
             if (!setupData) {
-                console.warn(`[${interaction.customId} IN_MEMORY_MISS ${interactionId}] In-memory state not found for ${userTag}. Attempting Firestore fallback.`);
-                if (dbAdmin) {
-                    const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
-                    const setupStateSnap = await setupStateRef.get();
-                    if (setupStateSnap.exists) {
-                        setupData = setupStateSnap.data();
-                        userExperimentSetupData.set(userId, setupData); // Repopulate in-memory map
-                        console.log(`[${interaction.customId} FIRESTORE_FALLBACK_SUCCESS ${interactionId}] Successfully restored state from Firestore for ${userTag}.`);
-                    }
-                }
-            }
-
-            if (!setupData) {
-                console.error(`[${interaction.customId} CRITICAL ${interactionId}] No setup state found in memory or Firestore for user ${userTag}.`);
+                console.warn(`[${interaction.customId} IN_MEMORY_MISS ${interactionId}] In-memory state not found for ${userTag}. This is unexpected but recoverable.`);
                 await interaction.reply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup by using the `/go` command.', ephemeral: true });
                 return;
             }
             
-            const cachedSettings = setupData.preFetchedWeeklySettings;
             let habit1LabelValue = "";
             let habit1UnitValue = "";
             let habit1GoalValue = "";
-            if (cachedSettings && cachedSettings.input1) {
-                console.log(`[${interaction.customId} CACHE_HIT ${interactionId}] Found cached settings for Habit 1 for ${userTag}.`);
-                habit1LabelValue = cachedSettings.input1.label || "";
-                habit1UnitValue = cachedSettings.input1.unit || "";
-                habit1GoalValue = cachedSettings.input1.goal !== null && cachedSettings.input1.goal !== undefined ? String(cachedSettings.input1.goal) : "";
+
+            // Check for data in a specific order of priority
+            const habitDataFromCurrentFlow = setupData.inputs?.[0];
+            const habitDataFromPreviousExperiment = setupData.preFetchedWeeklySettings?.input1;
+
+            if (habitDataFromCurrentFlow) {
+                // Priority 1: Use data from the current session (the "Edit" flow)
+                console.log(`[${interaction.customId} DATA_HIT_SESSION ${interactionId}] Using data for Habit 1 from current 'Edit' session.`);
+                habit1LabelValue = habitDataFromCurrentFlow.label || "";
+                habit1UnitValue = habitDataFromCurrentFlow.unit || "";
+                habit1GoalValue = habitDataFromCurrentFlow.goal !== null && habitDataFromCurrentFlow.goal !== undefined ? String(habitDataFromCurrentFlow.goal) : "";
+            } else if (habitDataFromPreviousExperiment) {
+                // Priority 2: Use data from the last saved experiment (pure "Manual Setup" flow)
+                console.log(`[${interaction.customId} DATA_HIT_CACHE ${interactionId}] Using cached settings for Habit 1 from previous experiment.`);
+                habit1LabelValue = habitDataFromPreviousExperiment.label || "";
+                habit1UnitValue = habitDataFromPreviousExperiment.unit || "";
+                habit1GoalValue = habitDataFromPreviousExperiment.goal !== null && habitDataFromPreviousExperiment.goal !== undefined ? String(habitDataFromPreviousExperiment.goal) : "";
+            } else {
+                // Priority 3: No data exists, this is a brand new user.
+                console.log(`[${interaction.customId} DATA_MISS ${interactionId}] No existing data for Habit 1. Will show empty modal.`);
             }
 
             const habit1Modal = new ModalBuilder()
@@ -4221,13 +4226,11 @@ client.on(Events.InteractionCreate, async interaction => {
             const habit1LabelInput = new TextInputBuilder().setCustomId('habit1_label_manual').setLabel("🛠️ Daily Habit 1 (The Label)").setPlaceholder("e.g., '15-Min Afternoon Walk'").setStyle(TextInputStyle.Short).setValue(habit1LabelValue).setRequired(true);
             const habit1UnitInput = new TextInputBuilder().setCustomId('habit1_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'minutes', 'steps', 'yes/no'").setStyle(TextInputStyle.Short).setValue(habit1UnitValue).setRequired(true);
             const habit1GoalInput = new TextInputBuilder().setCustomId('habit1_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '15', '2000', '1'").setStyle(TextInputStyle.Short).setValue(habit1GoalValue).setRequired(true);
-            
             habit1Modal.addComponents(
                 new ActionRowBuilder().addComponents(habit1LabelInput),
                 new ActionRowBuilder().addComponents(habit1GoalInput),
                 new ActionRowBuilder().addComponents(habit1UnitInput)
             );
-            
             await interaction.showModal(habit1Modal);
             const showModalTime = performance.now();
             console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Habit 1 modal shown to ${userTag}. Total time to show: ${(showModalTime - buttonClickStartTime).toFixed(2)}ms`);
@@ -4243,26 +4246,10 @@ client.on(Events.InteractionCreate, async interaction => {
         const userTag = interaction.user.tag;
         const interactionId = interaction.id;
         console.log(`[${interaction.customId} START ${interactionId}] Button clicked by ${userTag}.`);
-
         try {
             let setupData = userExperimentSetupData.get(userId);
-
-            // Fallback to Firestore if in-memory data is missing
             if (!setupData) {
-                console.warn(`[${interaction.customId} IN_MEMORY_MISS ${interactionId}] In-memory state not found for ${userTag}. Attempting Firestore fallback.`);
-                if (dbAdmin) {
-                    const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
-                    const setupStateSnap = await setupStateRef.get();
-                    if (setupStateSnap.exists) {
-                        setupData = setupStateSnap.data();
-                        userExperimentSetupData.set(userId, setupData); // Repopulate in-memory map
-                        console.log(`[${interaction.customId} FIRESTORE_FALLBACK_SUCCESS ${interactionId}] Successfully restored state from Firestore for ${userTag}.`);
-                    }
-                }
-            }
-
-            if (!setupData) {
-                console.error(`[${interaction.customId} CRITICAL ${interactionId}] No setup state found for user ${userTag}.`);
+                console.warn(`[${interaction.customId} IN_MEMORY_MISS ${interactionId}] In-memory state not found for ${userTag}. This is unexpected but recoverable.`);
                 await interaction.reply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', ephemeral: true });
                 return;
             }
@@ -4277,41 +4264,46 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             const nextHabitNumber = currentHabitCount + 1;
-            const cachedSettings = setupData.preFetchedWeeklySettings;
-            const cachedInputData = cachedSettings?.[`input${nextHabitNumber}`];
-
+            
             let habitLabelValue = "";
             let habitUnitValue = "";
             let habitGoalValue = "";
 
-            if (cachedInputData) {
-                console.log(`[${interaction.customId} CACHE_HIT ${interactionId}] Found cached settings for Habit ${nextHabitNumber}.`);
-                habitLabelValue = cachedInputData.label || "";
-                habitUnitValue = cachedInputData.unit || "";
-                habitGoalValue = cachedInputData.goal !== null && cachedInputData.goal !== undefined ? String(cachedInputData.goal) : "";
+            // **FIXED**: Check for data in a specific order of priority
+            const habitDataFromCurrentFlow = setupData.inputs?.[nextHabitNumber - 1]; // Use zero-based index
+            const habitDataFromPreviousExperiment = setupData.preFetchedWeeklySettings?.[`input${nextHabitNumber}`];
+
+            if (habitDataFromCurrentFlow) {
+                // Priority 1: Use data from the current session (the "Edit" flow)
+                console.log(`[${interaction.customId} DATA_HIT_SESSION ${interactionId}] Using data for Habit ${nextHabitNumber} from current 'Edit' session.`);
+                habitLabelValue = habitDataFromCurrentFlow.label || "";
+                habitUnitValue = habitDataFromCurrentFlow.unit || "";
+                habitGoalValue = habitDataFromCurrentFlow.goal !== null && habitDataFromCurrentFlow.goal !== undefined ? String(habitDataFromCurrentFlow.goal) : "";
+            } else if (habitDataFromPreviousExperiment) {
+                // Priority 2: Use data from the last saved experiment (pure "Manual Setup" flow)
+                console.log(`[${interaction.customId} DATA_HIT_CACHE ${interactionId}] Using cached settings for Habit ${nextHabitNumber} from previous experiment.`);
+                habitLabelValue = habitDataFromPreviousExperiment.label || "";
+                habitUnitValue = habitDataFromPreviousExperiment.unit || "";
+                habitGoalValue = habitDataFromPreviousExperiment.goal !== null && habitDataFromPreviousExperiment.goal !== undefined ? String(habitDataFromPreviousExperiment.goal) : "";
             } else {
-                console.log(`[${interaction.customId} CACHE_MISS ${interactionId}] No cached settings for Habit ${nextHabitNumber}.`);
+                // Priority 3: No data exists for this habit number.
+                console.log(`[${interaction.customId} DATA_MISS ${interactionId}] No existing data for Habit ${nextHabitNumber}. Will show empty modal.`);
             }
 
             const habitModal = new ModalBuilder()
                 .setCustomId(`manual_setup_habit${nextHabitNumber}_modal`)
                 .setTitle(`🧪 Experiment Setup (${nextHabitNumber + 1}/4): Habit ${nextHabitNumber}`);
-
             const habitLabelInput = new TextInputBuilder().setCustomId(`habit${nextHabitNumber}_label_manual`).setLabel(`🛠️ Daily Habit ${nextHabitNumber} (The Label)`).setPlaceholder(`e.g., 'Read for 10 pages'`).setStyle(TextInputStyle.Short).setValue(habitLabelValue).setRequired(true);
             const habitUnitInput = new TextInputBuilder().setCustomId(`habit${nextHabitNumber}_unit_manual`).setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'pages', 'yes/no'").setStyle(TextInputStyle.Short).setValue(habitUnitValue).setRequired(true);
             const habitGoalInput = new TextInputBuilder().setCustomId(`habit${nextHabitNumber}_goal_manual`).setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '10', '1'").setStyle(TextInputStyle.Short).setValue(habitGoalValue).setRequired(true);
-            
             habitModal.addComponents(
                 new ActionRowBuilder().addComponents(habitLabelInput),
                 new ActionRowBuilder().addComponents(habitGoalInput),
                 new ActionRowBuilder().addComponents(habitUnitInput)
-                
             );
-
             await interaction.showModal(habitModal);
             const showModalTime = performance.now();
             console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Habit ${nextHabitNumber} modal shown to ${userTag}. Total time: ${(showModalTime - buttonClickStartTime).toFixed(2)}ms`);
-
         } catch (error) {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing Habit modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
@@ -5196,64 +5188,74 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.isButton() && interaction.customId === 'request_edit_metrics_modal_btn') {
-      const requestEditClickTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const userTagForLog = interaction.user.tag;
+        const requestEditClickTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        const userTag = interaction.user.tag;
+        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}. Opening step-by-step edit flow.`);
 
-      console.log(`[request_edit_metrics_modal_btn START ${interactionId}] Clicked by ${userTagForLog}. Preparing to show edit instructions and modal trigger button.`);
-      try {
-        // Since we are replying with new components, we should deferUpdate.
-        await interaction.deferUpdate({ flags: MessageFlags.Ephemeral }); 
-        const deferTime = performance.now();
-        console.log(`[request_edit_metrics_modal_btn DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - requestEditClickTime).toFixed(2)}ms`);
+        try {
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || !setupData.outcome?.label) {
+                console.error(`[${interaction.customId} CRITICAL ${interactionId}] In-memory state missing critical data for user ${userId}.`);
+                await interaction.reply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup using `/go`.', ephemeral: true });
+                return;
+            }
 
-        const setupData = userExperimentSetupData.get(userId);
-        // Basic check to ensure setupData exists, more detailed checks happen before showing the actual modal.
-        if (!setupData || setupData.dmFlowState !== 'awaiting_metrics_confirmation') {
-          console.warn(`[request_edit_metrics_modal_btn WARN ${interactionId}] User ${userTagForLog} in unexpected state: ${setupData?.dmFlowState || 'no setupData'}.`);
-          await interaction.editReply({ content: "⚠️ Error: Your session seems to be in an unexpected state to start editing. Please try the `/go` command to restart if needed.", components: [], embeds: [] });
-          return;
+            // Pre-populate the first modal of the manual flow with existing data
+            const outcomeModal = new ModalBuilder()
+                .setCustomId('manual_setup_outcome_modal')
+                .setTitle('🧪 Edit Experiment (1/4): Outcome');
+            
+            const deeperProblemInput = new TextInputBuilder()
+                .setCustomId('deeper_problem_manual')
+                .setLabel("🧭 Deeper Wish / Problem To Solve")
+                .setStyle(TextInputStyle.Paragraph)
+                .setValue(setupData.deeperProblem || "")
+                .setRequired(true);
+
+            const outcomeLabelInput = new TextInputBuilder()
+                .setCustomId('outcome_label_manual')
+                .setLabel("📊 Measurable Outcome (The Label)")
+                .setStyle(TextInputStyle.Short)
+                .setValue(setupData.outcome.label)
+                .setRequired(true);
+
+            const outcomeUnitInput = new TextInputBuilder()
+                .setCustomId('outcome_unit_manual')
+                .setLabel("📏 Unit / Scale")
+                .setStyle(TextInputStyle.Short)
+                .setValue(setupData.outcome.unit)
+                .setRequired(true);
+
+            const outcomeGoalInput = new TextInputBuilder()
+                .setCustomId('outcome_goal_manual')
+                .setLabel("🎯 Daily Target Number")
+                .setStyle(TextInputStyle.Short)
+                .setValue(String(setupData.outcome.goal)) // Convert goal to string for modal
+                .setRequired(true);
+
+            outcomeModal.addComponents(
+                new ActionRowBuilder().addComponents(deeperProblemInput),
+                new ActionRowBuilder().addComponents(outcomeLabelInput),
+                new ActionRowBuilder().addComponents(outcomeGoalInput),
+                new ActionRowBuilder().addComponents(outcomeUnitInput)
+            );
+
+            await interaction.showModal(outcomeModal);
+            console.log(`[${interaction.customId} SUCCESS ${interactionId}] Re-opened outcome modal for editing for user ${userId}.`);
+
+        } catch (error) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing outcome modal for user ${userId}:`, error);
+            try {
+                // Can't defer and then show modal, so we reply on error
+                if (!interaction.replied) {
+                    await interaction.reply({ content: '❌ An error occurred while trying to go back. Please try again.', ephemeral: true });
+                }
+            } catch (e) {
+                console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}]`, e);
+            }
         }
-        
-        const instructionEmbed = new EmbedBuilder()
-            .setColor('#FFA500') // Orange for instruction/warning
-            .setTitle('CRUCIAL FORMATTING NOTE:')
-            .setDescription(
-                "Each line should have this format:\nGoal # , Unit / Scale , Label\n\nE.g.\n7.5, hours, Sleep\nOR\n8, out of 10, Relationships)\n\nUse Commas! ↳  ,  ↲"
-            )
-            .setFooter({text: "Your current Duration and Reminder settings will remain unchanged by this edit."});
-
-        const openEditFormButton = new ButtonBuilder()
-            .setCustomId('show_edit_metrics_modal_btn') // New ID for the button that actually shows the modal
-            .setLabel('📋 Open Edit Form')
-            .setStyle(ButtonStyle.Success);
-
-        const instructionRow = new ActionRowBuilder().addComponents(openEditFormButton);
-
-        await interaction.editReply({
-            content: "Ready to make some changes?",
-            embeds: [instructionEmbed],
-            components: [instructionRow] // Present the button to open the modal
-        });
-        console.log(`[request_edit_metrics_modal_btn EDIT_INSTRUCTIONS_SENT ${interactionId}] Showed edit instructions and 'Open Edit Form' button to ${userTagForLog}.`);
-
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[request_edit_metrics_modal_btn ERROR ${interactionId}] Error at ${errorTime.toFixed(2)}ms:`, error);
-        if (interaction.deferred && !interaction.replied) {
-          try {
-            await interaction.editReply({ content: `❌ An error occurred while preparing the edit step: ${error.message || 'Please try again.'}`, components: [], embeds: [] });
-          } catch (editError) {
-            console.error(`[request_edit_metrics_modal_btn FALLBACK_ERROR ${interactionId}] Fallback error reply failed:`, editError);
-          }
-        } else if (!interaction.replied && !interaction.deferred) {
-            try { await interaction.reply({ content: `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`, ephemeral: true }); }
-            catch (e) { console.error(`[request_edit_metrics_modal_btn ERROR_REPLY_FAIL ${interactionId}]`, e); }
-        }
-      }
-      const processEndTime = performance.now();
-      console.log(`[request_edit_metrics_modal_btn END ${interactionId}] Finished processing. Total time: ${(processEndTime - requestEditClickTime).toFixed(2)}ms`);
     }
 
     else if (interaction.isButton() && interaction.customId === 'show_edit_metrics_modal_btn') {
