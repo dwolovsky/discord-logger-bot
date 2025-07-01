@@ -4929,7 +4929,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 habitModal.addComponents(
                     new ActionRowBuilder().addComponents(habitLabelInput),
                     new ActionRowBuilder().addComponents(habitGoalInput),
-                    new ActionRowBuiĺder().addComponents(habitUnitInput)
+                    new ActionRowBuilder().addComponents(habitUnitInput)
                 );
 
                 // showModal must be the first reply, so we use it directly here.
