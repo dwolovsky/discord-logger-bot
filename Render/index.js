@@ -4871,124 +4871,170 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.isButton() && interaction.customId === 'add_another_habit_yes_btn') {
-      const yesAddHabitClickTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const userTagForLog = interaction.user.tag;
+        const yesAddHabitClickTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        const userTagForLog = interaction.user.tag;
 
-      console.log(`[add_another_habit_yes_btn START ${interactionId}] Clicked by ${userTagForLog}.`);
-      try {
-        await interaction.deferUpdate();
-
-        const setupData = userExperimentSetupData.get(userId);
-        if (!setupData || setupData.dmFlowState !== 'awaiting_add_another_habit_choice') {
-          console.warn(`[add_another_habit_yes_btn WARN ${interactionId}] User in unexpected state: ${setupData?.dmFlowState || 'no setupData'}.`);
-          await interaction.editReply({ content: "There was a mix-up with the steps. Please try restarting the experiment setup with `/go`.", components: [], embeds: [] });
-          return;
-        }
-
-        const currentNumberOfInputs = setupData.inputs.filter(Boolean).length;
-        if (currentNumberOfInputs >= 3) {
-          console.log(`[add_another_habit_yes_btn MAX_INPUTS ${interactionId}] User tried to add more than 3 inputs.`);
-          await interaction.editReply({
-            content: "You've already defined the maximum of 3 daily habits. Please proceed using the 'No, Skip' button from the original message if it's still visible.",
-            components: [],
-            embeds: []
-          });
-          return;
-        }
-        
-        await interaction.editReply({ content: "✅ Okay, let's add another habit. I'll send the next step in a new message below...", components: [], embeds: [] });
-        
-        setupData.currentInputIndex = currentNumberOfInputs + 1;
-        const nextInputNumber = setupData.currentInputIndex;
-        const ordinal = nextInputNumber === 2 ? "2nd" : "3rd";
-        setupData.dmFlowState = `processing_input${nextInputNumber}_label_suggestions`;
-        userExperimentSetupData.set(userId, setupData);
-
-        const thinkingEmbed = new EmbedBuilder()
-          .setColor('#5865F2')
-          .setDescription(`🧠 Let's define your **${ordinal} Daily Habit**. I'll brainstorm some ideas for you...`);
-        const thinkingMessage = await interaction.user.send({ embeds: [thinkingEmbed] });
-        
-        setupData.lastPromptMessageId = thinkingMessage.id;
-        userExperimentSetupData.set(userId, setupData);
-
-        const definedInputsForAI = setupData.inputs.filter(Boolean).map(input => ({
-            label: input.label, unit: input.unit, goal: input.goal
-        }));
+        console.log(`[add_another_habit_yes_btn START ${interactionId}] Clicked by ${userTagForLog}.`);
         try {
-            const habitSuggestionsResult = await callFirebaseFunction(
-              'generateInputLabelSuggestions',
-              {
-                userWish: setupData.deeperWish,
-                userBlockers: setupData.userBlockers,
-                userPositiveHabits: setupData.userPositiveHabits,
-                userVision: setupData.userVision,
-                outcomeMetric: setupData.outcome,
-                definedInputs: definedInputsForAI
-              },
-              userId
-            );
-            if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions?.length > 0) {
-              setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions;
-              setupData.dmFlowState = `awaiting_input${nextInputNumber}_label_dropdown_selection`;
-              userExperimentSetupData.set(userId, setupData);
-              
-              const habitLabelSelectMenu = new StringSelectMenuBuilder()
-                .setCustomId(`ai_input${nextInputNumber}_label_select`)
-                .setPlaceholder(`Select a Habit or enter your own.`);
-              habitLabelSelectMenu.addOptions(
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(`✏️ Enter custom habit idea...`)
-                  .setValue(`custom_input${nextInputNumber}_label`)
-                  .setDescription("Choose this to write in your own.")
-              );
-              habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
-                let displayLabel;
-                // Check if the goal is 'yes' or 'no' to adjust the display
-                if (typeof suggestion.goal === 'string' && (suggestion.goal.toLowerCase() === 'yes' || suggestion.goal.toLowerCase() === 'no')) {
-                    displayLabel = `${suggestion.label} (${suggestion.unit})`;
-                } else {
-                    displayLabel = `${suggestion.label} (${suggestion.goal} ${suggestion.unit})`;
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || setupData.dmFlowState !== 'awaiting_add_another_habit_choice') {
+                console.warn(`[add_another_habit_yes_btn WARN ${interactionId}] User in unexpected state: ${setupData?.dmFlowState || 'no setupData'}.`);
+                await interaction.reply({ content: "There was a mix-up with the steps. Please try restarting the experiment setup with `/go`.", ephemeral: true });
+                return;
+            }
+
+            const currentNumberOfInputs = setupData.inputs.filter(Boolean).length;
+            if (currentNumberOfInputs >= 3) {
+                console.log(`[add_another_habit_yes_btn MAX_INPUTS ${interactionId}] User tried to add more than 3 inputs.`);
+                await interaction.update({
+                    content: "You've already defined the maximum of 3 daily habits. Please proceed using the 'No More Habits' button.",
+                    components: [],
+                    embeds: []
+                });
+                return;
+            }
+
+            // <<<< START OF THE NEW LOGIC BRANCH >>>>
+            if (setupData.flowType === 'MANUAL') {
+                // Path for users in the Manual flow.
+                console.log(`[${interaction.customId} MANUAL_PATH ${interactionId}] Showing next manual habit modal.`);
+                const nextHabitNumber = currentNumberOfInputs + 1;
+                
+                // This logic is borrowed from the 'manual_add_another_habit_btn' handler to ensure consistency.
+                let habitLabelValue = "";
+                let habitUnitValue = "";
+                let habitGoalValue = "";
+                const habitDataFromCurrentFlow = setupData.inputs?.[nextHabitNumber - 1];
+                const habitDataFromPreviousExperiment = setupData.preFetchedWeeklySettings?.[`input${nextHabitNumber}`];
+
+                if (habitDataFromCurrentFlow) {
+                    habitLabelValue = habitDataFromCurrentFlow.label || "";
+                    habitUnitValue = habitDataFromCurrentFlow.unit || "";
+                    habitGoalValue = habitDataFromCurrentFlow.goal !== null && habitDataFromCurrentFlow.goal !== undefined ? String(habitDataFromCurrentFlow.goal) : "";
+                } else if (habitDataFromPreviousExperiment) {
+                    habitLabelValue = habitDataFromPreviousExperiment.label || "";
+                    habitUnitValue = habitDataFromPreviousExperiment.unit || "";
+                    habitGoalValue = habitDataFromPreviousExperiment.goal !== null && habitDataFromPreviousExperiment.goal !== undefined ? String(habitDataFromPreviousExperiment.goal) : "";
                 }
 
-                habitLabelSelectMenu.addOptions(
-                  new StringSelectMenuOptionBuilder()
-                    .setLabel(displayLabel.substring(0, 100))
-                    .setValue(`ai_input${nextInputNumber}_label_suggestion_${index}`)
-                    .setDescription((suggestion.briefExplanation || 'AI Suggested Habit').substring(0, 100))
+                const habitModal = new ModalBuilder()
+                    .setCustomId(`manual_setup_habit${nextHabitNumber}_modal`)
+                    .setTitle(`🧪 Experiment Setup (${nextHabitNumber + 1}/4): Habit ${nextHabitNumber}`);
+                const habitLabelInput = new TextInputBuilder().setCustomId(`habit${nextHabitNumber}_label_manual`).setLabel(`🛠️ Daily Habit ${nextHabitNumber} (The Label)`).setPlaceholder(`e.g., 'Read for 10 pages'`).setStyle(TextInputStyle.Short).setValue(habitLabelValue).setRequired(true);
+                const habitUnitInput = new TextInputBuilder().setCustomId(`habit${nextHabitNumber}_unit_manual`).setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'pages', 'yes/no'").setStyle(TextInputStyle.Short).setValue(habitUnitValue).setRequired(true);
+                const habitGoalInput = new TextInputBuilder().setCustomId(`habit${nextHabitNumber}_goal_manual`).setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '10', '1'").setStyle(TextInputStyle.Short).setValue(habitGoalValue).setRequired(true);
+                
+                habitModal.addComponents(
+                    new ActionRowBuilder().addComponents(habitLabelInput),
+                    new ActionRowBuilder().addComponents(habitGoalInput),
+                    new ActionRowBuiĺder().addComponents(habitUnitInput)
                 );
-              });
-              const resultsEmbed = new EmbedBuilder()
-                .setColor('#57F287')
-                .setTitle(`💡 Habit ${nextInputNumber} Ideas`)
-                .setDescription(`Here are some ideas for your **${ordinal} Daily Habit**.\n\nChoose one, or enter your own.`);
-              await thinkingMessage.edit({ embeds: [resultsEmbed], components: [new ActionRowBuilder().addComponents(habitLabelSelectMenu)] });
-              console.log(`[add_another_habit_yes_btn INPUT${nextInputNumber}_LABEL_DROPDOWN_SENT ${interactionId}] Edited 'thinking' message to display suggestions.`);
-            } else {
-              throw new Error(habitSuggestionsResult?.error || 'AI returned no suggestions.');
+
+                // showModal must be the first reply, so we use it directly here.
+                await interaction.showModal(habitModal);
+                console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Habit ${nextHabitNumber} modal shown to ${userTagForLog}.`);
+
+            } else { // This defaults to the AI_ASSISTED path
+                // Path for users in the AI-Assisted flow (original logic).
+                await interaction.deferUpdate();
+                console.log(`[${interaction.customId} AI_PATH ${interactionId}] Calling AI for next habit suggestions.`);
+                await interaction.editReply({ content: "✅ Okay, let's add another habit. I'll send the next step in a new message below...", components: [], embeds: [] });
+
+                setupData.currentInputIndex = currentNumberOfInputs + 1;
+                const nextInputNumber = setupData.currentInputIndex;
+                const ordinal = nextInputNumber === 2 ? "2nd" : "3rd";
+                setupData.dmFlowState = `processing_input${nextInputNumber}_label_suggestions`;
+                userExperimentSetupData.set(userId, setupData);
+
+                const thinkingEmbed = new EmbedBuilder()
+                    .setColor('#5865F2')
+                    .setDescription(`🧠 Let's define your **${ordinal} Daily Habit**. I'll brainstorm some ideas for you...`);
+                const thinkingMessage = await interaction.user.send({ embeds: [thinkingEmbed] });
+
+                setupData.lastPromptMessageId = thinkingMessage.id;
+                userExperimentSetupData.set(userId, setupData);
+                
+                const definedInputsForAI = setupData.inputs.filter(Boolean).map(input => ({
+                    label: input.label, unit: input.unit, goal: input.goal
+                }));
+
+                try {
+                    const habitSuggestionsResult = await callFirebaseFunction(
+                        'generateInputLabelSuggestions', {
+                            userWish: setupData.deeperWish,
+                            userBlockers: setupData.userBlockers,
+                            userPositiveHabits: setupData.userPositiveHabits,
+                            userVision: setupData.userVision,
+                            outcomeMetric: setupData.outcome,
+                            definedInputs: definedInputsForAI
+                        },
+                        userId
+                    );
+                    if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions?.length > 0) {
+                        setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions;
+                        setupData.dmFlowState = `awaiting_input${nextInputNumber}_label_dropdown_selection`;
+                        userExperimentSetupData.set(userId, setupData);
+
+                        const habitLabelSelectMenu = new StringSelectMenuBuilder()
+                            .setCustomId(`ai_input${nextInputNumber}_label_select`)
+                            .setPlaceholder(`Select a Habit or enter your own.`);
+                        habitLabelSelectMenu.addOptions(
+                            new StringSelectMenuOptionBuilder()
+                            .setLabel(`✏️ Enter custom habit idea...`)
+                            .setValue(`custom_input${nextInputNumber}_label`)
+                            .setDescription("Choose this to write in your own.")
+                        );
+                        habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
+                            let displayLabel;
+                            if (typeof suggestion.goal === 'string' && (suggestion.goal.toLowerCase() === 'yes' || suggestion.goal.toLowerCase() === 'no')) {
+                                displayLabel = `${suggestion.label} (${suggestion.unit})`;
+                            } else {
+                                displayLabel = `${suggestion.label} (${suggestion.goal} ${suggestion.unit})`;
+                            }
+                            habitLabelSelectMenu.addOptions(
+                                new StringSelectMenuOptionBuilder()
+                                .setLabel(displayLabel.substring(0, 100))
+                                .setValue(`ai_input${nextInputNumber}_label_suggestion_${index}`)
+                                .setDescription((suggestion.briefExplanation || 'AI Suggested Habit').substring(0, 100))
+                            );
+                        });
+                        const resultsEmbed = new EmbedBuilder()
+                            .setColor('#57F287')
+                            .setTitle(`💡 Habit ${nextInputNumber} Ideas`)
+                            .setDescription(`Here are some ideas for your **${ordinal} Daily Habit**.\n\nChoose one, or enter your own.`);
+                        await thinkingMessage.edit({ embeds: [resultsEmbed], components: [new ActionRowBuilder().addComponents(habitLabelSelectMenu)] });
+                        console.log(`[add_another_habit_yes_btn INPUT${nextInputNumber}_LABEL_DROPDOWN_SENT ${interactionId}] Edited 'thinking' message to display suggestions.`);
+                    } else {
+                        throw new Error(habitSuggestionsResult?.error || 'AI returned no suggestions.');
+                    }
+                } catch (error) {
+                    console.error(`[add_another_habit_yes_btn FIREBASE_FUNC_ERROR ${interactionId}] Error getting suggestions for Input ${nextInputNumber}:`, error);
+                    setupData.dmFlowState = `awaiting_input${nextInputNumber}_label_text`;
+                    userExperimentSetupData.set(userId, setupData);
+                    await thinkingMessage.edit({
+                        content: `I had a bit of trouble brainstorming right now. 😕\n\nNo worries! What **Label** would you like to give your ${ordinal} Daily Habit? (max 30 characters).`,
+                        embeds: []
+                    });
+                    console.log(`[add_another_habit_yes_btn FALLBACK_PROMPT_SENT ${interactionId}] Edited 'thinking' to prompt for text.`);
+                }
             }
+            // <<<< END OF THE NEW LOGIC BRANCH >>>>
+
         } catch (error) {
-            console.error(`[add_another_habit_yes_btn FIREBASE_FUNC_ERROR ${interactionId}] Error getting suggestions for Input ${nextInputNumber}:`, error);
-            setupData.dmFlowState = `awaiting_input${nextInputNumber}_label_text`;
-            userExperimentSetupData.set(userId, setupData);
-            await thinkingMessage.edit({
-                content: `I had a bit of trouble brainstorming right now. 😕\n\nNo worries! What **Label** would you like to give your ${ordinal} Daily Habit? (max 30 characters).`,
-                embeds: []
-            });
-            console.log(`[add_another_habit_yes_btn FALLBACK_PROMPT_SENT ${interactionId}] Edited 'thinking' to prompt for text.`);
+            // This outer catch is for errors before the branching logic, like getting setupData.
+            console.error(`[add_another_habit_yes_btn ERROR ${interactionId}] Error processing button click:`, error);
+            try {
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: "An error occurred. Please try again.", ephemeral: true });
+                }
+            } catch (e) {
+                console.error(`[add_another_habit_yes_btn FALLBACK_ERROR ${interactionId}]`, e);
+            }
         }
-      } catch (error) {
-        console.error(`[add_another_habit_yes_btn ERROR ${interactionId}] Error processing button click:`, error);
-        try {
-            await interaction.editReply({ content: "An error occurred. Please try again.", components: [], embeds: [] });
-        } catch (e) {
-            console.error(`[add_another_habit_yes_btn FALLBACK_ERROR ${interactionId}]`, e);
-        }
-      }
-      const processEndTime = performance.now();
-      console.log(`[add_another_habit_yes_btn END ${interactionId}] Finished processing. Total time: ${(processEndTime - yesAddHabitClickTime).toFixed(2)}ms`);
+        const processEndTime = performance.now();
+        console.log(`[add_another_habit_yes_btn END ${interactionId}] Finished processing. Total time: ${(processEndTime - yesAddHabitClickTime).toFixed(2)}ms`);
     }
 
     else if (interaction.isButton() && interaction.customId === 'add_another_habit_no_btn') {
