@@ -1658,19 +1658,29 @@ async function sendFinalSummaryDM(interaction, setupData) {
     }
 
     const randomMotivationalMessage = experimentSetupMotivationalMessages[Math.floor(Math.random() * experimentSetupMotivationalMessages.length)];
+    
+    // NEW: Build the settings description dynamically from the correct data structure
+    let settingsDescription = `Outcome: "${setupData.outcome?.label || 'N/A'}"`;
+    if (setupData.inputs && setupData.inputs.length > 0) {
+        setupData.inputs.forEach((input, index) => {
+            if (input && input.label) {
+                settingsDescription += `\nHabit ${index + 1}: "${input.label}"`;
+            }
+        });
+    }
+
     const dmEmbed = new EmbedBuilder()
       .setColor('#57F287') // Green for success
       .setTitle('🎉 Experiment Setup Complete! 🎉')
       .setDescription(`${randomMotivationalMessage}\n\nHere's the final summary of your new experiment. Good luck!`)
       .addFields(
           { name: '🎯 Deeper Wish', value: setupData.deeperProblem || 'Not specified' },
-          { name: '📋 Settings', value: `Outcome: "${setupData.outputLabel}"\nHabit 1: "${setupData.input1Label}"${setupData.input2Label ? `\nHabit 2: "${setupData.input2Label}"`:''}${setupData.input3Label ? `\nHabit 3: "${setupData.input3Label}"`:''}` },
+          { name: '📋 Settings', value: settingsDescription }, // Use the dynamically built string
           { name: '🗓️ Experiment Duration', value: `${setupData.experimentDuration.replace('_', ' ')} (Stats report interval)` },
-          { name: '⏰ Reminders', value: setupData.reminderSummary || 'Reminder status not recorded.' } // Use stored summary
+          { name: '⏰ Reminders', value: setupData.reminderSummary || 'Reminder status not recorded.' }
       )
      .setFooter({ text: `User: ${interaction.user.tag}`})
      .setTimestamp();
-
     try {
       await interaction.user.send({ embeds: [dmEmbed] });
       console.log(`[sendFinalSummaryDM ${interaction.id}] Sent final summary DM to ${interaction.user.tag}`);
