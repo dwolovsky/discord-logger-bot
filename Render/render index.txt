@@ -909,7 +909,7 @@ const dmFlowConfig = {
         });
       }
 
-      const content = `Here are 5 starting points for an outcome metric to support your wish.\n\nSelect 1 to customize it, or write your own from scratch.`;
+      const content = `Here are 5 outcome metric ideas.\n\nClick any one to EDIT it.`;
       const components = [new ActionRowBuilder().addComponents(outcomeLabelSelectMenu)];
       return { content, components };
     }
@@ -1118,10 +1118,9 @@ function isYesNoMetric(unit) {
  */
 function isTimeMetric(unit) {
     if (!unit) return false;
-    [cite_start]// This reuses the TIME_OF_DAY_KEYWORDS constant already defined in your code [cite: 1499, 1500]
+    // This reuses the TIME_OF_DAY_KEYWORDS constant already defined in your code
     return TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
 }
-
 /**
  * Formats a goal value for display, handling time-based units and yes/no.
  * @param {number | string | null | undefined} goal - The goal value.
@@ -4045,12 +4044,60 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.customId === MANUAL_SETUP_BTN_ID) {
-        const manualSetupStartTime = performance.now();
+    const manualSetupStartTime = performance.now();
+    const userId = interaction.user.id;
+    const userTag = interaction.user.tag;
+    const interactionId = interaction.id;
+    console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}.`);
+
+    try {
+        await interaction.deferUpdate();
+
+        // Prepare the message with the explanatory image and the continue button
+        const explainerEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle('How to Define a Metric')
+            .setDescription("Each metric you track needs three things:")
+            .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale.png'); // Replace with your actual image URL
+
+        const continueButton = new ButtonBuilder()
+            .setCustomId('manual_show_outcome_form_btn')
+            .setLabel('✍️ Continue to Form')
+            .setStyle(ButtonStyle.Success);
+        
+        const row = new ActionRowBuilder().addComponents(continueButton);
+
+        await interaction.editReply({
+            content: "First, let's define your **Daily Outcome**. This is the core result you want to see change.",
+            embeds: [explainerEmbed],
+            components: [row]
+        });
+        
+        console.log(`[${interaction.customId} SUCCESS ${interactionId}] Explainer image sent for manual setup to ${userTag}.`);
+
+    } catch (error) {
+        const errorTime = performance.now();
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Error in handler for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
+        // Fallback error reply
+        if (interaction.deferred && !interaction.replied) {
+            try {
+                await interaction.editReply({
+                    content: `❌ Oops! Something went wrong when trying to show setup options. Please try clicking "🔬 Set Experiment" again.`,
+                    embeds: [],
+                    components: []
+                });
+            } catch (fallbackError) {
+                console.error(`[${interaction.customId} FALLBACK_REPLY_ERROR ${interactionId}]`, fallbackError);
+            }
+        }
+    }
+    }
+
+    else if (interaction.customId === 'manual_show_outcome_form_btn') {
+        const showFormStartTime = performance.now();
         const userId = interaction.user.id;
         const userTag = interaction.user.tag;
-        const guildId = interaction.guild?.id;
         const interactionId = interaction.id;
-
         console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}.`);
 
         if (!dbAdmin) {
@@ -4060,72 +4107,53 @@ client.on(Events.InteractionCreate, async interaction => {
             } catch (e) { console.error(`[${interaction.customId} CRITICAL_REPLY_FAIL ${interactionId}]`, e); }
             return;
         }
-        if (!guildId) {
-            console.error(`[${interaction.customId} CRITICAL ${interactionId}] Guild ID is missing.`);
-            try {
-                await interaction.reply({ content: "Error: Could not identify the server. This action must be performed within a server.", ephemeral: true });
-            } catch (e) { console.error(`[${interaction.customId} GUILD_ID_FAIL_REPLY_FAIL ${interactionId}]`, e); }
-            return;
-        }
 
         try {
-            // 1. Get pre-fetched data from the in-memory map, which was populated by the /go command handler.
             const setupData = userExperimentSetupData.get(userId) || {};
             const cachedSettings = setupData.preFetchedWeeklySettings;
+
             if(cachedSettings) {
-                console.log(`[${interaction.customId} CACHE_HIT ${interactionId}] Using pre-fetched settings from /go command for ${userTag}.`);
+                console.log(`[${interaction.customId} CACHE_HIT ${interactionId}] Using pre-fetched settings for ${userTag}.`);
             } else {
-                console.log(`[${interaction.customId} CACHE_MISS ${interactionId}] No pre-fetched settings found in map for ${userTag}.`);
+                console.log(`[${interaction.customId} CACHE_MISS ${interactionId}] No pre-fetched settings found for ${userTag}.`);
             }
 
-            // 2. Prepare the initial state object
+            // Initialize or update the in-memory map
             const initialState = {
                 ...setupData,
                 flowType: 'MANUAL',
                 interactionId: interactionId,
             };
-
-            // 3. Update the in-memory map SYNCHRONOUSLY for immediate use.
             userExperimentSetupData.set(userId, initialState);
-            console.log(`[${interaction.customId} IN_MEMORY_INIT ${interactionId}] Initialized in-memory state for ${userTag}.`);
+            console.log(`[${interaction.customId} IN_MEMORY_INIT ${interactionId}] Initialized/updated in-memory state for ${userTag}.`);
             
-            // 4. Prepare and show the modal immediately.
-            let deeperProblemValue = "";
-            let outcomeLabelValue = "";
-            let outcomeUnitValue = "";
-            let outcomeGoalValue = "";
-
-            if (cachedSettings) {
-                deeperProblemValue = cachedSettings.deeperProblem || "";
-                if (cachedSettings.output) {
-                    outcomeLabelValue = cachedSettings.output.label || "";
-                    outcomeUnitValue = cachedSettings.output.unit || "";
-                    outcomeGoalValue = cachedSettings.output.goal !== null && cachedSettings.output.goal !== undefined ? String(cachedSettings.output.goal) : "";
-                }
-            }
+            // Prepare and show the modal, pre-filling from cache if available
+            let deeperProblemValue = cachedSettings?.deeperProblem || "";
+            let outcomeLabelValue = cachedSettings?.output?.label || "";
+            let outcomeUnitValue = cachedSettings?.output?.unit || "";
+            let outcomeGoalValue = cachedSettings?.output?.goal !== null && cachedSettings.output.goal !== undefined ? String(cachedSettings.output.goal) : "";
 
             const outcomeModal = new ModalBuilder()
                 .setCustomId('manual_setup_outcome_modal')
                 .setTitle('🧪 Experiment Setup (1/4): Outcome');
-
+            
             const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setPlaceholder("e.g., 'To be less stressed' or 'To have more energy.'").setStyle(TextInputStyle.Paragraph).setValue(deeperProblemValue).setRequired(true);
             const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setValue(outcomeLabelValue).setRequired(true);
             const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setValue(outcomeUnitValue).setRequired(true);
             const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setValue(outcomeGoalValue).setRequired(true);
-
+            
             outcomeModal.addComponents(
                 new ActionRowBuilder().addComponents(deeperProblemInput),
                 new ActionRowBuilder().addComponents(outcomeLabelInput),
                 new ActionRowBuilder().addComponents(outcomeGoalInput),
                 new ActionRowBuilder().addComponents(outcomeUnitInput)
-                
             );
 
             await interaction.showModal(outcomeModal);
             const showModalTime = performance.now();
-            console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Outcome modal shown to ${userTag}. Total time to show modal: ${(showModalTime - manualSetupStartTime).toFixed(2)}ms`);
+            console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Outcome modal shown to ${userTag}. Total time to show modal: ${(showModalTime - showFormStartTime).toFixed(2)}ms`);
 
-            // 5. AFTER showing the modal, save the state to Firestore in the background.
+            // Save the state to Firestore in the background
             (async () => {
                 try {
                     const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
@@ -4133,15 +4161,15 @@ client.on(Events.InteractionCreate, async interaction => {
                         ...initialState,
                         createdAt: admin.firestore.FieldValue.serverTimestamp()
                     });
-                    console.log(`[${interaction.customId} FIRESTORE_INIT_ASYNC ${interactionId}] Successfully initialized Firestore state for ${userTag} in the background.`);
+                    console.log(`[${interaction.customId} FIRESTORE_INIT_ASYNC ${interactionId}] Successfully initialized Firestore state for ${userTag}.`);
                 } catch (firestoreError) {
-                    console.error(`[${interaction.customId} FIRESTORE_INIT_ASYNC_ERROR ${interactionId}] Failed to save initial state to Firestore for ${userTag} in the background:`, firestoreError);
+                  console.error(`[${interaction.customId} FIRESTORE_INIT_ASYNC_ERROR ${interactionId}] Failed to save initial state to Firestore for ${userTag}:`, firestoreError);
                 }
             })();
 
         } catch (error) {
             const errorTime = performance.now();
-            console.error(`[${interaction.customId} ERROR ${interactionId}] Error in handler for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing outcome modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
         }
     }
 
@@ -6573,48 +6601,45 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.isButton() && interaction.customId.startsWith('show_raw_stats_')) {
-      const showStatsButtonStartTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const experimentId = interaction.customId.split('show_raw_stats_')[1];
-      console.log(`[show_raw_stats_ START ${interactionId}] Clicked by ${userId} for experiment ${experimentId}.`);
+    const showStatsButtonStartTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    const experimentId = interaction.customId.split('show_raw_stats_')[1];
+    console.log(`[show_raw_stats_ START ${interactionId}] Clicked by ${userId} for experiment ${experimentId}.`);
 
-      if (!experimentId) {
-        await interaction.reply({ content: "Error: Could not identify the experiment for the stats report.", ephemeral: true });
+    if (!experimentId) {
+        try {
+            await interaction.reply({ content: "Error: Could not identify the experiment for the stats report.", ephemeral: true });
+        } catch(e) { console.error(`[show_raw_stats_ ERROR ${interactionId}] Reply failed for missing experimentId.`, e); }
         return;
-      }
+    }
 
-      try {
-        // Acknowledge the button click. This prevents the "interaction failed" message.
+    try {
+        // Acknowledge the button click immediately.
+        // This prevents the "interaction failed" message on cold starts.
         await interaction.deferUpdate();
+        console.log(`[show_raw_stats_ DEFERRED ${interactionId}] Interaction deferred successfully.`);
 
-        // The userStatsReportData map was populated by the listener.
-        // Now we use it to send the first page.
-        const reportInfo = userStatsReportData.get(userId);
-        if (!reportInfo || reportInfo.experimentId !== experimentId) {
-            console.warn(`[show_raw_stats_ WARN ${interactionId}] Could not find matching report data in cache for user ${userId}, experiment ${experimentId}.`);
-            await interaction.user.send({ content: "Your stats report session seems to have expired. Please wait for the next report notification." });
-            return;
-        }
-
-        // Pass the user object to sendStatsPage. This will cause it to send a NEW message in the DM,
-        // which is the correct behavior for starting the report.
+        // The sendStatsPage function is now correctly responsible for ALL logic,
+        // including the in-memory check AND the Firestore fallback.
         await sendStatsPage(interaction.user, userId, experimentId, 1);
         console.log(`[show_raw_stats_ SUCCESS ${interactionId}] Call to sendStatsPage completed for ${userId}.`);
-
-      } catch (error) {
+        
+    } catch (error) {
         console.error(`[show_raw_stats_ ERROR ${interactionId}] Error processing stats request for exp ${experimentId}:`, error);
-        try {
-            // Since the original interaction was only deferred, we can't reply to it.
-            // We must send a new message to the user to inform them of the error.
-            await interaction.user.send({ content: `❌ An error occurred while loading your stats report: ${error.message || 'Please try again.'}`});
-        } catch (dmError) {
-            console.error(`[show_raw_stats_ CATCH_ERROR_DM_FAIL ${interactionId}]`, dmError);
+
+        // This error message is now more generic because the user may not have DMs open.
+        // The sendStatsPage function itself does not have access to the interaction to reply.
+        if (error.code === 10062) { // Specifically handle the "Unknown Interaction" on a cold start
+            console.warn(`[show_raw_stats_ WARN ${interactionId}] Cold start detected. Interaction expired before processing.`);
         }
-      }
-      const processEndTime = performance.now();
-      console.log(`[show_raw_stats_ END ${interactionId}] Finished processing. Total time: ${(processEndTime - showStatsButtonStartTime).toFixed(2)}ms`);
+        
+        // We cannot reliably reply to the interaction here if deferUpdate failed,
+        // but the error is logged for debugging.
     }
+    const processEndTime = performance.now();
+    console.log(`[show_raw_stats_ END ${interactionId}] Finished processing. Total time: ${(processEndTime - showStatsButtonStartTime).toFixed(2)}ms`);
+}
 
     else if (interaction.isButton() && interaction.customId.startsWith('stats_show_continuous_mode_prompt_')) {
       const nextButtonClickTime = performance.now();
@@ -6753,7 +6778,7 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
     console.log(`[ai_show_share_prompt_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - showSharePromptClickTime).toFixed(2)}ms`);
-}
+    }
 
     else if (interaction.isButton() && interaction.customId === 'ai_no_share_prompt_btn') {
       const noSharePromptClickTime = performance.now();
@@ -6883,9 +6908,6 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[post_ai_log_summary_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - postPublicClickTime).toFixed(2)}ms`);
     }
 
-    // In render index.txt
-// ADD THIS ENTIRE 'ELSE IF' BLOCK inside the interaction.isButton() handler
-
     else if (interaction.isButton() && interaction.customId.startsWith('stats_show_continuous_mode_prompt_')) {
       const nextButtonClickTime = performance.now();
       const interactionId = interaction.id;
@@ -6926,6 +6948,47 @@ client.on(Events.InteractionCreate, async interaction => {
       }
     }
 
+    else if (interaction.customId === 'ai_show_outcome_modal_btn') {
+        const showModalStartTime = performance.now();
+        const userId = interaction.user.id;
+        const userTag = interaction.user.tag;
+        const interactionId = interaction.id;
+        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}.`);
+        
+        try {
+            const setupData = userExperimentSetupData.get(userId);
+            const chosenSuggestion = setupData?.tempSelectedOutcome;
+
+            if (!chosenSuggestion) {
+                console.error(`[${interaction.customId} ERROR ${interactionId}] tempSelectedOutcome not found for ${userTag}.`);
+                await interaction.reply({ content: "Sorry, I've lost track of your selection. Please go back and choose your desired outcome again.", ephemeral: true });
+                return;
+            }
+
+            // Create and show the modal, pre-populated with the AI's suggestion.
+            const confirmOutcomeModal = new ModalBuilder()
+                .setCustomId('confirm_ai_outcome_modal')
+                .setTitle('Confirm Your Outcome');
+
+            const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish (Context)").setStyle(TextInputStyle.Paragraph).setValue(setupData.deeperWish || "").setRequired(true);
+            const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Outcome Label").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
+            const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target").setStyle(TextInputStyle.Short).setValue(String(chosenSuggestion.goal)).setRequired(true);
+            const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.unit).setRequired(true);
+            
+            confirmOutcomeModal.addComponents(
+                new ActionRowBuilder().addComponents(deeperProblemInput),
+                new ActionRowBuilder().addComponents(outcomeLabelInput),
+                new ActionRowBuilder().addComponents(outcomeGoalInput),
+                new ActionRowBuilder().addComponents(outcomeUnitInput)
+            );
+            
+            await interaction.showModal(confirmOutcomeModal);
+            console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed confirm_ai_outcome_modal with pre-filled suggestion.`);
+
+        } catch(error) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing modal for ${userTag}:`, error);
+        }
+    }
 
   } // End of "if (interaction.isButton())" block
 
@@ -7016,93 +7079,91 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.customId === 'ai_outcome_select') {
-        const selectMenuSubmitTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        const userTag = interaction.user.tag;
-        console.log(`[${interaction.customId} START ${interactionId}] Received selection from ${userTag}.`);
+    const selectMenuSubmitTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    const userTag = interaction.user.tag;
+    console.log(`[${interaction.customId} START ${interactionId}] Received selection from ${userTag}.`);
 
-        try {
-            const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || setupData.dmFlowState !== 'awaiting_outcome_suggestion_selection') {
-                // This select menu should only be actionable in the correct state.
-                // We reply directly because showModal must be the first response.
-                await interaction.reply({ content: "This selection has expired or your session is out of sync. Please restart using `/go`.", ephemeral: true });
-                console.warn(`[${interaction.customId} WARN ${interactionId}] User ${userTag} in wrong state: ${setupData?.dmFlowState}`);
+    try {
+        const setupData = userExperimentSetupData.get(userId);
+        if (!setupData || setupData.dmFlowState !== 'awaiting_outcome_suggestion_selection') {
+            await interaction.reply({ content: "This selection has expired or your session is out of sync. Please restart using `/go`.", ephemeral: true });
+            console.warn(`[${interaction.customId} WARN ${interactionId}] User ${userTag} in wrong state: ${setupData?.dmFlowState}`);
+            return;
+        }
+
+        const selectedValue = interaction.values[0];
+
+        // PATH 1: User wants to write their own metric. This path remains unchanged.
+        if (selectedValue === 'write_my_own_outcome') {
+            console.log(`[${interaction.customId} CUSTOM_PATH ${interactionId}] User ${userTag} selected 'Write my own'.`);
+            
+            const manualOutcomeModal = new ModalBuilder()
+                .setCustomId('manual_setup_outcome_modal')
+                .setTitle('🧪 Custom Outcome Metric');
+            
+            const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setStyle(TextInputStyle.Paragraph).setValue(setupData.deeperWish || "").setRequired(true);
+            const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setRequired(true);
+            const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setRequired(true);
+            const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setRequired(true);
+            
+            manualOutcomeModal.addComponents(
+                new ActionRowBuilder().addComponents(deeperProblemInput),
+                new ActionRowBuilder().addComponents(outcomeLabelInput),
+                new ActionRowBuilder().addComponents(outcomeGoalInput),
+                new ActionRowBuilder().addComponents(outcomeUnitInput)
+            );
+            
+            await interaction.showModal(manualOutcomeModal);
+            console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed manual_setup_outcome_modal for custom entry.`);
+            return;
+        }
+
+        // PATH 2: User selected an AI suggestion. This path is NEW.
+        if (selectedValue.startsWith('ai_outcome_suggestion_')) {
+            await interaction.deferUpdate();
+            const suggestionIndex = parseInt(selectedValue.split('_').pop(), 10);
+            const chosenSuggestion = setupData.aiGeneratedOutcomeSuggestions?.[suggestionIndex];
+
+            if (!chosenSuggestion) {
+                console.error(`[${interaction.customId} ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for ${userTag}.`);
+                await interaction.editReply({ content: "Sorry, I couldn't process that selection. Please try choosing again or restarting the setup.", components: [], embeds: [] });
                 return;
             }
 
-            const selectedValue = interaction.values[0];
+            console.log(`[${interaction.customId} AI_PATH ${interactionId}] User ${userTag} selected suggestion:`, chosenSuggestion);
+            // Store the selection in the user's state so the next handler can use it.
+            setupData.tempSelectedOutcome = chosenSuggestion;
+            userExperimentSetupData.set(userId, setupData);
 
-            // PATH 1: User wants to write their own metric from scratch
-            if (selectedValue === 'write_my_own_outcome') {
-                console.log(`[${interaction.customId} CUSTOM_PATH ${interactionId}] User ${userTag} selected 'Write my own'.`);
-                
-                // Reuse the manual setup modal. The existing handler for 'manual_setup_outcome_modal' will take over upon submission.
-                const manualOutcomeModal = new ModalBuilder()
-                    .setCustomId('manual_setup_outcome_modal')
-                    .setTitle('🧪 Custom Outcome Metric');
-                
-                // Pre-fill the deeper wish, but leave the rest empty for the user to define.
-                const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setStyle(TextInputStyle.Paragraph).setValue(setupData.deeperWish || "").setRequired(true);
-                const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setRequired(true);
-                const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setRequired(true);
-                const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setRequired(true);
-                
-                manualOutcomeModal.addComponents(
-                    new ActionRowBuilder().addComponents(deeperProblemInput),
-                    new ActionRowBuilder().addComponents(outcomeLabelInput),
-                    new ActionRowBuilder().addComponents(outcomeGoalInput),
-                    new ActionRowBuilder().addComponents(outcomeUnitInput)
-                );
-                
-                await interaction.showModal(manualOutcomeModal);
-                console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed manual_setup_outcome_modal for custom entry.`);
-                return; 
-            }
+            // Prepare the message with the explanatory image and the continue button
+            const explainerEmbed = new EmbedBuilder()
+                .setColor('#5865F2')
+                .setTitle('How to Define a Metric')
+                .setDescription("Each metric you track needs three things:")
+                .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale.png'); // Replace with your actual image URL
 
-            // PATH 2: User selected an AI suggestion
-            if (selectedValue.startsWith('ai_outcome_suggestion_')) {
-                const suggestionIndex = parseInt(selectedValue.split('_').pop(), 10);
-                const chosenSuggestion = setupData.aiGeneratedOutcomeSuggestions?.[suggestionIndex];
+            const continueButton = new ButtonBuilder()
+                .setCustomId('ai_show_outcome_modal_btn')
+                .setLabel('✍️ Confirm or Edit Metric')
+                .setStyle(ButtonStyle.Success);
+            
+            const row = new ActionRowBuilder().addComponents(continueButton);
 
-                if (!chosenSuggestion) {
-                    console.error(`[${interaction.customId} ERROR ${interactionId}] Invalid AI suggestion index or suggestions not found for ${userTag}.`);
-                    await interaction.reply({ content: "Sorry, I couldn't process that selection. Please try choosing again or restarting the setup.", ephemeral: true });
-                    return;
-                }
-
-                console.log(`[${interaction.customId} AI_PATH ${interactionId}] User ${userTag} selected suggestion:`, chosenSuggestion);
-
-                // Store the selection in the user's state so the modal handler knows which suggestion was chosen.
-                setupData.tempSelectedOutcome = chosenSuggestion;
-                userExperimentSetupData.set(userId, setupData);
-
-                // Create and show a NEW modal, pre-populated with the AI's suggestion.
-                const confirmOutcomeModal = new ModalBuilder()
-                    .setCustomId('confirm_ai_outcome_modal') // This will require a NEW modal submission handler
-                    .setTitle('Confirm Your Outcome');
-
-                const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish (Context)").setStyle(TextInputStyle.Paragraph).setValue(setupData.deeperWish || "").setRequired(true);
-                const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Outcome Label").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
-                const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target").setStyle(TextInputStyle.Short).setValue(String(chosenSuggestion.goal)).setRequired(true);
-                const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.unit).setRequired(true);
-                
-                confirmOutcomeModal.addComponents(
-                    new ActionRowBuilder().addComponents(deeperProblemInput),
-                    new ActionRowBuilder().addComponents(outcomeLabelInput),
-                    new ActionRowBuilder().addComponents(outcomeGoalInput),
-                    new ActionRowBuilder().addComponents(outcomeUnitInput)
-                );
-                
-                await interaction.showModal(confirmOutcomeModal);
-                console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Showed confirm_ai_outcome_modal with pre-filled suggestion.`);
-            }
-
-        } catch (error) {
-            console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing select menu for ${userTag}:`, error);
+            // Update the message that had the dropdown
+            await interaction.editReply({
+                content: `You selected: **${chosenSuggestion.label}**. Let's confirm the details.`,
+                embeds: [explainerEmbed],
+                components: [row]
+            });
+            console.log(`[${interaction.customId} EXPLAINER_SHOWN ${interactionId}] Showed metric explainer to ${userTag}.`);
         }
+
+    } catch (error) {
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Error processing select menu for ${userTag}:`, error);
     }
+}
     
     else if (interaction.customId === 'ai_input1_select') {
         const selectMenuSubmitTime = performance.now();

@@ -4063,8 +4063,6 @@ client.on(Events.InteractionCreate, async interaction => {
         // Prepare the message with the explanatory image and the continue button
         const explainerEmbed = new EmbedBuilder()
             .setColor('#5865F2')
-            .setTitle('How to Define a Metric')
-            .setDescription("Each metric you track needs three things:")
             .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale.png'); // Replace with your actual image URL
 
         const continueButton = new ButtonBuilder()
@@ -4075,7 +4073,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const row = new ActionRowBuilder().addComponents(continueButton);
 
         await interaction.editReply({
-            content: "First, let's define your **Daily Outcome**. This is the core result you want to see change.",
+            content: "Let's define your Metrics! Each metric has 3 parts.",
             embeds: [explainerEmbed],
             components: [row]
         });
