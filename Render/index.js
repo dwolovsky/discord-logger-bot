@@ -1902,6 +1902,11 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('hi')
           .setDescription('Begin the welcome and onboarding sequence.')
+          .toJSON(),
+        new SlashCommandBuilder()
+          .setName('backfill')
+          .setDescription('Admin only: Retroactively counts all user logs.')
+          .setDefaultMemberPermissions('0') // Makes this command admin-only
           .toJSON()
       ]}
     );
@@ -3769,6 +3774,38 @@ client.on(Events.InteractionCreate, async interaction => {
               }
               break;
             } // End case 'hi'
+
+            // ADD THIS ENTIRE NEW CASE
+          case 'backfill': {
+            const backfillStartTime = performance.now();
+            console.log(`[/backfill] Admin command invoked by ${interaction.user.tag}.`);
+            
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+            try {
+              // Call the Firebase function using the existing helper
+              const result = await callFirebaseFunction(
+                'backfillTotalLogs', 
+                {}, // No data payload needed
+                interaction.user.id
+              );
+              
+              if (result && result.success) {
+                console.log(`[/backfill] Success: ${result.message}`);
+                await interaction.editReply({ content: `✅ **Success!**\n${result.message}` });
+              } else {
+                throw new Error(result?.message || "The backfill function failed without a specific error message.");
+              }
+
+            } catch (error) {
+              console.error(`[/backfill] Error executing command:`, error);
+              await interaction.editReply({ content: `❌ **Error:**\n${error.message}` });
+            }
+            
+            const backfillEndTime = performance.now();
+            console.log(`[/backfill] Command processing finished. Total time: ${(backfillEndTime - backfillStartTime).toFixed(2)}ms`);
+            break;
+          }
 
           default: {
             console.warn('⚠️ Unrecognized command:', interaction.commandName);
