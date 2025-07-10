@@ -7237,7 +7237,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setColor('#5865F2')
                     .setTitle('How to Define a Metric')
                     .setDescription("Each metric you track needs three things:")
-                    .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale.png');
+                    .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale%20Unit.png');
 
                 const continueButton = new ButtonBuilder()
                     .setCustomId('ai_show_outcome_modal_btn')
