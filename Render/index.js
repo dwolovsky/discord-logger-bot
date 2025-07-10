@@ -1902,11 +1902,6 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('hi')
           .setDescription('Begin the welcome and onboarding sequence.')
-          .toJSON(),
-        new SlashCommandBuilder()
-          .setName('backfill')
-          .setDescription('Admin only: Retroactively counts all user logs.')
-          .setDefaultMemberPermissions('0') // Makes this command admin-only
           .toJSON()
       ]}
     );
@@ -3775,38 +3770,6 @@ client.on(Events.InteractionCreate, async interaction => {
               break;
             } // End case 'hi'
 
-            // ADD THIS ENTIRE NEW CASE
-          case 'backfill': {
-            const backfillStartTime = performance.now();
-            console.log(`[/backfill] Admin command invoked by ${interaction.user.tag}.`);
-            
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-            try {
-              // Call the Firebase function using the existing helper
-              const result = await callFirebaseFunction(
-                'backfillTotalLogs', 
-                {}, // No data payload needed
-                interaction.user.id
-              );
-              
-              if (result && result.success) {
-                console.log(`[/backfill] Success: ${result.message}`);
-                await interaction.editReply({ content: `✅ **Success!**\n${result.message}` });
-              } else {
-                throw new Error(result?.message || "The backfill function failed without a specific error message.");
-              }
-
-            } catch (error) {
-              console.error(`[/backfill] Error executing command:`, error);
-              await interaction.editReply({ content: `❌ **Error:**\n${error.message}` });
-            }
-            
-            const backfillEndTime = performance.now();
-            console.log(`[/backfill] Command processing finished. Total time: ${(backfillEndTime - backfillStartTime).toFixed(2)}ms`);
-            break;
-          }
-
           default: {
             console.warn('⚠️ Unrecognized command:', interaction.commandName);
             return await interaction.reply({
@@ -4960,14 +4923,30 @@ client.on(Events.InteractionCreate, async interaction => {
         console.log(`[add_another_habit_yes_btn START ${interactionId}] Clicked by ${userTagForLog}.`);
         try {
             const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || setupData.dmFlowState !== 'awaiting_add_another_habit_choice') {
+            if (!setupData || (setupData.dmFlowState !== 'awaiting_add_another_habit_choice' && setupData.flowType !== 'MANUAL')) {
                 console.warn(`[add_another_habit_yes_btn WARN ${interactionId}] User in unexpected state: ${setupData?.dmFlowState || 'no setupData'}.`);
                 await interaction.reply({ content: "There was a mix-up with the steps. Please try restarting the experiment setup with `/go`.", ephemeral: true });
                 return;
             }
 
-            const currentNumberOfInputs = setupData.inputs.filter(Boolean).length;
-            if (currentNumberOfInputs >= 3) {
+            let numHabitsAlreadyDefined = 0;
+            const embedTitle = interaction.message.embeds[0]?.title;
+
+            if (embedTitle) {
+                if (embedTitle.includes('Habit 1 Confirmed')) {
+                    numHabitsAlreadyDefined = 1;
+                } else if (embedTitle.includes('Habit 2 Confirmed')) {
+                    numHabitsAlreadyDefined = 2;
+                }
+            }
+
+            // Fallback for flows that don't use the specific embed titles.
+            if (numHabitsAlreadyDefined === 0) {
+                 numHabitsAlreadyDefined = setupData.inputs.filter(Boolean).length;
+            }
+
+
+            if (numHabitsAlreadyDefined >= 3) {
                 console.log(`[add_another_habit_yes_btn MAX_INPUTS ${interactionId}] User tried to add more than 3 inputs.`);
                 await interaction.update({
                     content: "You've already defined the maximum of 3 daily habits. Please proceed using the 'No More Habits' button.",
@@ -4976,28 +4955,31 @@ client.on(Events.InteractionCreate, async interaction => {
                 });
                 return;
             }
+            
+            const nextHabitNumber = numHabitsAlreadyDefined + 1;
 
-            // <<<< START OF THE NEW LOGIC BRANCH >>>>
             if (setupData.flowType === 'MANUAL') {
-                // Path for users in the Manual flow.
-                console.log(`[${interaction.customId} MANUAL_PATH ${interactionId}] Showing next manual habit modal.`);
-                const nextHabitNumber = currentNumberOfInputs + 1;
+                console.log(`[${interaction.customId} MANUAL_PATH ${interactionId}] Showing next manual habit modal for habit #${nextHabitNumber}.`);
                 
-                // This logic is borrowed from the 'manual_add_another_habit_btn' handler to ensure consistency.
                 let habitLabelValue = "";
                 let habitUnitValue = "";
                 let habitGoalValue = "";
+                
                 const habitDataFromCurrentFlow = setupData.inputs?.[nextHabitNumber - 1];
                 const habitDataFromPreviousExperiment = setupData.preFetchedWeeklySettings?.[`input${nextHabitNumber}`];
 
                 if (habitDataFromCurrentFlow) {
+                    console.log(`[${interaction.customId} DATA_HIT_SESSION ${interactionId}] Using data for Habit ${nextHabitNumber} from current 'Edit' session.`);
                     habitLabelValue = habitDataFromCurrentFlow.label || "";
                     habitUnitValue = habitDataFromCurrentFlow.unit || "";
                     habitGoalValue = habitDataFromCurrentFlow.goal !== null && habitDataFromCurrentFlow.goal !== undefined ? String(habitDataFromCurrentFlow.goal) : "";
                 } else if (habitDataFromPreviousExperiment) {
+                    console.log(`[${interaction.customId} DATA_HIT_CACHE ${interactionId}] Using cached settings for Habit ${nextHabitNumber} from previous experiment.`);
                     habitLabelValue = habitDataFromPreviousExperiment.label || "";
                     habitUnitValue = habitDataFromPreviousExperiment.unit || "";
                     habitGoalValue = habitDataFromPreviousExperiment.goal !== null && habitDataFromPreviousExperiment.goal !== undefined ? String(habitDataFromPreviousExperiment.goal) : "";
+                } else {
+                    console.log(`[${interaction.customId} DATA_MISS ${interactionId}] No existing data for Habit ${nextHabitNumber}. Will show empty modal.`);
                 }
 
                 const habitModal = new ModalBuilder()
@@ -5012,21 +4994,18 @@ client.on(Events.InteractionCreate, async interaction => {
                     new ActionRowBuilder().addComponents(habitGoalInput),
                     new ActionRowBuilder().addComponents(habitUnitInput)
                 );
-
-                // showModal must be the first reply, so we use it directly here.
+                
                 await interaction.showModal(habitModal);
                 console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Habit ${nextHabitNumber} modal shown to ${userTagForLog}.`);
 
             } else { // This defaults to the AI_ASSISTED path
-                // Path for users in the AI-Assisted flow (original logic).
                 await interaction.deferUpdate();
                 console.log(`[${interaction.customId} AI_PATH ${interactionId}] Calling AI for next habit suggestions.`);
                 await interaction.editReply({ content: "✅ Okay, let's add another habit. I'll send the next step in a new message below...", components: [], embeds: [] });
-
-                setupData.currentInputIndex = currentNumberOfInputs + 1;
-                const nextInputNumber = setupData.currentInputIndex;
-                const ordinal = nextInputNumber === 2 ? "2nd" : "3rd";
-                setupData.dmFlowState = `processing_input${nextInputNumber}_label_suggestions`;
+                
+                setupData.currentInputIndex = nextHabitNumber;
+                const ordinal = nextHabitNumber === 2 ? "2nd" : "3rd";
+                setupData.dmFlowState = `processing_input${nextHabitNumber}_label_suggestions`;
                 userExperimentSetupData.set(userId, setupData);
 
                 const thinkingEmbed = new EmbedBuilder()
@@ -5036,7 +5015,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 setupData.lastPromptMessageId = thinkingMessage.id;
                 userExperimentSetupData.set(userId, setupData);
-                
+
                 const definedInputsForAI = setupData.inputs.filter(Boolean).map(input => ({
                     label: input.label, unit: input.unit, goal: input.goal
                 }));
@@ -5055,16 +5034,16 @@ client.on(Events.InteractionCreate, async interaction => {
                     );
                     if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions?.length > 0) {
                         setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions;
-                        setupData.dmFlowState = `awaiting_input${nextInputNumber}_label_dropdown_selection`;
+                        setupData.dmFlowState = `awaiting_input${nextHabitNumber}_label_dropdown_selection`;
                         userExperimentSetupData.set(userId, setupData);
 
                         const habitLabelSelectMenu = new StringSelectMenuBuilder()
-                            .setCustomId(`ai_input${nextInputNumber}_label_select`)
+                            .setCustomId(`ai_input${nextHabitNumber}_label_select`)
                             .setPlaceholder(`Select a Habit or enter your own.`);
                         habitLabelSelectMenu.addOptions(
                             new StringSelectMenuOptionBuilder()
                             .setLabel(`✏️ Enter custom habit idea...`)
-                            .setValue(`custom_input${nextInputNumber}_label`)
+                            .setValue(`custom_input${nextHabitNumber}_label`)
                             .setDescription("Choose this to write in your own.")
                         );
                         habitSuggestionsResult.suggestions.forEach((suggestion, index) => {
@@ -5077,22 +5056,22 @@ client.on(Events.InteractionCreate, async interaction => {
                             habitLabelSelectMenu.addOptions(
                                 new StringSelectMenuOptionBuilder()
                                 .setLabel(displayLabel.substring(0, 100))
-                                .setValue(`ai_input${nextInputNumber}_label_suggestion_${index}`)
+                                .setValue(`ai_input${nextHabitNumber}_label_suggestion_${index}`)
                                 .setDescription((suggestion.briefExplanation || 'AI Suggested Habit').substring(0, 100))
                             );
                         });
                         const resultsEmbed = new EmbedBuilder()
                             .setColor('#57F287')
-                            .setTitle(`💡 Habit ${nextInputNumber} Ideas`)
+                            .setTitle(`💡 Habit ${nextHabitNumber} Ideas`)
                             .setDescription(`Here are some ideas for your **${ordinal} Daily Habit**.\n\nChoose one, or enter your own.`);
                         await thinkingMessage.edit({ embeds: [resultsEmbed], components: [new ActionRowBuilder().addComponents(habitLabelSelectMenu)] });
-                        console.log(`[add_another_habit_yes_btn INPUT${nextInputNumber}_LABEL_DROPDOWN_SENT ${interactionId}] Edited 'thinking' message to display suggestions.`);
+                        console.log(`[add_another_habit_yes_btn INPUT${nextHabitNumber}_LABEL_DROPDOWN_SENT ${interactionId}] Edited 'thinking' message to display suggestions.`);
                     } else {
                         throw new Error(habitSuggestionsResult?.error || 'AI returned no suggestions.');
                     }
                 } catch (error) {
-                    console.error(`[add_another_habit_yes_btn FIREBASE_FUNC_ERROR ${interactionId}] Error getting suggestions for Input ${nextInputNumber}:`, error);
-                    setupData.dmFlowState = `awaiting_input${nextInputNumber}_label_text`;
+                    console.error(`[add_another_habit_yes_btn FIREBASE_FUNC_ERROR ${interactionId}] Error getting suggestions for Input ${nextHabitNumber}:`, error);
+                    setupData.dmFlowState = `awaiting_input${nextHabitNumber}_label_text`;
                     userExperimentSetupData.set(userId, setupData);
                     await thinkingMessage.edit({
                         content: `I had a bit of trouble brainstorming right now. 😕\n\nNo worries! What **Label** would you like to give your ${ordinal} Daily Habit? (max 30 characters).`,
@@ -5101,10 +5080,8 @@ client.on(Events.InteractionCreate, async interaction => {
                     console.log(`[add_another_habit_yes_btn FALLBACK_PROMPT_SENT ${interactionId}] Edited 'thinking' to prompt for text.`);
                 }
             }
-            // <<<< END OF THE NEW LOGIC BRANCH >>>>
 
         } catch (error) {
-            // This outer catch is for errors before the branching logic, like getting setupData.
             console.error(`[add_another_habit_yes_btn ERROR ${interactionId}] Error processing button click:`, error);
             try {
                 if (!interaction.replied && !interaction.deferred) {

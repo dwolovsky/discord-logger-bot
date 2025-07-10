@@ -352,7 +352,8 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     const logData = snap.data();
     const logId = event.params.logId;
     const userId = logData.userId;
-    const channelId = logData.channelId; // Get the channelId from the log document
+    // This variable is no longer used for public messages but is kept for other logic.
+    const channelId = logData.channelId;
 
     let displayNameForMessage;
     const storedUserTag = logData.userTag;
@@ -392,7 +393,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                     lastLog: (userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP] && typeof userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP].toDate === 'function')
                              ? userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP].toDate() : null,
                     userTag: userData[STREAK_CONFIG.FIELDS.USER_TAG] || displayNameForMessage,
-                    totalLogs: userData.totalLogs || 0 // Get existing log count
+                    totalLogs: userData.totalLogs || 0
                 };
             }
 
@@ -425,7 +426,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                 newState.streakContinued = true;
             }
 
-            const newTotalLogs = currentData.totalLogs + 1; // Calculate new total logs
+            const newTotalLogs = currentData.totalLogs + 1;
 
             const updateData = {
                 [STREAK_CONFIG.FIELDS.CURRENT_STREAK]: newState.newStreak,
@@ -434,7 +435,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                 [STREAK_CONFIG.FIELDS.FREEZES_REMAINING]: newState.freezesRemaining,
                 [STREAK_CONFIG.FIELDS.USER_TAG]: logData.userTag || currentData.userTag,
                 [STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE]: `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${newState.freezesRemaining}`,
-                'totalLogs': newTotalLogs // Store the new total log count
+                'totalLogs': newTotalLogs
             };
             let roleInfo = null;
             let dmMessageText = null;
@@ -459,7 +460,6 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                          tempPublicMessage = `🎉 Big congrats to <@${userId}> for achieving the '${roleInfo.name}' title with a ${newState.newStreak}-day streak!`;
                     }
                 } else {
-                    // This is the updated line
                     tempPublicMessage = `🥳 <@${userId}> just extended their daily logging streak to **${newState.newStreak} days**! (Freezes: ${newState.freezesRemaining} 🧊)`;
                 }
             }
@@ -473,22 +473,20 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                 }
             }
             
-            // --- NEW: Write public message to its own collection ---
-            if (tempPublicMessage && channelId) {
+            const MAIN_CHANNEL_ID = '1363161131723526437';
+
+            if (tempPublicMessage) {
                 const publicMessageRef = db.collection('pendingPublicMessages').doc();
                 transaction.set(publicMessageRef, {
                     message: tempPublicMessage,
-                    channelId: channelId,
+                    channelId: MAIN_CHANNEL_ID,
                     userId: userId,
                     createdAt: FieldValue.serverTimestamp(),
                     status: 'pending'
                 });
-                logger.log(`Queued public message for user ${userId} in channel ${channelId}.`);
-            } else if (tempPublicMessage && !channelId) {
-                logger.warn(`Generated public message for log ${logId} but no channelId was present in the log document.`);
+                logger.log(`Queued public message for user ${userId} in main channel ${MAIN_CHANNEL_ID}.`);
             }
 
-            // --- Update User Document ---
             updateData[STREAK_CONFIG.FIELDS.PENDING_DM_MESSAGE] = dmMessageText ? dmMessageText : FieldValue.delete();
             updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_UPDATE] = roleInfo ? roleInfo : FieldValue.delete();
             if (newState.streakBroken) {
@@ -4010,76 +4008,5 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   }
 });
 
-
-// In functions/index.js, add this entire new function.
-// It's a one-time use utility function to backfill the totalLogs count.
-
-/**
- * A callable function to retroactively count all logs for every user
- * and update their profile in the 'users' collection with a 'totalLogs' field.
- * This is a one-time utility function. It should be triggered manually.
- */
-exports.backfillTotalLogs = onCall({
-    // Set a longer timeout for this potentially long-running operation
-    timeoutSeconds: 540,
-}, async (request) => {
-    // Basic authentication check
-    if (!request.auth) {
-        logger.warn("backfillTotalLogs called without authentication.");
-        throw new HttpsError('unauthenticated', 'You must be authenticated to run this utility.');
-    }
-
-    logger.info(`backfillTotalLogs function triggered by UID: ${request.auth.uid}. Starting process.`);
-    const db = admin.firestore();
-
-    try {
-        // Step 1: Fetch all documents from the 'logs' collection
-        const logsSnapshot = await db.collection('logs').get();
-        if (logsSnapshot.empty) {
-            logger.info("No logs found in the collection. Nothing to do.");
-            return { success: true, message: "No logs found to process." };
-        }
-        logger.info(`Found ${logsSnapshot.size} total log documents to process.`);
-
-        // Step 2: Aggregate the log counts for each user in memory
-        const userLogCounts = {};
-        logsSnapshot.forEach(doc => {
-            const logData = doc.data();
-            const userId = logData.userId;
-            if (userId) {
-                userLogCounts[userId] = (userLogCounts[userId] || 0) + 1;
-            }
-        });
-
-        const uniqueUserCount = Object.keys(userLogCounts).length;
-        logger.info(`Aggregated logs for ${uniqueUserCount} unique users.`);
-
-        // Step 3: Create a batch write to update all user documents efficiently
-        const batch = db.batch();
-        let updatedUserCount = 0;
-
-        for (const userId in userLogCounts) {
-            if (Object.prototype.hasOwnProperty.call(userLogCounts, userId)) {
-                const totalLogs = userLogCounts[userId];
-                const userRef = db.collection('users').doc(userId);
-                // Use { merge: true } to add the 'totalLogs' field without overwriting the document.
-                batch.set(userRef, { totalLogs: totalLogs }, { merge: true });
-                updatedUserCount++;
-            }
-        }
-
-        // Step 4: Commit the batch update to Firestore
-        await batch.commit();
-        logger.info(`Successfully committed batch update for ${updatedUserCount} users.`);
-
-        // Step 5: Return a success response
-        const successMessage = `Successfully backfilled total log counts. Processed ${logsSnapshot.size} logs for ${uniqueUserCount} unique users.`;
-        return { success: true, message: successMessage };
-
-    } catch (error) {
-        logger.error("Error during backfillTotalLogs execution:", error);
-        throw new HttpsError('internal', 'An error occurred while backfilling log counts.', error.message);
-    }
-});
 
 // Final blank line below this comment
