@@ -4108,7 +4108,7 @@ client.on(Events.InteractionCreate, async interaction => {
         // Prepare the message with the explanatory image and the continue button
         const explainerEmbed = new EmbedBuilder()
             .setColor('#5865F2')
-            .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale.png'); // Replace with your actual image URL
+            .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale%20Unit.png'); // Replace with your actual image URL
 
             const continueButton = new ButtonBuilder()
             .setCustomId('manual_show_outcome_form_btn')
