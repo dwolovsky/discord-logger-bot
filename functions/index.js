@@ -3933,8 +3933,9 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
             - **For Rating Effort or Quality of an Action**, use a scale like: 'out of 10'.
             - **For Timing a Specific Action**, use a timestamp like: 'Time of Day'.
         5.  The "goal" MUST be a sensible number, time string, 'yes', or 'no' that fits the label and unit (e.g., '15' for unit=minutes, 'yes' for unit="completed", '7:30 AM' for unit=Time of Day).
-        6.  The "briefExplanation" MUST be a concise explanation (max 15 words) of the habit's relevance. For "Upstream Habits," briefly state the chain of logic (e.g., "To boost afternoon energy by improving sleep quality.").
-        7.  The 5 suggestions MUST include a mix of:
+        6.  Do not suggest "reminders" (e.g. "hydration reminders") or anything that is not something the user would do themselves daily.
+        7.  The "briefExplanation" MUST be a concise explanation (max 15 words) of the habit's relevance. For "Upstream Habits," briefly state the chain of logic (e.g., "To boost afternoon energy by improving sleep quality.").
+        8.  The 5 suggestions MUST include a mix of:
             - 2 Habits that directly support the chosen outcome.
             - 3 creative "Upstream Habits" that intervene earlier in the behavioral chain.
             - AVOID suggesting habits similar to any the user has already defined in their context.

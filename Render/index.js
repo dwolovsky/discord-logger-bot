@@ -4161,6 +4161,7 @@ client.on(Events.InteractionCreate, async interaction => {
         try {
             const setupData = userExperimentSetupData.get(userId) || {};
             const cachedSettings = setupData.preFetchedWeeklySettings;
+            setupData.messageToCleanUp = interaction.message.id;
 
             if(cachedSettings) {
                 console.log(`[${interaction.customId} CACHE_HIT ${interactionId}] Using pre-fetched settings for ${userTag}.`);
@@ -4231,13 +4232,16 @@ client.on(Events.InteractionCreate, async interaction => {
         console.log(`[${interaction.customId} START ${interactionId}] Button clicked by ${userTag}.`);
         try {
             let setupData = userExperimentSetupData.get(userId);
-
             if (!setupData) {
                 console.warn(`[${interaction.customId} IN_MEMORY_MISS ${interactionId}] In-memory state not found for ${userTag}. This is unexpected but recoverable.`);
                 await interaction.reply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup by using the `/go` command.', ephemeral: true });
                 return;
             }
             
+            // Store the ID of the message with the button we just clicked
+            setupData.messageToCleanUp = interaction.message.id;
+            userExperimentSetupData.set(userId, setupData);
+
             let habit1LabelValue = "";
             let habit1UnitValue = "";
             let habit1GoalValue = "";
@@ -4257,7 +4261,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 console.log(`[${interaction.customId} DATA_HIT_CACHE ${interactionId}] Using cached settings for Habit 1 from previous experiment.`);
                 habit1LabelValue = habitDataFromPreviousExperiment.label || "";
                 habit1UnitValue = habitDataFromPreviousExperiment.unit || "";
-                habit1GoalValue = habitDataFromPreviousExperiment.goal !== null && habitDataFromPreviousExperiment.goal !== undefined ? String(habitDataFromPreviousExperiment.goal) : "";
+                habitGoalValue = habitDataFromPreviousExperiment.goal !== null && habitDataFromPreviousExperiment.goal !== undefined ? String(habitDataFromPreviousExperiment.goal) : "";
             } else {
                 // Priority 3: No data exists, this is a brand new user.
                 console.log(`[${interaction.customId} DATA_MISS ${interactionId}] No existing data for Habit 1. Will show empty modal.`);
@@ -4929,6 +4933,10 @@ client.on(Events.InteractionCreate, async interaction => {
                 return;
             }
 
+            // Store the ID of the message with the button we just clicked
+            setupData.messageToCleanUp = interaction.message.id;
+            userExperimentSetupData.set(userId, setupData);
+
             let numHabitsAlreadyDefined = 0;
             const embedTitle = interaction.message.embeds[0]?.title;
 
@@ -4940,7 +4948,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
 
-            // Fallback for flows that don't use the specific embed titles.
             if (numHabitsAlreadyDefined === 0) {
                  numHabitsAlreadyDefined = setupData.inputs.filter(Boolean).length;
             }
@@ -8300,8 +8307,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
         try {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-            const deferTime = performance.now();
-            console.log(`[${interaction.customId} DEFERRED ${interactionId}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
+            const modalSubmitStartTime = performance.now(); // Moved for accurate logging after deferral
+            const userId = interaction.user.id;
+            const userTag = interaction.user.tag;
+            const interactionId = interaction.id;
 
             const setupData = userExperimentSetupData.get(userId);
             if (!setupData) {
@@ -8309,6 +8318,22 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
                 return;
             }
+
+            // Clean up the previous message that had the button to open this modal
+            if (setupData.messageToCleanUp) {
+                try {
+                    const previousMessage = await interaction.channel.messages.fetch(setupData.messageToCleanUp);
+                    await previousMessage.delete();
+                    console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Deleted previous ephemeral message ${setupData.messageToCleanUp}.`);
+                } catch (e) {
+                    // This is not a critical error; the message might have expired or been dismissed.
+                    console.warn(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Could not delete previous message ${setupData.messageToCleanUp}: ${e.message}`);
+                }
+                delete setupData.messageToCleanUp; // Clean up the ID
+            }
+
+            const deferTime = performance.now();
+            console.log(`[${interaction.customId} DEFERRED ${interactionId}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
 
             const deeperProblem = interaction.fields.getTextInputValue('deeper_problem_manual')?.trim();
             const outcomeLabel = interaction.fields.getTextInputValue('outcome_label_manual')?.trim();
@@ -8335,7 +8360,6 @@ client.on(Events.InteractionCreate, async interaction => {
             if (!outcomeGoalStr) {
                 validationErrors.push("The 'Target Number' is required.");
             } else {
-                // This now correctly uses the more flexible parseGoalValue helper
                 const goalResult = parseGoalValue(outcomeGoalStr);
                 if (goalResult.error) {
                     validationErrors.push(goalResult.error);
@@ -8354,14 +8378,15 @@ client.on(Events.InteractionCreate, async interaction => {
             // --- Validation Passed ---
             setupData.deeperProblem = deeperProblem;
             setupData.outcome = { label: outcomeLabel, unit: outcomeUnit, goal: outcomeGoal };
+            
+            // This was the fix for the subsequent "edit" flow bug.
+            setupData.inputs = [];
 
-            // <<<< START OF THE NEW LOGIC BRANCH >>>>
             if (setupData.flowType === 'AI_ASSISTED') {
                 // Path for users who started with the AI flow
                 setupData.dmFlowState = 'processing_input1_label_suggestions';
                 userExperimentSetupData.set(userId, setupData);
                 console.log(`[${interaction.customId} AI_PATH ${interactionId}] User confirmed custom outcome. State is now '${setupData.dmFlowState}'.`);
-
                 await interaction.editReply({
                     content: `✅ **Custom Outcome Confirmed!**\n\n> **${outcomeLabel}** (${outcomeGoalStr} ${outcomeUnit})\n\nGreat! Now, let's find your first **Daily Habit**.\n\n🧠 I'll brainstorm some ideas based on your new outcome...`,
                     embeds: [],
@@ -8379,7 +8404,6 @@ client.on(Events.InteractionCreate, async interaction => {
                         },
                         userId
                     );
-
                     if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions?.length > 0) {
                         setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions;
                         setupData.dmFlowState = 'awaiting_input1_suggestion_selection';
@@ -8388,7 +8412,6 @@ client.on(Events.InteractionCreate, async interaction => {
                         
                         const stepConfig = dmFlowConfig[setupData.dmFlowState];
                         const { content, components } = stepConfig.prompt(setupData);
-                        
                         await interaction.followUp({
                             content: content,
                             components: components,
@@ -8417,8 +8440,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 });
                 console.log(`[${interaction.customId} SUCCESS_REPLY_SENT_MANUAL ${interactionId}] Confirmed outcome and sent button to define Habit 1.`);
             }
-            // <<<< END OF THE NEW LOGIC BRANCH >>>>
-
         } catch (error) {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing outcome modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
@@ -8566,6 +8587,18 @@ client.on(Events.InteractionCreate, async interaction => {
                 return;
             }
 
+            // Clean up the previous message that had the button to open this modal
+            if (setupData.messageToCleanUp) {
+                try {
+                    const previousMessage = await interaction.channel.messages.fetch(setupData.messageToCleanUp);
+                    await previousMessage.delete();
+                    console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Deleted previous ephemeral message ${setupData.messageToCleanUp}.`);
+                } catch (e) {
+                    console.warn(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Could not delete previous message ${setupData.messageToCleanUp}: ${e.message}`);
+                }
+                delete setupData.messageToCleanUp; // Clean up the ID
+            }
+
             const habit1Label = interaction.fields.getTextInputValue('habit1_label_manual')?.trim();
             const habit1Unit = interaction.fields.getTextInputValue('habit1_unit_manual')?.trim();
             const habit1GoalStr = interaction.fields.getTextInputValue('habit1_goal_manual')?.trim();
@@ -8674,6 +8707,18 @@ client.on(Events.InteractionCreate, async interaction => {
                 return;
             }
 
+            // Clean up the previous message that had the button to open this modal
+            if (setupData.messageToCleanUp) {
+                try {
+                    const previousMessage = await interaction.channel.messages.fetch(setupData.messageToCleanUp);
+                    await previousMessage.delete();
+                    console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Deleted previous ephemeral message ${setupData.messageToCleanUp}.`);
+                } catch (e) {
+                    console.warn(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Could not delete previous message ${setupData.messageToCleanUp}: ${e.message}`);
+                }
+                delete setupData.messageToCleanUp; // Clean up the ID
+            }
+
             const habit2Label = interaction.fields.getTextInputValue('habit2_label_manual')?.trim();
             const habit2Unit = interaction.fields.getTextInputValue('habit2_unit_manual')?.trim();
             const habit2GoalStr = interaction.fields.getTextInputValue('habit2_goal_manual')?.trim();
@@ -8779,6 +8824,18 @@ client.on(Events.InteractionCreate, async interaction => {
                 console.error(`[${interaction.customId} CRITICAL ${interactionId}] User ${userTag} is in an invalid state to submit Habit 3. Has ${setupData.inputs?.filter(Boolean).length || 0} habits.`);
                 await interaction.editReply({ content: '❌ Error: Your session data is out of sync. Please restart the setup.', components: [], embeds: [] });
                 return;
+            }
+
+            // Clean up the previous message that had the button to open this modal
+            if (setupData.messageToCleanUp) {
+                try {
+                    const previousMessage = await interaction.channel.messages.fetch(setupData.messageToCleanUp);
+                    await previousMessage.delete();
+                    console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Deleted previous ephemeral message ${setupData.messageToCleanUp}.`);
+                } catch (e) {
+                    console.warn(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Could not delete previous message ${setupData.messageToCleanUp}: ${e.message}`);
+                }
+                delete setupData.messageToCleanUp; // Clean up the ID
             }
 
             const habit3Label = interaction.fields.getTextInputValue('habit3_label_manual')?.trim();
