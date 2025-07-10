@@ -64,7 +64,7 @@ const STREAK_CONFIG = {
             STREAK_RESET: "Look at your grit!!!\nYou've just proven you care more about your personal transformation than the dopamine spike of +1 to your streak.\n\n"
         },
         PUBLIC: { // Bot replaces ${userTag} with the actual user tag for public announcements
-            STREAK_RESET: '${userTag} has GRIT beyond streaks! They just broke their streak and restarted 🙌🏼. We\'re not worthy!'
+            STREAK_RESET: '${userTag} has GRIT beyond streaks! They just broke their streak and restarted 🙌🏼. The hardest thing to do!'
             // Add other public message templates here if needed later
         }
     },
@@ -365,7 +365,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     }
 
     const logTimestamp = (logData.timestamp && typeof logData.timestamp.toDate === 'function')
-                         ? logData.timestamp.toDate() : null;
+                        ? logData.timestamp.toDate() : null;
 
     if (!userId || !logTimestamp) {
         logger.error("Log document missing valid userId or timestamp.", { logId });
@@ -379,7 +379,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     try {
         await db.runTransaction(async (transaction) => {
             const userDoc = await transaction.get(userRef);
-            let currentData = { streak: 0, longest: 0, freezes: 0, lastLog: null, userTag: displayNameForMessage };
+            let currentData = { streak: 0, longest: 0, freezes: 0, lastLog: null, userTag: displayNameForMessage, totalLogs: 0 };
             let previousStreak = 0;
 
             if (userDoc.exists) {
@@ -391,7 +391,8 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                     freezes: Math.min(userData[STREAK_CONFIG.FIELDS.FREEZES_REMAINING] || 0, STREAK_CONFIG.FREEZES.MAX || 5),
                     lastLog: (userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP] && typeof userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP].toDate === 'function')
                              ? userData[STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP].toDate() : null,
-                    userTag: userData[STREAK_CONFIG.FIELDS.USER_TAG] || displayNameForMessage
+                    userTag: userData[STREAK_CONFIG.FIELDS.USER_TAG] || displayNameForMessage,
+                    totalLogs: userData.totalLogs || 0 // Get existing log count
                 };
             }
 
@@ -424,13 +425,16 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                 newState.streakContinued = true;
             }
 
+            const newTotalLogs = currentData.totalLogs + 1; // Calculate new total logs
+
             const updateData = {
                 [STREAK_CONFIG.FIELDS.CURRENT_STREAK]: newState.newStreak,
                 [STREAK_CONFIG.FIELDS.LONGEST_STREAK]: Math.max(currentData.longest, newState.newStreak),
                 [STREAK_CONFIG.FIELDS.LAST_LOG_TIMESTAMP]: logData.timestamp,
                 [STREAK_CONFIG.FIELDS.FREEZES_REMAINING]: newState.freezesRemaining,
                 [STREAK_CONFIG.FIELDS.USER_TAG]: logData.userTag || currentData.userTag,
-                [STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE]: `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${newState.freezesRemaining}`
+                [STREAK_CONFIG.FIELDS.PENDING_FREEZE_ROLE_UPDATE]: `${STREAK_CONFIG.MILESTONES.FREEZE_ROLE_BASENAME}: ${newState.freezesRemaining}`,
+                'totalLogs': newTotalLogs // Store the new total log count
             };
             let roleInfo = null;
             let dmMessageText = null;
@@ -443,7 +447,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                 updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = FieldValue.delete();
             } else if (newState.streakBroken) {
                 dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
-                tempPublicMessage = STREAK_CONFIG.MESSAGES.PUBLIC.STREAK_RESET.replace('${userTag}', `<@${userId}>`);
+                tempPublicMessage = `<@${userId}> has GRIT beyond streaks! They just broke their streak and restarted with log #${newTotalLogs} 🙌🏼. We're not worthy!`;
                 roleInfo = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
                 updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true;
             } else if (newState.newStreak > previousStreak) {
@@ -4006,5 +4010,76 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   }
 });
 
+
+// In functions/index.js, add this entire new function.
+// It's a one-time use utility function to backfill the totalLogs count.
+
+/**
+ * A callable function to retroactively count all logs for every user
+ * and update their profile in the 'users' collection with a 'totalLogs' field.
+ * This is a one-time utility function. It should be triggered manually.
+ */
+exports.backfillTotalLogs = onCall({
+    // Set a longer timeout for this potentially long-running operation
+    timeoutSeconds: 540,
+}, async (request) => {
+    // Basic authentication check
+    if (!request.auth) {
+        logger.warn("backfillTotalLogs called without authentication.");
+        throw new HttpsError('unauthenticated', 'You must be authenticated to run this utility.');
+    }
+
+    logger.info(`backfillTotalLogs function triggered by UID: ${request.auth.uid}. Starting process.`);
+    const db = admin.firestore();
+
+    try {
+        // Step 1: Fetch all documents from the 'logs' collection
+        const logsSnapshot = await db.collection('logs').get();
+        if (logsSnapshot.empty) {
+            logger.info("No logs found in the collection. Nothing to do.");
+            return { success: true, message: "No logs found to process." };
+        }
+        logger.info(`Found ${logsSnapshot.size} total log documents to process.`);
+
+        // Step 2: Aggregate the log counts for each user in memory
+        const userLogCounts = {};
+        logsSnapshot.forEach(doc => {
+            const logData = doc.data();
+            const userId = logData.userId;
+            if (userId) {
+                userLogCounts[userId] = (userLogCounts[userId] || 0) + 1;
+            }
+        });
+
+        const uniqueUserCount = Object.keys(userLogCounts).length;
+        logger.info(`Aggregated logs for ${uniqueUserCount} unique users.`);
+
+        // Step 3: Create a batch write to update all user documents efficiently
+        const batch = db.batch();
+        let updatedUserCount = 0;
+
+        for (const userId in userLogCounts) {
+            if (Object.prototype.hasOwnProperty.call(userLogCounts, userId)) {
+                const totalLogs = userLogCounts[userId];
+                const userRef = db.collection('users').doc(userId);
+                // Use { merge: true } to add the 'totalLogs' field without overwriting the document.
+                batch.set(userRef, { totalLogs: totalLogs }, { merge: true });
+                updatedUserCount++;
+            }
+        }
+
+        // Step 4: Commit the batch update to Firestore
+        await batch.commit();
+        logger.info(`Successfully committed batch update for ${updatedUserCount} users.`);
+
+        // Step 5: Return a success response
+        const successMessage = `Successfully backfilled total log counts. Processed ${logsSnapshot.size} logs for ${uniqueUserCount} unique users.`;
+        return { success: true, message: successMessage };
+
+    } catch (error) {
+        logger.error("Error during backfillTotalLogs execution:", error);
+        throw new HttpsError('internal', 'An error occurred while backfilling log counts.', error.message);
+    }
+});
 
 // Final blank line below this comment

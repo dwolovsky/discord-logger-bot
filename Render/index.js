@@ -3416,6 +3416,40 @@ client.on(Events.GuildMemberAdd, async member => {
 });
 // ===== END NEW MEMBER WELCOME SEQUENCE =====
 
+// ===== HANDLER FOR MEMBER LEAVING THE SERVER =====
+client.on(Events.GuildMemberRemove, async (member) => {
+    // This event triggers when a user leaves the guild or is kicked/banned.
+    if (member.user.bot) return; // Ignore bots
+
+    const userId = member.user.id;
+    console.log(`[GuildMemberRemove] Member left or was removed: ${member.user.tag} (ID: ${userId}).`);
+
+    // Ensure the Firebase Admin SDK is initialized before proceeding.
+    if (!dbAdmin) {
+        console.error(`[GuildMemberRemove] dbAdmin not initialized. Cannot update user doc for ${userId}.`);
+        return;
+    }
+
+    try {
+        const userRef = dbAdmin.collection('users').doc(userId);
+
+        // Update the user's document to remove the active experiment schedule.
+        // This will prevent the backend from running scheduled stats calculations for them.
+        await userRef.update({
+            experimentCurrentSchedule: admin.firestore.FieldValue.delete()
+        });
+
+        console.log(`[GuildMemberRemove] Successfully removed active experiment schedule for former member ${userId}.`);
+    } catch (error) {
+        // It's possible the user never had a document, so we can ignore 'not-found' errors.
+        if (error.code === 5) { 
+            console.log(`[GuildMemberRemove] User document for ${userId} not found. No action needed.`);
+        } else {
+            console.error(`[GuildMemberRemove] Error updating user document for ${userId}:`, error);
+        }
+    }
+});
+
 // ====== INTERACTION HANDLER ======
 client.on(Events.InteractionCreate, async interaction => {
     const interactionEntryTimestamp = Date.now();
@@ -8498,7 +8532,6 @@ client.on(Events.InteractionCreate, async interaction => {
         const userTag = interaction.user.tag;
         const interactionId = interaction.id;
         console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 1 submitted by ${userTag}.`);
-
         if (!dbAdmin) {
             console.error(`[${interaction.customId} CRITICAL ${interactionId}] dbAdmin not initialized.`);
             try {
@@ -8544,13 +8577,11 @@ client.on(Events.InteractionCreate, async interaction => {
             if (!habit1GoalStr) {
                 validationErrors.push("The 'Target Number' for Habit 1 is required.");
             } else {
-                const goal = parseFloat(habit1GoalStr);
-                if (isNaN(goal)) {
-                    validationErrors.push(`The Target Number for Habit 1 ("${habit1GoalStr}") must be a valid number.`);
-                } else if (goal < 0) {
-                    validationErrors.push("The Target Number for Habit 1 must be 0 or a positive number.");
+                const goalResult = parseGoalValue(habit1GoalStr);
+                if (goalResult.error) {
+                    validationErrors.push(goalResult.error);
                 } else {
-                    habit1Goal = goal;
+                    habit1Goal = goalResult.goal;
                 }
             }
 
@@ -8563,20 +8594,17 @@ client.on(Events.InteractionCreate, async interaction => {
 
             if (!setupData.inputs) setupData.inputs = [];
             setupData.inputs[0] = { label: habit1Label, unit: habit1Unit, goal: habit1Goal };
-            
             // This is the correct next step after confirming the first habit in the AI flow
             setupData.dmFlowState = 'awaiting_add_another_habit_choice';
             userExperimentSetupData.set(userId, setupData);
             
             console.log(`[${interaction.customId} HABIT1_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 1. State is now '${setupData.dmFlowState}'.`);
-            
             // --- Ask to add another habit or finish ---
             const confirmationEmbed = new EmbedBuilder()
                 .setColor('#57F287')
                 .setTitle('✅ Habit 1 Confirmed!')
                 .setDescription(`**${formatGoalForDisplay(habit1Goal, habit1Unit)} ${habit1Unit}, ${habit1Label}**`)
                 .addFields({ name: '\u200B', value: "Would you like to add another daily habit to test (up to 3 total)?" });
-            
             const addHabitButtons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
@@ -8588,13 +8616,11 @@ client.on(Events.InteractionCreate, async interaction => {
                         .setLabel('⏭️ No More Habits')
                         .setStyle(ButtonStyle.Primary)
                 );
-            
             await interaction.editReply({
                 embeds: [confirmationEmbed],
                 components: [addHabitButtons]
             });
             console.log(`[${interaction.customId} PROMPT_ADD_ANOTHER_SENT ${interactionId}] Prompted user to add another habit or finish.`);
-
         } catch (error) {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing Habit 1 modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
@@ -8766,13 +8792,11 @@ client.on(Events.InteractionCreate, async interaction => {
             if (!habit3GoalStr) {
                 validationErrors.push("The 'Target Number' for Habit 3 is required.");
             } else {
-                const goal = parseFloat(habit3GoalStr);
-                if (isNaN(goal)) {
-                    validationErrors.push(`The Target Number for Habit 3 ("${habit3GoalStr}") must be a valid number.`);
-                } else if (goal < 0) {
-                    validationErrors.push("The Target Number for Habit 3 must be 0 or a positive number.");
+                const goalResult = parseGoalValue(habit3GoalStr);
+                if (goalResult.error) {
+                    validationErrors.push(goalResult.error);
                 } else {
-                    habit3Goal = goal;
+                    habit3Goal = goalResult.goal;
                 }
             }
 
