@@ -4118,7 +4118,7 @@ client.on(Events.InteractionCreate, async interaction => {
         const row = new ActionRowBuilder().addComponents(continueButton);
 
         await interaction.editReply({
-            content: "Let's define your Metrics! Each metric has 3 parts.",
+            content: "Let's define your Metrics!\nEach metric has 3 parts.",
             embeds: [explainerEmbed],
             components: [row]
         });
@@ -8900,9 +8900,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     `**Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
                     `**Outcome:**\n**${setupData.outcome.goal}** **${setupData.outcome.unit}** for **${setupData.outcome.label}**\n\n` +
                     `**Habits:**\n` +
-                    `1. Track **${setupData.inputs[0].goal}** **${setupData.inputs[0].unit}** for **${setupData.inputs[0].label}**.\n` +
-                    `2. Track **${setupData.inputs[1].goal}** **${setupData.inputs[1].unit}** for **${setupData.inputs[1].label}**.\n` +
-                    `3. Track **${setupData.inputs[2].goal}** **${setupData.inputs[2].unit}** for **${setupData.inputs[2].label}**.`
+                    `1. **${setupData.inputs[0].goal}** **${setupData.inputs[0].unit}** for **${setupData.inputs[0].label}**.\n` +
+                    `2. **${setupData.inputs[1].goal}** **${setupData.inputs[1].unit}** for **${setupData.inputs[1].label}**.\n` +
+                    `3. **${setupData.inputs[2].goal}** **${setupData.inputs[2].unit}** for **${setupData.inputs[2].label}**.`
                 );
             await interaction.editReply({
                 embeds: [fullSummaryEmbed],
