@@ -6366,7 +6366,7 @@ client.on(Events.InteractionCreate, async interaction => {
       userCurrentTime: null, // Explicitly null or omitted
       reminderWindowStartHour: null,
       reminderWindowEndHour: null,
-      reminderFrequency: 'none', // Explicitly 'none'
+      reminderFrequency: '0',
       customReminderMessage: null,
       skippedReminders: true
     };
