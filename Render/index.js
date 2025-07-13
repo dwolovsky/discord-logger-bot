@@ -8701,7 +8701,7 @@ client.on(Events.InteractionCreate, async interaction => {
             console.log(`[${interaction.customId} DEFERRED ${interactionId}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
 
             const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || !setupData.inputs || setupData.inputs.filter(Boolean).length !== 1) {
+            if (!setupData || !setupData.inputs || setupData.inputs.filter(Boolean).length < 1) {
                 console.error(`[${interaction.customId} CRITICAL ${interactionId}] User ${userTag} is in an invalid state to submit Habit 2. Has ${setupData.inputs?.filter(Boolean).length || 0} habits.`);
                 await interaction.editReply({ content: '❌ Error: Your session data is out of sync. Please restart the setup.', components: [], embeds: [] });
                 return;
@@ -8820,7 +8820,7 @@ client.on(Events.InteractionCreate, async interaction => {
             console.log(`[${interaction.customId} DEFERRED ${interactionId}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
 
             const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || !setupData.inputs || setupData.inputs.filter(Boolean).length !== 2) {
+            if (!setupData || !setupData.inputs || setupData.inputs.filter(Boolean).length < 2) {
                 console.error(`[${interaction.customId} CRITICAL ${interactionId}] User ${userTag} is in an invalid state to submit Habit 3. Has ${setupData.inputs?.filter(Boolean).length || 0} habits.`);
                 await interaction.editReply({ content: '❌ Error: Your session data is out of sync. Please restart the setup.', components: [], embeds: [] });
                 return;
