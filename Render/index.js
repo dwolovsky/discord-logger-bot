@@ -5287,75 +5287,72 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.isButton() && interaction.customId === 'request_edit_metrics_modal_btn') {
-        const requestEditClickTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        const userTag = interaction.user.tag;
-        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}. Opening step-by-step edit flow.`);
+    const requestEditClickTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    const userTag = interaction.user.tag;
+    console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}. Opening step-by-step edit flow.`);
+    try {
+        const setupData = userExperimentSetupData.get(userId);
+        if (!setupData || !setupData.outcome?.label) {
+            console.error(`[${interaction.customId} CRITICAL ${interactionId}] In-memory state missing critical data for user ${userId}.`);
+            await interaction.reply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup using `/go`.', ephemeral: true });
+            return;
+        }
 
+        // Store the ID of the message containing the button that was just clicked.
+        // This allows the next step (modal submission) to find and disable it.
+        setupData.messageToCleanUp = interaction.message.id;
+        userExperimentSetupData.set(userId, setupData);
+
+        // Pre-populate the first modal of the manual flow with existing data
+        const outcomeModal = new ModalBuilder()
+            .setCustomId('manual_setup_outcome_modal')
+            .setTitle('🧪 Edit Experiment (1/4): Outcome');
+        const deeperProblemInput = new TextInputBuilder()
+            .setCustomId('deeper_problem_manual')
+            .setLabel("🧭 Deeper Wish / Problem To Solve")
+            .setStyle(TextInputStyle.Paragraph)
+            .setValue(setupData.deeperProblem || "")
+            .setRequired(true);
+        const outcomeLabelInput = new TextInputBuilder()
+            .setCustomId('outcome_label_manual')
+            .setLabel("📊 Measurable Outcome (The Label)")
+            .setStyle(TextInputStyle.Short)
+            .setValue(setupData.outcome.label)
+            .setRequired(true);
+        const outcomeUnitInput = new TextInputBuilder()
+            .setCustomId('outcome_unit_manual')
+            .setLabel("📏 Unit / Scale")
+            .setStyle(TextInputStyle.Short)
+            .setValue(setupData.outcome.unit)
+            .setRequired(true);
+        const outcomeGoalInput = new TextInputBuilder()
+            .setCustomId('outcome_goal_manual')
+            .setLabel("🎯 Daily Target Number")
+            .setStyle(TextInputStyle.Short)
+            .setValue(String(setupData.outcome.goal)) // Convert goal to string for modal
+            .setRequired(true);
+        outcomeModal.addComponents(
+            new ActionRowBuilder().addComponents(deeperProblemInput),
+            new ActionRowBuilder().addComponents(outcomeLabelInput),
+            new ActionRowBuilder().addComponents(outcomeGoalInput),
+            new ActionRowBuilder().addComponents(outcomeUnitInput)
+        );
+        await interaction.showModal(outcomeModal);
+        console.log(`[${interaction.customId} SUCCESS ${interactionId}] Re-opened outcome modal for editing for user ${userId}.`);
+    } catch (error) {
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing outcome modal for user ${userId}:`, error);
         try {
-            const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || !setupData.outcome?.label) {
-                console.error(`[${interaction.customId} CRITICAL ${interactionId}] In-memory state missing critical data for user ${userId}.`);
-                await interaction.reply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup using `/go`.', ephemeral: true });
-                return;
+            // Can't defer and then show modal, so we reply on error
+            if (!interaction.replied) {
+                await interaction.reply({ content: '❌ An error occurred while trying to go back. Please try again.', ephemeral: true });
             }
-
-            // Pre-populate the first modal of the manual flow with existing data
-            const outcomeModal = new ModalBuilder()
-                .setCustomId('manual_setup_outcome_modal')
-                .setTitle('🧪 Edit Experiment (1/4): Outcome');
-            
-            const deeperProblemInput = new TextInputBuilder()
-                .setCustomId('deeper_problem_manual')
-                .setLabel("🧭 Deeper Wish / Problem To Solve")
-                .setStyle(TextInputStyle.Paragraph)
-                .setValue(setupData.deeperProblem || "")
-                .setRequired(true);
-
-            const outcomeLabelInput = new TextInputBuilder()
-                .setCustomId('outcome_label_manual')
-                .setLabel("📊 Measurable Outcome (The Label)")
-                .setStyle(TextInputStyle.Short)
-                .setValue(setupData.outcome.label)
-                .setRequired(true);
-
-            const outcomeUnitInput = new TextInputBuilder()
-                .setCustomId('outcome_unit_manual')
-                .setLabel("📏 Unit / Scale")
-                .setStyle(TextInputStyle.Short)
-                .setValue(setupData.outcome.unit)
-                .setRequired(true);
-
-            const outcomeGoalInput = new TextInputBuilder()
-                .setCustomId('outcome_goal_manual')
-                .setLabel("🎯 Daily Target Number")
-                .setStyle(TextInputStyle.Short)
-                .setValue(String(setupData.outcome.goal)) // Convert goal to string for modal
-                .setRequired(true);
-
-            outcomeModal.addComponents(
-                new ActionRowBuilder().addComponents(deeperProblemInput),
-                new ActionRowBuilder().addComponents(outcomeLabelInput),
-                new ActionRowBuilder().addComponents(outcomeGoalInput),
-                new ActionRowBuilder().addComponents(outcomeUnitInput)
-            );
-
-            await interaction.showModal(outcomeModal);
-            console.log(`[${interaction.customId} SUCCESS ${interactionId}] Re-opened outcome modal for editing for user ${userId}.`);
-
-        } catch (error) {
-            console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing outcome modal for user ${userId}:`, error);
-            try {
-                // Can't defer and then show modal, so we reply on error
-                if (!interaction.replied) {
-                    await interaction.reply({ content: '❌ An error occurred while trying to go back. Please try again.', ephemeral: true });
-                }
-            } catch (e) {
-                console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}]`, e);
-            }
+        } catch (e) {
+            console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}]`, e);
         }
     }
+}
 
     else if (interaction.isButton() && interaction.customId === 'show_edit_metrics_modal_btn') {
       const showModalClickTime = performance.now();
@@ -8299,158 +8296,158 @@ client.on(Events.InteractionCreate, async interaction => {
     }
   
     else if (interaction.customId === 'manual_setup_outcome_modal') {
-        const modalSubmitStartTime = performance.now();
-        const userId = interaction.user.id;
-        const userTag = interaction.user.tag;
-        const interactionId = interaction.id;
-        console.log(`[${interaction.customId} START ${interactionId}] Modal submitted by ${userTag}.`);
+    const modalSubmitStartTime = performance.now();
+    const userId = interaction.user.id;
+    const userTag = interaction.user.tag;
+    const interactionId = interaction.id;
+    console.log(`[${interaction.customId} START ${interactionId}] Modal submitted by ${userTag}.`);
+    try {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const setupData = userExperimentSetupData.get(userId);
+        if (!setupData) {
+            console.error(`[${interaction.customId} CRITICAL ${interactionId}] In-memory setup state not found for user ${userTag}.`);
+            await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
+            return;
+        }
 
-        try {
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-            const modalSubmitStartTime = performance.now(); // Moved for accurate logging after deferral
-            const userId = interaction.user.id;
-            const userTag = interaction.user.tag;
-            const interactionId = interaction.id;
-
-            const setupData = userExperimentSetupData.get(userId);
-            if (!setupData) {
-                console.error(`[${interaction.customId} CRITICAL ${interactionId}] In-memory setup state not found for user ${userTag}.`);
-                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
-                return;
-            }
-
-            // Clean up the previous message that had the button to open this modal
-            if (setupData.messageToCleanUp) {
-                try {
-                    const previousMessage = await interaction.channel.messages.fetch(setupData.messageToCleanUp);
-                    await previousMessage.delete();
-                    console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Deleted previous ephemeral message ${setupData.messageToCleanUp}.`);
-                } catch (e) {
-                    // This is not a critical error; the message might have expired or been dismissed.
-                    console.warn(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Could not delete previous message ${setupData.messageToCleanUp}: ${e.message}`);
+        // --- UPDATED CLEANUP LOGIC ---
+        // This finds the message that had the 'Edit' button and disables its components.
+        if (setupData.messageToCleanUp) {
+            try {
+                const previousMessage = await interaction.channel.messages.fetch(setupData.messageToCleanUp);
+                const disabledComponents = previousMessage.components.map(row =>
+                    new ActionRowBuilder().addComponents(
+                        row.components.map(component => ButtonBuilder.from(component).setDisabled(true))
+                    )
+                );
+                await previousMessage.edit({ components: disabledComponents });
+                console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Disabled buttons on previous message ${setupData.messageToCleanUp}.`);
+            } catch (e) {
+                if (e.code !== 10008) { // Ignore "Unknown Message" error, but log others
+                    console.warn(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Could not disable buttons on previous message ${setupData.messageToCleanUp}: ${e.message}`);
                 }
-                delete setupData.messageToCleanUp; // Clean up the ID
             }
+            delete setupData.messageToCleanUp;
+        }
+        // --- END UPDATED CLEANUP LOGIC ---
 
-            const deferTime = performance.now();
-            console.log(`[${interaction.customId} DEFERRED ${interactionId}] Reply deferred. Took: ${(deferTime - modalSubmitStartTime).toFixed(2)}ms`);
+        const deeperProblem = interaction.fields.getTextInputValue('deeper_problem_manual')?.trim();
+        const outcomeLabel = interaction.fields.getTextInputValue('outcome_label_manual')?.trim();
+        const outcomeUnit = interaction.fields.getTextInputValue('outcome_unit_manual')?.trim();
+        const outcomeGoalStr = interaction.fields.getTextInputValue('outcome_goal_manual')?.trim();
 
-            const deeperProblem = interaction.fields.getTextInputValue('deeper_problem_manual')?.trim();
-            const outcomeLabel = interaction.fields.getTextInputValue('outcome_label_manual')?.trim();
-            const outcomeUnit = interaction.fields.getTextInputValue('outcome_unit_manual')?.trim();
-            const outcomeGoalStr = interaction.fields.getTextInputValue('outcome_goal_manual')?.trim();
+        const validationErrors = [];
+        if (!deeperProblem) validationErrors.push("The 'Deeper Wish' cannot be empty.");
+        if (!outcomeLabel) {
+            validationErrors.push("The 'Measurable Outcome' label is required.");
+        } else if (outcomeLabel.length > 30) {
+            validationErrors.push(`The Outcome Label is too long (max 30 characters).`);
+        }
+        if (!outcomeUnit) {
+            validationErrors.push("The 'Unit / Scale' is required.");
+        } else if (outcomeUnit.length > 15) {
+            validationErrors.push(`The Unit/Scale is too long (max 15 characters).`);
+        }
+        if (outcomeLabel && outcomeUnit && (outcomeLabel.length + outcomeUnit.length + 1) > 45) {
+            validationErrors.push(`The combined Label and Unit are too long for the daily log form (max 45 chars).`);
+        }
 
-            const validationErrors = [];
-            if (!deeperProblem) validationErrors.push("The 'Deeper Wish' cannot be empty.");
-            if (!outcomeLabel) {
-                validationErrors.push("The 'Measurable Outcome' label is required.");
-            } else if (outcomeLabel.length > 30) {
-                validationErrors.push(`The Outcome Label is too long (max 30 characters).`);
-            }
-            if (!outcomeUnit) {
-                validationErrors.push("The 'Unit / Scale' is required.");
-            } else if (outcomeUnit.length > 15) {
-                validationErrors.push(`The Unit/Scale is too long (max 15 characters).`);
-            }
-            if (outcomeLabel && outcomeUnit && (outcomeLabel.length + outcomeUnit.length + 1) > 45) {
-                validationErrors.push(`The combined Label and Unit are too long for the daily log form (max 45 chars).`);
-            }
-
-            let outcomeGoal = null;
-            if (!outcomeGoalStr) {
-                validationErrors.push("The 'Target Number' is required.");
+        let outcomeGoal = null;
+        if (!outcomeGoalStr) {
+            validationErrors.push("The 'Target Number' is required.");
+        } else {
+            const goalResult = parseGoalValue(outcomeGoalStr);
+            if (goalResult.error) {
+                validationErrors.push(goalResult.error);
             } else {
-                const goalResult = parseGoalValue(outcomeGoalStr);
-                if (goalResult.error) {
-                    validationErrors.push(goalResult.error);
-                } else {
-                    outcomeGoal = goalResult.goal;
-                }
-            }
-
-            if (validationErrors.length > 0) {
-                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`);
-                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and try submitting the form again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
-                await interaction.editReply({ embeds: [errorEmbed], components: [] });
-                return;
-            }
-
-            // --- Validation Passed ---
-            setupData.deeperProblem = deeperProblem;
-            setupData.outcome = { label: outcomeLabel, unit: outcomeUnit, goal: outcomeGoal };
-            
-            // This was the fix for the subsequent "edit" flow bug.
-            setupData.inputs = [];
-
-            if (setupData.flowType === 'AI_ASSISTED') {
-                // Path for users who started with the AI flow
-                setupData.dmFlowState = 'processing_input1_label_suggestions';
-                userExperimentSetupData.set(userId, setupData);
-                console.log(`[${interaction.customId} AI_PATH ${interactionId}] User confirmed custom outcome. State is now '${setupData.dmFlowState}'.`);
-                await interaction.editReply({
-                    content: `✅ **Custom Outcome Confirmed!**\n\n> **${outcomeLabel}** (${outcomeGoalStr} ${outcomeUnit})\n\nGreat! Now, let's find your first **Daily Habit**.\n\n🧠 I'll brainstorm some ideas based on your new outcome...`,
-                    embeds: [],
-                    components: []
-                });
-
-                try {
-                    const habitSuggestionsResult = await callFirebaseFunction(
-                        'generateInputLabelSuggestions', {
-                            userWish: setupData.deeperWish,
-                            userBlockers: setupData.userBlockers,
-                            userVision: setupData.userVision,
-                            outcomeMetric: setupData.outcome,
-                            definedInputs: []
-                        },
-                        userId
-                    );
-                    if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions?.length > 0) {
-                        setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions;
-                        setupData.dmFlowState = 'awaiting_input1_suggestion_selection';
-                        setupData.currentInputIndex = 1;
-                        userExperimentSetupData.set(userId, setupData);
-                        
-                        const stepConfig = dmFlowConfig[setupData.dmFlowState];
-                        const { content, components } = stepConfig.prompt(setupData);
-                        await interaction.followUp({
-                            content: content,
-                            components: components,
-                            ephemeral: true
-                        });
-                        console.log(`[${interaction.customId} HABIT_DROPDOWN_SENT ${interactionId}] Sent habit suggestions dropdown to ${userTag}.`);
-                    } else {
-                        throw new Error(habitSuggestionsResult?.message || 'AI failed to return valid habit suggestions.');
-                    }
-                } catch (error) {
-                    console.error(`[${interaction.customId} FIREBASE_FUNC_ERROR ${interactionId}] Error calling generateInputLabelSuggestions for ${userTag}:`, error);
-                    await interaction.followUp({ content: 'Sorry, I had trouble brainstorming habit ideas right now. Please type `cancel` and try again.', ephemeral: true });
-                }
-            } else {
-                // Fallback for Manual Flow (original logic)
-                userExperimentSetupData.set(userId, setupData);
-                console.log(`[${interaction.customId} MANUAL_PATH ${interactionId}] Updated in-memory state with outcome data for ${userTag}.`);
-                
-                const continueToHabit1Button = new ButtonBuilder().setCustomId('manual_continue_to_habit1_btn').setLabel('➡️ Define Habit 1').setStyle(ButtonStyle.Success);
-                const row = new ActionRowBuilder().addComponents(continueToHabit1Button);
-                const outcomeEmbed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Outcome Saved!').setDescription(`**Deeper Wish:**\n${deeperProblem}\n\n**Outcome:**\n**${outcomeGoalStr}** **${outcomeUnit}** for **${outcomeLabel}**.`);
-                
-                await interaction.editReply({
-                    embeds: [outcomeEmbed],
-                    components: [row]
-                });
-                console.log(`[${interaction.customId} SUCCESS_REPLY_SENT_MANUAL ${interactionId}] Confirmed outcome and sent button to define Habit 1.`);
-            }
-        } catch (error) {
-            const errorTime = performance.now();
-            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing outcome modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
-            if (interaction.deferred || interaction.replied) {
-                try {
-                    await interaction.editReply({ content: '❌ An unexpected error occurred while saving your outcome. Please try again.', components: [], embeds: [] });
-                } catch (editError) {
-                    console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback editReply failed:`, editError);
-                }
+                outcomeGoal = goalResult.goal;
             }
         }
+
+        if (validationErrors.length > 0) {
+            console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`);
+            const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and try submitting the form again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
+            await interaction.editReply({ embeds: [errorEmbed], components: [] });
+            return;
+        }
+
+        // --- Validation Passed ---
+        setupData.deeperProblem = deeperProblem;
+        setupData.outcome = { label: outcomeLabel, unit: outcomeUnit, goal: outcomeGoal };
+        
+        // --- UPDATED DATA INTEGRITY FIX ---
+        // This line now correctly resets the habits only when starting from scratch.
+        if (setupData.setupStyle === 'scratch' || !setupData.inputs) {
+            setupData.inputs = [];
+        }
+
+        if (setupData.flowType === 'AI_ASSISTED') {
+            setupData.dmFlowState = 'processing_input1_label_suggestions';
+            userExperimentSetupData.set(userId, setupData);
+            console.log(`[${interaction.customId} AI_PATH ${interactionId}] User confirmed custom outcome. State is now '${setupData.dmFlowState}'.`);
+            await interaction.editReply({
+                content: `✅ **Custom Outcome Confirmed!**\n\n> **${outcomeLabel}** (${outcomeGoalStr} ${outcomeUnit})\n\nGreat! Now, let's find your first **Daily Habit**.\n\n🧠 I'll brainstorm some ideas based on your new outcome...`,
+                embeds: [],
+                components: []
+            });
+
+            try {
+                const habitSuggestionsResult = await callFirebaseFunction(
+                    'generateInputLabelSuggestions', {
+                        userWish: setupData.deeperWish,
+                        userBlockers: setupData.userBlockers,
+                        userVision: setupData.userVision,
+                        outcomeMetric: setupData.outcome,
+                        definedInputs: []
+                    },
+                    userId
+                );
+                if (habitSuggestionsResult && habitSuggestionsResult.success && habitSuggestionsResult.suggestions?.length > 0) {
+                    setupData.aiGeneratedInputSuggestions = habitSuggestionsResult.suggestions;
+                    setupData.dmFlowState = 'awaiting_input1_suggestion_selection';
+                    setupData.currentInputIndex = 1;
+                    userExperimentSetupData.set(userId, setupData);
+                    
+                    const stepConfig = dmFlowConfig[setupData.dmFlowState];
+                    const { content, components } = stepConfig.prompt(setupData);
+                    await interaction.followUp({
+                        content: content,
+                        components: components,
+                        ephemeral: true
+                    });
+                    console.log(`[${interaction.customId} HABIT_DROPDOWN_SENT ${interactionId}] Sent habit suggestions dropdown to ${userTag}.`);
+                } else {
+                    throw new Error(habitSuggestionsResult?.message || 'AI failed to return valid habit suggestions.');
+                }
+            } catch (error) {
+                console.error(`[${interaction.customId} FIREBASE_FUNC_ERROR ${interactionId}] Error calling generateInputLabelSuggestions for ${userTag}:`, error);
+                await interaction.followUp({ content: 'Sorry, I had trouble brainstorming habit ideas right now. Please type `cancel` and try again.', ephemeral: true });
+            }
+        } else {
+            // Manual Flow
+            userExperimentSetupData.set(userId, setupData);
+            console.log(`[${interaction.customId} MANUAL_PATH ${interactionId}] Updated in-memory state with outcome data for ${userTag}.`);
+            
+            const continueToHabit1Button = new ButtonBuilder().setCustomId('manual_continue_to_habit1_btn').setLabel('➡️ Define Habit 1').setStyle(ButtonStyle.Success);
+            const row = new ActionRowBuilder().addComponents(continueToHabit1Button);
+            const outcomeEmbed = new EmbedBuilder().setColor('#57F287').setTitle('✅ Outcome Saved!').setDescription(`**Deeper Wish:**\n${deeperProblem}\n\n**Outcome:**\n**${outcomeGoalStr}** **${outcomeUnit}** for **${outcomeLabel}**.`);
+            await interaction.editReply({
+                embeds: [outcomeEmbed],
+                components: [row]
+            });
+            console.log(`[${interaction.customId} SUCCESS_REPLY_SENT_MANUAL ${interactionId}] Confirmed outcome and sent button to define Habit 1.`);
+        }
+    } catch (error) {
+        const errorTime = performance.now();
+        console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing outcome modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
+        if (interaction.deferred || interaction.replied) {
+            try {
+                await interaction.editReply({ content: '❌ An unexpected error occurred while saving your outcome. Please try again.', components: [], embeds: [] });
+            } catch (editError) {
+                console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback editReply failed:`, editError);
+            }
+        }
+    }
     }
 
     else if (interaction.customId === 'confirm_ai_habit_modal_1') {

@@ -3306,7 +3306,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                             YOUR TASK:
                             1. Start with the "Creative Seed" as your core theme.
                             2. Personalize it using the user's "Last Note" and your "Specific Focus".
-                            3. Use the "Time Context" to ensure your message is appropriate (e.g., don't mention a bedtime habit in a morning reminder). If the focus habit is time-incongruent, be more general.
+                            3. Use the "Time Context" to ensure your message is appropriate (e.g., don't mention a bedtime habit in a morning reminder). If the focus habit is time-incongruent, be more general. AVOID time-based cliches like "afternoon slump."
                             4. Be direct, conversational, and avoid greetings. Generate ONLY the reminder message text.`;
 
                         // C. Call AI
