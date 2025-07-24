@@ -165,104 +165,102 @@ const GEMINI_CONFIG = {
 const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
 
 // INSIGHTS_PROMPT_TEMPLATE for "This Experiment" MVP
-const INSIGHTS_PROMPT_TEMPLATE = (data) => {
-  // Helper to format metric stats
+const AI_STATS_ANALYSIS_PROMPT_TEMPLATE = (data) => {
+  // Helper to format metric stats for the prompt
   const formatMetricStat = (metric) => {
     if (!metric) return "N/A";
     let statString = `${metric.label} (${metric.unit || 'N/A'}): `;
     if (metric.status === 'skipped_insufficient_data') {
-      statString += `Not enough data (had ${metric.dataPoints}, needed ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS}).`;
+      statString += `Not enough data (had ${metric.dataPoints}, needed 5).`;
     } else {
       statString += `Avg: ${metric.average?.toFixed(2) ?? 'N/A'}, Median: ${metric.median?.toFixed(2) ?? 'N/A'}, Variation: ${metric.variationPercentage?.toFixed(2) ?? 'N/A'}% (DP: ${metric.dataPoints ?? 'N/A'})`;
     }
     return statString;
   };
 
-  // Helper to format correlations
+  // Helper to format correlations for the prompt
   const formatCorrelation = (corr) => {
-    if (!corr) return "N/A";
-    let corrString = `${corr.label} → ${corr.vsOutputLabel}: `;
-    if (corr.status === 'calculated' && corr.coefficient !== undefined && !isNaN(corr.coefficient)) {
-      const rSquared = corr.coefficient * corr.coefficient;
-      corrString += `Influence (R²): ${(rSquared * 100).toFixed(1)}%, P-Value: ${corr.pValue?.toFixed(3) ?? 'N/A'} (Pairs: ${corr.n_pairs ?? 'N/A'}). Interpretation: ${corr.interpretation || 'N/A'}`;
-    } else {
-      corrString += `Not calculated. Status: ${corr.status || 'Unknown'}, Reason: ${corr.interpretation || 'N/A'} (Pairs: ${corr.n_pairs ?? 'N/A'})`;
-    }
-    return corrString;
+    if (!corr || corr.status !== 'calculated' || corr.coefficient === undefined) return null;
+    const rSquared = corr.coefficient * corr.coefficient;
+    if (rSquared < 0.0225) return null; // Filter out weak correlations
+    return `${corr.label} -> ${corr.vsOutputLabel}: Coeff=${corr.coefficient.toFixed(3)}, PVal=${corr.pValue?.toFixed(3) ?? 'N/A'}, N=${corr.n_pairs ?? 'N/A'}`;
   };
 
-  // Helper to format pairwise interactions
+  // Helper to format lag time correlations for the prompt
+  const formatLagCorrelation = (lag) => {
+      if (!lag || lag.coefficient === undefined) return null;
+      const rSquared = lag.coefficient * lag.coefficient;
+      if (rSquared < 0.0225) return null;
+      return `Yesterday's ${lag.yesterdayMetricLabel} -> Today's ${lag.todayMetricLabel}: Coeff=${lag.coefficient.toFixed(3)}, PVal=${lag.pValue?.toFixed(3) ?? 'N/A'}, N=${lag.n_pairs ?? 'N/A'}`;
+  };
+
+  // Helper to format pairwise interactions for the prompt
   const formatPairwiseInteraction = (interaction) => {
     if (!interaction || !interaction.summary || interaction.summary.toLowerCase().includes("skipped") || interaction.summary.toLowerCase().includes("no meaningful conclusion") || interaction.summary.toLowerCase().includes("not enough days")) return null;
-    return `When combining ${interaction.input1Label} & ${interaction.input2Label}:\n    Summary: ${interaction.summary}`;
+    return `When combining ${interaction.input1Label} & ${interaction.input2Label}: ${interaction.summary}`;
   };
 
-  // Constructing the prompt
-  let prompt = `
-You are a "self science" assistant, providing insights on a user's habit experimentation data to help them see their life patterns and plan their next experiment. Your tone should be supportive, analytical, and encouraging, focusing on actionable advice and personal insights. The goal is to inspire the user to continue their journey of consistent small actions and encourage thoughtful experimentation with tweaks to make these actions easier and more impactful. That is the heart of self science. Keep your total response concise (under 1890 characters).
+  return `
+You are a "Self Science" assistant. Your goal is to analyze a user's habit experiment data and present it as a supportive, insightful, and actionable story. Your tone is empowering and non-judgmental, but realistic, focusing on curiosity and small, sustainable changes.
 
-**Experiment Context:**
-- User's Deeper Wish: ${data.deeperProblem || "Not specified"}
-- Total Logs Processed in this Period: ${data.totalLogsProcessed || 0}
+**USER'S DATA SUMMARY:**
+- Deeper Wish: "${data.deeperProblem || "Not specified"}"
+- Current Logging Streak: ${data.userOverallStreak || 0} days
 
-**User's Consistency in daily logging:**
-- Current Overall Log Streak: ${data.userOverallStreak || 0} days
-- Longest Overall Log Streak: ${data.userOverallLongestStreak || 0} days
+**METRIC STATISTICS:**
+${Object.values(data.calculatedMetrics || {}).map(formatMetricStat).join("\n")}
 
-**Data for "This Experiment" (ID: ${data.experimentIdForPrompt}):**
+**RELATIONSHIPS & INTERACTIONS:**
+- Direct Correlations:
+${Object.values(data.correlationsData || {}).map(formatCorrelation).filter(Boolean).join("\n") || "  No significant direct correlations found."}
+- Day-After Effects (Lag Time):
+${Object.values(data.lagTimeCorrelations || {}).map(formatLagCorrelation).filter(Boolean).join("\n") || "  No significant day-after effects found."}
+- Combined Habit Effects (Pairwise):
+${Object.values(data.pairwiseInteractions || {}).map(formatPairwiseInteraction).filter(Boolean).join("\n") || "  No significant combined habit effects found."}
 
-**1. Core Metric Statistics:**
-${data.calculatedMetrics && Object.keys(data.calculatedMetrics).length > 0
-  ? Object.values(data.calculatedMetrics).map(formatMetricStat).join("\n")
-  : "  No core metric statistics were calculated for this experiment."}
-${data.skippedMetricsData && data.skippedMetricsData.length > 0
-  ? "\n  Metrics Skipped Due to Insufficient Data:\n  " + data.skippedMetricsData.map(m => `${m.label} (had ${m.dataPoints} data points, needed ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS})`).join("\n  ")
-  : ""}
-
-**2. Daily Habit → Daily Outcome Impacts (Correlations):**
-${data.correlationsData && Object.keys(data.correlationsData).length > 0
-  ? Object.values(data.correlationsData).map(formatCorrelation).join("\n")
-  : "  No correlation data was calculated for this experiment."}
-
-**3. Combined Effects Analysis (Pairwise Interactions):**
-${data.pairwiseInteractions && Object.keys(data.pairwiseInteractions).length > 0
-  ? Object.values(data.pairwiseInteractions).map(formatPairwiseInteraction).filter(Boolean).join("\n\n")
-  : "  No pairwise interaction analysis was performed or yielded results for this experiment."}
-
-**4. User's Notes Summary (from logs during this experiment period):**
-${data.experimentNotesSummary && data.experimentNotesSummary.trim() !== ""
-  ? data.experimentNotesSummary
-  : "  No notes were found or summarized for this experiment period."}
+**USER'S NOTES SUMMARY:**
+${data.experimentNotesSummary && data.experimentNotesSummary.trim() !== "" ? data.experimentNotesSummary : "  No notes were provided for this experiment period."}
 
 ---
-**Analysis Task:**
-Based *only* on the data provided above for This Experiment, provide succinct analysis (total length under 1890 characters) in three sections:
+**YOUR TASK:**
+Generate a JSON object with three keys: "strikingInsight", "experimentStory", and "nextExperimentSuggestions".
 
-### 🫂 Challenges & Consistency
-Review the user's journey *within this experiment period*, focusing on friction points and consistency patterns evident in *this experiment's data (metric stats, correlations, combined effects)* and the provided *notes summary*.
-- Pinpoint recurring friction points or areas where consistency fluctuates, using *this experiment's data* and *notes for this period*.
-- **If possible, connect these friction points directly to specific phrases or feelings the user expressed in their *notes from this experiment period* around that time.** (e.g., 'The lower consistency for [Metric X] during this experiment might relate to when you mentioned feeling "[Quote from note]"').
-- Where does their effort seem persistent *in this experiment*, even if results vary? Validate this effort clearly.
-- Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human, and reiterate the value of doing the self science experiments they're doing. Find various ways to remind them that growth comes from experiments.
+**1. "strikingInsight":**
+Identify the single most striking (and actionable) insight from the data. Use this hierarchy to decide:
+  a. **Combined Correlation + Lag Time Correlation:** A habit that has a different effect today vs. tomorrow. (e.g., "Habit X helps your outcome today but hurts it tomorrow" or "Habit X helps your outcome today but REALLY helps it tomorrow"). Requires both correlations to be at least moderate.
+  b. **Pairwise Interactions:** Two habits together having a significant effect.
+  c. **Strong Lag Time Correlations:** A habit today clearly influencing an outcome tomorrow.
+  d. **Strong Direct Correlations:** A single habit strongly impacting the outcome on the same day.
+  e. **Significant Deviation/Consistency:** A metric dramatically differing from its goal or showing surprising consistency, especially if it resonates with the user's notes.
+  f. **Fallback:** If none of the above are strong, find where the user was closest to their goal number (for outcome or habits) and frame it as a win, starting with "You may already know this, but...".
 
-### 🌱 Growth Highlights
-Highlight evidence of growth, adaptation, and the impact of sustained effort by analyzing patterns *within this experiment's data and notes*. Start by celebrating their consistency *during this experiment* (mention current overall streak if relevant as context) and the most significant positive trend or achievement observed *in this experiment's data*.
-- Where are *this experiment's* metrics (average, variation, correlations) showing particular strengths?
-- How are their consistent small actions leading to evolution, as seen in *this experiment's data and reflections*?
-- Point out any potentially interesting (even if subtle) connections observed between *this experiment's metrics* and themes found in the *notes from this period*.
+Your insight must be a single, impactful sentence framed in a supportive, empowering tone, with a simple label for the relationship or effect being spotlighted. Example: "Your data reveals a fascinating 'rebound effect': high [Habit X] today often leads to lower [Outcome Y] tomorrow!"
+
+**2. "experimentStory":**
+Write a concise narrative summary (2-4 sentences) of the user's experiment period.
+- Summarize the typical pattern of the week based on data trends.
 - Look for subtle shifts in language in *this period's notes*, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress *within this experiment*.
-- **Also, select 1-2 particularly insightful or representative short quotes directly from the provided 'Notes Summary' (from *this experiment*) that capture a key moment of learning, challenge, or success, and weave them into your analysis where relevant.**
+- Highlight 1-2 recurring themes from the notes that align with the data.
+- Integrate one short, impactful quote directly from their notes.
+- Use cautious, observational language ("It seems like...", "You often mentioned..."). Do not invent feelings. Remind them that everything is just data, and insight (and especially behavior change) sometimes takes many times seeing the same data.
 
-### 🧪 Next Experiment Ideas
-Small, sustainable adjustments often lead to the biggest long-term shifts. Suggest 4 small, actionable experiments (tweaks) for their *next experiment*, designed to make their current positive actions easier, more consistent, or more impactful, based on the analysis of *this experiment's data*. Frame these as curious explorations, not fixes. Experiments should aim to:
-1. Build on momentum from positive trends or consistent efforts identified in the 'Growth Highlights' section for *this experiment*.
-2. Directly address the friction points or consistency challenges identified in the 'Challenges' section from *this experiment's data and notes*.
-3. **Prioritize suggesting experiments that directly explore questions, ideas, or 'what ifs' explicitly mentioned in the user's *notes from this experiment period*.** (Quote the relevant part of the note briefly if it helps frame the experiment).
-4. The first 3 suggestions should focus on *adjustments* to existing routines/habits rather than introducing entirely new, large habits. The last one should explicitly be mentioned as "something a bit different." It should give them an idea that's highly relevant but which they may not have thought of before.
+**3. "nextExperimentSuggestions":**
+Provide an array of exactly 3 actionable, concise experiment ideas based on the data and notes. Frame them as curious explorations. **Choose 3 distinct frameworks from the list below**, ensuring variety in your suggestions.
+- **Seek More Evidence:** A small tweak to an existing habit to confirm or disprove a potential pattern.
+  - **Format:** "To gain more clarity: Try [tweak, e.g., 'increasing Meditation by 5 minutes'] to observe if [specific effect, e.g., 'your Focus score shifts']."
+- **Minimum Effective Dose:** Find an easier version of a habit that is still effective.
+  - **Format:** "To find the easiest effective version: Try reducing [Habit Y] to [smaller amount] and see if you still notice a benefit in your [Outcome]."
+- **What if Not?:** Intentionally remove a habit to see its true impact.
+  - **Format:** "To see what happens without it: For one or two days, try *skipping* [Habit X] and notice how it affects your [Outcome]."
+- **Context Swap:** Test if the timing or trigger of a habit is key.
+  - **Format:** "To test a different trigger: Try doing [Habit Z] at [different time or location] and see how it impacts your [Outcome]."
+- **Flavor Swap:** Try a slight variation of a habit to find a more enjoyable version.
+  - **Format:** "To try a different flavor: Instead of [Habit A], try [a similar but different Habit B] and see if it affects your [Outcome] differently."
+- **Upstream Intervention:** Based on the "Chain of Behavior" concept, suggest a small, indirect habit that addresses a root cause mentioned in the user's notes.
+  - **Format:** "An upstream lever: Your notes mention [problem X]. What if you try [small, indirect habit Y that may precede more relevant events] to address that?"
 
-Again, keep the total response under 1890 characters.
+Return ONLY the raw JSON object. Do not include markdown or any other text.
 `;
-  return prompt;
 };
 // ============== END OF AI INSIGHTS SETUP ==================
 
@@ -3197,15 +3195,14 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 reminderWindowEndUTC
             } = schedule;
 
-            if (remindersLeftToSend <= 0) {
-                continue;
-            }
+            let remindersLeft = remindersLeftToSend; // Use a mutable variable for this iteration
 
             const weeklyStartDate = weeklyReminderPeriodStart.toDate();
             const weeklyEndDate = new Date(weeklyStartDate.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+            // --- CORRECTED LOGIC: RESET FIRST ---
             if (now > weeklyEndDate) {
-                logger.log(`[sendScheduledReminders] Weekly reminder period ended for user ${userId}. Resetting.`);
+                logger.log(`[sendScheduledReminders] Weekly reminder period ended for user ${userId}. Resetting reminders for the new week.`);
                 const resetPromise = userDoc.ref.update({
                     'experimentCurrentSchedule.remindersLeftToSend': totalWeeklyReminders,
                     'experimentCurrentSchedule.weeklyReminderPeriodStart': admin.firestore.FieldValue.serverTimestamp()
@@ -3213,6 +3210,11 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                     logger.error(`[sendScheduledReminders] Failed to reset weekly reminder schedule for user ${userId}:`, err);
                 });
                 reminderPromises.push(resetPromise);
+                remindersLeft = totalWeeklyReminders; // Update the mutable variable
+            }
+            
+            // --- NOW CHECK IF THERE ARE REMINDERS LEFT ---
+            if (remindersLeft <= 0) {
                 continue;
             }
 
@@ -3234,13 +3236,12 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
             const fullDaysLeft = Math.floor((weeklyEndDate.getTime() - (now.getTime() + msUntilTomorrow)) / (1000 * 60 * 60 * 24));
             const hoursInFutureFullDays = Math.max(0, fullDaysLeft) * windowDuration;
             const timeSlotsLeftInWeek = hoursRemainingInToday + hoursInFutureFullDays;
-
             if (timeSlotsLeftInWeek <= 0) {
                 continue;
             }
 
-            let probability = remindersLeftToSend / timeSlotsLeftInWeek;
-            if (remindersLeftToSend >= timeSlotsLeftInWeek) {
+            let probability = remindersLeft / timeSlotsLeftInWeek;
+            if (remindersLeft >= timeSlotsLeftInWeek) {
                 probability = 1.0;
             }
 
@@ -3377,7 +3378,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
  * Expects request.auth.uid to be present for authenticated user.
  */
 exports.fetchOrGenerateAiInsights = onCall(async (request) => {
-  logger.log("[fetchOrGenerateAiInsights] Function called. Request data:", request.data);
+  logger.log("[fetchOrGenerateAiInsights] V2 Function called. Request data:", request.data);
 
   // 1. Authentication & Validation
   if (!request.auth) {
@@ -3385,14 +3386,12 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
   }
   const userId = request.auth.uid;
-  const userTagForLog = request.auth.token?.name || `User_${userId}`; // For logging
-
-  if (!request.data || !request.data.targetExperimentId) {
+  const { targetExperimentId } = request.data;
+  if (!targetExperimentId) {
     logger.warn(`[fetchOrGenerateAiInsights] Invalid argument: targetExperimentId missing for user ${userId}.`);
     throw new HttpsError('invalid-argument', 'The function must be called with a "targetExperimentId".');
   }
-  const targetExperimentId = request.data.targetExperimentId;
-  logger.info(`[fetchOrGenerateAiInsights] Processing request for user: ${userId} (${userTagForLog}), targetExperimentId: ${targetExperimentId}`);
+  logger.info(`[fetchOrGenerateAiInsights] Processing request for user: ${userId}, targetExperimentId: ${targetExperimentId}`);
 
   const db = admin.firestore();
   try {
@@ -3402,170 +3401,113 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     if (!targetExperimentStatsSnap.exists) {
       logger.warn(`[fetchOrGenerateAiInsights] Target experiment stats document not found for user ${userId}, experiment ${targetExperimentId}.`);
-      throw new HttpsError('not-found', 'Target experiment statistics not found. Please ensure the experiment has been processed.');
+      throw new HttpsError('not-found', 'Target experiment statistics not found.');
     }
     const targetExperimentStatsData = targetExperimentStatsSnap.data();
-    logger.log(`[fetchOrGenerateAiInsights] Successfully fetched targetExperimentStatsData for ${targetExperimentId}.`);
 
-    const userDocRef = db.collection('users').doc(userId);
-    const userDocSnap = await userDocRef.get();
-
-    if (!userDocSnap.exists || !userDocSnap.data()?.experimentCurrentSchedule) {
-      logger.warn(`[fetchOrGenerateAiInsights] User document or experimentCurrentSchedule not found for user ${userId}. Proceeding, but global stats timestamp for cache invalidation might be unavailable.`);
-    }
-    const experimentCurrentSchedule = userDocSnap.data()?.experimentCurrentSchedule;
-    const latestGlobalStatsTimestamp = experimentCurrentSchedule?.statsCalculationTimestamp;
-
-    // 3. Caching Logic Implementation
-    const cachedInsightText = targetExperimentStatsData.aiInsightText;
-    const cachedInsightGeneratedAt = targetExperimentStatsData.aiInsightGeneratedAt; // This is a Firestore Timestamp
-
-    if (cachedInsightText && cachedInsightGeneratedAt) {
-        let serveCache = true;
-        if (latestGlobalStatsTimestamp) { // Only if global timestamp exists, compare
-            if (cachedInsightGeneratedAt.toMillis() < latestGlobalStatsTimestamp.toMillis()) {
-                serveCache = false; // Cache is stale relative to global stats update
-                logger.log(`[fetchOrGenerateAiInsights] Cache for experiment ${targetExperimentId} is stale (Generated: ${cachedInsightGeneratedAt.toDate().toISOString()}, Global Stats: ${latestGlobalStatsTimestamp.toDate().toISOString()}). Will regenerate.`);
-            }
-        }
-
-        if (serveCache) {
-            logger.log(`[fetchOrGenerateAiInsights] Serving cached insight for experiment ${targetExperimentId} for user ${userId}.`);
-            return { success: true, insightsText: cachedInsightText, source: "cached" };
-        }
+    // 3. Caching Logic (Checking for the new object)
+    const cachedInsights = targetExperimentStatsData.aiEnhancedInsights;
+    if (cachedInsights && cachedInsights.strikingInsight) {
+        logger.log(`[fetchOrGenerateAiInsights] Serving cached enhanced insight for experiment ${targetExperimentId}.`);
+        return { success: true, insights: cachedInsights, source: "cached" };
     }
 
-    // 4. If Generating New Insights (Cache Miss or Stale)
-    logger.log(`[fetchOrGenerateAiInsights] Generating new insight for experiment ${targetExperimentId} for user ${userId}.`);
+    // 4. If Generating New Insights (Cache Miss)
+    logger.log(`[fetchOrGenerateAiInsights] Generating new enhanced insights for experiment ${targetExperimentId}.`);
     if (!genAI) {
-        logger.error("[fetchOrGenerateAiInsights] Gemini AI client (genAI) is not initialized. Cannot generate insights.");
-        throw new HttpsError('internal', "The AI insights service is currently unavailable. Please try again later. (AI client not ready)");
+        logger.error("[fetchOrGenerateAiInsights] Gemini AI client (genAI) is not initialized.");
+        throw new HttpsError('internal', "The AI insights service is currently unavailable.");
     }
 
     // 4a. Data Preparation for Prompt
     const activeSettings = targetExperimentStatsData.activeExperimentSettings;
     const deeperProblem = activeSettings?.deeperProblem || "Not specified";
-    const experimentEndDateISO = targetExperimentStatsData.experimentEndDateISO || "Unknown"; // ISO String
     const totalLogsProcessed = targetExperimentStatsData.totalLogsInPeriodProcessed || 0;
-    const expSettingsTimestamp = targetExperimentStatsData.experimentSettingsTimestamp || "Unknown"; // ISO String
-
     const calculatedMetrics = targetExperimentStatsData.calculatedMetricStats || {};
     const correlationsData = targetExperimentStatsData.correlations || {};
     const pairwiseInteractions = targetExperimentStatsData.pairwiseInteractionResults || {};
-    const skippedMetricsData = targetExperimentStatsData.skippedMetrics || [];
+    const lagTimeCorrelations = targetExperimentStatsData.lagTimeCorrelations || {};
 
-    // Fetch User's Overall Streak Data
-    const userMainDocSnap = await db.collection('users').doc(userId).get(); // Re-fetch user doc if needed, or use userDocSnap if fresh enough
-    const userMainData = userMainDocSnap.data();
-    const userOverallStreak = userMainData?.currentStreak || 0;
-    const userOverallLongestStreak = userMainData?.longestStreak || 0;
+    const userMainDocSnap = await db.collection('users').doc(userId).get();
+    const userMainData = userMainDocSnap.data() || {};
+    const userOverallStreak = userMainData.currentStreak || 0;
 
-    // Fetch Logs for Notes Summary
     let experimentNotesSummary = "No notes were found for this experiment period.";
     const experimentStartDateForNotes = targetExperimentStatsData.experimentSettingsTimestamp ? new Date(targetExperimentStatsData.experimentSettingsTimestamp) : null;
     const experimentEndDateForNotes = targetExperimentStatsData.experimentEndDateISO ? new Date(targetExperimentStatsData.experimentEndDateISO) : null;
-    if (experimentStartDateForNotes && experimentEndDateForNotes && experimentStartDateForNotes < experimentEndDateForNotes) {
-        try {
-            const logsQuery = db.collection('logs')
-                .where('userId', '==', userId)
-                .where('timestamp', '>=', experimentStartDateForNotes)
-                .where('timestamp', '<=', experimentEndDateForNotes) // Inclusive of end date for logs
-                .orderBy('timestamp', 'asc');
-            const logsSnapshot = await logsQuery.get();
-            if (!logsSnapshot.empty) {
-                const notesEntries = [];
-                logsSnapshot.forEach(doc => {
-                    const log = doc.data();
-                    const logDate = log.timestamp?.toDate ? log.timestamp.toDate().toLocaleDateString() : (log.logDate || 'Unknown Date');
-                    if (log.notes && typeof log.notes === 'string' && log.notes.trim() !== "") {
-                        notesEntries.push(`- On ${logDate}: ${log.notes.trim()}`);
-                    }
-                });
-                if (notesEntries.length > 0) {
-                    experimentNotesSummary = "Key notes from this period:\n" + notesEntries.join("\n");
-                }
-                logger.log(`[fetchOrGenerateAiInsights] Fetched ${notesEntries.length} notes for experiment ${targetExperimentId}.`);
-            } else {
-                logger.log(`[fetchOrGenerateAiInsights] No logs with notes found for experiment ${targetExperimentId} in period ${experimentStartDateForNotes.toISOString()} to ${experimentEndDateForNotes.toISOString()}.`);
-            }
-        } catch (notesError) {
-            logger.error(`[fetchOrGenerateAiInsights] Error fetching notes for experiment ${targetExperimentId}:`, notesError);
-            experimentNotesSummary = "Could not retrieve notes for this period due to an error.";
-        }
-    } else {
-        logger.warn(`[fetchOrGenerateAiInsights] Invalid or missing start/end dates for notes fetching for experiment ${targetExperimentId}. Start: ${experimentStartDateForNotes}, End: ${experimentEndDateForNotes}`);
-    }
 
+    if (experimentStartDateForNotes && experimentEndDateForNotes) {
+        const logsQuery = db.collection('logs')
+            .where('userId', '==', userId)
+            .where('timestamp', '>=', experimentStartDateForNotes)
+            .where('timestamp', '<=', experimentEndDateForNotes)
+            .orderBy('timestamp', 'asc');
+        const logsSnapshot = await logsQuery.get();
+        if (!logsSnapshot.empty) {
+            const notesEntries = logsSnapshot.docs.map(doc => {
+                const log = doc.data();
+                const logDate = log.timestamp?.toDate ? log.timestamp.toDate().toLocaleDateString() : 'Unknown Date';
+                return (log.notes && log.notes.trim()) ? `- On ${logDate}: ${log.notes.trim()}` : null;
+            }).filter(Boolean);
+            if (notesEntries.length > 0) {
+                experimentNotesSummary = "Key notes from this period:\n" + notesEntries.join("\n");
+            }
+        }
+    }
 
     const promptData = {
       deeperProblem,
-      // experimentIdForPrompt, // Removed
-      experimentEndDateISO,
       totalLogsProcessed,
-      expSettingsTimestamp,
       calculatedMetrics,
       correlationsData,
       pairwiseInteractions,
-      skippedMetricsData,
+      lagTimeCorrelations,
       userOverallStreak,
-      userOverallLongestStreak,
       experimentNotesSummary,
-      // MINIMUM_DATAPOINTS_FOR_METRIC_STATS is a global constant, INSIGHTS_PROMPT_TEMPLATE can access it directly or have it passed if preferred.
-      // For simplicity, the template can reference the global one defined in this file.
     };
-    logger.log(`[fetchOrGenerateAiInsights] Prepared promptData for experiment ${targetExperimentId}. Notes summary length: ${experimentNotesSummary.length}`);
 
     // 4b. Populate and Call Gemini
-    const finalPrompt = INSIGHTS_PROMPT_TEMPLATE(promptData);
-    // logger.debug(`[fetchOrGenerateAiInsights] Final prompt for Gemini for experiment ${targetExperimentId}:\n${finalPrompt}`); // Can be very verbose
+    const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const generationResult = await model.generateContent({
+        contents: [{ role: "user", parts: [{text: finalPrompt}] }],
+        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
+    });
+    const response = await generationResult.response;
+    const responseText = response.text()?.trim();
 
-    let newInsightsText = "";
+    if (!responseText) {
+        throw new HttpsError('internal', 'AI generated an empty response.');
+    }
+
+    let newEnhancedInsights;
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" }); // Or your preferred model
-      const generationResult = await model.generateContent({
-          contents: [{ role: "user", parts: [{text: finalPrompt}] }],
-          generationConfig: GEMINI_CONFIG, // Defined at top of file
-      });
-      const response = await generationResult.response;
-      newInsightsText = response.text();
-      logger.log(`[fetchOrGenerateAiInsights] Successfully generated insights from Gemini for experiment ${targetExperimentId}. Text length: ${newInsightsText.length}`);
-    } catch (geminiError) {
-    // Enhanced logging:
-    logger.error(`[fetchOrGenerateAiInsights] Gemini API call failed for experiment ${targetExperimentId}. Full Error Object:`, JSON.stringify(geminiError, Object.getOwnPropertyNames(geminiError)));
-    logger.error(`[fetchOrGenerateAiInsights] Gemini API call failed. Error Message: ${geminiError.message}, Status: ${geminiError.status}, Details: ${JSON.stringify(geminiError.details)}`);
-    if (geminiError.message && geminiError.message.includes('SAFETY')) {
-        logger.warn(`[fetchOrGenerateAiInsights] Gemini content generation blocked due to safety settings for exp ${targetExperimentId}.`);
-        return { success: false, message: "The AI couldn't generate insights for this data due to content restrictions. Please review your notes if they contain sensitive topics.", source: "generation_failed_safety" };
-    }
-    return { success: false, message: "I'm having trouble connecting to the AI to generate your insights at the moment. Please try again later.", source: "generation_failed" };
+        newEnhancedInsights = JSON.parse(responseText);
+    } catch (parseError) {
+        logger.error(`[fetchOrGenerateAiInsights] Failed to parse Gemini JSON response for log ${targetExperimentId}. Raw: "${responseText}". Error:`, parseError);
+        throw new HttpsError('internal', `AI returned an invalid format: ${parseError.message}`);
     }
 
-    if (!newInsightsText || newInsightsText.trim() === "") {
-        logger.warn(`[fetchOrGenerateAiInsights] Gemini generated empty insights text for experiment ${targetExperimentId}.`);
-        return { success: false, message: "The AI generated an empty response. Please try again later.", source: "generation_empty" };
+    if (!newEnhancedInsights.strikingInsight || !newEnhancedInsights.experimentStory || !newEnhancedInsights.nextExperimentSuggestions) {
+        throw new HttpsError('internal', 'AI response was missing one or more required fields.');
     }
 
-    // 4c. Store New Insight in Firestore
+    // 4c. Store New Insight Object in Firestore
     await targetExperimentStatsDocRef.update({
-      aiInsightText: newInsightsText,
+      aiEnhancedInsights: newEnhancedInsights,
       aiInsightGeneratedAt: FieldValue.serverTimestamp()
     });
-    logger.log(`[fetchOrGenerateAiInsights] Successfully stored new insight for experiment ${targetExperimentId} for user ${userId}.`);
+    logger.log(`[fetchOrGenerateAiInsights] Successfully stored new enhanced insights for experiment ${targetExperimentId}.`);
 
-    // 4d. Return New Insight
-    return { success: true, insightsText: newInsightsText, source: "generated" };
+    // 4d. Return New Insight Object
+    return { success: true, insights: newEnhancedInsights, source: "generated" };
+
   } catch (error) {
-    // Outer Try-Catch for the entire function logic
     logger.error(`[fetchOrGenerateAiInsights] Critical error for user ${userId}, experiment ${targetExperimentId}:`, error);
     if (error instanceof HttpsError) {
-      throw error; // Re-throw HttpsError instances directly
+      throw error;
     }
-    // For other errors, wrap in a generic HttpsError
-    throw new HttpsError('internal', `An unexpected error occurred while processing AI insights for experiment ${targetExperimentId}. Details: ${error.message}`, {
-        errorDetails: error.toString(), // Include more details for server logs
-        userId: userId,
-        experimentId: targetExperimentId
-    });
+    throw new HttpsError('internal', `An unexpected error occurred while processing AI insights: ${error.message}`);
   }
 });
 

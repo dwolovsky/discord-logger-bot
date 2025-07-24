@@ -315,6 +315,118 @@ function buildLagTimePage(embed, statsReportData) {
     }
 }
 
+// ADD THESE FIVE NEW FUNCTIONS AFTER buildLagTimePage
+
+/**
+ * Builds the embed for Page 1: The "Aha!" Moment cover page.
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} aiInsights - The AI-generated insights object.
+ */
+function buildAhaMomentPage(embed, aiInsights) {
+    embed.setTitle('💡 Your Experiment\'s "Aha!" Moment')
+         .setDescription(
+             "Here's the most striking insight from your latest experiment, framed in a supportive way to empower you on your journey."
+         )
+         .addFields({
+             name: 'Key Insight',
+             value: aiInsights.strikingInsight || "No specific insight was generated, but every day of logging is a win for self-awareness!"
+         });
+}
+
+/**
+ * Builds the embed for Page 2: The Core Experiment Overview.
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data.
+ */
+function buildCoreOverviewPage(embed, statsReportData) {
+    embed.setTitle('📊 Your Core Data Overview');
+    const settings = statsReportData.activeExperimentSettings;
+    if (!settings) {
+        embed.setDescription("Could not load experiment settings.");
+        return;
+    }
+
+    let description = "A high-level summary of your main outcome and habits. This is the raw data before we dive into the AI analysis.\n\n";
+    
+    // Outcome Snapshot
+    const outcomeLabel = settings.output?.label;
+    if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
+        const data = statsReportData.calculatedMetricStats[outcomeLabel];
+        if (data.status === 'skipped_insufficient_data') {
+            description += `**Outcome: ${outcomeLabel}**\n*Not enough data to calculate stats.*\n\n`;
+        } else {
+            description += `**Outcome: ${outcomeLabel}**\nAveraged: **${data.average}** ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
+        }
+    }
+
+    // Habits Snapshot
+    description += "**Habits:**\n";
+    for (let i = 1; i <= 3; i++) {
+        const inputSetting = settings[`input${i}`];
+        const inputLabel = inputSetting?.label;
+        if (inputLabel && statsReportData.calculatedMetricStats?.[inputLabel]) {
+            const data = statsReportData.calculatedMetricStats[inputLabel];
+             if (data.status === 'skipped_insufficient_data') {
+                description += `*${inputLabel}: Not enough data.*\n`;
+            } else {
+                description += `*${inputLabel}:* Avg **${data.average}** ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
+            }
+        }
+    }
+    embed.setDescription(description);
+}
+
+/**
+ * Builds the embed for Page 3: Hidden Levers & Relationships.
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data.
+ */
+function buildHiddenLeversPage(embed, statsReportData) {
+    embed.setTitle('🕵️‍♀️ Hidden Levers & Relationships')
+         .setDescription("Here, we combine all the relational data to see how your habits influenced your outcome.");
+
+    // This reuses the existing builder functions to construct the page, ensuring minimal code duplication.
+    buildCorrelationsPage(embed, statsReportData);
+    buildCombinedEffectsPage(embed, statsReportData);
+    buildLagTimePage(embed, statsReportData);
+}
+
+/**
+ * Builds the embed for Page 4: Your Experiment Story.
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} aiInsights - The AI-generated insights object.
+ */
+function buildExperimentStoryPage(embed, aiInsights) {
+    embed.setTitle('📖 Your Experiment Story')
+         .setDescription(
+             aiInsights.experimentStory || "The AI could not generate a narrative for this experiment, but the data still tells a story."
+         );
+}
+
+/**
+ * Builds the embed for Page 5: Next Experiment Suggestions.
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} aiInsights - The AI-generated insights object.
+ */
+function buildNextStepsPage(embed, aiInsights) {
+    embed.setTitle('🧪 Next Experiment Suggestions')
+         .setDescription("Here are a few small, actionable ideas for your next experiment, based on your data.");
+
+    if (aiInsights.nextExperimentSuggestions && Array.isArray(aiInsights.nextExperimentSuggestions)) {
+        aiInsights.nextExperimentSuggestions.forEach((suggestion, index) => {
+            // Suggestion is expected to be a string directly from the AI based on the new prompt.
+            // We'll split it by the colon for formatting, assuming the AI follows the "Title: Body" format.
+            const parts = suggestion.split(':');
+            const title = parts.length > 1 ? `Idea ${index + 1}: ${parts[0]}` : `Idea ${index + 1}`;
+            const value = parts.length > 1 ? parts.slice(1).join(':').trim() : suggestion;
+            
+            embed.addFields({ name: title, value: value });
+        });
+    } else {
+        embed.addFields({ name: 'No Suggestions', value: 'The AI did not generate specific suggestions for this experiment.' });
+    }
+}
+
 /**
  * Builds the CORE stats fields (Outcome/Habits) for the summary page.
  * @param {EmbedBuilder} embed - The embed to add fields to.
@@ -394,23 +506,23 @@ function buildFinalSummaryPage(embed, statsReportData, pageConfig) {
 }
 
 /**
- * Sends a specific page of the stats report to a user.
- * This is now called by the listener for the first page, and by button handlers for navigation.
- * @param {import('discord.js').Interaction | { user: import('discord.js').User }} interactionOrUser - The interaction object or a user object for the initial DM.
+ * Sends a specific page of the new narrative stats report to a user.
+ * Manages dynamic button generation and a session timeout.
+ * @param {import('discord.js').Interaction | import('discord.js').User} interactionOrUser - The interaction or user object.
  * @param {string} userId - The user's ID.
  * @param {string} experimentId - The experiment's ID.
  * @param {number} targetPage - The 1-based page number to display.
  */
 async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage) {
-    const isInteraction = 'update' in interactionOrUser;
+    const isInteraction = 'update' in interactionOrUser || 'editReply' in interactionOrUser;
     const user = isInteraction ? interactionOrUser.user : interactionOrUser;
 
     if (isInteraction && !interactionOrUser.deferred) {
         try {
             await interactionOrUser.deferUpdate();
         } catch (error) {
-            if (error.code === 10062) {
-                console.warn(`[sendStatsPage] Failed to defer update for interaction (likely expired): ${error.message}`);
+            if (error.code === 10062) { // Unknown interaction
+                console.warn(`[sendStatsPage] Failed to defer update (likely expired): ${error.message}`);
                 return;
             }
             throw error;
@@ -419,9 +531,14 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
 
     let reportInfo = userStatsReportData.get(userId);
 
+    // --- TIMEOUT MANAGEMENT: Clear any existing timer ---
+    if (reportInfo && reportInfo.timeoutTimer) {
+        clearTimeout(reportInfo.timeoutTimer);
+    }
+
     // --- FIRESTORE FALLBACK LOGIC ---
-    if (!reportInfo || !reportInfo.statsReportData || !reportInfo.pageConfig) {
-        console.warn(`[sendStatsPage] In-memory stats report data not found for user ${userId}. Attempting Firestore fallback.`);
+    if (!reportInfo || !reportInfo.statsReportData || !reportInfo.pageConfig || !reportInfo.aiEnhancedInsights) {
+        console.warn(`[sendStatsPage] In-memory data not found for ${userId}. Attempting Firestore fallback.`);
         if (dbAdmin) {
             try {
                 const statsReportFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('statsReport');
@@ -429,48 +546,40 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
 
                 if (docSnap.exists) {
                     const persistedData = docSnap.data();
-                    
-                    // Re-attach builder functions
                     const pageConfigWithBuilders = persistedData.pageConfig.map(p => {
-                          const builders = {
-                            cover: buildCoverPage,
-                            outcome: buildOutcomeStatsPage,
-                            habit: buildHabitStatsPage,
-                            correlations: buildCorrelationsPage,
-                            combined: buildCombinedEffectsPage,
-                            lag: buildLagTimePage,
-                            summary: buildFinalSummaryPage
-                          };
-                          const builderFunc = builders[p.type];
-                          return { ...p, builder: builderFunc };
-                      });
-
+                        const builders = {
+                            aha: buildAhaMomentPage,
+                            overview: buildCoreOverviewPage,
+                            levers: buildHiddenLeversPage,
+                            story: buildExperimentStoryPage,
+                            next_steps: buildNextStepsPage,
+                            raw_stats: buildFinalSummaryPage
+                        };
+                        return { ...p, builder: builders[p.type] };
+                    });
                     reportInfo = {
                         statsReportData: persistedData.statsReportData,
+                        aiEnhancedInsights: persistedData.aiEnhancedInsights, // Get AI insights from fallback
                         experimentId: persistedData.experimentId,
                         pageConfig: pageConfigWithBuilders
                     };
-                    
-                    // Repopulate in-memory map for subsequent navigations
                     userStatsReportData.set(userId, reportInfo);
-                    console.log(`[sendStatsPage] Successfully restored stats report session from Firestore for user ${userId}.`);
+                    console.log(`[sendStatsPage] Successfully restored narrative report session from Firestore for ${userId}.`);
                 }
             } catch (fbError) {
-                console.error(`[sendStatsPage] Error during Firestore fallback for user ${userId}:`, fbError);
-                // Proceed to show error message below
+                console.error(`[sendStatsPage] Error during Firestore fallback for ${userId}:`, fbError);
             }
         }
     }
-    // --- END FIRESTORE FALLBACK ---
 
-    if (!reportInfo || !reportInfo.statsReportData || !reportInfo.pageConfig) {
+    if (!reportInfo || !reportInfo.statsReportData || !reportInfo.pageConfig || !reportInfo.aiEnhancedInsights) {
         const errorMessage = "Your stats report session has expired or is invalid. Please request it again via the `/go` command.";
         if (isInteraction) await interactionOrUser.editReply({ content: errorMessage, embeds: [], components: [] });
         else await user.send(errorMessage);
         return;
     }
 
-    const { statsReportData, pageConfig } = reportInfo;
+    const { statsReportData, aiEnhancedInsights, pageConfig } = reportInfo;
     const totalPages = pageConfig.length;
     const pageIndex = targetPage - 1;
 
@@ -484,61 +593,60 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     const embed = new EmbedBuilder()
         .setColor(0x0099FF)
         .setFooter({ text: `Experiment ID: ${experimentId}` });
-    
-    // Call the correct builder function with the necessary arguments
-    // Call the correct builder function with the necessary arguments
+
+    // Call the correct builder function based on page type
     switch (currentPageConfig.type) {
-        case 'cover':
-            buildCoverPage(embed);
+        case 'aha':
+            buildAhaMomentPage(embed, aiEnhancedInsights);
             break;
-        case 'outcome':
-            buildOutcomeStatsPage(embed, statsReportData.calculatedMetricStats[currentPageConfig.metricKey]);
+        case 'overview':
+            buildCoreOverviewPage(embed, statsReportData);
             break;
-        case 'habit':
-            buildHabitStatsPage(embed, statsReportData.calculatedMetricStats[currentPageConfig.metricKey], currentPageConfig.habitNumber);
+        case 'levers':
+            buildHiddenLeversPage(embed, statsReportData);
             break;
-        case 'correlations':
-            buildCorrelationsPage(embed, statsReportData);
+        case 'story':
+            buildExperimentStoryPage(embed, aiEnhancedInsights);
             break;
-        case 'combined':
-            buildCombinedEffectsPage(embed, statsReportData);
+        case 'next_steps':
+            buildNextStepsPage(embed, aiEnhancedInsights);
             break;
-        case 'lag':
-            buildLagTimePage(embed, statsReportData);
+        case 'raw_stats':
+            embed.setTitle('📈 Full Raw Stats Report'); // Override default title for clarity
+            buildFinalSummaryPage(embed, statsReportData, pageConfig);
             break;
-        case 'summary':
-             buildFinalSummaryPage(embed, statsReportData, pageConfig);
-             break;
         default:
-             console.error("Unknown page type in pageConfig:", currentPageConfig.type);
-             embed.setDescription("Error: Could not determine the content for this page.");
+            console.error("Unknown page type in pageConfig:", currentPageConfig.type);
+            embed.setDescription("Error: Could not determine the content for this page.");
     }
     
     embed.setTitle(`${embed.data.title} (Page ${targetPage} of ${totalPages})`);
-    
-    // Build navigation buttons
+
+    // --- DYNAMIC BUTTON LOGIC ---
     const row = new ActionRowBuilder();
-    if (targetPage > 1) {
+    if (targetPage === 1) {
+        row.addComponents(new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_2`).setLabel('Tell Me More! ➡️').setStyle(ButtonStyle.Primary));
+    } else if (targetPage === 2) {
+        row.addComponents(new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_3`).setLabel('Uncover AI Insights 🧠').setStyle(ButtonStyle.Primary));
+    } else if (targetPage === 3) {
         row.addComponents(
-            new ButtonBuilder()
-                .setCustomId(`stats_nav_back_${experimentId}_${targetPage - 1}`)
-                .setLabel('⬅️ Back')
-                .setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId(`stats_nav_back_${experimentId}_2`).setLabel('⬅️ Previous Page').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_4`).setLabel('Experiment Story ➡️').setStyle(ButtonStyle.Primary)
         );
-    }
-    if (targetPage < totalPages) {
+    } else if (targetPage === 4) {
         row.addComponents(
-            new ButtonBuilder()
-                .setCustomId(`stats_nav_next_${experimentId}_${targetPage + 1}`)
-                .setLabel('Next ➡️')
-                .setStyle(ButtonStyle.Primary)
+            new ButtonBuilder().setCustomId(`stats_nav_back_${experimentId}_3`).setLabel('⬅️ Previous Page').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_5`).setLabel('Next Experiment Ideas ➡️').setStyle(ButtonStyle.Primary)
         );
-    } else { // This is the last page
+    } else if (targetPage === 5) {
         row.addComponents(
-            new ButtonBuilder()
-                .setCustomId(`stats_show_continuous_mode_prompt_${experimentId}`)
-                .setLabel('Next ➡️')
-                .setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId(`stats_nav_back_${experimentId}_4`).setLabel('⬅️ Previous Page').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_6`).setLabel('📊 See All Raw Data').setStyle(ButtonStyle.Primary)
+        );
+    } else if (targetPage === totalPages) { // This is the last page (Page 6)
+        row.addComponents(
+            new ButtonBuilder().setCustomId(`stats_nav_back_${experimentId}_5`).setLabel('⬅️ Previous Page').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`stats_show_continuous_mode_prompt_${experimentId}`).setLabel('🚀 Start a New Experiment').setStyle(ButtonStyle.Success)
         );
     }
 
@@ -548,7 +656,45 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     } else {
         await user.send(messagePayload);
     }
-    console.log(`[sendStatsPage] Sent page ${targetPage}/${totalPages} of stats report for experiment ${experimentId} to user ${userId}.`);
+    console.log(`[sendStatsPage] Sent page ${targetPage}/${totalPages} of narrative report for experiment ${experimentId} to user ${userId}.`);
+
+    // --- TIMEOUT MECHANISM: Set a new timer ---
+    const timeout = setTimeout(async () => {
+        console.log(`[StatsTimeout] Session for user ${userId}, experiment ${experimentId} has expired.`);
+        const finalReportInfo = userStatsReportData.get(userId);
+        if (finalReportInfo && finalReportInfo.experimentId === experimentId) { // Check if the session is still the same
+            try {
+                const finalEmbed = new EmbedBuilder()
+                    .setColor(0xFFA500) // Orange for timeout
+                    .setTitle('📈 Full Raw Stats Report (Session Timed Out)')
+                    .setFooter({ text: `Experiment ID: ${finalReportInfo.experimentId}` });
+
+                buildFinalSummaryPage(finalEmbed, finalReportInfo.statsReportData, finalReportInfo.pageConfig);
+
+                const finalButton = new ButtonBuilder()
+                    .setCustomId(`stats_show_continuous_mode_prompt_${finalReportInfo.experimentId}`)
+                    .setLabel('🚀 Start a New Experiment')
+                    .setStyle(ButtonStyle.Success);
+
+                await user.send({
+                    content: "It looks like our interactive stats session timed out, but here is your complete report for your records!",
+                    embeds: [finalEmbed],
+                    components: [new ActionRowBuilder().addComponents(finalButton)]
+                });
+                console.log(`[StatsTimeout] Sent final raw report to user ${userId} via new message.`);
+            } catch (timeoutError) {
+                console.error(`[StatsTimeout] Failed to send timeout fallback message to user ${userId}:`, timeoutError);
+            } finally {
+                userStatsReportData.delete(userId); // Clean up the session
+            }
+        }
+    }, 20 * 60 * 1000); // 20 minutes
+
+    // Store the timer so it can be cleared on the next navigation
+    if (reportInfo) {
+        reportInfo.timeoutTimer = timeout;
+        userStatsReportData.set(userId, reportInfo);
+    }
 }
 
 /**
@@ -557,7 +703,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
  * @param {import('discord.js').Client} client - The Discord client instance.
  */
 function setupStatsNotificationListener(client) {
-  console.log("<<<<< NEW INSIGHTS-FIRST STATS LISTENER IS ACTIVE >>>>>");
+  console.log("<<<<< NEW STATELESS-TRIGGER STATS LISTENER IS ACTIVE >>>>>");
   if (!admin.apps.length || !dbAdmin) {
       console.warn("Firebase Admin SDK not initialized. Stats notification listener will NOT run.");
       return;
@@ -572,154 +718,65 @@ function setupStatsNotificationListener(client) {
               const notification = change.doc.data();
               const docId = change.doc.id;
               const { userId, experimentId, statsDocumentId } = notification;
-              console.log(`[StatsListener] Detected 'ready' notification for user ${userId}, experiment ${statsDocumentId || experimentId}.`);
+              const finalExperimentId = statsDocumentId || experimentId;
+              console.log(`[StatsListener] Detected 'ready' notification for user ${userId}, experiment ${finalExperimentId}.`);
 
               let discordUser;
               try {
                   discordUser = await client.users.fetch(userId);
               } catch (userFetchError) {
-                   console.error(`[StatsListener] Failed to fetch Discord user ${userId} for stats. Doc ID: ${docId}:`, userFetchError);
-                  await change.doc.ref.update({ status: 'error_user_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: `Failed to fetch Discord user for stats: ${userFetchError.message}`.substring(0, 499) });
+                  console.error(`[StatsListener] Failed to fetch Discord user ${userId}. Doc ID: ${docId}:`, userFetchError);
+                  await change.doc.ref.update({ status: 'error_user_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: userFetchError.message.substring(0, 499) });
                   return;
               }
 
-              if (!discordUser) {
-                   console.error(`[StatsListener] Fetched Discord user is null for ID: ${userId}.`);
-                   await change.doc.ref.update({ status: 'error_user_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: 'Fetched Discord user was null.' });
-                   return;
-              }
-
               try {
-                  const finalExperimentId = statsDocumentId || experimentId;
                   const statsReportRef = dbAdmin.collection('users').doc(userId).collection('experimentStats').doc(finalExperimentId);
                   const statsReportSnap = await statsReportRef.get();
 
-                  // Fetch the main user document to check for an email
-                  const userDocRef = dbAdmin.collection('users').doc(userId);
-                  const userDocSnap = await userDocRef.get();
-
-                  if (statsReportSnap.exists) {
-                      const statsReportData = statsReportSnap.data();
-
-                      // --- DYNAMIC PAGE CONFIGURATION (Now JSON serializable) ---
-                      const pageConfig = [];
-                      const settings = statsReportData.activeExperimentSettings;
-                      
-                      pageConfig.push({ type: 'cover' });
-
-                      const outcomeLabel = settings?.output?.label;
-                      if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
-                          pageConfig.push({ type: 'outcome', metricKey: outcomeLabel });
-                      }
-
-                      for (let i = 1; i <= 3; i++) {
-                          const inputSetting = settings?.[`input${i}`];
-                          const inputLabel = inputSetting?.label;
-                          if (inputLabel && statsReportData.calculatedMetricStats?.[inputLabel]) {
-                              pageConfig.push({ type: 'habit', metricKey: inputLabel, habitNumber: i });
-                          }
-                      }
-                      
-                      if (statsReportData.correlations && Object.keys(statsReportData.correlations).length > 0) {
-                           const hasMeaningfulCorrelation = Object.values(statsReportData.correlations).some(corr =>
-                              corr && corr.status === 'calculated' && corr.coefficient !== undefined && !isNaN(corr.coefficient) && Math.abs(corr.coefficient) >= 0.15
-                          );
-                          if (hasMeaningfulCorrelation) {
-                              pageConfig.push({ type: 'correlations' });
-                          }
-                      }
-
-                      if (statsReportData.pairwiseInteractionResults && Object.keys(statsReportData.pairwiseInteractionResults).length > 0) {
-                           const hasMeaningfulResults = Object.values(statsReportData.pairwiseInteractionResults).some(pairData => {
-                              const summary = pairData.summary || "";
-                              return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion") && !summary.toLowerCase().includes("did not show any group");
-                           });
-                           if(hasMeaningfulResults) {
-                                pageConfig.push({ type: 'combined' });
-                           }
-                      }
-
-                      if (statsReportData.lagTimeCorrelations && Object.keys(statsReportData.lagTimeCorrelations).length > 0 && settings?.output?.label) {
-                           const outcomeMetricLabel = settings.output.label;
-                           const hasMeaningfulLagToOutcome = Object.values(statsReportData.lagTimeCorrelations).some(lag =>
-                              lag && lag.todayMetricLabel === outcomeMetricLabel &&
-                              lag.coefficient !== undefined && !isNaN(lag.coefficient) && Math.abs(lag.coefficient) >= 0.15
-                           );
-                          if (hasMeaningfulLagToOutcome) {
-                              pageConfig.push({ type: 'lag' });
-                          }
-                      }
-
-                      pageConfig.push({ type: 'summary' });
-
-                      // Add the builder functions back in for the in-memory map version
-                      const pageConfigWithBuilders = pageConfig.map(p => {
-                          const builders = {
-                            cover: buildCoverPage,
-                            outcome: buildOutcomeStatsPage,
-                            habit: buildHabitStatsPage,
-                            correlations: buildCorrelationsPage,
-                            combined: buildCombinedEffectsPage,
-                            lag: buildLagTimePage,
-                            summary: buildFinalSummaryPage
-                          };
-                          // Find the correct builder function based on the 'type' property
-                          const builderFunc = builders[p.type];
-                          return { ...p, builder: builderFunc };
-                      });
-                      
-                      // Store in-memory for immediate use
-                      userStatsReportData.set(userId, { statsReportData, experimentId: finalExperimentId, pageConfig: pageConfigWithBuilders });
-                      
-                      // --- PERSIST TO FIRESTORE ---
-                      // We store the version WITHOUT the builder functions
-                      const statsReportFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('statsReport');
-                      await statsReportFlowRef.set({
-                          statsReportData: statsReportData,
-                          experimentId: finalExperimentId,
-                          pageConfig: pageConfig, // The serializable version
-                          lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
-                      });
-                      console.log(`[StatsListener] Persisted serializable stats report flow data to Firestore for user ${userId}.`);
-                      
-                      // --- ALIGNMENT FOR FUTURE EMAIL FEATURE ---
-                      if (userDocSnap.exists && userDocSnap.data()?.email) {
-                        const userEmail = userDocSnap.data().email;
-                        console.log(`[StatsListener] User ${userId} has email on file (${userEmail}). FUTURE: This is where an experiment summary email would be queued.`);
-                        // Placeholder for future email queuing logic.
-                      }
-                      
-                      // --- SEND DISCORD DM PROMPT ---
-                      const insightsPromptEmbed = new EmbedBuilder()
-                        .setColor('#7F00FF')
-                        .setTitle('📊 Your New Stats and Insights!')
-                        .setDescription("I've analyzed your data and have some insights for you. Would you like to see them now?");
-                      
-                      const insightsButton = new ButtonBuilder()
-                        .setCustomId(`request_ai_insights_initial_${finalExperimentId}`)
-                        .setLabel('💡 Get AI Insights')
-                        .setStyle(ButtonStyle.Primary);
-
-                      const row = new ActionRowBuilder().addComponents(insightsButton);
-
-                      await discordUser.send({
-                        embeds: [insightsPromptEmbed],
-                        components: [row]
-                      });
-
-                      console.log(`[StatsListener] Sent 'Get Insights' prompt for experiment ${finalExperimentId} to user ${userId}.`);
-
-                      await change.doc.ref.update({
-                          status: 'processed_by_bot',
-                          processedAt: admin.firestore.FieldValue.serverTimestamp(),
-                          botProcessingNode: process.env.RENDER_INSTANCE_ID || 'local_dev_insights_prompt'
-                      });
-                      console.log(`[StatsListener] Updated notification ${docId} to 'processed_by_bot'.`);
-
-                  } else {
-                      console.error(`[StatsListener] Stats report document not found for user ${userId}, experiment ${finalExperimentId}.`);
-                      await change.doc.ref.update({ status: 'error_report_not_found', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: 'Stats report document could not be found in Firestore.' });
+                  if (!statsReportSnap.exists) {
+                      throw new Error(`Stats report document not found for experiment ${finalExperimentId}.`);
                   }
+
+                  // Call Firebase to get all AI-generated text components
+                  console.log(`[StatsListener] Pre-generating AI insights for experiment ${finalExperimentId}.`);
+                  const aiInsightsResult = await callFirebaseFunction(
+                      'fetchOrGenerateAiInsights',
+                      { targetExperimentId: finalExperimentId },
+                      userId
+                  );
+
+                  if (!aiInsightsResult || !aiInsightsResult.success) {
+                      throw new Error(aiInsightsResult?.message || 'Failed to get AI insights for the report.');
+                  }
+                  
+                  const strikingInsight = aiInsightsResult.insights.strikingInsight;
+
+                  // --- SEND THE STATELESS "START" DM ---
+                  const startEmbed = new EmbedBuilder()
+                      .setColor('#7F00FF')
+                      .setTitle('💡 Your New Experiment Insights Are Ready!')
+                      .setDescription(strikingInsight || "I've analyzed your data and have some insights for you.")
+                      .setFooter({ text: "You can click the button below at any time to see your full report." });
+
+                  const startButton = new ButtonBuilder()
+                      .setCustomId(`start_narrative_report_${finalExperimentId}`)
+                      .setLabel('Tell Me More! ➡️')
+                      .setStyle(ButtonStyle.Primary);
+
+                  await discordUser.send({
+                      embeds: [startEmbed],
+                      components: [new ActionRowBuilder().addComponents(startButton)]
+                  });
+                  console.log(`[StatsListener] Sent stateless 'Start Report' DM for experiment ${finalExperimentId} to user ${userId}.`);
+
+                  await change.doc.ref.update({
+                      status: 'processed_by_bot',
+                      processedAt: admin.firestore.FieldValue.serverTimestamp(),
+                      botProcessingNode: process.env.RENDER_INSTANCE_ID || 'local_dev_stateless_trigger'
+                  });
+                  console.log(`[StatsListener] Updated notification ${docId} to 'processed_by_bot'.`);
+
               } catch (error) {
                   console.error(`[StatsListener] Error processing notification ${docId} for user ${userId}:`, error);
                   await change.doc.ref.update({ status: 'error_processing_in_bot', processedAt: admin.firestore.FieldValue.serverTimestamp(), errorMessage: error.message });
@@ -5868,6 +5925,87 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
+    
+    else if (interaction.isButton() && interaction.customId.startsWith('start_narrative_report_')) {
+        const startReportClickTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        const experimentId = interaction.customId.split('start_narrative_report_')[1];
+        console.log(`[start_narrative_report START ${interactionId}] Clicked by ${userId} for experiment ${experimentId}.`);
+
+        if (!experimentId) {
+            await interaction.reply({ content: "Error: This report button is missing an experiment ID.", ephemeral: true });
+            return;
+        }
+
+        try {
+            await interaction.deferUpdate(); // Acknowledge the click, the original message will be edited.
+
+            // 1. Fetch the pre-generated data from Firestore
+            const statsReportRef = dbAdmin.collection('users').doc(userId).collection('experimentStats').doc(experimentId);
+            const statsReportSnap = await statsReportRef.get();
+
+            if (!statsReportSnap.exists) {
+                throw new Error("I couldn't find the data for this experiment report. It might be too old.");
+            }
+
+            const statsReportData = statsReportSnap.data();
+            const aiEnhancedInsights = statsReportData.aiEnhancedInsights;
+
+            if (!aiEnhancedInsights) {
+                 throw new Error("The AI insights for this report could not be found.");
+            }
+
+            // 2. Build the session data (page config, builders, etc.)
+            const pageConfig = [
+                { type: 'aha' }, { type: 'overview' }, { type: 'levers' },
+                { type: 'story' }, { type: 'next_steps' }, { type: 'raw_stats' }
+            ];
+            
+            const pageConfigWithBuilders = pageConfig.map(p => {
+                const builders = {
+                    aha: buildAhaMomentPage,
+                    overview: buildCoreOverviewPage,
+                    levers: buildHiddenLeversPage,
+                    story: buildExperimentStoryPage,
+                    next_steps: buildNextStepsPage,
+                    raw_stats: buildFinalSummaryPage
+                };
+                return { ...p, builder: builders[p.type] };
+            });
+
+            const sessionData = {
+                statsReportData,
+                aiEnhancedInsights,
+                experimentId,
+                pageConfig: pageConfigWithBuilders
+            };
+
+            // 3. Store the session data in memory and Firestore backup
+            userStatsReportData.set(userId, sessionData);
+
+            const statsReportFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('statsReport');
+            await statsReportFlowRef.set({
+                statsReportData: statsReportData,
+                aiEnhancedInsights: aiEnhancedInsights,
+                experimentId: experimentId,
+                pageConfig: pageConfig, // Serializable version
+                lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            // 4. Launch the interactive report by calling sendStatsPage
+            // This will EDIT the DM the user just clicked the button on, turning it into Page 1.
+            await sendStatsPage(interaction, userId, experimentId, 1);
+            console.log(`[start_narrative_report SUCCESS ${interactionId}] Launched interactive report for ${userId}.`);
+
+        } catch (error) {
+            console.error(`[start_narrative_report ERROR ${interactionId}] Error starting report for ${userId}:`, error);
+            if (interaction.deferred || interaction.replied) {
+                 await interaction.editReply({ content: `❌ An error occurred while loading your report: ${error.message}`, components: [], embeds: [] });
+            }
+        }
+    }
+
     // --- Handler for Stats Report Navigation ---
     else if (interaction.isButton() && interaction.customId.startsWith('stats_nav_')) {
         // This single handler manages both 'next' and 'back' navigation.
@@ -5882,94 +6020,71 @@ client.on(Events.InteractionCreate, async interaction => {
         await sendStatsPage(interaction, interaction.user.id, experimentId, targetPage);
     }
 
-        // --- Handler for "AI Insights" Button (from /go hub) ---
+    // --- Handler for "AI Insights" Button (from /go hub) ---
     else if (interaction.isButton() && interaction.customId === 'ai_insights_btn') {
-      const goInsightsButtonStartTime = performance.now();
-      const interactionId = interaction.id; // For logging
-      const userId = interaction.user.id;
+        const goInsightsButtonStartTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        console.log(`[ai_insights_btn /go START ${interactionId}] Clicked by ${userId}.`);
 
-      console.log(`[ai_insights_btn /go START ${interactionId}] Clicked by ${userId}. Time: ${goInsightsButtonStartTime.toFixed(2)}ms`);
-
-      if (!dbAdmin) {
-        console.error(`[ai_insights_btn /go ERROR ${interactionId}] dbAdmin (Firebase Admin Firestore) is not initialized. Cannot fetch experiments.`);
         try {
-          await interaction.reply({ content: "❌ Error: The bot cannot access experiment data at the moment. Please try again later.", flags: MessageFlags.Ephemeral });
-        } catch (replyError) {
-          console.error(`[ai_insights_btn /go ERROR ${interactionId}] Failed to send dbAdmin error reply:`, replyError);
-        }
-        return;
-      }
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-      try {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const deferTime = performance.now();
-        console.log(`[ai_insights_btn /go DEFERRED ${interactionId}] Interaction deferred. Took: ${(deferTime - goInsightsButtonStartTime).toFixed(2)}ms`);
+            // 1. Fetch the most recent experimentId for the user
+            console.log(`[ai_insights_btn /go] Querying most recent experiment for user ${userId}.`);
+            const experimentStatsQuery = dbAdmin.collection('users').doc(userId).collection('experimentStats')
+                .orderBy('calculationTimestamp', 'desc')
+                .limit(1);
+            const experimentStatsSnapshot = await experimentStatsQuery.get();
 
-        // Fetch the most recent experimentId for the user
-        let targetExperimentId = null;
-        try {
-          console.log(`[ai_insights_btn /go FIRESTORE_QUERY ${interactionId}] Querying most recent experiment for user ${userId}.`);
-          const experimentStatsQuery = dbAdmin.collection('users').doc(userId).collection('experimentStats')
-            .orderBy('calculationTimestamp', 'desc') // Assuming calculationTimestamp is a reliable indicator of completion/recency
-            .limit(1);
-          const experimentStatsSnapshot = await experimentStatsQuery.get();
+            if (experimentStatsSnapshot.empty) {
+                await interaction.editReply({ content: "💡 You'll be able to get insights here once you complete your first experiment!", components: [] });
+                return;
+            }
+            
+            const targetExperimentId = experimentStatsSnapshot.docs[0].id;
+            console.log(`[ai_insights_btn /go] Found most recent experimentId: ${targetExperimentId}.`);
 
-          if (!experimentStatsSnapshot.empty) {
-            targetExperimentId = experimentStatsSnapshot.docs[0].id;
-            console.log(`[ai_insights_btn /go FIRESTORE_SUCCESS ${interactionId}] Found most recent experimentId: ${targetExperimentId} for user ${userId}.`);
-          } else {
-            console.log(`[ai_insights_btn /go FIRESTORE_EMPTY ${interactionId}] No experiment stats found for user ${userId}.`);
-          }
-        } catch (dbError) {
-          console.error(`[ai_insights_btn /go FIRESTORE_ERROR ${interactionId}] Error fetching most recent experiment for user ${userId}:`, dbError);
-          await interaction.editReply({ content: "❌ Error: Could not retrieve your experiment data. Please try again.", components: [] });
-          return;
-        }
+            // 2. Pre-generate/cache the insights to ensure they are ready
+            const aiInsightsResult = await callFirebaseFunction(
+                'fetchOrGenerateAiInsights',
+                { targetExperimentId: targetExperimentId },
+                userId
+            );
 
-        if (!targetExperimentId) {
-          await interaction.editReply({ content: "💡 Complete your first experiment to get deep insights about yourself!", components: [] });
-          console.log(`[ai_insights_btn /go NO_EXPERIMENTS ${interactionId}] Informed user ${userId} to complete an experiment.`);
-          return;
-        }
+            if (!aiInsightsResult || !aiInsightsResult.success) {
+                throw new Error(aiInsightsResult?.message || 'Failed to prepare AI insights.');
+            }
 
-        // Now call the Firebase function with the found targetExperimentId
-        console.log(`[ai_insights_btn /go FIREBASE_CALL ${interactionId}] Calling 'fetchOrGenerateAiInsights' for experiment ${targetExperimentId}, user ${userId}.`);
-        const result = await callFirebaseFunction(
-            'fetchOrGenerateAiInsights',
-            { targetExperimentId: targetExperimentId },
-            userId
-        );
-        const firebaseCallEndTime = performance.now();
-        console.log(`[ai_insights_btn /go FIREBASE_RETURN ${interactionId}] 'fetchOrGenerateAiInsights' returned for exp ${targetExperimentId}. Took: ${(firebaseCallEndTime - deferTime).toFixed(2)}ms. Result:`, result);
+            // 3. Send the user a stateless "start" button, just like the automatic notification
+            const strikingInsight = aiInsightsResult.insights.strikingInsight;
+            const startEmbed = new EmbedBuilder()
+                .setColor('#7F00FF')
+                .setTitle('💡 Your Latest Experiment Insights Are Ready!')
+                .setDescription(strikingInsight || "I've retrieved your latest report.")
+                .setFooter({ text: "Click the button below to see the full report." });
 
-        if (result && result.success) {
-            await interaction.user.send(`💡 **AI Insights**\n\n${result.insightsText}`);
-            await interaction.editReply({ content: "✅ AI Insights for your latest experiment have been sent to your DMs!", components: [] });
-            console.log(`[ai_insights_btn /go SUCCESS ${interactionId}] AI Insights sent to DMs for experiment ${targetExperimentId}, user ${userId}.`);
-        } else {
-            console.error(`[ai_insights_btn /go FIREBASE_FAIL ${interactionId}] 'fetchOrGenerateAiInsights' failed for exp ${targetExperimentId}. Result:`, result);
-            await interaction.editReply({ content: `❌ Failed to get AI insights for your latest experiment: ${result ? result.message : 'Unknown error.'}`, components: [] });
-        }
+            const startButton = new ButtonBuilder()
+                .setCustomId(`start_narrative_report_${targetExperimentId}`) // This triggers our new handler
+                .setLabel('Tell Me More! ➡️')
+                .setStyle(ButtonStyle.Primary);
 
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[ai_insights_btn /go CATCH_ERROR ${interactionId}] Error processing AI insights for user ${userId} at ${errorTime.toFixed(2)}ms:`, error);
-        if (interaction.deferred && !interaction.replied) {
-            try {
+            await interaction.user.send({
+                embeds: [startEmbed],
+                components: [new ActionRowBuilder().addComponents(startButton)]
+            });
+            
+            // 4. Confirm to the user that the DM has been sent
+            await interaction.editReply({ content: "✅ I've sent your latest AI insights report to your DMs!", components: [] });
+
+        } catch (error) {
+            console.error(`[ai_insights_btn /go CATCH_ERROR ${interactionId}] Error processing AI insights for user ${userId}:`, error);
+            if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ content: `❌ An error occurred while fetching AI insights: ${error.message || 'Please try again.'}`, components: [] });
-            } catch (editError) {
-                console.error(`[ai_insights_btn /go CATCH_ERROR_EDIT_REPLY_FAIL ${interactionId}] Failed to send error editReply:`, editError);
-            }
-        } else if (!interaction.replied) {
-             try {
-                await interaction.reply({ content: `❌ An error occurred while fetching AI insights: ${error.message || 'Please try again.'}`, flags: MessageFlags.Ephemeral });
-            } catch (replyError) {
-                console.error(`[ai_insights_btn /go CATCH_ERROR_REPLY_FAIL ${interactionId}] Failed to send error reply:`, replyError);
             }
         }
-      }
-      const processEndTime = performance.now();
-      console.log(`[ai_insights_btn /go END ${interactionId}] Finished processing for user ${userId}. Total time: ${(processEndTime - goInsightsButtonStartTime).toFixed(2)}ms`);
+        const processEndTime = performance.now();
+        console.log(`[ai_insights_btn /go END ${interactionId}] Finished processing. Total time: ${(processEndTime - goInsightsButtonStartTime).toFixed(2)}ms`);
     }
 
         // --- START: NEW Unified Handler for Reminder Select Menus ---
@@ -6623,121 +6738,6 @@ client.on(Events.InteractionCreate, async interaction => {
       const processEndTime = performance.now();
       console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - buttonClickTime).toFixed(2)}ms`);
     }
-
-    else if (interaction.isButton() && interaction.customId.startsWith('request_ai_insights_initial_')) {
-      const insightsButtonStartTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      const experimentId = interaction.customId.split('request_ai_insights_initial_')[1];
-      console.log(`[request_ai_insights_initial START ${interactionId}] Clicked by ${userId} for experiment ${experimentId}.`);
-
-      if (!experimentId) {
-        // This is a failsafe; we can't reply to the interaction, but we can log the error.
-        console.error(`[request_ai_insights_initial ERROR ${interactionId}] Could not parse experimentId from customId: ${interaction.customId}`);
-        return;
-      }
-
-      // Provide immediate feedback by editing the message the button was on.
-      // This is robust because the bot owns the message and can edit it at any time.
-      // It also removes the button, preventing multiple clicks.
-      try {
-        const workingEmbed = new EmbedBuilder()
-            .setColor('#5865F2') // A neutral "working on it" color
-            .setTitle('📊 Your New Experiment Report')
-            .setDescription("🧠 Generating your AI insights... one moment!");
-
-        await interaction.message.edit({
-            content: "", // Remove the old text content
-            embeds: [workingEmbed], // Replace with the new "working" embed
-            components: [] // Remove the button
-        });
-        console.log(`[request_ai_insights_initial INFO ${interactionId}] Edited original prompt to 'working' state and removed button.`);
-      } catch(editError) {
-          console.warn(`[request_ai_insights_initial WARN ${interactionId}] Could not edit original message to remove button. It may have been deleted by the user. Continuing...`);
-          // This is not a fatal error, so we continue with the core logic.
-      }
-
-      // Now, perform the main task and send a *new* DM with the result.
-      try {
-        console.log(`[request_ai_insights_initial FIREBASE_CALL ${interactionId}] Calling 'fetchOrGenerateAiInsights' for experiment ${experimentId}, user ${userId}.`);
-        const result = await callFirebaseFunction(
-            'fetchOrGenerateAiInsights',
-            { targetExperimentId: experimentId },
-            userId
-        );
-        
-        if (result && result.success) {
-            const seeStatsButton = new ButtonBuilder()
-                .setCustomId(`show_raw_stats_${experimentId}`)
-                .setLabel('📊 See Full Stats Report')
-                .setStyle(ButtonStyle.Secondary);
-            
-            const actionRow = new ActionRowBuilder().addComponents(seeStatsButton);
-
-            // Send a NEW DM with the results.
-            await interaction.user.send({
-                content: `💡 **AI Insights for Experiment ${experimentId}**\n\n${result.insightsText}`,
-                components: [actionRow]
-            });
-            
-            console.log(`[request_ai_insights_initial SUCCESS ${interactionId}] AI Insights and 'See Stats' button sent to DMs for experiment ${experimentId}.`);
-            
-        } else {
-            console.error(`[request_ai_insights_initial FIREBASE_FAIL ${interactionId}] 'fetchOrGenerateAiInsights' failed. Result:`, result);
-            await interaction.user.send({ content: `❌ Failed to get AI insights: ${result ? result.message : 'Unknown error.'}` });
-        }
-
-      } catch (error) {
-        console.error(`[request_ai_insights_initial CATCH_ERROR ${interactionId}] Error processing insights for exp ${experimentId}:`, error);
-        try {
-            await interaction.user.send({ content: `❌ An error occurred while fetching AI insights: ${error.message || 'Please try again.'}` });
-        } catch (dmError) {
-            console.error(`[request_ai_insights_initial CATCH_ERROR_DM_FAIL ${interactionId}]`, dmError);
-        }
-      }
-      console.log(`[request_ai_insights_initial END ${interactionId}] Finished processing at ${performance.now().toFixed(2)}ms.`);
-    }
-
-    else if (interaction.isButton() && interaction.customId.startsWith('show_raw_stats_')) {
-    const showStatsButtonStartTime = performance.now();
-    const interactionId = interaction.id;
-    const userId = interaction.user.id;
-    const experimentId = interaction.customId.split('show_raw_stats_')[1];
-    console.log(`[show_raw_stats_ START ${interactionId}] Clicked by ${userId} for experiment ${experimentId}.`);
-
-    if (!experimentId) {
-        try {
-            await interaction.reply({ content: "Error: Could not identify the experiment for the stats report.", ephemeral: true });
-        } catch(e) { console.error(`[show_raw_stats_ ERROR ${interactionId}] Reply failed for missing experimentId.`, e); }
-        return;
-    }
-
-    try {
-        // Acknowledge the button click immediately.
-        // This prevents the "interaction failed" message on cold starts.
-        await interaction.deferUpdate();
-        console.log(`[show_raw_stats_ DEFERRED ${interactionId}] Interaction deferred successfully.`);
-
-        // The sendStatsPage function is now correctly responsible for ALL logic,
-        // including the in-memory check AND the Firestore fallback.
-        await sendStatsPage(interaction.user, userId, experimentId, 1);
-        console.log(`[show_raw_stats_ SUCCESS ${interactionId}] Call to sendStatsPage completed for ${userId}.`);
-        
-    } catch (error) {
-        console.error(`[show_raw_stats_ ERROR ${interactionId}] Error processing stats request for exp ${experimentId}:`, error);
-
-        // This error message is now more generic because the user may not have DMs open.
-        // The sendStatsPage function itself does not have access to the interaction to reply.
-        if (error.code === 10062) { // Specifically handle the "Unknown Interaction" on a cold start
-            console.warn(`[show_raw_stats_ WARN ${interactionId}] Cold start detected. Interaction expired before processing.`);
-        }
-        
-        // We cannot reliably reply to the interaction here if deferUpdate failed,
-        // but the error is logged for debugging.
-    }
-    const processEndTime = performance.now();
-    console.log(`[show_raw_stats_ END ${interactionId}] Finished processing. Total time: ${(processEndTime - showStatsButtonStartTime).toFixed(2)}ms`);
-}
 
     else if (interaction.isButton() && interaction.customId.startsWith('stats_show_continuous_mode_prompt_')) {
       const nextButtonClickTime = performance.now();
