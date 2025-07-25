@@ -414,17 +414,15 @@ function buildExperimentStoryPage(embed, aiInsights) {
  */
 function buildNextStepsPage(embed, aiInsights) {
     embed.setTitle('🧪 Next Experiment Suggestions')
-         .setDescription("Here are a few small, actionable ideas for your next experiment, based on your data.");
+         .setDescription("A few ideas for your next experiment.");
 
     if (aiInsights.nextExperimentSuggestions && Array.isArray(aiInsights.nextExperimentSuggestions)) {
         aiInsights.nextExperimentSuggestions.forEach((suggestion, index) => {
             // Suggestion is expected to be a string directly from the AI based on the new prompt.
             // We'll split it by the colon for formatting, assuming the AI follows the "Title: Body" format.
-            const parts = suggestion.split(':');
-            const title = parts.length > 1 ? `Idea ${index + 1}: ${parts[0]}` : `Idea ${index + 1}`;
-            const value = parts.length > 1 ? parts.slice(1).join(':').trim() : suggestion;
-            
-            embed.addFields({ name: title, value: value });
+            const framework = item.framework; 
+            const idea = item.suggestion; // This holds the string you want
+            embed.addFields({ name: `**${index + 1}. ${framework}**`, value: idea, inline: false });
         });
     } else {
         embed.addFields({ name: 'No Suggestions', value: 'The AI did not generate specific suggestions for this experiment.' });

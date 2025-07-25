@@ -263,39 +263,6 @@ Return ONLY the raw JSON object. Do not include markdown or any other text.
 };
 // ============== END OF AI INSIGHTS SETUP ==================
 
-const METRIC_SUMMARY_PROMPT_TEMPLATE = (metricData) => {
-  return `
-    You are a mindful self-science coach. Your goal is to help a user witness their life's data with non-judgmental curiosity.
-    The user is looking at a single metric from their recent experiment.
-
-    **USER'S PHILOSOPHY:**
-    "These stats are not for being a 'perfect' or 'better' version of myself, but to witness my life while I'm alive. They don't predict my future. They are simply a way of paying attention."
-
-    **METRIC DATA TO ANALYZE:**
-    - Metric Label: "${metricData.label}"
-    - Metric Type: ${metricData.type}
-    - Average Value: ${metricData.average?.toFixed(2) ?? 'N/A'}
-    - Median Value: ${metricData.median?.toFixed(2) ?? 'N/A'}
-    - Consistency (Variation %): ${metricData.variationPercentage?.toFixed(1) ?? 'N/A'}%
-    - Data Points: ${metricData.dataPoints}
-
-    **YOUR TASK:**
-    Based ONLY on the metric data provided and embodying the user's philosophy, generate a SINGLE, gentle, encouraging sentence (under 140 characters).
-    - Frame the data as something to be observed.
-    - If consistency is high (variation < 25%), acknowledge the stability.
-    - If consistency is low (variation > 40%), frame it as a dynamic pattern to be curious about.
-    - Avoid words like "good," "bad," "improve," or "progress." Use words like "notice," "pattern," "rhythm," "story," "observe," "witness."
-    - DO NOT give advice. Just provide a calm, one-sentence observation about the data's story.
-
-    **EXAMPLE OUTPUTS:**
-    - "Here's the story of your [Metric Label] for this period; a steady rhythm to observe."
-    - "Notice the dynamic pattern of your [Metric Label] across these ${metricData.dataPoints} days."
-    - "This is the data for your [Metric Label], a simple reflection of this moment in time."
-
-    Generate ONLY the single sentence.
-  `;
-};
-
 // Initialize the Firebase Admin SDK
 admin.initializeApp();
 
