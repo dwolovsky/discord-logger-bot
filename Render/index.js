@@ -481,26 +481,14 @@ function buildFinalSummaryPage(embed, statsReportData, pageConfig) {
     buildCoreStatsSummary(embed, statsReportData);
 
     // --- 2. Habit Impacts ---
-    embed.addFields({ name: '\u200B', value: '**ANALYSIS**' }); // Section break
-    if (wasPageIncluded(buildCorrelationsPage)) {
-        buildCorrelationsPage(embed, statsReportData); // This function will add its fields under the "Habit Impacts" title
-    } else {
-        embed.addFields({ name: '🔗 Habit Impacts', value: 'No significant habit impacts were found.', inline: false });
-    }
-
+        embed.addFields({ name: '\u200B', value: '**ANALYSIS**' });
+        buildCorrelationsPage(embed, statsReportData);
+    
     // --- 3. Combined Effects ---
-    if (wasPageIncluded(buildCombinedEffectsPage)) {
-        buildCombinedEffectsPage(embed, statsReportData); // Adds fields under "Combined Effects" title
-    } else {
-        embed.addFields({ name: '✅ Combined Effects', value: 'No significant combined effects were found.', inline: false });
-    }
+        buildCombinedEffectsPage(embed, statsReportData);
 
     // --- 4. Day-to-Day Connections ---
-    if (wasPageIncluded(buildLagTimePage)) {
-        buildLagTimePage(embed, statsReportData); // Adds fields under "Yesterday's Habits..." title
-    } else {
-        embed.addFields({ name: '⏳ Day-to-Day Connections', value: 'No significant day-to-day connections were found.', inline: false });
-    }
+        buildLagTimePage(embed, statsReportData);
 
     embed.setTitle('📊 Experiment Summary')
          .setDescription(`This is a complete overview of your experiment. Click "Next" to plan your next steps.`);
