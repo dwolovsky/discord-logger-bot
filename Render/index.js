@@ -763,7 +763,7 @@ function setupStatsNotificationListener(client) {
                   const startEmbed = new EmbedBuilder()
                       .setColor('#7F00FF')
                       .setTitle('💡 Your New Experiment Insights Are Ready!')
-                      .setDescription(strikingInsight || "I've analyzed your data and have some insights for you.")
+                      .setDescription(strikingInsight && strikingInsight.insight ? strikingInsight.insight : "I've analyzed your data and have some insights for you.")
                       .setFooter({ text: "You can click the button below at any time to see your full report." });
 
                   const startButton = new ButtonBuilder()
@@ -771,7 +771,6 @@ function setupStatsNotificationListener(client) {
                       .setLabel('Tell Me More! ➡️')
                       .setStyle(ButtonStyle.Primary);
 
-                  console.log(`[StatsListener] Attempting to send Discord DM to ${userId}.`); 
                   await discordUser.send({
                       embeds: [startEmbed],
                       components: [new ActionRowBuilder().addComponents(startButton)]
