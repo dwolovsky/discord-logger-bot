@@ -176,32 +176,33 @@ function buildCorrelationsPage(embed, statsReportData) {
 
             const rSquared = corr.coefficient * corr.coefficient;
             if (rSquared < 0.0225) { 
-                continue; 
+                continue;
             }
 
-            const habitArrow = '⤴️';
-            const outcomeArrow = corr.coefficient >= 0 ? '⤴️' : '⤵️';
+            const habitInfo = statsReportData.calculatedMetricStats?.[corr.label];
+            const outcomeInfo = statsReportData.calculatedMetricStats?.[corr.vsOutputLabel];
+            const isHabitTime = isTimeMetric(habitInfo?.unit);
+            const isOutcomeTime = isTimeMetric(outcomeInfo?.unit);
+
+            const habitDisplay = isHabitTime ? 'is later' : 'goes up ⤴️';
+            const outcomeDisplay = isOutcomeTime
+                ? (corr.coefficient >= 0 ? 'is later' : 'is earlier')
+                : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
 
             const isConfident = corr.pValue !== null && corr.pValue < 0.05;
             const confidenceText = isConfident ? "This is a statistically significant relationship." : "We need more data to confirm this.";
-            
             let strengthText = "No detectable";
             let strengthEmoji = "🟦";
             const absCoeff = Math.abs(corr.coefficient);
-            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥";
-            }
-            else if (absCoeff >= 0.45) { strengthText = "Strong";
-                strengthEmoji = "🟧"; }
-            else if (absCoeff >= 0.3) { strengthText = "Moderate";
-                strengthEmoji = "🟨"; }
-            else if (absCoeff >= 0.15) { strengthText = "Weak";
-                strengthEmoji = "🟩"; }
+            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+            else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+            else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+            else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
             
-            const title = `When **${corr.label}** ${habitArrow}`;
-            const value = `Your **${corr.vsOutputLabel}** ${outcomeArrow}\n\n` +
+            const title = `When **${corr.label}** ${habitDisplay}`;
+            const value = `Your **${corr.vsOutputLabel}** ${outcomeDisplay}\n\n` +
                           `**Influence Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                           `*${confidenceText}*`;
-
             embed.addFields({ name: title, value, inline: false });
             
             hasDisplayedAnyCorrelation = true;
@@ -219,14 +220,18 @@ function buildCombinedEffectsPage(embed, statsReportData) {
 
     const results = statsReportData.pairwiseInteractionResults;
     let hasMeaningfulResults = false;
-
     if (results && typeof results === 'object' && Object.keys(results).length > 0) {
-        // Helper function to format the text into the new visual style
         const formatCondition = (conditionString) => {
             const parts = conditionString.split(' & ');
             return parts.map(part => {
                 const label = part.substring(0, part.lastIndexOf(' was '));
-                const state = part.endsWith('High') ? '⤴️' : '⤵️';
+                
+                const metricInfo = statsReportData.calculatedMetricStats?.[label];
+                const isMetricTime = isTimeMetric(metricInfo?.unit);
+                const state = part.endsWith('High')
+                    ? (isMetricTime ? 'was Later' : 'was Higher ⤴️')
+                    : (isMetricTime ? 'was Earlier' : 'was Lower ⤵️');
+
                 return `**${label}** ${state}`;
             }).join(' + ');
         };
@@ -237,11 +242,9 @@ function buildCombinedEffectsPage(embed, statsReportData) {
             const isSignificant = !summary.toLowerCase().includes("skipped") &&
                                   !summary.toLowerCase().includes("no meaningful conclusion") &&
                                   !summary.toLowerCase().includes("did not show any group");
-
             if (isSignificant && pairData.input1Label && pairData.input2Label) {
                 const bestGroup = summary.includes("higher") ? /Avg.*higher \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
                 const worstGroup = summary.includes("lower") ? /Avg.*lower \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
-
                 if (bestGroup) {
                     hasMeaningfulResults = true;
                     const comboTitle = formatCondition(bestGroup[2]);
@@ -266,45 +269,44 @@ function buildCombinedEffectsPage(embed, statsReportData) {
 function buildLagTimePage(embed, statsReportData) {
     embed.setTitle('⏳ Yesterday\'s Habits → Today\'s Outcome')
          .setDescription("How do your habits on one day carry over to your outcome the next day?");
-
     const results = statsReportData.lagTimeCorrelations;
     const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
     let hasHabitToOutcomeLag = false;
-
     if (results && typeof results === 'object' && Object.keys(results).length > 0 && outcomeMetricLabel) {
         for (const key in results) {
             const lag = results[key];
             if (lag && lag.todayMetricLabel === outcomeMetricLabel) {
                 if (lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
-                
                 const rSquared = lag.coefficient * lag.coefficient;
                 if (rSquared < 0.0225) {
-                    continue; 
+                    continue;
                 }
                 
                 hasHabitToOutcomeLag = true;
+                
+                const yesterdayInfo = statsReportData.calculatedMetricStats?.[lag.yesterdayMetricLabel];
+                const todayInfo = statsReportData.calculatedMetricStats?.[lag.todayMetricLabel];
+                const isYesterdayTime = isTimeMetric(yesterdayInfo?.unit);
+                const isTodayTime = isTimeMetric(todayInfo?.unit);
 
-                const yesterdayArrow = '⤴️';
-                const todayArrow = lag.coefficient >= 0 ? '⤴️' : '⤵️';
+                const yesterdayDisplay = isYesterdayTime ? 'was later' : 'was higher ⤴️';
+                const todayDisplay = isTodayTime
+                    ? (lag.coefficient >= 0 ? 'was later' : 'was earlier')
+                    : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
 
                 const isConfident = lag.pValue !== null && lag.pValue < 0.05;
                 const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data may be needed to confirm this connection.";
-                
                 let strengthText = "No detectable";
                 let strengthEmoji = "🟦";
                 const absCoeff = Math.abs(lag.coefficient);
-                if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥";
-                }
-                else if (absCoeff >= 0.45) { strengthText = "Strong";
-                    strengthEmoji = "🟧"; }
-                else if (absCoeff >= 0.3) { strengthText = "Moderate";
-                    strengthEmoji = "🟨"; }
+                if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+                else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+                else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
                 
-                const title = `Yesterday's **${lag.yesterdayMetricLabel}** ${yesterdayArrow}`;
-                const value = `→ Today's **${lag.todayMetricLabel}** ${todayArrow}\n\n` +
+                const title = `When Yesterday's **${lag.yesterdayMetricLabel}** ${yesterdayDisplay}`;
+                const value = `→ Today's **${lag.todayMetricLabel}** ${todayDisplay}\n\n` +
                               `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                               `*${confidenceText}*`;
-
                 embed.addFields({ name: title, value, inline: false });
             }
         }
@@ -5529,18 +5531,13 @@ client.on(Events.InteractionCreate, async interaction => {
 
         try {
             const setupData = userExperimentSetupData.get(userId) || {};
-            // Store guildId in case it's needed for a later part of the flow
             if (interaction.guildId) {
                 setupData.guildId = interaction.guildId;
             }
 
             const hasTimeMetrics = setupData.logFlowHasTimeMetrics;
             const cachedSettings = setupData.preFetchedWeeklySettings;
-
-            // Helper function to check for time metrics
             const isTimeMetric = (unit) => TIME_OF_DAY_KEYWORDS.includes(unit?.toLowerCase().trim());
-
-            // Helper function to build the standard log modal
             const buildStandardLogModal = (settings) => {
                 const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
                 const components = [settings.output, settings.input1, settings.input2, settings.input3]
@@ -5570,10 +5567,9 @@ client.on(Events.InteractionCreate, async interaction => {
             // ---- CACHED / FAST PATH ----
             if (cachedSettings) {
                 console.log(`[log_daily_progress_btn CACHE_HIT ${interactionId}] Using cached settings.`);
-                setupData.logFlowSettings = cachedSettings; // Ensure settings are available for the next step
+                setupData.logFlowSettings = cachedSettings; 
 
                 if (hasTimeMetrics) {
-                    // Path A: Cached with time metrics -> edit message to start time prompts
                     console.log(`[log_daily_progress_btn CACHE_TIME_METRICS ${interactionId}] Path A: Cached settings have time metrics. Editing message.`);
                     await interaction.deferUpdate();
                     const metrics = [cachedSettings.output, cachedSettings.input1, cachedSettings.input2, cachedSettings.input3].filter(Boolean);
@@ -5584,7 +5580,6 @@ client.on(Events.InteractionCreate, async interaction => {
                     userExperimentSetupData.set(userId, setupData);
                     await sendNextTimeLogPrompt(interaction, userId);
                 } else {
-                    // Path B: Cached without time metrics -> show modal directly
                     console.log(`[log_daily_progress_btn CACHE_NO_TIME_METRICS ${interactionId}] Path B: Cached settings have no time metrics. Showing modal directly.`);
                     const modal = buildStandardLogModal(cachedSettings);
                     await interaction.showModal(modal);
@@ -5602,13 +5597,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
 
                 const settings = settingsResult.settings;
-                setupData.logFlowSettings = settings; // Store for next steps
+                setupData.logFlowSettings = settings; 
 
                 const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
                 const timeMetrics = metrics.filter(metric => isTimeMetric(metric.unit));
 
                 if (timeMetrics.length > 0) {
-                    // Path C: Fallback with time metrics -> edit deferred reply to start time prompts
                     console.log(`[log_daily_progress_btn FALLBACK_TIME_METRICS ${interactionId}] Path C: Fetched settings have time metrics. Editing message.`);
                     setupData.logFlowTimeMetrics = timeMetrics;
                     setupData.logFlowOtherMetrics = metrics.filter(metric => !isTimeMetric(metric.unit));
@@ -5617,7 +5611,6 @@ client.on(Events.InteractionCreate, async interaction => {
                     userExperimentSetupData.set(userId, setupData);
                     await sendNextTimeLogPrompt(interaction, userId);
                 } else {
-                    // Path D: Fallback without time metrics -> show intermediate button
                     console.log(`[log_daily_progress_btn FALLBACK_NO_TIME_METRICS ${interactionId}] Path D: Fetched settings have no time metrics. Showing intermediate button.`);
                     const openModalButton = new ButtonBuilder()
                         .setCustomId('show_standard_log_modal_btn')
@@ -5631,18 +5624,30 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         } catch (error) {
             console.error(`[log_daily_progress_btn ERROR ${interactionId}] Error for User ${userId}:`, error);
-            const userErrorMessage = `❌ An error occurred while preparing your log form: ${error.message || 'Please try again.'}`;
+            let userErrorMessage = `❌ An error occurred while preparing your log form. Please try again.`;
+
+            // Check for the specific "Unknown Interaction" error which indicates a timeout
+            if (error.code === 10062) {
+                 userErrorMessage = "🚗 Had to warm up the engine and the connection timed out. Please click '✍️ Log Data' again now";
+            }
+
             // Universal error handler that checks interaction state
             if (interaction.replied || interaction.deferred) {
-                try { await interaction.editReply({ content: userErrorMessage, components: [], embeds: [] }); }
-                catch (e) { console.error(`[log_daily_progress_btn] Fallback editReply failed:`, e); }
+                try { 
+                    await interaction.editReply({ content: userErrorMessage, components: [], embeds: [] }); 
+                } catch (e) {
+                    // If editReply also fails (likely because the interaction is truly gone), try a followup
+                    try {
+                        await interaction.followUp({ content: userErrorMessage, ephemeral: true });
+                    } catch (followUpError) {
+                         console.error(`[log_daily_progress_btn] Fallback followUp failed:`, followUpError);
+                    }
+                }
             } else {
                 try { await interaction.reply({ content: userErrorMessage, ephemeral: true }); }
                 catch (e) { console.error(`[log_daily_progress_btn] Fallback reply failed:`, e); }
             }
         }
-        const logButtonEndTime = performance.now();
-        console.log(`[log_daily_progress_btn END ${interactionId}] Finished processing. Total time: ${(logButtonEndTime - logButtonStartTime).toFixed(2)}ms`);
     }
 
     else if (interaction.customId === LOG_TIME_NEXT_BTN_ID) {
@@ -5759,7 +5764,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             // This logic is adapted from your 'log_daily_progress_btn' handler 
-            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
+            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Every Day Is Data`);
             const components = [settings.output, settings.input1, settings.input2, settings.input3]
                 .filter(metric => metric && metric.label)
                 .map(metric => {

@@ -164,7 +164,6 @@ const GEMINI_CONFIG = {
 
 const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
 
-// INSIGHTS_PROMPT_TEMPLATE for "This Experiment" MVP
 const AI_STATS_ANALYSIS_PROMPT_TEMPLATE = (data) => {
   // Helper to format metric stats for the prompt
   const formatMetricStat = (metric) => {
