@@ -325,14 +325,16 @@ function buildLagTimePage(embed, statsReportData) {
  * @param {object} aiInsights - The AI-generated insights object.
  */
 function buildAhaMomentPage(embed, aiInsights) {
-    embed.setTitle('💡 Your Experiment\'s "Aha!" Moment')
+    embed.setTitle('💡 Your Experiment\'s Insight!')
          .setDescription(
              "Here's the most striking insight from your latest experiment, framed in a supportive way to empower you on your journey."
-         )
-         .addFields({
-             name: 'Key Insight',
-             value: aiInsights.strikingInsight || "No specific insight was generated, but every day of logging is a win for self-awareness!"
-         });
+            )
+          .addFields(
+             { 
+                 name: `"${aiInsights.strikingInsight.label}"`, // Access the label from the nested object
+                 value: aiInsights.strikingInsight.insight,      // Access the insight string from the nested object
+                 inline: false 
+})
 }
 
 /**
