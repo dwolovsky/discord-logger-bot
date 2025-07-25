@@ -714,7 +714,7 @@ function setupStatsNotificationListener(client) {
 
   const notificationsRef = dbAdmin.collection('pendingStatsNotifications');
   notificationsRef.where('status', '==', 'ready').onSnapshot(snapshot => {
-    console.log(`[StatsListener CALLBACK] --- onSnapshot CALLBACK FIRED! --- Doc changes: ${snapshot.docChanges().length}, Is empty: ${snapshot.empty}.`); // REPLACE with this line
+    console.log(`[StatsListener CALLBACK] --- onSnapshot CALLBACK FIRED! --- Doc changes: ${snapshot.docChanges().length}, Is empty: ${snapshot.empty}.`); // MODIFY/REPLACE this line
     if (snapshot.empty) {
         console.log("[StatsListener] Snapshot is empty, returning."); // ADD this line for clarity
         return;
@@ -771,6 +771,7 @@ function setupStatsNotificationListener(client) {
                       .setLabel('Tell Me More! ➡️')
                       .setStyle(ButtonStyle.Primary);
 
+                  console.log(`[StatsListener] Attempting to send Discord DM to ${userId}.`); 
                   await discordUser.send({
                       embeds: [startEmbed],
                       components: [new ActionRowBuilder().addComponents(startButton)]
