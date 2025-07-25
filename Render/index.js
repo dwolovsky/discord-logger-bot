@@ -420,8 +420,8 @@ function buildNextStepsPage(embed, aiInsights) {
         aiInsights.nextExperimentSuggestions.forEach((suggestion, index) => {
             // Suggestion is expected to be a string directly from the AI based on the new prompt.
             // We'll split it by the colon for formatting, assuming the AI follows the "Title: Body" format.
-            const framework = item.framework; 
-            const idea = item.suggestion; // This holds the string you want
+            const framework = suggestion.framework; // Correctly access framework from the 'suggestion' object
+            const idea = suggestion.suggestion; // Correctly access the 'suggestion' string from the 'suggestion' object
             embed.addFields({ name: `**${index + 1}. ${framework}**`, value: idea, inline: false });
         });
     } else {
