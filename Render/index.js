@@ -705,7 +705,8 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
  * @param {import('discord.js').Client} client - The Discord client instance.
  */
 function setupStatsNotificationListener(client) {
-  console.log("<<<<< NEW STATELESS-TRIGGER STATS LISTENER IS ACTIVE >>>>>");
+   console.log(`[StatsListener INIT] Attempting to attach onSnapshot listener.`); // ADD THIS LINE
+    console.log("<<<<< NEW STATELESS-TRIGGER STATS LISTENER IS ACTIVE >>>>>");
   if (!admin.apps.length || !dbAdmin) {
       console.warn("Firebase Admin SDK not initialized. Stats notification listener will NOT run.");
       return;
@@ -713,7 +714,11 @@ function setupStatsNotificationListener(client) {
 
   const notificationsRef = dbAdmin.collection('pendingStatsNotifications');
   notificationsRef.where('status', '==', 'ready').onSnapshot(snapshot => {
-      if (snapshot.empty) return;
+    console.log(`[StatsListener CALLBACK] --- onSnapshot CALLBACK FIRED! --- Doc changes: ${snapshot.docChanges().length}, Is empty: ${snapshot.empty}.`); // REPLACE with this line
+    if (snapshot.empty) {
+        console.log("[StatsListener] Snapshot is empty, returning."); // ADD this line for clarity
+        return;
+    }
 
       snapshot.docChanges().forEach(async (change) => {
           if (change.type === 'added' || change.type === 'modified') {
