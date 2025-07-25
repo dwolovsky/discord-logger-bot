@@ -1,0 +1,1141 @@
+// =====================================
+// CONFIGURATION
+// =====================================
+const CONFIG = {
+  SHEETS: {
+    MASTER: 'Master Data',
+    WEEKLY_PRIORITIES: 'Weekly_Priorities_Cache',
+    STREAK_DATA: 'Streak_Data'
+  },
+  
+  COLUMNS: {
+    // Master sheet columns
+    DATE: 1,
+    TIMESTAMP: 2,
+    USERTAG: 3,
+    P1_LABEL: 4,
+    P1_VALUE: 5,
+    P1_UNIT: 6,
+    P2_LABEL: 7,
+    P2_VALUE: 8,
+    P2_UNIT: 9,
+    P3_LABEL: 10,
+    P3_VALUE: 11,
+    P3_UNIT: 12,
+    SATISFACTION: 13,
+    NOTES: 14
+  },
+
+  STREAK: { 
+    COLUMNS: {
+      USERID: 1,
+      USERTAG: 2,
+      CURRENT_STREAK: 3,
+      LONGEST_STREAK: 4,
+      LAST_LOG_DATE: 5,
+      FREEZES_REMAINING: 6,
+      LAST_FREEZE_DATE: 7,
+      FROZEN_DATES: 8
+    },
+    
+    MILESTONES: {
+      REGULAR: [1, 15, 30, 60, 100, 150, 200, 250, 300, 365, 400, 450, 
+                500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000],
+      FREEZE_AWARD: [15, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360, 390, 420, 450, 
+                    480, 510, 540, 570, 600, 630, 660, 690, 720, 750, 780, 810, 840, 870, 900, 930, 960, 990, 1020], 
+      ROLES: {
+        // Red tones (1-100 days)
+        SEEDLING: { name: 'Originator', days: 1, color: '#FFB3B3' },      // Light red
+        SAPLING: { name: 'Mover', days: 15, color: '#FF6666' },         // Medium red
+        GROVE: { name: 'Navigator', days: 30, color: '#FF0000' },          // Bright red
+        BEACON: { name: 'Signal', days: 60, color: '#CC0000' },          // Deep red
+        CENTURION: { name: 'Centurion', days: 100, color: '#990000' },         // Dark red
+
+        // Orange tones (150-300 days)
+        MYSTIC: { name: 'Vector', days: 150, color: '#FFD1B3' },         // Light orange
+        LUMINARY: { name: 'Blaster', days: 200, color: '#FFA366' },           // Medium orange
+        SOVEREIGN: { name: 'Orbiter', days: 250, color: '#FF8000' },   // Bright orange
+        CELESTIAL: { name: 'Luminary', days: 300, color: '#CC6600' },    // Deep orange
+
+        // Yellow tones (365-450 days)
+        CHRONICLE: { name: 'Corona', days: 365, color: '#FFF4B3' },   // Light yellow
+        ETHEREAL: { name: 'Radiance', days: 400, color: '#FFE666' },     // Medium yellow
+        PARADIGM: { name: 'Pulsar', days: 450, color: '#FFD700' },   // Bright yellow
+
+        // Green tones (500-650 days)
+        QUANTUM: { name: 'Quantum', days: 500, color: '#B3FFB3' },     // Light green
+        ZENITH: { name: 'Zenith', days: 550, color: '#66FF66' },       // Medium green
+        NEXUS: { name: 'Nexus', days: 600, color: '#00FF00' },      // Bright green
+        PARAGON: { name: 'Paragon', days: 650, color: '#009900' },           // Deep green
+
+        // Blue tones (700-850 days)
+        APEX: { name: 'Supernova', days: 700, color: '#B3B3FF' },      // Light blue
+        ETERNAL: { name: 'Axiom', days: 750, color: '#6666FF' },    // Medium blue
+        ORACLE: { name: 'Oracle', days: 800, color: '#0000FF' },          // Bright blue
+        DIVINE: { name: 'Divinator', days: 850, color: '#000099' }, // Deep blue
+
+        // Purple tones (900-1000 days)
+        COSMIC: { name: 'Cosmic', days: 900, color: '#D1B3FF' }, // Light purple
+        INFINITY: { name: 'Infinity', days: 950, color: '#9933FF' }, // Medium purple
+        TRANSCENDENT: { name: 'Transcendent', days: 1000, color: '#4B0082' } // Deep purple/indigo
+      },
+    },
+
+    FREEZES: {
+      MAX: 5,
+      AUTO_APPLY: true  // Automatically use freeze when missing a day
+    },
+    
+    MESSAGES: {
+      PUBLIC: {
+        DAILY_LOG: '🎯 ${user} just logged their daily metrics!'
+      },
+      DM: {
+        FREEZE_AWARD: '❄️ STREAK FREEZE AWARDED for reaching ${streak} days!',
+        ROLE_ACHIEVEMENT: '🏆 Congratulations! You\'ve earned the ${role} Figs Streaker role!',
+        LOG_CONFIRMATION: 'Entry recorded for ${dayOfWeek}, ${month} ${day}! (${time})\n\n',
+        LOG_OVERWRITE: 'Previous entry overwritten. New entry recorded for ${dayOfWeek}, ${month} ${day}! (${time})\n\n',
+        INSPIRATIONAL: [
+            "Congratulations on recording your metrics! 🎊\n\nNotice how you feel as if it's the first time you've ever felt this way.",
+            "Amazing work logging your progress! 🌟\n\nEach moment of awareness builds a bridge to deeper understanding.",
+            "Thank you for sharing your ratings! 🙏\n\nEvery data point tells a story of growth.\nWhat passage did you write today?",
+            "Thank you for your forward steps! 💫\n\nLike footprints in the sand, each entry marks your path.",
+            "Beautiful reflection! 🌅\n\nIn the quiet space between thoughts,\nwisdom grows like mushrooms.",
+            "You've noted your progress! 🍃\n\nmay your awareness move with grace.",
+            "What a mindful moment! 🕊️\n\nIn measuring our days,\nwe live bigger lives.",
+            "Thanks for dotting this data point! 🌈\n\nEach rating is a window\ninto the landscape of your experience.",
+            "You care courageously. 🌺\n\nWatch how your awareness grows,\nlike garden seeds planted with intention.",
+            "You've planted your daily marker! ⭐\n\nYour efforts are like a constellation,\neach point shining with possibility.",
+            "Reflection reflected! 🌙\n\nThe gentle rhythm of daily practice,\nshows our deepest insights.",
+            "Progress snapshot captured! 🦋\n\nLike a butterfly's flap,\nyour growth can change the weather.",
+            "What mindful metrics! 🎯\n\nYou've earned this moment of reflection.",
+            "Like morning dew on grass,\nmay your insights meet the morning sun.",
+            "A moment of truth! 🔮\n\nSelf-reflection is a mirror.\nWhat clarity do you see today?",
+            "Each mindful pause creates space\nfor deeper understanding to emerge.",
+            "You've written today's sentence! 📖\n\nWhat themes are surfacing\nin the story of your growth?",
+            "That reflection is rippling! 💧\n\nLike stones thrown in water,\nyour awareness creates waves.",
+            "Illumination! 🌠\n\nIn the darkness of uncertainty,\neach data point is a star to guide us home.",
+            "Mindful milestone marked! 🎭\n\nBehind the numbers and metrics,\nwhat truth is revealing itself to you?",
+            "You're amazing! \n\nYou know that?\nYOU ARE AMAZING!",
+            "Nothing great was ever done but in little steps.",
+            "Your life is bigger than it seems. \nToday made a difference.",
+            "Consistency is the glue of growth. \nIncremental progress is all it takes!",
+            "Don't be surprised when good things happen \n\nYou're putting in the work!"
+        ]
+      }
+    }
+  }
+
+};
+
+CONFIG.MILESTONES = {
+  STATS_AND_INSIGHTS: {
+    WEEKLY: 7,
+    MONTHLY: 30
+  },
+  MESSAGES: {
+    WEEKLY: "Here's your weekly Self Science reward! 📈 Check out your life's data, so you can make optimize learning and transformation next week.",
+    MONTHLY: "Congratulations on a month of dedicated self-discovery! Here's your monthly Self Science reward — check out how your life has transformed and what you've learned! 🎯"
+  }
+};
+
+// Add INSIGHTS configuration to existing CONFIG
+CONFIG.INSIGHTS = {
+  SHEET: 'User_Insights',
+  MIN_LOGS: 7,
+  CACHE_DURATION_HOURS: 1,
+  COLUMNS: {
+    USER_TAG: 1,
+    GENERATED_AT: 2,
+    PERIOD_DAYS: 3,
+    DATA_JSON: 4
+  },
+  ERROR_TYPES: {
+    GATHERING: 'insights_gathering',
+    PROCESSING: 'insights_processing',
+    STORAGE: 'insights_storage'
+  },
+  VALID_PERIODS: [7, 30]  // Valid periods for insights
+};
+
+// =====================================
+// INITIALIZATION
+// =====================================
+function initializeSheets() {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  
+  // Initialize Master Data sheet
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER) || 
+                     ss.insertSheet(CONFIG.SHEETS.MASTER);
+  
+  const masterHeaders = [
+    'Date',
+    'Timestamp',
+    'UserTag',
+    'Priority1_Label',
+    'Priority1_Value',
+    'Priority1_Unit',
+    'Priority2_Label',
+    'Priority2_Value',
+    'Priority2_Unit',
+    'Priority3_Label',
+    'Priority3_Value',
+    'Priority3_Unit',
+    'Satisfaction',
+    'Notes'
+  ];
+  
+  setupSheet_(masterSheet, masterHeaders);
+
+  // Initialize Streak Data sheet with all columns
+  const streakSheet = ss.getSheetByName(CONFIG.SHEETS.STREAK_DATA) || 
+                     ss.insertSheet(CONFIG.SHEETS.STREAK_DATA);
+  
+  const streakHeaders = [
+    'UserId',
+    'UserTag',
+    'CurrentStreak',
+    'LongestStreak',
+    'LastLogDate',
+    'FreezesRemaining',
+    'LastFreezeDate',
+    'FrozenDates'
+  ];
+  
+  setupSheet_(streakSheet, streakHeaders);
+}
+
+// =====================================
+// SHEET MANAGEMENT
+// =====================================
+function getUserSheet(userId) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  let sheet = ss.getSheetByName(userId);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(userId);
+    // Row 1: Email
+    sheet.getRange('A1').setValue(''); // Placeholder for email
+    
+    // Row 2: Headers (same as before)
+    const headers = [
+      'Date',
+      'Timestamp',
+      'UserTag',
+      'Priority1_Label',
+      'Priority1_Value',
+      'Priority1_Unit',
+      'Priority2_Label',
+      'Priority2_Value',
+      'Priority2_Unit',
+      'Priority3_Label',
+      'Priority3_Value',
+      'Priority3_Unit',
+      'Satisfaction',
+      'Notes'
+    ];
+    sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(2);
+    sheet.autoResizeColumns(1, headers.length);
+  }
+
+  return sheet;
+}
+
+function setupSheet_(sheet, headers) {
+  const headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setValues([headers]);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#4a86e8');
+  headerRange.setFontColor('white');
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, headers.length);
+}
+
+
+function updateExistingLog_(userId, streakDate, data) {
+  const userSheet = getUserSheet(userId);
+  const sheetData = userSheet.getDataRange().getValues();
+
+  for (let i = 2; i < sheetData.length; i++) {
+    if (sheetData[i][0] === streakDate) {
+      // Build the row of updated data
+      const newRow = [
+        streakDate,
+        new Date(),
+        data.userTag,
+        data.priority1_label || '',
+        data.priority1_value || '',
+        data.priority1_unit || '',
+        data.priority2_label || '',
+        data.priority2_value || '',
+        data.priority2_unit || '',
+        data.priority3_label || '',
+        data.priority3_value || '',
+        data.priority3_unit || '',
+        data.satisfaction || '',
+        data.notes || ''
+      ];
+
+      // Overwrite the existing row in the user sheet
+      userSheet.getRange(i + 1, 1, 1, 14).setValues([newRow]);
+
+      // ✅ NEW: Also log this overwrite to the Master sheet
+      const masterSheet = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8').getSheetByName(CONFIG.SHEETS.MASTER);
+      if (masterSheet) {
+        masterSheet.appendRow(newRow);
+      }
+
+      break;
+    }
+  }
+}
+
+
+
+function doPost(e) {
+  let payload;
+  try {
+    Logger.log('Raw doPost input: %s', JSON.stringify(e));
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error('Missing postData or contents in request');
+    }
+
+    payload = JSON.parse(e.postData.contents);
+
+    // Handle daily logging
+    if (payload.action === 'logDaily') {
+    Logger.log('Received logDaily payload:', JSON.stringify(payload, null, 2));
+      const { userId, userTag, data } = payload;
+      const now = new Date();
+      const streakDate = now.toISOString().split('T')[0];  // Simply gets YYYY-MM-DD from the timestamp
+
+      // Check if user already logged for this streak day
+      let isOverwrite = false;
+      if (hasUserLoggedToday_(userId, streakDate)) {
+        try {
+          updateExistingLog_(userId, streakDate, { ...data, userTag });
+          isOverwrite = true;
+        } catch (updateError) {
+          logError_(updateError, {
+            action: 'logDaily_update',
+            userId: userId,
+            context: `Failed to update log for date: ${streakDate}`
+          });
+          throw updateError;
+        }
+      } else {
+    try {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+  const userSheet = getUserSheet(userId);
+
+  const rowData = [
+    streakDate,
+    now,
+    userTag,
+    data.priority1_label || '',
+    data.priority1_value || '',
+    data.priority1_unit || '',
+    data.priority2_label || '',
+    data.priority2_value || '',
+    data.priority2_unit || '',
+    data.priority3_label || '',
+    data.priority3_value || '',
+    data.priority3_unit || '',
+    data.satisfaction || '',
+    data.notes || ''
+  ];
+
+  // Attempt to write to master sheet
+  try {
+    masterSheet.appendRow(rowData);
+  } catch (err) {
+    logError_(err, {
+      action: 'logDaily_master_append',
+      userId: userId,
+      context: 'Failed to append to Master Sheet'
+    });
+    throw err;
+  }
+
+  // Attempt to write to user sheet
+  try {
+    userSheet.appendRow(rowData);
+  } catch (err) {
+    logError_(err, {
+      action: 'logDaily_user_append',
+      userId: userId,
+      context: 'Failed to append to user sheet'
+    });
+    throw err;
+  }
+
+ } catch (appendError) {
+  logError_(appendError, {
+    action: 'logDaily_append',
+    userId: userId,
+    context: 'Failed to append new log'
+  });
+  throw appendError;
+ }
+    }
+
+      try {
+        // Update streaks, freezes, and check for milestones
+        const streakResult = updateStreak_(userId, userTag, now);
+
+        // Build confirmation message
+        const confirmationMessage = getRandomConfirmationMessage(now, isOverwrite);
+
+        // Build response
+        const response = {
+          success: true,
+          message: confirmationMessage,
+          currentStreak: streakResult.currentStreak,
+          freezesRemaining: streakResult.freezesRemaining
+        };
+        if (streakResult.milestone) {
+          response.milestone = streakResult.milestone;
+          response.dmMessage = streakResult.dmMessage;
+          response.statusMessage = streakResult.statusMessage;
+          response.roleInfo = streakResult.roleInfo;
+        }
+
+        return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(ContentService.MimeType.JSON);
+      } catch (streakError) {
+        logError_(streakError, {
+          action: 'streak_update',
+          userId: userId,
+          context: 'Failed to update streak or generate response'
+        });
+        throw streakError;
+      }
+    }
+
+    // Handle getting streak
+    if (payload.action === 'getStreak') {
+      return ContentService.createTextOutput(JSON.stringify(
+        getStreak_(payload.userId)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Handle getting leaderboard
+    if (payload.action === 'getLeaderboard') {
+      return ContentService.createTextOutput(JSON.stringify(
+        getLeaderboard_(payload.userId)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+   // Handle delivery confirmation
+    if (payload.action === 'confirmDelivery') {
+      return ContentService.createTextOutput(JSON.stringify(
+        confirmMessageDelivery_(payload.messageId)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Handle delivery failure
+    if (payload.action === 'deliveryFailed') {
+      return ContentService.createTextOutput(JSON.stringify(
+        handleDeliveryFailure_(payload.messageId, payload.error)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+      // Handle getting queued messages
+    if (payload.action === 'getQueuedMessages') {
+    console.log('Handling getQueuedMessages request');
+    const props = PropertiesService.getScriptProperties();
+    const keys = props.getKeys();
+    console.log('All keys:', keys);
+    
+    const queueMessages = keys.filter(key => key.startsWith('dm_queue_'));
+    console.log('Queue message keys:', queueMessages);
+    
+    const messages = queueMessages.map(key => {
+      const rawMsg = props.getProperty(key);
+      console.log(`Raw message for ${key}:`, rawMsg);
+      const msg = JSON.parse(rawMsg);
+      return {
+        ...msg,
+        id: key
+      };
+    });
+  
+  console.log('Processed messages:', messages);
+  return ContentService.createTextOutput(JSON.stringify({
+    messages: messages
+  })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Handle getting insights
+  if (payload.action === 'getInsights') {
+
+    logError_('Debug: Processing getInsights', {
+        action: 'getInsights_start',
+        userId: payload.userId,
+        userTag: payload.userTag,
+        context: `Period Days: ${payload.periodDays}`
+      });
+    return ContentService.createTextOutput(JSON.stringify(
+      getInsights(payload.userId, payload.userTag, payload.periodDays)
+    )).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Handle storing insights
+  if (payload.action === 'storeInsights') {
+    return ContentService.createTextOutput(JSON.stringify(
+      storeInsights(payload.userId, payload.userTag, payload.periodDays, payload.insights)
+    )).setMimeType(ContentService.MimeType.JSON);
+  }
+
+    // Handle updating weekly priorities
+    if (payload.action === 'updateWeeklyPriorities') {
+      return ContentService.createTextOutput(JSON.stringify(
+        updateWeeklyPriorities(payload.userId, payload.userTag, payload.priorities)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Handle getting weekly priorities
+    if (payload.action === 'getWeeklyPriorities') {
+      return ContentService.createTextOutput(JSON.stringify(
+        getWeeklyPriorities(payload.userId)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Unknown action
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: 'Unknown action'
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    // Log error and return error response
+    console.error('Error in doPost:', error);
+    
+    logError_(error, {
+      action: payload?.action || 'unknown',
+      userId: payload?.userId || 'unknown',
+      context: 'Error in doPost'
+    });
+
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: error.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function confirmMessageDelivery_(messageId) {
+  console.log(`Attempting to confirm delivery for message: ${messageId}`);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    
+    // Check if message exists
+    const messageExists = props.getProperty(messageId);
+    console.log(`Message exists in queue: ${messageExists !== null}`);
+    
+    if (messageExists) {
+      props.deleteProperty(messageId);
+      console.log(`Successfully deleted message: ${messageId}`);
+      return { success: true };
+    } else {
+      console.log(`Message ${messageId} not found in queue`);
+      return { success: false, error: 'Message not found in queue' };
+    }
+    
+  } catch (error) {
+    console.error('Error in confirmMessageDelivery_:', error);
+    logError_(error, {
+      action: 'confirm_delivery',
+      messageId: messageId,
+      context: 'Failed to confirm message delivery'
+    });
+    return { success: false, error: error.message };
+  }
+}
+
+function handleDeliveryFailure_(messageId, error) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const msgData = JSON.parse(props.getProperty(messageId));
+    
+    if (!msgData) {
+      return { success: false, error: 'Message not found' };
+    }
+
+    msgData.attempts = (msgData.attempts || 0) + 1;
+    
+    if (msgData.attempts >= 2) {  // Max retries reached
+      props.deleteProperty(messageId);
+      logError_('Max delivery attempts reached', {
+        action: 'message_delivery',
+        messageId: messageId,
+        userTag: msgData.userTag,
+        error: error
+      });
+    } else {
+      props.setProperty(messageId, JSON.stringify(msgData));
+    }
+    
+    return { success: true };
+  } catch (error) {
+    logError_(error, {
+      action: 'delivery_failure',
+      messageId: messageId,
+      context: 'Failed to handle delivery failure'
+    });
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Validates and parses a priority string in "label, unit" format
+ * @param {string} priorityStr - Raw priority string to parse
+ * @returns {Object} Result object with success status and data/error
+ * @private
+ */
+function parsePriorityString_(priorityStr) {
+  if (!priorityStr || typeof priorityStr !== 'string') {
+    return {
+      success: false,
+      error: 'Priority cannot be empty'
+    };
+  }
+
+  const priorityPattern = /^(.+?)\s*,\s*(.+?)$/;
+  const trimmed = priorityStr.trim();
+  const match = trimmed.match(priorityPattern);
+  
+  if (!match) {
+    return {
+      success: false,
+      error: `Please use "Label, Unit" format (e.g., "Meditation, minutes" or "Health, effort") for: "${trimmed}"`
+    };
+  }
+
+  const [_, label, unit] = match;
+  const trimmedLabel = label.trim();
+  const trimmedUnit = unit.trim();
+
+  if (trimmedLabel.length > 45) {
+    return {
+      success: false,
+      error: `Label must be 45 characters or less: "${trimmedLabel}"`
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      label: trimmedLabel,
+      unit: trimmedUnit
+    }
+  };
+}
+
+/**
+ * Updates a user's weekly priorities in the Weekly_Priorities_Cache sheet
+ * @param {string} userId - Discord user ID
+ * @param {string} userTag - Discord user tag
+ * @param {string[]} priorityStrings - Array of priority strings to parse
+ * @returns {Object} Result object with success status and message/error
+ */
+function updateWeeklyPriorities(userId, userTag, priorityStrings) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const context = {
+    userId,
+    userTag,
+    action: 'updateWeeklyPriorities',
+    timestamp: new Date().toISOString()
+  };
+
+  try {
+    if (!Array.isArray(priorityStrings) || priorityStrings.length !== 3) {
+      throw new Error('Exactly 3 priorities required');
+    }
+
+    // Validate and parse all priorities
+    const priorities = [];
+    for (const priorityStr of priorityStrings) {
+      const result = parsePriorityString_(priorityStr);
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error
+        };
+      }
+      priorities.push(result.data);
+    }
+
+        const sheet = ss.getSheetByName(CONFIG.SHEETS.WEEKLY_PRIORITIES);
+    if (!sheet) {
+      const error = new Error('Sheet not found: ' + CONFIG.SHEETS.WEEKLY_PRIORITIES);
+      logError_(error, context);
+      return {
+        success: false,
+        error: 'Internal error: sheet not found'
+      };
+    }
+    
+    // Find existing row for user
+    const data = sheet.getDataRange().getValues();
+    const headerRow = data[0];
+    const userIdCol = headerRow.indexOf("DiscordId");
+    let userRow = data.findIndex(row => row[userIdCol] === userId);
+    
+    const rowData = [
+      userTag,                // UserTag
+      userId,                // DiscordId
+      priorities[0].label,   // Priority1
+      priorities[0].unit,    // Unit1
+      priorities[1].label,   // Priority2
+      priorities[1].unit,    // Unit2
+      priorities[2].label,   // Priority3
+      priorities[2].unit,    // Unit3
+      new Date().toISOString() // LastUpdated
+    ];
+
+    if (userRow > 0) {
+      sheet.getRange(userRow + 1, 1, 1, rowData.length).setValues([rowData]);
+    } else {
+      sheet.appendRow(rowData);
+    }
+
+    const formattedPriorities = priorities.map((p, i) => 
+      `${i + 1}. "${p.label}" (${p.unit})`
+    ).join('\n');
+
+    CacheService.getUserCache().remove(`priorities-${userId}`);
+
+    return {
+      success: true,
+      message: `✅ Weekly priorities set!\n\n${formattedPriorities}\n\nThese will appear as labels in your /log form.`
+    };
+    
+  } catch (error) {
+    logError_(error, context);
+    return {
+      success: false,
+      error: "Failed to update priorities. Please try again or contact support if the issue persists."
+    };
+  }
+}
+
+function getWeeklyPriorities(userId) {
+  const cache = CacheService.getUserCache();
+  const cached = cache.get(`priorities-${userId}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.WEEKLY_PRIORITIES);
+    if (!sheet) throw new Error('Weekly priorities sheet not found');
+
+    const data = sheet.getDataRange().getValues(); // includes headers
+    const headers = data[0];
+    const userIdCol = headers.indexOf("DiscordId");
+
+    if (userIdCol === -1) throw new Error('DiscordId column not found');
+
+    const rowIndex = data.findIndex((row, idx) => idx > 0 && row[userIdCol] === userId);
+    if (rowIndex === -1) {
+      return {
+        success: false,
+        error: 'No priorities found for user'
+      };
+    }
+
+    const rowData = data[rowIndex];
+
+    const result = {
+      success: true,
+      priorities: {
+        Priority1: {
+          label: rowData[headers.indexOf("Priority1")] || '',
+          unit: rowData[headers.indexOf("Unit1")] || ''
+        },
+        Priority2: {
+          label: rowData[headers.indexOf("Priority2")] || '',
+          unit: rowData[headers.indexOf("Unit2")] || ''
+        },
+        Priority3: {
+          label: rowData[headers.indexOf("Priority3")] || '',
+          unit: rowData[headers.indexOf("Unit3")] || ''
+        }
+      }
+    };
+
+    cache.put(`priorities-${userId}`, JSON.stringify(result), 120); // cache for 2 minutes
+    return result;
+
+  } catch (error) {
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+
+function getRandomConfirmationMessage(date, isOverwrite = false) {
+  const messages = CONFIG.STREAK.MESSAGES.DM.INSPIRATIONAL;
+  const randomIndex = Math.floor(Math.random() * messages.length);
+  
+  // Format the date components
+  const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
+  const month = date.toLocaleDateString('en-US', { month: 'long' });
+  const day = date.getDate();
+  const time = date.toLocaleTimeString('en-US', { 
+    hour: 'numeric', 
+    minute: '2-digit', 
+    hour12: true 
+  });
+
+  // Get base confirmation message
+  const baseMsg = isOverwrite ? 
+    CONFIG.STREAK.MESSAGES.DM.LOG_OVERWRITE : 
+    CONFIG.STREAK.MESSAGES.DM.LOG_CONFIRMATION;
+
+  // Replace template variables
+  const confirmationPart = baseMsg
+    .replace('${dayOfWeek}', dayOfWeek)
+    .replace('${month}', month)
+    .replace('${day}', day)
+    .replace('${time}', time);
+
+  // Combine with random inspirational message
+  return confirmationPart + messages[randomIndex];
+}
+
+function getUserLogCount_(userTag, testSheet) {
+  const sheet = testSheet || SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8').getSheetByName(CONFIG.SHEETS.MASTER);
+  console.log('Debug getUserLogCount_:');
+  console.log('Sheet name:', sheet.getName());
+  const data = sheet.getDataRange().getValues();
+  console.log('Looking for userTag:', userTag);
+  console.log('In column index:', CONFIG.COLUMNS.USERTAG - 1);
+  console.log('Data rows:', data.length);
+  const count = data.slice(1).filter(row => row[CONFIG.COLUMNS.USERTAG - 1] === userTag).length;
+  console.log('Filtered count:', count);
+  return count;
+}
+
+function getUserDiscordId(userTag) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const sheets = ss.getSheets();
+  
+  console.log(`Checking sheets for userTag: ${userTag}`);
+  
+  // Skip these system sheets
+  const systemSheets = [
+    'Master Data', 
+    'Streak_Data', 
+    'Weekly_Stats', 
+    'App_Errors',
+    'User_Insights'
+  ];
+  
+  for (const sheet of sheets) {
+    const sheetName = sheet.getName();
+    if (systemSheets.includes(sheetName)) {
+      console.log(`Skipping system sheet: ${sheetName}`);
+      continue;
+    }
+    
+    console.log(`Checking sheet: ${sheetName}`);
+    const userTagCell = sheet.getRange(3, CONFIG.COLUMNS.USERTAG).getValue();
+    console.log(`Found userTag: ${userTagCell}`);
+    
+    if (userTagCell === userTag) {
+      console.log(`Match found! Sheet name (Discord ID): ${sheetName}`);
+      return sheetName;
+    }
+  }
+  console.log(`No match found for userTag: ${userTag}`);
+  return null;
+}
+
+function getCacheData() {
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+    
+    // Get all data except header row
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, CONFIG.COLUMNS.NOTES).getValues();
+    
+    // Transform the data into the required format
+    const formattedData = data.map(row => {
+      const userTag = row[CONFIG.COLUMNS.USERTAG - 1];
+      const discordId = getUserDiscordId(userTag);
+      
+      // Add debug log here
+      Logger.log(`GETCACHEDATA DEBUG - Processing ${userTag}: got discordId=${discordId}`);
+      
+      const entry = {
+        UserTag: userTag,
+        DiscordId: discordId,
+        Priority1_Label: row[CONFIG.COLUMNS.P1_LABEL - 1],
+        Priority1_Value: row[CONFIG.COLUMNS.P1_VALUE - 1],
+        Priority1_Unit: row[CONFIG.COLUMNS.P1_UNIT - 1],
+        Priority2_Label: row[CONFIG.COLUMNS.P2_LABEL - 1],
+        Priority2_Value: row[CONFIG.COLUMNS.P2_VALUE - 1],
+        Priority2_Unit: row[CONFIG.COLUMNS.P2_UNIT - 1],
+        Priority3_Label: row[CONFIG.COLUMNS.P3_LABEL - 1],
+        Priority3_Value: row[CONFIG.COLUMNS.P3_VALUE - 1],
+        Priority3_Unit: row[CONFIG.COLUMNS.P3_UNIT - 1],
+        Timestamp: row[CONFIG.COLUMNS.TIMESTAMP - 1]
+      };
+
+      // Log the entry we created
+      Logger.log(`GETCACHEDATA DEBUG - Created entry for ${userTag}: DiscordId=${entry.DiscordId}`);
+      
+      return entry;
+    });
+
+    return {
+      success: true,
+      data: formattedData
+    };
+    
+  } catch (error) {
+    console.error('Error in getCacheData:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+function logError_(error, context = {}) {
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const errorSheet = ss.getSheetByName('App_Errors') || ss.insertSheet('App_Errors');
+    
+    // Set up headers if they don't exist
+    if (errorSheet.getRange('A1').isBlank()) {
+      errorSheet.getRange('A1:E1').setValues([['Timestamp', 'User ID', 'Action', 'Error Message', 'Context']]);
+      errorSheet.setFrozenRows(1);
+    }
+
+    // Prepare error data
+    const errorData = [
+      new Date(),                    // Timestamp
+      context.userId || 'N/A',       // User ID
+      context.action || 'N/A',       // Action being performed
+      error.toString(),              // Error message
+      JSON.stringify(context)        // Additional context as JSON
+    ];
+
+    errorSheet.appendRow(errorData);
+  } catch (e) {
+    console.error('Failed to log error:', e);
+  }
+}
+
+
+function testLogCount() {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const testSheet = ss.insertSheet('Test_Sheet_Temporary');
+  
+  console.log('Starting testLogCount with test sheet...');
+  
+  try {
+    // Set up all columns exactly as in CONFIG.COLUMNS
+    const headers = [
+      'Date',           // 1
+      'Timestamp',      // 2
+      'UserTag',        // 3
+      'P1_Label',       // 4
+      'P1_Value',       // 5
+      'P1_Unit',        // 6
+      'P2_Label',       // 7
+      'P2_Value',       // 8
+      'P2_Unit',        // 9
+      'P3_Label',       // 10
+      'P3_Value',       // 11
+      'P3_Unit',        // 12
+      'Satisfaction',   // 13
+      'Notes'           // 14
+    ];
+    
+    console.log('Setting up headers:', headers);
+    testSheet.appendRow(headers);
+    
+    // Test case 1: Just headers
+    console.log('\nTest Case 1: Empty sheet (just headers)');
+    let data = testSheet.getDataRange().getValues();
+    console.log('Sheet data after headers:', data);
+    const emptyCount = getUserLogCount_('testUser', testSheet);
+    console.log('Empty sheet count:', emptyCount);
+    
+    // Test case 2: Single log
+    console.log('\nTest Case 2: Single log');
+    const rowData = new Array(14).fill('');  // Create array with 14 empty elements
+    rowData[0] = '2025-04-28';              // DATE
+    rowData[1] = new Date();                // TIMESTAMP
+    rowData[2] = 'testUser';                // USERTAG
+    testSheet.appendRow(rowData);
+    
+    data = testSheet.getDataRange().getValues();
+    console.log('Sheet data after single log:', data);
+    const singleCount = getUserLogCount_('testUser', testSheet);
+    console.log('Single log count:', singleCount);
+    
+    // Test case 3: Multiple logs same day
+    console.log('\nTest Case 3: Multiple logs same day');
+    testSheet.appendRow(rowData);
+    data = testSheet.getDataRange().getValues();
+    console.log('Sheet data after duplicate:', data);
+    const duplicateCount = getUserLogCount_('testUser', testSheet);
+    console.log('Duplicate day count:', duplicateCount);
+    
+    // Test case 4: Multiple users
+    console.log('\nTest Case 4: Multiple users');
+    const otherUserRow = [...rowData];
+    otherUserRow[2] = 'otherUser';
+    testSheet.appendRow(otherUserRow);
+    data = testSheet.getDataRange().getValues();
+    console.log('Sheet data after other user:', data);
+    const multiUserCount = getUserLogCount_('testUser', testSheet);
+    console.log('Multi-user count:', multiUserCount);
+
+  } catch (error) {
+    console.error('Test failed with error:', error);
+  } finally {
+    // Clean up - delete the temporary test sheet
+    ss.deleteSheet(testSheet);
+    console.log('\nTemporary test sheet cleaned up');
+  }
+}
+
+
+function testMessageQueue() {
+  try {
+    console.log("Starting full stats delivery test...");
+    const testUserTag = "davewolo";
+
+    // Clear existing queue first
+    console.log("Clearing existing message queue...");
+    const props = PropertiesService.getScriptProperties();
+    const keys = props.getKeys();
+    const queueMessages = keys.filter(key => key.startsWith('dm_queue_'));
+    queueMessages.forEach(key => props.deleteProperty(key));
+    
+    // Calculate and store stats as before...
+    console.log("Calculating fresh stats...");
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+    const data = masterSheet.getDataRange().getValues();
+    
+    const userStats = calculateUserStats(data, testUserTag);
+    if (!userStats) {
+      throw new Error("Failed to calculate user stats");
+    }
+    
+    console.log("Storing calculated stats...");
+    const stored = storeUserStats(userStats);
+    if (!stored) {
+      throw new Error("Failed to store stats");
+    }
+
+    // Queue message with explicit logging of userId
+    console.log("Queueing message...");
+    const userId = getUserDiscordId(testUserTag);
+    console.log("Using Discord ID:", userId);
+    
+    const message = formatWeeklyStatsMessage(userStats);
+    const queueResult = queueDiscordDM(testUserTag, message);
+    
+    // Verify queue state with detailed logging
+    const finalKeys = props.getKeys();
+    const finalQueue = finalKeys
+      .filter(key => key.startsWith('dm_queue_'))
+      .map(key => {
+        const item = JSON.parse(props.getProperty(key));
+        console.log("Queue item details:");
+        console.log("- Key:", key);
+        console.log("- UserTag:", item.userTag);
+        console.log("- UserId:", item.userId);
+        console.log("- Message length:", item.message.length);
+        return item;
+      });
+    
+    return "Test completed - check logs for queue details";
+    
+  } catch (error) {
+    console.error("Test failed:", error);
+    logError_(error, {
+      action: 'stats_test',
+      userTag: 'davewolo',
+      context: 'Manual stats test failed'
+    });
+    return "Test failed: " + error.message;
+  }
+}
+
+
+function testGetUserDiscordId() {
+  // Test with a known userTag from your sheet
+  const testUserTag = "visheidy";
+  
+  console.log('Testing getUserDiscordId function');
+  console.log('Test userTag:', testUserTag);
+  
+  const discordId = getUserDiscordId(testUserTag);
+  console.log('Result:', {
+    userTag: testUserTag,
+    discordId: discordId,
+    found: discordId !== null
+  });
+  
+  // Test the full cache data flow with focus on Discord IDs
+  const cacheData = getCacheData();
+  
+  // Log the raw data first
+  console.log('Raw cache data:', cacheData.data);
+  
+  // Then log the formatted version
+  console.log('Cache data test:', {
+    success: cacheData.success,
+    totalEntries: cacheData.data?.length,
+    entriesWithDiscordIds: cacheData.data?.filter(entry => entry.DiscordId).length,
+    allEntries: cacheData.data?.map(entry => ({
+      userTag: entry.UserTag,
+      discordId: entry.DiscordId,  // This should actually have values
+      priority1: `${entry.Priority1_Label}, ${entry.Priority1_Value} ${entry.Priority1_Unit}`
+    }))
+  });
+}
+
+function testDiscordIdMapping() {
+  const testUsers = ['visheidy', 'jindi0190', 'davewolo'];
+  
+  console.log('Testing individual Discord ID lookups:');
+  testUsers.forEach(userTag => {
+    const discordId = getUserDiscordId(userTag);
+    console.log(`${userTag} -> ${discordId}`);
+  });
+  
+  const cacheData = getCacheData();
+  
+  // Log the raw data structure
+  console.log('\nDEBUG - Raw cache data structure:');
+  const firstEntry = cacheData.data[0];
+  console.log('First entry keys:', Object.keys(firstEntry));
+  console.log('First entry full data:', firstEntry);
+  
+  console.log('\nTesting full cache data:');
+  cacheData.data.forEach(entry => {
+    const userTag = entry.UserTag;
+    // Get a fresh Discord ID lookup
+    const freshDiscordId = getUserDiscordId(userTag);
+    console.log({
+      userTag: userTag,
+      cachedDiscordId: entry.DiscordId,
+      freshLookup: freshDiscordId,
+      hasDiscordIdProperty: 'DiscordId' in entry
+    });
+  });
+}

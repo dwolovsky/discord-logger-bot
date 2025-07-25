@@ -1,0 +1,3896 @@
+//Code.gs:
+// =====================================
+// CONFIGURATION
+// =====================================
+const CONFIG = {
+  SHEETS: {
+    MASTER: 'Master Data',
+    WEEKLY_PRIORITIES: 'Weekly_Priorities_Cache',
+    STREAK_DATA: 'Streak_Data'
+  },
+  
+  COLUMNS: {
+    // Master sheet columns
+    DATE: 1,
+    TIMESTAMP: 2,
+    USERTAG: 3,
+    P1_LABEL: 4,
+    P1_VALUE: 5,
+    P1_UNIT: 6,
+    P2_LABEL: 7,
+    P2_VALUE: 8,
+    P2_UNIT: 9,
+    P3_LABEL: 10,
+    P3_VALUE: 11,
+    P3_UNIT: 12,
+    SATISFACTION: 13,
+    NOTES: 14
+  },
+
+  STREAK: { 
+    COLUMNS: {
+      USERID: 1,
+      USERTAG: 2,
+      CURRENT_STREAK: 3,
+      LONGEST_STREAK: 4,
+      LAST_LOG_DATE: 5,
+      FREEZES_REMAINING: 6,
+      LAST_FREEZE_DATE: 7,
+      FROZEN_DATES: 8
+    },
+    
+    MILESTONES: {
+      REGULAR: [1, 15, 30, 60, 100, 150, 200, 250, 300, 365, 400, 450, 
+                500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000],
+      FREEZE_AWARD: [15, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360, 390, 420, 450, 
+                    480, 510, 540, 570, 600, 630, 660, 690, 720, 750, 780, 810, 840, 870, 900, 930, 960, 990, 1020], 
+      ROLES: {
+        // Red tones (1-100 days)
+        SEEDLING: { name: 'Originator', days: 1, color: '#FFB3B3' },      // Light red
+        SAPLING: { name: 'Mover', days: 15, color: '#FF6666' },         // Medium red
+        GROVE: { name: 'Navigator', days: 30, color: '#FF0000' },          // Bright red
+        BEACON: { name: 'Signal', days: 60, color: '#CC0000' },          // Deep red
+        CENTURION: { name: 'Centurion', days: 100, color: '#990000' },         // Dark red
+
+        // Orange tones (150-300 days)
+        MYSTIC: { name: 'Vector', days: 150, color: '#FFD1B3' },         // Light orange
+        LUMINARY: { name: 'Blaster', days: 200, color: '#FFA366' },           // Medium orange
+        SOVEREIGN: { name: 'Orbiter', days: 250, color: '#FF8000' },   // Bright orange
+        CELESTIAL: { name: 'Luminary', days: 300, color: '#CC6600' },    // Deep orange
+
+        // Yellow tones (365-450 days)
+        CHRONICLE: { name: 'Corona', days: 365, color: '#FFF4B3' },   // Light yellow
+        ETHEREAL: { name: 'Radiance', days: 400, color: '#FFE666' },     // Medium yellow
+        PARADIGM: { name: 'Pulsar', days: 450, color: '#FFD700' },   // Bright yellow
+
+        // Green tones (500-650 days)
+        QUANTUM: { name: 'Quantum', days: 500, color: '#B3FFB3' },     // Light green
+        ZENITH: { name: 'Zenith', days: 550, color: '#66FF66' },       // Medium green
+        NEXUS: { name: 'Nexus', days: 600, color: '#00FF00' },      // Bright green
+        PARAGON: { name: 'Paragon', days: 650, color: '#009900' },           // Deep green
+
+        // Blue tones (700-850 days)
+        APEX: { name: 'Supernova', days: 700, color: '#B3B3FF' },      // Light blue
+        ETERNAL: { name: 'Axiom', days: 750, color: '#6666FF' },    // Medium blue
+        ORACLE: { name: 'Oracle', days: 800, color: '#0000FF' },          // Bright blue
+        DIVINE: { name: 'Divinator', days: 850, color: '#000099' }, // Deep blue
+
+        // Purple tones (900-1000 days)
+        COSMIC: { name: 'Cosmic', days: 900, color: '#D1B3FF' }, // Light purple
+        INFINITY: { name: 'Infinity', days: 950, color: '#9933FF' }, // Medium purple
+        TRANSCENDENT: { name: 'Transcendent', days: 1000, color: '#4B0082' } // Deep purple/indigo
+      },
+    },
+
+    FREEZES: {
+      MAX: 5,
+      AUTO_APPLY: true  // Automatically use freeze when missing a day
+    },
+    
+    MESSAGES: {
+      PUBLIC: {
+        DAILY_LOG: '🎯 ${user} just logged their daily metrics!'
+      },
+      DM: {
+        FREEZE_AWARD: '❄️ STREAK FREEZE AWARDED for reaching ${streak} days!',
+        ROLE_ACHIEVEMENT: '🏆 Congratulations! You\'ve earned the ${role} Figs Streaker role!',
+        LOG_CONFIRMATION: 'Entry recorded for ${dayOfWeek}, ${month} ${day}! (${time})\n\n',
+        LOG_OVERWRITE: 'Previous entry overwritten. New entry recorded for ${dayOfWeek}, ${month} ${day}! (${time})\n\n',
+        INSPIRATIONAL: [
+            "Congratulations on recording your metrics! 🎊\n\nNotice how you feel as if it's the first time you've ever felt this way.",
+            "Amazing work logging your progress! 🌟\n\nEach moment of awareness builds a bridge to deeper understanding.",
+            "Thank you for sharing your ratings! 🙏\n\nEvery data point tells a story of growth.\nWhat passage did you write today?",
+            "Thank you for your forward steps! 💫\n\nLike footprints in the sand, each entry marks your path.",
+            "Beautiful reflection! 🌅\n\nIn the quiet space between thoughts,\nwisdom grows like mushrooms.",
+            "You've noted your progress! 🍃\n\nmay your awareness move with grace.",
+            "What a mindful moment! 🕊️\n\nIn measuring our days,\nwe live bigger lives.",
+            "Thanks for dotting this data point! 🌈\n\nEach rating is a window\ninto the landscape of your experience.",
+            "You care courageously. 🌺\n\nWatch how your awareness grows,\nlike garden seeds planted with intention.",
+            "You've planted your daily marker! ⭐\n\nYour efforts are like a constellation,\neach point shining with possibility.",
+            "Reflection reflected! 🌙\n\nThe gentle rhythm of daily practice,\nshows our deepest insights.",
+            "Progress snapshot captured! 🦋\n\nLike a butterfly's flap,\nyour growth can change the weather.",
+            "What mindful metrics! 🎯\n\nYou've earned this moment of reflection.",
+            "Like morning dew on grass,\nmay your insights meet the morning sun.",
+            "A moment of truth! 🔮\n\nSelf-reflection is a mirror.\nWhat clarity do you see today?",
+            "Each mindful pause creates space\nfor deeper understanding to emerge.",
+            "You've written today's sentence! 📖\n\nWhat themes are surfacing\nin the story of your growth?",
+            "That reflection is rippling! 💧\n\nLike stones thrown in water,\nyour awareness creates waves.",
+            "Illumination! 🌠\n\nIn the darkness of uncertainty,\neach data point is a star to guide us home.",
+            "Mindful milestone marked! 🎭\n\nBehind the numbers and metrics,\nwhat truth is revealing itself to you?",
+            "You're amazing! \n\nYou know that?\nYOU ARE AMAZING!",
+            "Nothing great was ever done but in little steps.",
+            "Your life is bigger than it seems. \nToday made a difference.",
+            "Consistency is the glue of growth. \nIncremental progress is all it takes!",
+            "Don't be surprised when good things happen \n\nYou're putting in the work!"
+        ]
+      }
+    }
+  }
+
+};
+
+CONFIG.MILESTONES = {
+  STATS_AND_INSIGHTS: {
+    WEEKLY: 7,
+    MONTHLY: 30
+  },
+  MESSAGES: {
+    WEEKLY: "Here's your weekly Self Science reward! 📈 Check out your life's data, so you can make optimize learning and transformation next week.",
+    MONTHLY: "Congratulations on a month of dedicated self-discovery! Here's your monthly Self Science reward — check out how your life has transformed and what you've learned! 🎯"
+  }
+};
+
+// Add INSIGHTS configuration to existing CONFIG
+CONFIG.INSIGHTS = {
+  SHEET: 'User_Insights',
+  MIN_LOGS: 7,
+  CACHE_DURATION_HOURS: 1,
+  COLUMNS: {
+    USER_TAG: 1,
+    GENERATED_AT: 2,
+    PERIOD_DAYS: 3,
+    DATA_JSON: 4
+  },
+  ERROR_TYPES: {
+    GATHERING: 'insights_gathering',
+    PROCESSING: 'insights_processing',
+    STORAGE: 'insights_storage'
+  },
+  VALID_PERIODS: [7, 30]  // Valid periods for insights
+};
+
+// =====================================
+// INITIALIZATION
+// =====================================
+function initializeSheets() {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  
+  // Initialize Master Data sheet
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER) || 
+                     ss.insertSheet(CONFIG.SHEETS.MASTER);
+  
+  const masterHeaders = [
+    'Date',
+    'Timestamp',
+    'UserTag',
+    'Priority1_Label',
+    'Priority1_Value',
+    'Priority1_Unit',
+    'Priority2_Label',
+    'Priority2_Value',
+    'Priority2_Unit',
+    'Priority3_Label',
+    'Priority3_Value',
+    'Priority3_Unit',
+    'Satisfaction',
+    'Notes'
+  ];
+  
+  setupSheet_(masterSheet, masterHeaders);
+
+  // Initialize Streak Data sheet with all columns
+  const streakSheet = ss.getSheetByName(CONFIG.SHEETS.STREAK_DATA) || 
+                     ss.insertSheet(CONFIG.SHEETS.STREAK_DATA);
+  
+  const streakHeaders = [
+    'UserId',
+    'UserTag',
+    'CurrentStreak',
+    'LongestStreak',
+    'LastLogDate',
+    'FreezesRemaining',
+    'LastFreezeDate',
+    'FrozenDates'
+  ];
+  
+  setupSheet_(streakSheet, streakHeaders);
+}
+
+// =====================================
+// SHEET MANAGEMENT
+// =====================================
+function getUserSheet(userId) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  let sheet = ss.getSheetByName(userId);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(userId);
+    // Row 1: Email
+    sheet.getRange('A1').setValue(''); // Placeholder for email
+    
+    // Row 2: Headers (same as before)
+    const headers = [
+      'Date',
+      'Timestamp',
+      'UserTag',
+      'Priority1_Label',
+      'Priority1_Value',
+      'Priority1_Unit',
+      'Priority2_Label',
+      'Priority2_Value',
+      'Priority2_Unit',
+      'Priority3_Label',
+      'Priority3_Value',
+      'Priority3_Unit',
+      'Satisfaction',
+      'Notes'
+    ];
+    sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(2);
+    sheet.autoResizeColumns(1, headers.length);
+  }
+
+  return sheet;
+}
+
+function setupSheet_(sheet, headers) {
+  const headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setValues([headers]);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#4a86e8');
+  headerRange.setFontColor('white');
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, headers.length);
+}
+
+
+function updateExistingLog_(userId, streakDate, data) {
+  const userSheet = getUserSheet(userId);
+  const sheetData = userSheet.getDataRange().getValues();
+
+  for (let i = 2; i < sheetData.length; i++) {
+    if (sheetData[i][0] === streakDate) {
+      // Build the row of updated data
+      const newRow = [
+        streakDate,
+        new Date(),
+        data.userTag,
+        data.priority1_label || '',
+        data.priority1_value || '',
+        data.priority1_unit || '',
+        data.priority2_label || '',
+        data.priority2_value || '',
+        data.priority2_unit || '',
+        data.priority3_label || '',
+        data.priority3_value || '',
+        data.priority3_unit || '',
+        data.satisfaction || '',
+        data.notes || ''
+      ];
+
+      // Overwrite the existing row in the user sheet
+      userSheet.getRange(i + 1, 1, 1, 14).setValues([newRow]);
+
+      // ✅ NEW: Also log this overwrite to the Master sheet
+      const masterSheet = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8').getSheetByName(CONFIG.SHEETS.MASTER);
+      if (masterSheet) {
+        masterSheet.appendRow(newRow);
+      }
+
+      break;
+    }
+  }
+}
+
+
+
+function doPost(e) {
+  let payload;
+  try {
+    Logger.log('Raw doPost input: %s', JSON.stringify(e));
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error('Missing postData or contents in request');
+    }
+
+    payload = JSON.parse(e.postData.contents);
+
+    // Handle daily logging
+    if (payload.action === 'logDaily') {
+    Logger.log('Received logDaily payload:', JSON.stringify(payload, null, 2));
+      const { userId, userTag, data } = payload;
+      const now = new Date();
+      const streakDate = now.toISOString().split('T')[0];  // Simply gets YYYY-MM-DD from the timestamp
+
+      // Check if user already logged for this streak day
+      let isOverwrite = false;
+      if (hasUserLoggedToday_(userId, streakDate)) {
+        try {
+          updateExistingLog_(userId, streakDate, { ...data, userTag });
+          isOverwrite = true;
+        } catch (updateError) {
+          logError_(updateError, {
+            action: 'logDaily_update',
+            userId: userId,
+            context: `Failed to update log for date: ${streakDate}`
+          });
+          throw updateError;
+        }
+      } else {
+    try {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+  const userSheet = getUserSheet(userId);
+
+  const rowData = [
+    streakDate,
+    now,
+    userTag,
+    data.priority1_label || '',
+    data.priority1_value || '',
+    data.priority1_unit || '',
+    data.priority2_label || '',
+    data.priority2_value || '',
+    data.priority2_unit || '',
+    data.priority3_label || '',
+    data.priority3_value || '',
+    data.priority3_unit || '',
+    data.satisfaction || '',
+    data.notes || ''
+  ];
+
+  // Attempt to write to master sheet
+  try {
+    masterSheet.appendRow(rowData);
+  } catch (err) {
+    logError_(err, {
+      action: 'logDaily_master_append',
+      userId: userId,
+      context: 'Failed to append to Master Sheet'
+    });
+    throw err;
+  }
+
+  // Attempt to write to user sheet
+  try {
+    userSheet.appendRow(rowData);
+  } catch (err) {
+    logError_(err, {
+      action: 'logDaily_user_append',
+      userId: userId,
+      context: 'Failed to append to user sheet'
+    });
+    throw err;
+  }
+
+ } catch (appendError) {
+  logError_(appendError, {
+    action: 'logDaily_append',
+    userId: userId,
+    context: 'Failed to append new log'
+  });
+  throw appendError;
+ }
+    }
+
+      try {
+        // Update streaks, freezes, and check for milestones
+        const streakResult = updateStreak_(userId, userTag, now);
+
+        // Build confirmation message
+        const confirmationMessage = getRandomConfirmationMessage(now, isOverwrite);
+
+        // Build response
+        const response = {
+          success: true,
+          message: confirmationMessage,
+          currentStreak: streakResult.currentStreak,
+          freezesRemaining: streakResult.freezesRemaining
+        };
+        if (streakResult.milestone) {
+          response.milestone = streakResult.milestone;
+          response.dmMessage = streakResult.dmMessage;
+          response.statusMessage = streakResult.statusMessage;
+          response.roleInfo = streakResult.roleInfo;
+        }
+
+        return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(ContentService.MimeType.JSON);
+      } catch (streakError) {
+        logError_(streakError, {
+          action: 'streak_update',
+          userId: userId,
+          context: 'Failed to update streak or generate response'
+        });
+        throw streakError;
+      }
+    }
+
+    // Handle getting streak
+    if (payload.action === 'getStreak') {
+      return ContentService.createTextOutput(JSON.stringify(
+        getStreak_(payload.userId)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Handle getting leaderboard
+    if (payload.action === 'getLeaderboard') {
+      return ContentService.createTextOutput(JSON.stringify(
+        getLeaderboard_(payload.userId)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+   // Handle delivery confirmation
+    if (payload.action === 'confirmDelivery') {
+      return ContentService.createTextOutput(JSON.stringify(
+        confirmMessageDelivery_(payload.messageId)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Handle delivery failure
+    if (payload.action === 'deliveryFailed') {
+      return ContentService.createTextOutput(JSON.stringify(
+        handleDeliveryFailure_(payload.messageId, payload.error)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+      // Handle getting queued messages
+    if (payload.action === 'getQueuedMessages') {
+    console.log('Handling getQueuedMessages request');
+    const props = PropertiesService.getScriptProperties();
+    const keys = props.getKeys();
+    console.log('All keys:', keys);
+    
+    const queueMessages = keys.filter(key => key.startsWith('dm_queue_'));
+    console.log('Queue message keys:', queueMessages);
+    
+    const messages = queueMessages.map(key => {
+      const rawMsg = props.getProperty(key);
+      console.log(`Raw message for ${key}:`, rawMsg);
+      const msg = JSON.parse(rawMsg);
+      return {
+        ...msg,
+        id: key
+      };
+    });
+  
+  console.log('Processed messages:', messages);
+  return ContentService.createTextOutput(JSON.stringify({
+    messages: messages
+  })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Handle getting insights
+  if (payload.action === 'getInsights') {
+
+    logError_('Debug: Processing getInsights', {
+        action: 'getInsights_start',
+        userId: payload.userId,
+        userTag: payload.userTag,
+        context: `Period Days: ${payload.periodDays}`
+      });
+    return ContentService.createTextOutput(JSON.stringify(
+      getInsights(payload.userId, payload.userTag, payload.periodDays)
+    )).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Handle storing insights
+  if (payload.action === 'storeInsights') {
+    return ContentService.createTextOutput(JSON.stringify(
+      storeInsights(payload.userId, payload.userTag, payload.periodDays, payload.insights)
+    )).setMimeType(ContentService.MimeType.JSON);
+  }
+
+    // Handle updating weekly priorities
+    if (payload.action === 'updateWeeklyPriorities') {
+      return ContentService.createTextOutput(JSON.stringify(
+        updateWeeklyPriorities(payload.userId, payload.userTag, payload.priorities)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Handle getting weekly priorities
+    if (payload.action === 'getWeeklyPriorities') {
+      return ContentService.createTextOutput(JSON.stringify(
+        getWeeklyPriorities(payload.userId)
+      )).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Unknown action
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: 'Unknown action'
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    // Log error and return error response
+    console.error('Error in doPost:', error);
+    
+    logError_(error, {
+      action: payload?.action || 'unknown',
+      userId: payload?.userId || 'unknown',
+      context: 'Error in doPost'
+    });
+
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: error.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function confirmMessageDelivery_(messageId) {
+  console.log(`Attempting to confirm delivery for message: ${messageId}`);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    
+    // Check if message exists
+    const messageExists = props.getProperty(messageId);
+    console.log(`Message exists in queue: ${messageExists !== null}`);
+    
+    if (messageExists) {
+      props.deleteProperty(messageId);
+      console.log(`Successfully deleted message: ${messageId}`);
+      return { success: true };
+    } else {
+      console.log(`Message ${messageId} not found in queue`);
+      return { success: false, error: 'Message not found in queue' };
+    }
+    
+  } catch (error) {
+    console.error('Error in confirmMessageDelivery_:', error);
+    logError_(error, {
+      action: 'confirm_delivery',
+      messageId: messageId,
+      context: 'Failed to confirm message delivery'
+    });
+    return { success: false, error: error.message };
+  }
+}
+
+function handleDeliveryFailure_(messageId, error) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const msgData = JSON.parse(props.getProperty(messageId));
+    
+    if (!msgData) {
+      return { success: false, error: 'Message not found' };
+    }
+
+    msgData.attempts = (msgData.attempts || 0) + 1;
+    
+    if (msgData.attempts >= 2) {  // Max retries reached
+      props.deleteProperty(messageId);
+      logError_('Max delivery attempts reached', {
+        action: 'message_delivery',
+        messageId: messageId,
+        userTag: msgData.userTag,
+        error: error
+      });
+    } else {
+      props.setProperty(messageId, JSON.stringify(msgData));
+    }
+    
+    return { success: true };
+  } catch (error) {
+    logError_(error, {
+      action: 'delivery_failure',
+      messageId: messageId,
+      context: 'Failed to handle delivery failure'
+    });
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Validates and parses a priority string in "label, unit" format
+ * @param {string} priorityStr - Raw priority string to parse
+ * @returns {Object} Result object with success status and data/error
+ * @private
+ */
+function parsePriorityString_(priorityStr) {
+  if (!priorityStr || typeof priorityStr !== 'string') {
+    return {
+      success: false,
+      error: 'Priority cannot be empty'
+    };
+  }
+
+  const priorityPattern = /^(.+?)\s*,\s*(.+?)$/;
+  const trimmed = priorityStr.trim();
+  const match = trimmed.match(priorityPattern);
+  
+  if (!match) {
+    return {
+      success: false,
+      error: `Please use "Label, Unit" format (e.g., "Meditation, minutes" or "Health, effort") for: "${trimmed}"`
+    };
+  }
+
+  const [_, label, unit] = match;
+  const trimmedLabel = label.trim();
+  const trimmedUnit = unit.trim();
+
+  if (trimmedLabel.length > 45) {
+    return {
+      success: false,
+      error: `Label must be 45 characters or less: "${trimmedLabel}"`
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      label: trimmedLabel,
+      unit: trimmedUnit
+    }
+  };
+}
+
+/**
+ * Updates a user's weekly priorities in the Weekly_Priorities_Cache sheet
+ * @param {string} userId - Discord user ID
+ * @param {string} userTag - Discord user tag
+ * @param {string[]} priorityStrings - Array of priority strings to parse
+ * @returns {Object} Result object with success status and message/error
+ */
+function updateWeeklyPriorities(userId, userTag, priorityStrings) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const context = {
+    userId,
+    userTag,
+    action: 'updateWeeklyPriorities',
+    timestamp: new Date().toISOString()
+  };
+
+  try {
+    if (!Array.isArray(priorityStrings) || priorityStrings.length !== 3) {
+      throw new Error('Exactly 3 priorities required');
+    }
+
+    // Validate and parse all priorities
+    const priorities = [];
+    for (const priorityStr of priorityStrings) {
+      const result = parsePriorityString_(priorityStr);
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error
+        };
+      }
+      priorities.push(result.data);
+    }
+
+        const sheet = ss.getSheetByName(CONFIG.SHEETS.WEEKLY_PRIORITIES);
+    if (!sheet) {
+      const error = new Error('Sheet not found: ' + CONFIG.SHEETS.WEEKLY_PRIORITIES);
+      logError_(error, context);
+      return {
+        success: false,
+        error: 'Internal error: sheet not found'
+      };
+    }
+    
+    // Find existing row for user
+    const data = sheet.getDataRange().getValues();
+    const headerRow = data[0];
+    const userIdCol = headerRow.indexOf("DiscordId");
+    let userRow = data.findIndex(row => row[userIdCol] === userId);
+    
+    const rowData = [
+      userTag,                // UserTag
+      userId,                // DiscordId
+      priorities[0].label,   // Priority1
+      priorities[0].unit,    // Unit1
+      priorities[1].label,   // Priority2
+      priorities[1].unit,    // Unit2
+      priorities[2].label,   // Priority3
+      priorities[2].unit,    // Unit3
+      new Date().toISOString() // LastUpdated
+    ];
+
+    if (userRow > 0) {
+      sheet.getRange(userRow + 1, 1, 1, rowData.length).setValues([rowData]);
+    } else {
+      sheet.appendRow(rowData);
+    }
+
+    const formattedPriorities = priorities.map((p, i) => 
+      `${i + 1}. "${p.label}" (${p.unit})`
+    ).join('\n');
+
+    CacheService.getUserCache().remove(`priorities-${userId}`);
+
+    return {
+      success: true,
+      message: `✅ Weekly priorities set!\n\n${formattedPriorities}\n\nThese will appear as labels in your /log form.`
+    };
+    
+  } catch (error) {
+    logError_(error, context);
+    return {
+      success: false,
+      error: "Failed to update priorities. Please try again or contact support if the issue persists."
+    };
+  }
+}
+
+function getWeeklyPriorities(userId) {
+  const cache = CacheService.getUserCache();
+  const cached = cache.get(`priorities-${userId}`);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.WEEKLY_PRIORITIES);
+    if (!sheet) throw new Error('Weekly priorities sheet not found');
+
+    const data = sheet.getDataRange().getValues(); // includes headers
+    const headers = data[0];
+    const userIdCol = headers.indexOf("DiscordId");
+
+    if (userIdCol === -1) throw new Error('DiscordId column not found');
+
+    const rowIndex = data.findIndex((row, idx) => idx > 0 && row[userIdCol] === userId);
+    if (rowIndex === -1) {
+      return {
+        success: false,
+        error: 'No priorities found for user'
+      };
+    }
+
+    const rowData = data[rowIndex];
+
+    const result = {
+      success: true,
+      priorities: {
+        Priority1: {
+          label: rowData[headers.indexOf("Priority1")] || '',
+          unit: rowData[headers.indexOf("Unit1")] || ''
+        },
+        Priority2: {
+          label: rowData[headers.indexOf("Priority2")] || '',
+          unit: rowData[headers.indexOf("Unit2")] || ''
+        },
+        Priority3: {
+          label: rowData[headers.indexOf("Priority3")] || '',
+          unit: rowData[headers.indexOf("Unit3")] || ''
+        }
+      }
+    };
+
+    cache.put(`priorities-${userId}`, JSON.stringify(result), 120); // cache for 2 minutes
+    return result;
+
+  } catch (error) {
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+
+function getRandomConfirmationMessage(date, isOverwrite = false) {
+  const messages = CONFIG.STREAK.MESSAGES.DM.INSPIRATIONAL;
+  const randomIndex = Math.floor(Math.random() * messages.length);
+  
+  // Format the date components
+  const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
+  const month = date.toLocaleDateString('en-US', { month: 'long' });
+  const day = date.getDate();
+  const time = date.toLocaleTimeString('en-US', { 
+    hour: 'numeric', 
+    minute: '2-digit', 
+    hour12: true 
+  });
+
+  // Get base confirmation message
+  const baseMsg = isOverwrite ? 
+    CONFIG.STREAK.MESSAGES.DM.LOG_OVERWRITE : 
+    CONFIG.STREAK.MESSAGES.DM.LOG_CONFIRMATION;
+
+  // Replace template variables
+  const confirmationPart = baseMsg
+    .replace('${dayOfWeek}', dayOfWeek)
+    .replace('${month}', month)
+    .replace('${day}', day)
+    .replace('${time}', time);
+
+  // Combine with random inspirational message
+  return confirmationPart + messages[randomIndex];
+}
+
+function getUserLogCount_(userTag, testSheet) {
+  const sheet = testSheet || SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8').getSheetByName(CONFIG.SHEETS.MASTER);
+  console.log('Debug getUserLogCount_:');
+  console.log('Sheet name:', sheet.getName());
+  const data = sheet.getDataRange().getValues();
+  console.log('Looking for userTag:', userTag);
+  console.log('In column index:', CONFIG.COLUMNS.USERTAG - 1);
+  console.log('Data rows:', data.length);
+  const count = data.slice(1).filter(row => row[CONFIG.COLUMNS.USERTAG - 1] === userTag).length;
+  console.log('Filtered count:', count);
+  return count;
+}
+
+function getUserDiscordId(userTag) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const sheets = ss.getSheets();
+  
+  console.log(`Checking sheets for userTag: ${userTag}`);
+  
+  // Skip these system sheets
+  const systemSheets = [
+    'Master Data', 
+    'Streak_Data', 
+    'Weekly_Stats', 
+    'App_Errors',
+    'Weekly_Priorities_Cache',
+    'User_Insights'
+  ];
+  
+  for (const sheet of sheets) {
+    const sheetName = sheet.getName();
+    if (systemSheets.includes(sheetName)) {
+      console.log(`Skipping system sheet: ${sheetName}`);
+      continue;
+    }
+    
+    console.log(`Checking sheet: ${sheetName}`);
+    const userTagCell = sheet.getRange(3, CONFIG.COLUMNS.USERTAG).getValue();
+    console.log(`Found userTag: ${userTagCell}`);
+    
+    if (userTagCell === userTag) {
+      console.log(`Match found! Sheet name (Discord ID): ${sheetName}`);
+      return sheetName;
+    }
+  }
+  console.log(`No match found for userTag: ${userTag}`);
+  return null;
+}
+
+function getCacheData() {
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const sheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+    
+    // Get all data except header row
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, CONFIG.COLUMNS.NOTES).getValues();
+    
+    // Transform the data into the required format
+    const formattedData = data.map(row => {
+      const userTag = row[CONFIG.COLUMNS.USERTAG - 1];
+      const discordId = getUserDiscordId(userTag);
+      
+      // Add debug log here
+      Logger.log(`GETCACHEDATA DEBUG - Processing ${userTag}: got discordId=${discordId}`);
+      
+      const entry = {
+        UserTag: userTag,
+        DiscordId: discordId,
+        Priority1_Label: row[CONFIG.COLUMNS.P1_LABEL - 1],
+        Priority1_Value: row[CONFIG.COLUMNS.P1_VALUE - 1],
+        Priority1_Unit: row[CONFIG.COLUMNS.P1_UNIT - 1],
+        Priority2_Label: row[CONFIG.COLUMNS.P2_LABEL - 1],
+        Priority2_Value: row[CONFIG.COLUMNS.P2_VALUE - 1],
+        Priority2_Unit: row[CONFIG.COLUMNS.P2_UNIT - 1],
+        Priority3_Label: row[CONFIG.COLUMNS.P3_LABEL - 1],
+        Priority3_Value: row[CONFIG.COLUMNS.P3_VALUE - 1],
+        Priority3_Unit: row[CONFIG.COLUMNS.P3_UNIT - 1],
+        Timestamp: row[CONFIG.COLUMNS.TIMESTAMP - 1]
+      };
+
+      // Log the entry we created
+      Logger.log(`GETCACHEDATA DEBUG - Created entry for ${userTag}: DiscordId=${entry.DiscordId}`);
+      
+      return entry;
+    });
+
+    return {
+      success: true,
+      data: formattedData
+    };
+    
+  } catch (error) {
+    console.error('Error in getCacheData:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+function logError_(error, context = {}) {
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const errorSheet = ss.getSheetByName('App_Errors') || ss.insertSheet('App_Errors');
+    
+    // Set up headers if they don't exist
+    if (errorSheet.getRange('A1').isBlank()) {
+      errorSheet.getRange('A1:E1').setValues([['Timestamp', 'User ID', 'Action', 'Error Message', 'Context']]);
+      errorSheet.setFrozenRows(1);
+    }
+
+    // Prepare error data
+    const errorData = [
+      new Date(),                    // Timestamp
+      context.userId || 'N/A',       // User ID
+      context.action || 'N/A',       // Action being performed
+      error.toString(),              // Error message
+      JSON.stringify(context)        // Additional context as JSON
+    ];
+
+    errorSheet.appendRow(errorData);
+  } catch (e) {
+    console.error('Failed to log error:', e);
+  }
+}
+
+
+function testLogCount() {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const testSheet = ss.insertSheet('Test_Sheet_Temporary');
+  
+  console.log('Starting testLogCount with test sheet...');
+  
+  try {
+    // Set up all columns exactly as in CONFIG.COLUMNS
+    const headers = [
+      'Date',           // 1
+      'Timestamp',      // 2
+      'UserTag',        // 3
+      'P1_Label',       // 4
+      'P1_Value',       // 5
+      'P1_Unit',        // 6
+      'P2_Label',       // 7
+      'P2_Value',       // 8
+      'P2_Unit',        // 9
+      'P3_Label',       // 10
+      'P3_Value',       // 11
+      'P3_Unit',        // 12
+      'Satisfaction',   // 13
+      'Notes'           // 14
+    ];
+    
+    console.log('Setting up headers:', headers);
+    testSheet.appendRow(headers);
+    
+    // Test case 1: Just headers
+    console.log('\nTest Case 1: Empty sheet (just headers)');
+    let data = testSheet.getDataRange().getValues();
+    console.log('Sheet data after headers:', data);
+    const emptyCount = getUserLogCount_('testUser', testSheet);
+    console.log('Empty sheet count:', emptyCount);
+    
+    // Test case 2: Single log
+    console.log('\nTest Case 2: Single log');
+    const rowData = new Array(14).fill('');  // Create array with 14 empty elements
+    rowData[0] = '2025-04-28';              // DATE
+    rowData[1] = new Date();                // TIMESTAMP
+    rowData[2] = 'testUser';                // USERTAG
+    testSheet.appendRow(rowData);
+    
+    data = testSheet.getDataRange().getValues();
+    console.log('Sheet data after single log:', data);
+    const singleCount = getUserLogCount_('testUser', testSheet);
+    console.log('Single log count:', singleCount);
+    
+    // Test case 3: Multiple logs same day
+    console.log('\nTest Case 3: Multiple logs same day');
+    testSheet.appendRow(rowData);
+    data = testSheet.getDataRange().getValues();
+    console.log('Sheet data after duplicate:', data);
+    const duplicateCount = getUserLogCount_('testUser', testSheet);
+    console.log('Duplicate day count:', duplicateCount);
+    
+    // Test case 4: Multiple users
+    console.log('\nTest Case 4: Multiple users');
+    const otherUserRow = [...rowData];
+    otherUserRow[2] = 'otherUser';
+    testSheet.appendRow(otherUserRow);
+    data = testSheet.getDataRange().getValues();
+    console.log('Sheet data after other user:', data);
+    const multiUserCount = getUserLogCount_('testUser', testSheet);
+    console.log('Multi-user count:', multiUserCount);
+
+  } catch (error) {
+    console.error('Test failed with error:', error);
+  } finally {
+    // Clean up - delete the temporary test sheet
+    ss.deleteSheet(testSheet);
+    console.log('\nTemporary test sheet cleaned up');
+  }
+}
+
+
+function testMessageQueue() {
+  try {
+    console.log("Starting full stats delivery test...");
+    const testUserTag = "davewolo";
+
+    // Clear existing queue first
+    console.log("Clearing existing message queue...");
+    const props = PropertiesService.getScriptProperties();
+    const keys = props.getKeys();
+    const queueMessages = keys.filter(key => key.startsWith('dm_queue_'));
+    queueMessages.forEach(key => props.deleteProperty(key));
+    
+    // Calculate and store stats as before...
+    console.log("Calculating fresh stats...");
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+    const data = masterSheet.getDataRange().getValues();
+    
+    const userStats = calculateUserStats(data, testUserTag);
+    if (!userStats) {
+      throw new Error("Failed to calculate user stats");
+    }
+    
+    console.log("Storing calculated stats...");
+    const stored = storeUserStats(userStats);
+    if (!stored) {
+      throw new Error("Failed to store stats");
+    }
+
+    // Queue message with explicit logging of userId
+    console.log("Queueing message...");
+    const userId = getUserDiscordId(testUserTag);
+    console.log("Using Discord ID:", userId);
+    
+    const message = formatWeeklyStatsMessage(userStats);
+    const queueResult = queueDiscordDM(testUserTag, message);
+    
+    // Verify queue state with detailed logging
+    const finalKeys = props.getKeys();
+    const finalQueue = finalKeys
+      .filter(key => key.startsWith('dm_queue_'))
+      .map(key => {
+        const item = JSON.parse(props.getProperty(key));
+        console.log("Queue item details:");
+        console.log("- Key:", key);
+        console.log("- UserTag:", item.userTag);
+        console.log("- UserId:", item.userId);
+        console.log("- Message length:", item.message.length);
+        return item;
+      });
+    
+    return "Test completed - check logs for queue details";
+    
+  } catch (error) {
+    console.error("Test failed:", error);
+    logError_(error, {
+      action: 'stats_test',
+      userTag: 'davewolo',
+      context: 'Manual stats test failed'
+    });
+    return "Test failed: " + error.message;
+  }
+}
+
+
+function testGetUserDiscordId() {
+  // Test with a known userTag from your sheet
+  const testUserTag = "visheidy";
+  
+  console.log('Testing getUserDiscordId function');
+  console.log('Test userTag:', testUserTag);
+  
+  const discordId = getUserDiscordId(testUserTag);
+  console.log('Result:', {
+    userTag: testUserTag,
+    discordId: discordId,
+    found: discordId !== null
+  });
+  
+  // Test the full cache data flow with focus on Discord IDs
+  const cacheData = getCacheData();
+  
+  // Log the raw data first
+  console.log('Raw cache data:', cacheData.data);
+  
+  // Then log the formatted version
+  console.log('Cache data test:', {
+    success: cacheData.success,
+    totalEntries: cacheData.data?.length,
+    entriesWithDiscordIds: cacheData.data?.filter(entry => entry.DiscordId).length,
+    allEntries: cacheData.data?.map(entry => ({
+      userTag: entry.UserTag,
+      discordId: entry.DiscordId,  // This should actually have values
+      priority1: `${entry.Priority1_Label}, ${entry.Priority1_Value} ${entry.Priority1_Unit}`
+    }))
+  });
+}
+
+function testDiscordIdMapping() {
+  const testUsers = ['visheidy', 'jindi0190', 'davewolo'];
+  
+  console.log('Testing individual Discord ID lookups:');
+  testUsers.forEach(userTag => {
+    const discordId = getUserDiscordId(userTag);
+    console.log(`${userTag} -> ${discordId}`);
+  });
+  
+  const cacheData = getCacheData();
+  
+  // Log the raw data structure
+  console.log('\nDEBUG - Raw cache data structure:');
+  const firstEntry = cacheData.data[0];
+  console.log('First entry keys:', Object.keys(firstEntry));
+  console.log('First entry full data:', firstEntry);
+  
+  console.log('\nTesting full cache data:');
+  cacheData.data.forEach(entry => {
+    const userTag = entry.UserTag;
+    // Get a fresh Discord ID lookup
+    const freshDiscordId = getUserDiscordId(userTag);
+    console.log({
+      userTag: userTag,
+      cachedDiscordId: entry.DiscordId,
+      freshLookup: freshDiscordId,
+      hasDiscordIdProperty: 'DiscordId' in entry
+    });
+  });
+}
+
+//end code.gs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//Streaks.gs
+//All config elements located in Code.gs
+
+/**
+ * Updates the user's streak data, checks for milestones (roles, freezes),
+ * calculates stats for the user if a weekly milestone is hit, and queues
+ * appropriate notification DMs (streak milestones or insights prompts).
+ * @param {string} userId The Discord User ID.
+ * @param {string} userTag The Discord User Tag.
+ * @param {Date} logDate The date/time of the current log.
+ * @returns {object} An object containing streak and milestone info for the bot response.
+ */
+function updateStreak_(userId, userTag, logDate) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8'); // Ensure this is your Sheet ID
+  const streakSheet = ss.getSheetByName(CONFIG.SHEETS.STREAK_DATA);
+  const data = streakSheet.getDataRange().getValues();
+
+  // Find or create user row
+  let userRow = -1;
+  for (let i = 1; i < data.length; i++) { // Start from 1 to skip header
+    if (data[i][CONFIG.STREAK.COLUMNS.USERID - 1] === userId) { // Check UserId column
+      userRow = i + 1; // 1-based index for getRange
+      break;
+    }
+  }
+
+  // If user not found, create new row with default values
+  if (userRow === -1) {
+    const defaultValues = [
+      userId, userTag, 0, 0, '', 0, '', '' // Default values matching columns
+    ];
+    // Ensure columns are UserId, UserTag, CurrentStreak, LongestStreak, LastLogDate, FreezesRemaining, LastFreezeDate, FrozenDates
+    const numColumns = 8; // Set the number of columns explicitly
+    const headerRow = streakSheet.getRange(1, 1, 1, numColumns).getValues()[0]; // Read headers if needed for validation, otherwise just append
+    streakSheet.appendRow(defaultValues);
+    userRow = streakSheet.getLastRow();
+    Logger.log(`[Streak Update: ${userTag}] New user added to Streak_Data at row ${userRow}.`);
+     // Set currentData for new user
+      currentData = { streak: 0, longest: 0, freezes: 0, lastLog: null };
+  } else {
+      // Get current streak data only if userRow was found
+      currentData = {
+        streak: Number(streakSheet.getRange(userRow, CONFIG.STREAK.COLUMNS.CURRENT_STREAK).getValue()) || 0,
+        longest: Number(streakSheet.getRange(userRow, CONFIG.STREAK.COLUMNS.LONGEST_STREAK).getValue()) || 0,
+        freezes: Number(streakSheet.getRange(userRow, CONFIG.STREAK.COLUMNS.FREEZES_REMAINING).getValue()) || 0,
+        lastLog: streakSheet.getRange(userRow, CONFIG.STREAK.COLUMNS.LAST_LOG_DATE).getValue()
+      };
+  }
+
+
+  Logger.log(`[Streak Update: ${userTag}] Retrieved current data: ${JSON.stringify(currentData)}`);
+
+  // Calculate new streak state (handles continuation, resets, freezes used)
+  const streakState = calculateNewStreakState_(currentData, logDate);
+
+  // Update streak data sheet (current streak, longest, last log, freezes remaining, etc.)
+  updateStreakData_(streakSheet, userRow, streakState);
+
+  // Check specifically for freeze awards based on the new streak number
+  // This check should happen *after* streakState is calculated
+  if (CONFIG.STREAK.MILESTONES.FREEZE_AWARD.includes(streakState.newStreak) && !streakState.usedFreeze && currentData.streak !== streakState.newStreak) { // Only award if streak increased and freeze wasn't just used
+    Logger.log(`[Streak Update: ${userTag}] Awarding freeze at streak ${streakState.newStreak}.`);
+    streakState.freezesRemaining++; // Increment the count in our state object
+    // Update the sheet again specifically for the freeze count
+    streakSheet.getRange(userRow, CONFIG.STREAK.COLUMNS.FREEZES_REMAINING)
+               .setValue(streakState.freezesRemaining);
+     // Append freeze award message to any existing role message
+     const freezeAwardMsg = CONFIG.STREAK.MESSAGES.DM.FREEZE_AWARD.replace('${streak}', streakState.newStreak);
+     streakState.dmMessage = streakState.dmMessage ? `${streakState.dmMessage}\n\n${freezeAwardMsg}` : freezeAwardMsg;
+
+  }
+
+
+  // --- Updated Stats Milestone Handling ---
+
+  // Get the user's total log count *after* this log has notionally been added
+  // Note: getUserLogCount_ reads from Master, which might be slightly behind if called concurrently, but generally ok.
+  const logCount = getUserLogCount_(userTag);
+  Logger.log(`[Streak Update: ${userTag}] Current Log Count for stats check: ${logCount}`);
+
+      // Weekly stats processing and notification trigger (Multiples of 7)
+      // Check logCount > 0 to prevent running on the very first log if WEEKLY=1 (though WEEKLY is 7)
+      if (logCount > 0 && CONFIG.MILESTONES.STATS_AND_INSIGHTS.WEEKLY > 0 && logCount % CONFIG.MILESTONES.STATS_AND_INSIGHTS.WEEKLY === 0) {
+        Logger.log(`User ${userTag} hit weekly stats milestone: ${logCount} logs.`);
+        try {
+          // 1. Process and Store stats (as before, needed for insights command later)
+          const statsProcessed = processAndStoreStatsForUser(userTag); // Keep this call
+
+          // 2. Calculate stats AGAIN to get the data object for the DM
+          // (We need userId for the new calculateUserStats version)
+          // Assuming 'ss' (SpreadsheetApp object) is defined earlier in updateStreak_
+          const masterSheetForStats = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+          if (!masterSheetForStats) { throw new Error("Master Data sheet not found for stats calculation in updateStreak_"); }
+          const masterDataForStats = masterSheetForStats.getDataRange().getValues();
+          // Assuming 'userId' is correctly passed into updateStreak_
+          const statsDataForDM = calculateUserStats(userId, userTag, masterDataForStats);
+
+          let weeklyMessage = "";
+          if (statsProcessed && statsDataForDM) {
+             Logger.log(`Stats processed and calculated successfully for ${userTag} at milestone ${logCount}, formatting message.`);
+             // 3. Format the stats message
+             const formattedStats = formatWeeklyStatsMessage(statsDataForDM); // Assuming this function exists and handles statsDataForDM structure
+             // 4. Combine with insights prompt
+             weeklyMessage = `${formattedStats}\n\n_Type \`/insights7\` to get AI analysis on this!_`;
+             // 5. Queue the combined message
+             queueDiscordDM(userTag, weeklyMessage); // Assuming this function exists
+          } else {
+             // Log why it might fail more specifically
+             if (!statsProcessed) { Logger.log(`Stats storage failed for ${userTag} at milestone ${logCount}.`); }
+             if (!statsDataForDM) { Logger.log(`Stats calculation for DM failed for ${userTag} at milestone ${logCount}.`); }
+             Logger.log(`Queueing simple prompt for ${userTag} as fallback.`);
+             // Fallback: Queue the simple prompt if stats failed
+             queueDiscordDM(userTag, `You've hit ${logCount} logs! Your weekly stats have been updated. Run /insights7 to see stats & insights for your last 7 entries.`);
+          }
+        } catch (error) {
+           // Log error related to triggering the process or queuing the DM
+           logError_(error, {
+              action: 'milestone_trigger_weekly',
+              userTag: userTag,
+              userId: userId, // Add userId to context if available
+              logCount: logCount,
+              context: 'Error calling stats processing or queuing DM for weekly milestone: ' + error.message
+           });
+           // Optional: Queue a generic error message to the user? Or rely on logs.
+        }
+      }
+
+      // Monthly insights notification trigger (Multiples of 30)
+      // We only notify here, assuming stats were processed at prior weekly milestones.
+      // Check logCount > 0
+      if (logCount > 0 && CONFIG.MILESTONES.STATS_AND_INSIGHTS.MONTHLY > 0 && logCount % CONFIG.MILESTONES.STATS_AND_INSIGHTS.MONTHLY === 0) {
+         Logger.log(`User ${userTag} hit monthly insights milestone: ${logCount} logs. Queueing notification.`);
+         try {
+            // Just queue the NEW prompt message
+            queueDiscordDM(userTag, `You've hit ${logCount} logs! Run /insights30 to see stats & insights for your last 30 entries.`);
+         } catch (error) {
+             logError_(error, {
+                action: 'milestone_trigger_monthly',
+                userTag: userTag,
+                logCount: logCount,
+                context: 'Error queuing DM for monthly milestone: ' + error.message
+             });
+         }
+      }
+
+      // --- End Updated Stats Milestone Handling ---
+
+  // Return the streak result object - This info is used by the 'logDaily' action handler
+  // The dmMessage here relates ONLY to streak milestones (roles/freezes), not the stats/insights prompts we just queued.
+  return {
+    success: true,
+    currentStreak: streakState.newStreak,
+    freezesRemaining: streakState.freezesRemaining,
+    milestone: streakState.milestone, // Boolean: Was a *streak* (role) milestone hit?
+    dmMessage: streakState.dmMessage, // Message related to role/freeze award (if any)
+    roleInfo: streakState.roleInfo,   // Role details (name, color) if milestone hit
+    usedFreeze: streakState.usedFreeze // Boolean: Was a freeze used to maintain streak?
+  };
+} // End of updateStreak_ function
+
+
+function getStreak_(userId) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const streakSheet = ss.getSheetByName(CONFIG.SHEETS.STREAK_DATA);
+  const data = streakSheet.getDataRange().getValues();
+  
+  // Find user row
+  let userRow = data.findIndex(row => row[0] === userId);
+  if (userRow === -1) {
+    return {
+      success: true,
+      message: "You haven't started your streak yet. Type /log to begin!"
+    };
+  }
+
+  const currentStreak = data[userRow][CONFIG.STREAK.COLUMNS.CURRENT_STREAK - 1] || 0;
+  const longestStreak = data[userRow][CONFIG.STREAK.COLUMNS.LONGEST_STREAK - 1] || 0;
+  
+  if (currentStreak === 0) {
+    return {
+      success: true,
+      message: "Your current streak is 0. Start up your next streak by typing /log!"
+    };
+  }
+
+  return {
+    success: true,
+    message: `Your current streak: ${currentStreak} days\nLongest streak: ${longestStreak} days`
+  };
+}
+
+function getLeaderboard_(userId) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const streakSheet = ss.getSheetByName(CONFIG.SHEETS.STREAK_DATA);
+  const data = streakSheet.getDataRange().getValues();
+  
+  // Remove header row and filter out users with 0 streak
+  const activeStreaks = data.slice(1)
+    .filter(row => row[CONFIG.STREAK.COLUMNS.CURRENT_STREAK - 1] > 0)
+    .map(row => ({
+      userTag: row[CONFIG.STREAK.COLUMNS.USERTAG - 1],
+      streak: row[CONFIG.STREAK.COLUMNS.CURRENT_STREAK - 1]
+    }))
+    .sort((a, b) => b.streak - a.streak);
+
+  if (activeStreaks.length === 0) {
+    return {
+      success: true,
+      message: "No active streaks yet. Be the first to start one with /log!"
+    };
+  }
+
+  // Get top 10
+  const top10 = activeStreaks.slice(0, 10);
+  let message = "🏆 Top 10 Streaks:\n";
+  top10.forEach((entry, index) => {
+    message += `${index + 1}. ${entry.userTag} - ${entry.streak} days\n`;
+  });
+
+  // Find requesting user's position if not in top 10
+  const userPosition = activeStreaks.findIndex(entry => 
+    entry.userTag === data.find(row => row[0] === userId)?.[CONFIG.STREAK.COLUMNS.USERTAG - 1]
+  );
+
+  if (userPosition >= 10) {
+    message += `-------------------\nYour position: #${userPosition + 1} (${activeStreaks[userPosition].streak} days)`;
+  }
+
+  return {
+    success: true,
+    message: message
+  };
+}
+
+function calculateNewStreakState_(currentData, logDate) {
+  const now = new Date(logDate);
+
+  let state = {
+    newStreak: 1,
+    freezesRemaining: Math.min(currentData.freezes, CONFIG.STREAK.FREEZES.MAX),
+    usedFreeze: false,
+    freezesUsed: 0,
+    logDate: now,
+    success: true,
+    milestone: null,
+    dmMessage: null,
+    roleInfo: null
+  };
+
+  if (!currentData.lastLog) {
+    const milestoneRole = Object.values(CONFIG.STREAK.MILESTONES.ROLES).find(role => role.days === 1);
+    if (milestoneRole) {
+      state.milestone = true;
+      state.dmMessage = `🏆 Congratulations! You've earned the ${milestoneRole.name} role!`;
+      state.roleInfo = milestoneRole;
+    }
+    return state;
+  }
+
+  const lastLogDate = new Date(Date.parse(currentData.lastLog));
+  const hoursSinceLastLog = Math.abs(now - lastLogDate) / (1000 * 60 * 60);
+  console.log(`Time debug - Last log: ${lastLogDate}, Current log: ${now}, Hours between: ${hoursSinceLastLog}`);
+
+  if (hoursSinceLastLog < 17) {
+    state.newStreak = currentData.streak;
+    return state;
+  }
+
+  // Within 30 hours - continue streak
+  if (hoursSinceLastLog <= 30) {
+    state.newStreak = currentData.streak + 1;
+  } else {
+    // Over 30 hours - check if we can use freezes
+    const daysToFreeze = Math.ceil(hoursSinceLastLog / 24) - 1;
+    if (daysToFreeze <= state.freezesRemaining) {
+      state.newStreak = currentData.streak + 1;
+      state.freezesRemaining -= daysToFreeze;
+      state.usedFreeze = true;
+      state.freezesUsed = daysToFreeze;
+
+      } else {
+      // Reset streak if we can't cover the gap with freezes
+      state.newStreak = 1;
+      const seedlingRole = Object.values(CONFIG.STREAK.MILESTONES.ROLES).find(role => role.days === 1);
+      if (seedlingRole) {
+        state.roleInfo = seedlingRole;  // This triggers role change
+        state.milestone = false;  // Don't show milestone message
+        state.dmMessage = '💪 ${user} is back on the wagon! It takes a ton of grit to start over - show them some love and admiration! 🙌';
+      }
+    }
+  }
+
+  // Check for milestones
+  const milestoneRole = Object.values(CONFIG.STREAK.MILESTONES.ROLES).find(role => role.days === state.newStreak);
+  if (milestoneRole && now.getDate() !== lastLogDate.getDate() && state.newStreak > 1) {
+    state.milestone = true;
+    state.dmMessage = `🏆 Congratulations! You've earned the ${milestoneRole.name} role!`;
+    state.roleInfo = milestoneRole;
+    
+    // Award freeze if configured
+    if (milestoneRole.awardFreeze) {
+      state.freezesRemaining += 1;
+    }
+  }
+
+ // Check for freeze awards
+  if (CONFIG.STREAK.MILESTONES.FREEZE_AWARD.includes(state.newStreak) && 
+      now.getDate() !== lastLogDate.getDate()) {
+    state.freezesRemaining += 1;
+    // If there's already a milestone message, append to it
+    state.dmMessage = state.dmMessage 
+      ? `${state.dmMessage}\n\n${CONFIG.STREAK.MESSAGES.DM.FREEZE_AWARD.replace('${streak}', state.newStreak)}`
+      : CONFIG.STREAK.MESSAGES.DM.FREEZE_AWARD.replace('${streak}', state.newStreak);
+  }
+
+  return state;
+}
+
+function updateStreakData_(sheet, row, state) {
+  // Format date consistently
+  const formattedDate = state.logDate;  // Use exact timestamp directly
+
+  // Update basic streak data with explicit number conversion
+  sheet.getRange(row, CONFIG.STREAK.COLUMNS.CURRENT_STREAK)
+    .setValue(Number(state.newStreak));
+  
+  sheet.getRange(row, CONFIG.STREAK.COLUMNS.LAST_LOG_DATE)
+    .setValue(formattedDate);
+  
+  sheet.getRange(row, CONFIG.STREAK.COLUMNS.FREEZES_REMAINING)
+    .setValue(Number(state.freezesRemaining));
+
+  // Update longest streak if needed
+  const currentLongest = Number(sheet.getRange(row, CONFIG.STREAK.COLUMNS.LONGEST_STREAK).getValue()) || 0;
+  if (state.newStreak > currentLongest) {
+    sheet.getRange(row, CONFIG.STREAK.COLUMNS.LONGEST_STREAK)
+      .setValue(Number(state.newStreak));
+  }
+
+  // Update freeze-related data if freezes were used
+  if (state.usedFreeze) {
+    const currentFrozenDates = sheet.getRange(row, CONFIG.STREAK.COLUMNS.FROZEN_DATES).getValue();
+    // If multiple freezes were used, add the date multiple times
+    const freezeDates = Array(state.freezesUsed).fill(formattedDate).join(',');
+    const newFrozenDates = currentFrozenDates ? `${currentFrozenDates},${freezeDates}` : freezeDates;
+    sheet.getRange(row, CONFIG.STREAK.COLUMNS.FROZEN_DATES).setValue(newFrozenDates);
+    sheet.getRange(row, CONFIG.STREAK.COLUMNS.LAST_FREEZE_DATE).setValue(formattedDate);
+  }
+}
+
+function generateMilestoneMessages_(streak, userTag) {
+  let milestone = null;
+  let dmMessage = null;
+  let roleInfo = null;
+
+  // Check regular milestones
+  if (CONFIG.STREAK.MILESTONES.REGULAR.includes(streak)) {
+    milestone = true;  // Just indicate there's a milestone
+  
+    // Find matching role
+    const roles = CONFIG.STREAK.MILESTONES.ROLES;
+    for (const key in roles) {
+      const role = roles[key];
+      if (role.days === streak) {
+        roleInfo = {
+          name: role.name,
+          color: role.color
+        };
+        dmMessage = `🏆 Congratulations! You've earned the ${role.name} role!`;
+        break;
+      }
+    }
+  }
+
+  return { 
+    milestone, 
+    dmMessage,
+    roleInfo
+  };
+}
+
+function hasUserLoggedToday_(userId, streakDate) {
+  const userSheet = getUserSheet(userId);
+  const data = userSheet.getDataRange().getValues();
+  // Start from row 3 (skip email and headers)
+  for (let i = 2; i < data.length; i++) {
+    if (data[i][0] === streakDate) return true;
+  }
+  return false;
+}
+
+function findOrCreateUserRow_(sheet, data, userId, userTag) {
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId) {
+      return i + 1;
+    }
+  }
+  
+  const defaultValues = [
+    userId,
+    userTag,
+    0, // CurrentStreak
+    0, // LongestStreak
+    '', // LastLogDate
+    0, // FreezesRemaining
+    '', // LastFreezeDate
+    '' // FrozenDates
+  ];
+  sheet.appendRow(defaultValues);
+  return sheet.getLastRow();
+}
+
+function sendFreezeNotification(userTag) {
+  queueDiscordDM(userTag, "You've used a streak freeze 🧊. Your streak survives to fight another day!");
+}
+
+//end streaks.gs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//Stats.gs
+
+// =====================================
+// CONFIGURATION
+// =====================================
+const STATS_CONFIG = {
+    // Sheet Configuration
+    SHEETS: {
+        WEEKLY_STATS: 'Weekly_Stats',
+        HISTORICAL_STATS: 'Historical_Stats'  // New sheet
+    },
+    
+    // Column Configuration
+    COLUMNS: {
+        USER_TAG: 1,
+        DATE: 2,
+        STATS_JSON: 3
+    },
+
+    HISTORICAL: {
+      COLUMNS: {
+        LABEL_UNIT: 1,      // "label|unit" combination as key
+        FIRST_SEEN: 2,      // First date this combination appeared
+        LAST_SEEN: 3,       // Last date this combination appeared
+        TOTAL_ENTRIES: 4,   // Total number of entries with this combination
+        DATA_SUMMARY: 5     // JSON string of aggregated stats
+    }
+   },
+
+    // Timing Configuration
+    PROCESS_HOUR: 7,     // 7 AM
+    PROCESS_DAY: ScriptApp.WeekDay.MONDAY,
+    LOOKBACK_DAYS: 30,   // For finding active users
+    ANALYSIS_DAYS: 6,    // Number of days to analyze
+    RETENTION_DAYS: 90,  // How long to keep old stats
+    
+    // Statistical Thresholds
+    MINIMUM_LOGS: 7,     // Minimum logs needed for analysis
+    CORRELATION: {
+        WEAK: 0.2,
+        MODERATE: 0.4,
+        STRONG: 0.6,
+        P_VALUE_THRESHOLD: 0.05
+    },
+
+    // Performance Settings
+    BATCH_SIZE: 50,      // Process users in batches
+    BATCH_DELAY_MS: 1000,// Delay between batches to prevent timeout
+    
+    // Error Handling
+    MAX_RETRIES: 3,
+    RETRY_DELAY_MS: 5000,
+    
+    // Data Cleaning
+    VALUE_BOUNDS: {
+        MIN_SATISFACTION: 0,
+        MAX_SATISFACTION: 10,
+        OUTLIER_STDEVS: 3  // Flag values more than 3 standard deviations from mean
+    },
+
+    // Cache Settings
+    CACHE_DURATION_HOURS: 24
+};
+
+const STATS_ERROR_TYPES = {
+    CALCULATION: 'stats_calculation',
+    VALIDATION: 'stats_validation',
+    TIMEOUT: 'stats_timeout'
+};
+
+
+// =====================================
+// DEPENDENCIES
+// =====================================
+// Required functions from Code.gs:
+// - logError_(error, context)
+// - CONFIG.COLUMNS (for priority and satisfaction column indices)
+
+// Verify dependencies are available
+function verifyDependencies_() {
+    if (typeof logError_ !== 'function') {
+        throw new Error('Required function logError_ not found');
+    }
+    if (typeof CONFIG === 'undefined' || !CONFIG.COLUMNS) {
+        throw new Error('Required CONFIG.COLUMNS not found');
+    }
+}
+
+// Run verification when the file loads
+verifyDependencies_();
+
+
+
+// =====================================
+// STATS HELPER FUNCTIONS
+// =====================================
+
+function groupByDate(values) {
+  console.log("groupByDate input:", JSON.stringify(values));
+  // Type checking
+  if (!Array.isArray(values)) {
+    logError_('Invalid input to groupByDate', {
+      action: STATS_ERROR_TYPES.VALIDATION,
+      error: 'Input must be an array',
+      received: typeof values
+    });
+    return [];
+  }
+
+  const dateGroups = {};
+  
+  values.forEach((entry, index) => {
+    // Validate entry structure
+    if (!entry || typeof entry !== 'object') {
+      logError_('Invalid entry in values array', {
+        action: STATS_ERROR_TYPES.VALIDATION,
+        error: 'Entry must be an object',
+        index,
+        received: typeof entry
+      });
+      return;
+    }
+
+    if (!entry.date || !entry.value) {
+      logError_('Invalid entry properties', {
+        action: STATS_ERROR_TYPES.VALIDATION,
+        error: 'Entry missing date or value',
+        index,
+        entry: JSON.stringify(entry)
+      });
+      return;
+    }
+
+    try {
+      const dateKey = new Date(entry.date).toISOString().split('T')[0];
+      const numValue = parseFloat(entry.value);
+
+      if (isNaN(numValue)) {
+        logError_('Invalid numeric value', {
+          action: STATS_ERROR_TYPES.VALIDATION,
+          error: 'Value cannot be converted to number',
+          index,
+          value: entry.value
+        });
+        return;
+      }
+
+      if (!dateGroups[dateKey]) {
+        dateGroups[dateKey] = {
+          sum: 0,
+          count: 0
+        };
+      }
+      dateGroups[dateKey].sum += numValue;
+      dateGroups[dateKey].count++;
+    } catch (error) {
+      logError_('Date processing error', {
+        action: STATS_ERROR_TYPES.VALIDATION,
+        error: error.toString(),
+        index,
+        entry: JSON.stringify(entry)
+      });
+    }
+  });
+
+  // Convert to array of averaged values
+  return Object.entries(dateGroups)
+    .map(([date, data]) => ({
+      date: new Date(date),
+      value: data.sum / data.count
+    }))
+    .sort((a, b) => b.date - a.date); // Sort newest to oldest
+}
+
+function mean(values) {
+  // Type checking
+  if (!Array.isArray(values)) {
+    logError_('Invalid input to mean', {
+      action: STATS_ERROR_TYPES.VALIDATION,
+      error: 'Input must be an array',
+      received: typeof values
+    });
+    return 0;
+  }
+
+  if (!values.length) return 0;
+
+  const validNumbers = values.filter(val => !isNaN(parseFloat(val)));
+  if (validNumbers.length === 0) {
+    logError_('No valid numbers in array', {
+      action: STATS_ERROR_TYPES.VALIDATION,
+      error: 'Array contains no valid numbers',
+      values: JSON.stringify(values)
+    });
+    return 0;
+  }
+
+  return validNumbers.reduce((sum, val) => sum + parseFloat(val), 0) / validNumbers.length;
+}
+
+  /**
+   * Calculates the median (middle value) of an array of numbers.
+   * @param {number[]} values - An array of numbers.
+   * @returns {number|null} The median value, or null if input is invalid or empty after cleaning.
+   */
+function calculateMedian(values) {
+  // Basic validation
+  if (!Array.isArray(values) || values.length === 0) {
+    return null;
+  }
+
+  // Filter out non-numeric values and convert valid ones to numbers
+  const numericValues = values
+    .map(v => parseFloat(v)) // Convert to number
+    .filter(v => !isNaN(v)); // Keep only valid numbers
+
+  if (numericValues.length === 0) {
+    return null; // No valid numbers to calculate median
+  }
+
+  // Sort the numeric values
+  numericValues.sort((a, b) => a - b);
+
+  // Find the middle index
+  const midIndex = Math.floor(numericValues.length / 2);
+
+  // Check if the array length is odd or even
+  if (numericValues.length % 2 === 1) {
+    // Odd length: median is the middle element
+    return numericValues[midIndex];
+  } else {
+    // Even length: median is the average of the two middle elements
+    return (numericValues[midIndex - 1] + numericValues[midIndex]) / 2;
+  }
+}
+
+
+  /**
+   * Counts the number of unique, non-null, numeric values in an array.
+   * @param {Array} values - An array of values (potentially numbers, strings, nulls).
+   * @returns {number} The count of unique numeric values.
+   */
+function countUnique(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return 0;
+  }
+  // Filter for valid numbers and create a Set to get unique values
+  const uniqueNumericValues = new Set(
+    values
+      .map(v => parseFloat(v)) // Convert to number
+      .filter(v => !isNaN(v))  // Keep only valid numbers
+  );
+  return uniqueNumericValues.size; // Return the size of the Set
+}
+
+
+
+  /**
+   * Performs stratified analysis for one pair of variables against an output variable.
+   * Calculates the mean output for High/Low combinations based on median splits.
+   * Identifies groups with means significantly different from the overall median based on IQR.
+   * @param {object[]} alignedData - Array of objects with date-aligned numeric values.
+   * @param {object} var1Info - Info for the first variable { valueKey, median, label, unit }.
+   * @param {object} var2Info - Info for the second variable { valueKey, median, label, unit }.
+   * @param {object} outputInfo - Info for the output variable { valueKey, label }.
+   * @returns {object|null} Analysis results including best/worst significant groups, or null if insufficient data.
+   */
+function performSinglePairStratification(alignedData, var1Info, var2Info, outputInfo) {
+  const MIN_TOTAL_ALIGNED_POINTS = 7;  // Min days where Var1, Var2, AND Output are present (Lowered in previous step)
+  const MIN_GROUP_N_FOR_AVG = 3;      // Min data points needed in a subgroup (HH, HL etc) to consider its average
+  const IQR_MULTIPLIER = 1.5;         // Multiplier for IQR to determine significance threshold
+
+  // 1. Filter for rows where all necessary data points for this pair are valid numbers
+  const validRows = alignedData.filter(row =>
+    row[var1Info.valueKey] !== null && !isNaN(parseFloat(row[var1Info.valueKey])) &&
+    row[var2Info.valueKey] !== null && !isNaN(parseFloat(row[var2Info.valueKey])) &&
+    row[outputInfo.valueKey] !== null && !isNaN(parseFloat(row[outputInfo.valueKey]))
+  );
+
+  // 2. Check if enough aligned data exists for this specific pairwise analysis
+  if (validRows.length < MIN_TOTAL_ALIGNED_POINTS) {
+    // Log skipped reason - handled by caller (calculateUserStats) now if needed based on this null return
+    // Logger.log(`Skipping stratification for ${var1Info.label} & ${var2Info.label}: Only ${validRows.length} fully aligned data points found (need ${MIN_TOTAL_ALIGNED_POINTS}).`);
+    return null; // Not enough aligned data
+  }
+
+  // 3. Calculate overall Output statistics for thresholding
+  const outputValues = validRows.map(row => parseFloat(row[outputInfo.valueKey]));
+  const outputMedian = calculateMedian(outputValues);
+  const outputQ1 = calculatePercentile_(outputValues, 25); // Need a percentile function
+  const outputQ3 = calculatePercentile_(outputValues, 75); // Need a percentile function
+
+  // Ensure median and quartiles could be calculated
+  if (outputMedian === null || outputQ1 === null || outputQ3 === null) {
+      Logger.log(`Could not calculate Output median/quartiles for ${var1Info.label} & ${var2Info.label}. Skipping stratification.`);
+      return null;
+  }
+  const outputIQR = outputQ3 - outputQ1;
+  const lowerThreshold = outputMedian - IQR_MULTIPLIER * outputIQR;
+  const upperThreshold = outputMedian + IQR_MULTIPLIER * outputIQR;
+
+
+  // 4. Initialize containers for output values in each quadrant
+  const groups = { HH: [], HL: [], LH: [], LL: [] };
+
+  // 5. Stratify the valid rows
+  validRows.forEach(row => {
+    const v1 = parseFloat(row[var1Info.valueKey]);
+    const v2 = parseFloat(row[var2Info.valueKey]);
+    const output = parseFloat(row[outputInfo.valueKey]);
+    const v1Group = (v1 > var1Info.median) ? 'H' : 'L';
+    const v2Group = (v2 > var2Info.median) ? 'H' : 'L';
+    groups[v1Group + v2Group].push(output);
+  });
+
+  // 6. Calculate stats and check significance for each group
+  let bestSignificantGroup = null; // { key, avg, n }
+  let worstSignificantGroup = null; // { key, avg, n }
+  let maxSigAvg = -Infinity;
+  let minSigAvg = +Infinity;
+
+  for (const groupKey in groups) { // groupKey will be "HH", "HL", "LH", "LL"
+    const groupValues = groups[groupKey];
+    const n = groupValues.length;
+
+    if (n >= MIN_GROUP_N_FOR_AVG) {
+      const avg = mean(groupValues);
+      if (avg !== null) {
+        const roundedAvg = Math.round(avg * 10) / 10;
+        // Check significance
+        const isSignificant = (roundedAvg > upperThreshold) || (roundedAvg < lowerThreshold);
+
+        if (isSignificant) {
+          // Check if it's the best significant high
+          if (roundedAvg > outputMedian && roundedAvg > maxSigAvg) {
+            maxSigAvg = roundedAvg;
+            bestSignificantGroup = { key: groupKey, avg: roundedAvg, n: n };
+          }
+          // Check if it's the worst significant low
+          if (roundedAvg < outputMedian && roundedAvg < minSigAvg) {
+            minSigAvg = roundedAvg;
+            worstSignificantGroup = { key: groupKey, avg: roundedAvg, n: n };
+          }
+        }
+      }
+    }
+  } // End loop through groups
+
+  // 7. Structure and return the final result for this pair
+  // Only return the object if at least one significant group was found
+  if (bestSignificantGroup || worstSignificantGroup) {
+      return {
+          var1Label: var1Info.label,
+          var1Unit: var1Info.unit,
+          var2Label: var2Info.label,
+          var2Unit: var2Info.unit,
+          outputLabel: outputInfo.label,
+          // Only include groups that were significant
+          bestSignificantGroup: bestSignificantGroup,
+          worstSignificantGroup: worstSignificantGroup
+        };
+  } else {
+      // No significant groups found for this pair
+      return { // Return structure indicating run but no findings
+          var1Label: var1Info.label,
+          var1Unit: var1Info.unit,
+          var2Label: var2Info.label,
+          var2Unit: var2Info.unit,
+          outputLabel: outputInfo.label,
+          bestSignificantGroup: null,
+          worstSignificantGroup: null
+      };
+  }
+}
+
+// Helper function to calculate Percentiles (needed for IQR)
+// Add this function near calculateMedian if it doesn't exist
+function calculatePercentile_(values, percentile) {
+  if (!Array.isArray(values) || values.length === 0 || percentile <= 0 || percentile >= 100) {
+    return null;
+  }
+  const numericValues = values.map(v => parseFloat(v)).filter(v => !isNaN(v));
+  if (numericValues.length === 0) {
+    return null;
+  }
+  numericValues.sort((a, b) => a - b);
+  const index = (percentile / 100) * (numericValues.length - 1);
+  if (Math.floor(index) === index) { // Integer index
+    return numericValues[index];
+  } else { // Interpolate
+    const lower = numericValues[Math.floor(index)];
+    const upper = numericValues[Math.ceil(index)];
+    return lower + (upper - lower) * (index - Math.floor(index));
+  }
+}
+
+
+
+function calculateVariationPercent(values) {
+  // Type checking
+  if (!Array.isArray(values)) {
+    logError_('Invalid input to calculateVariationPercent', {
+      action: STATS_ERROR_TYPES.VALIDATION,
+      error: 'Input must be an array',
+      received: typeof values
+    });
+    return 0;
+  }
+
+  if (!values.length) return 0;
+
+  const validNumbers = values.filter(val => !isNaN(parseFloat(val)));
+  if (validNumbers.length === 0) {
+    logError_('No valid numbers in array', {
+      action: STATS_ERROR_TYPES.VALIDATION,
+      error: 'Array contains no valid numbers',
+      values: JSON.stringify(values)
+    });
+    return 0;
+  }
+
+  const avg = mean(validNumbers);
+  if (avg === 0) return 0;
+  
+  const squaredDiffs = validNumbers.map(v => Math.pow(parseFloat(v) - avg, 2));
+  const standardDev = Math.sqrt(mean(squaredDiffs));
+  
+  return Math.round((standardDev / avg) * 100);
+}
+
+
+
+  /**
+   * Calculates detailed statistics for a given user based on their log data.
+   * Uses the user's most recently set weekly priorities to determine which metrics to analyze across all history.
+   * @param {string} userId The Discord User ID.
+   * @param {string} userTag The Discord User Tag (e.g., username#1234).
+   * @param {Array[]} data The raw data array from the Master Data sheet.
+   * @returns {object|null} A stats object containing processed metrics, or null if insufficient data/error.
+   */
+function calculateUserStats(userId, userTag, data) {
+  try {
+    // 1. Get User's CURRENT Weekly Priorities
+    let currentWeeklyPriorities = null;
+    let priorityFetchError = null;
+    try {
+      // Assumes getWeeklyPriorities(userId) function exists and returns { success: boolean, priorities?: { Priority1: {label, unit}, ... }, error?: string }
+      const priorityResult = getWeeklyPriorities(userId);
+      if (priorityResult.success && priorityResult.priorities) {
+        currentWeeklyPriorities = [ // Create a simple array of {label, unit}
+          { label: priorityResult.priorities.Priority1.label, unit: priorityResult.priorities.Priority1.unit },
+          { label: priorityResult.priorities.Priority2.label, unit: priorityResult.priorities.Priority2.unit },
+          { label: priorityResult.priorities.Priority3.label, unit: priorityResult.priorities.Priority3.unit }
+        ].filter(p => p.label && p.unit); // Filter out any empty priorities potentially returned
+        Logger.log(`[calculateUserStats:${userTag}] Fetched ${currentWeeklyPriorities.length} current priorities.`);
+      } else {
+        priorityFetchError = priorityResult.error || 'Could not fetch priorities.';
+        Logger.log(`[calculateUserStats:${userTag}] Warning: ${priorityFetchError}`);
+      }
+    } catch (e) {
+      priorityFetchError = `Error fetching priorities: ${e.toString()}`;
+      logError_(e, { action: 'calculateUserStats_fetch_prio', userId: userId, userTag: userTag, context: 'Failed inside getWeeklyPriorities call' });
+    }
+
+    // If NO priorities could be fetched or none are validly set, we cannot proceed based on current goals.
+    if (!currentWeeklyPriorities || currentWeeklyPriorities.length === 0) {
+       Logger.log(`[calculateUserStats:${userTag}] No current weekly priorities set or fetched. Cannot determine metrics to analyze based on current goals.`);
+       return null; // Indicate failure: cannot calculate based on current goals.
+    }
+
+    // Create normalized keys from CURRENT priorities to use for matching historical data
+    const currentMetricKeys = new Set();
+    const currentMetricsMap = new Map(); // To store original label/unit casing for reporting
+    currentWeeklyPriorities.forEach(p => {
+        // Assumes normalizeLabel function exists (lowercase, trim, handle spacing)
+        const normalizedLabel = normalizeLabel(p.label);
+        const normalizedUnit = normalizeLabel(p.unit);
+        const key = `${normalizedLabel}__${normalizedUnit}`;
+        currentMetricKeys.add(key);
+        currentMetricsMap.set(key, { label: p.label, unit: p.unit }); // Store original casing
+    });
+    Logger.log(`[calculateUserStats:${userTag}] Analyzing based on ${currentMetricKeys.size} current priority keys.`);
+
+    // 2. Get ALL user logs from the provided master data, sorted newest first
+    const userLogs = data
+      .filter(row => row[CONFIG.COLUMNS.USERTAG - 1] === userTag) // Assuming CONFIG.COLUMNS.USERTAG = 3
+      .sort((a, b) => { // Sort by Date (col 1, index 0) DESC
+          try { return new Date(b[CONFIG.COLUMNS.DATE - 1]) - new Date(a[CONFIG.COLUMNS.DATE - 1]); }
+          catch(e) { return 0; } // Handle potential invalid dates
+       });
+
+    // Check minimum overall logs required for *any* stats calculation
+    if (userLogs.length < STATS_CONFIG.MINIMUM_LOGS) { // Assuming STATS_CONFIG.MINIMUM_LOGS = 7
+      Logger.log(`Skipping stats for ${userTag}: Found ${userLogs.length} total logs, need ${STATS_CONFIG.MINIMUM_LOGS} overall.`);
+      return null;
+    }
+
+    // 3. Group ALL historical data by key, filtering for entries that match one of the CURRENT priorities
+    const flatPriorities = [];
+     for (const row of userLogs) {
+        const date = new Date(row[CONFIG.COLUMNS.DATE - 1]);
+        // Check all 3 priority slots in the historical row
+        for (let i = 1; i <= 3; i++) {
+            const rawLabel = row[CONFIG.COLUMNS[`P${i}_LABEL`] - 1];
+            const rawUnit = row[CONFIG.COLUMNS[`P${i}_UNIT`] - 1];
+            const rawValue = row[CONFIG.COLUMNS[`P${i}_VALUE`] - 1];
+            // Basic validation for the historical entry
+            if (!rawLabel || !rawUnit || rawValue === null || rawValue === '' || isNaN(parseFloat(rawValue))) continue;
+            // Normalize the historical entry's key
+            const normalizedLabel = normalizeLabel(rawLabel);
+            const normalizedUnit = normalizeLabel(rawUnit);
+            const key = `${normalizedLabel}__${normalizedUnit}`;
+            // *** Core Logic Change: Only include if this historical key matches a CURRENT priority key ***
+            if (currentMetricKeys.has(key)) {
+               flatPriorities.push({ key, label: rawLabel.trim(), unit: rawUnit.trim(), value: Number(parseFloat(rawValue)), date });
+            }
+        }
+     }
+    // Group the filtered entries by their normalized key
+    const groupedByKey = {};
+    for (const entry of flatPriorities) {
+        if (!groupedByKey[entry.key]) groupedByKey[entry.key] = [];
+        // Store details needed for calculations and context
+        groupedByKey[entry.key].push({ date: entry.date, value: entry.value, label: entry.label, unit: entry.unit });
+    }
+
+    // 4. Initialize the stats object to be returned
+    const stats = {
+      userTag,
+      generatedAt: new Date().toISOString(),
+      priorities: [], // Holds stats for priorities meeting MINIMUM_LOGS
+      skippedPriorities: [], // Holds priorities not meeting MINIMUM_LOGS
+      correlations: [],
+      stratifiedAnalyses: [],
+      skippedStratificationReason: []
+    };
+
+     // If no historical data matched any of the current priorities
+     if (Object.keys(groupedByKey).length === 0) {
+        Logger.log(`[calculateUserStats:${userTag}] No historical data found matching any of the current priorities. Cannot generate report.`);
+        stats.statusMessage = "No historical data found for your current priorities.";
+        return stats; // Return structure indicating no stats, but not an error
+    }
+
+    // 5. Process Metrics Matching CURRENT Priorities
+    for (const key of currentMetricKeys) { // Iterate the SET of current priority keys
+      const entries = groupedByKey[key]; // Get all historical entries matching this key
+      const originalCase = currentMetricsMap.get(key); // Get the original label/unit casing
+
+      // Handle case where a current priority has NO historical entries
+      if (!entries || entries.length === 0) {
+          stats.skippedPriorities.push({ label: originalCase.label, unit: originalCase.unit, dataPoints: 0, reason: `No historical logs found for this priority.` });
+          continue; // Skip to the next current priority
+      }
+
+      const values = entries.map(e => e.value);
+      const totalHistoricalCount = values.length;
+
+      // Check if enough historical data exists for THIS specific priority
+      if (totalHistoricalCount >= STATS_CONFIG.MINIMUM_LOGS) {
+        const medianValue = calculateMedian(values); // Assumes calculateMedian helper exists
+        stats.priorities.push({
+          label: originalCase.label, // Use original casing for reporting
+          unit: originalCase.unit,
+          metrics: {
+            average: Math.round(mean(values) * 10) / 10, // Assumes mean helper exists
+            variation: Math.round(calculateVariationPercent(values)), // Assumes calculateVariationPercent helper exists
+            dataPoints: totalHistoricalCount,
+            median: medianValue
+          }
+        });
+      } else {
+        // Not enough data for stats on this specific priority
+        stats.skippedPriorities.push({ label: originalCase.label, unit: originalCase.unit, dataPoints: totalHistoricalCount, reason: `Needs ${STATS_CONFIG.MINIMUM_LOGS} historical logs for stats.` });
+      }
+    }
+
+    // 6. Calculate Individual Correlations (vs. Satisfaction - output still hardcoded)
+    // This section uses `stats.priorities`, which now correctly contains only stats for current priorities meeting the threshold.
+    const satisfactionColumnIndex = CONFIG.COLUMNS.SATISFACTION - 1; // Assumes Satisfaction is col 13
+     const satisfactionScores = userLogs.map(row => {
+         const satValue = row[satisfactionColumnIndex];
+         // Handle potential non-numeric values gracefully
+         return (satValue === null || satValue === '' || isNaN(parseFloat(satValue))) ? null : parseFloat(satValue);
+        });
+     // Map satisfaction scores by date string for easy lookup
+     const satisfactionMap = new Map();
+     userLogs.forEach((row, index) => {
+         try {
+             const dateStr = new Date(row[CONFIG.COLUMNS.DATE - 1]).toISOString().split('T')[0];
+             if (satisfactionScores[index] !== null) { // Only map valid scores
+                satisfactionMap.set(dateStr, satisfactionScores[index]);
+             }
+         } catch(e) { /* Ignore rows with invalid dates */ }
+        });
+
+     stats.correlations = stats.priorities.map(priority => {
+         // Regenerate the normalized key for lookup in groupedByKey
+         const normalizedLabel = normalizeLabel(priority.label);
+         const normalizedUnit = normalizeLabel(priority.unit);
+         const priorityKey = `${normalizedLabel}__${normalizedUnit}`;
+         const priorityEntries = groupedByKey[priorityKey] || []; // Get historical entries for this priority
+
+         const alignedPriorityValues = [];
+         const alignedSatisfactionValues = [];
+         // Align data points by date
+         priorityEntries.forEach(entry => {
+             try {
+                 const dateStr = entry.date.toISOString().split('T')[0];
+                 if (satisfactionMap.has(dateStr)) { // Check if satisfaction exists for the same day
+                     alignedPriorityValues.push(entry.value);
+                     alignedSatisfactionValues.push(satisfactionMap.get(dateStr));
+                    }
+             } catch(e) { /* Ignore entries with invalid dates */ }
+            });
+
+         // Need enough aligned pairs for correlation
+         if (alignedPriorityValues.length < 4) return null; // Threshold for meaningful correlation
+
+         // Assumes calculateCorrelation helper exists and returns { coefficient, pValue, n } or null
+         const correlationResult = calculateCorrelation(alignedPriorityValues, alignedSatisfactionValues);
+         if (!correlationResult) return null;
+
+         // Assumes interpretCorrelation helper exists and returns { text, strength, direction, significant } or null
+         const interpretation = interpretCorrelation(correlationResult);
+         if (!interpretation) return null;
+
+         // Return structured correlation info
+         return { priority: priority.label, correlation: correlationResult.coefficient, n: correlationResult.n, interpretation: interpretation.text };
+     }).filter(c => c !== null); // Filter out any null results from failed calculations
+
+
+    // 7. Stratified Analysis Section (Optional - Requires Careful Review)
+    // This section compares pairs of the CURRENT priorities against Satisfaction.
+    // It needs the `currentWeeklyPriorities` fetched earlier.
+    // Assumes helpers: performSinglePairStratification, countUnique, calculateMedian exist.
+
+    const currentPrioritiesInfoForStrat = {};
+    currentWeeklyPriorities.forEach((p, index) => {
+        currentPrioritiesInfoForStrat[`Priority${index + 1}`] = { label: p.label, unit: p.unit };
+    });
+    // Fill remaining slots if less than 3 priorities were set
+    for (let i = currentWeeklyPriorities.length + 1; i <= 3; i++) {
+        currentPrioritiesInfoForStrat[`Priority${i}`] = { label: `NotSet${i}`, unit: '' };
+    }
+
+    const outputLabel = "Satisfaction"; // Output still hardcoded
+    const MIN_UNIQUE_INPUT_VALUES = 3; // Threshold for sufficient variation in an input
+
+    // Get historical data again, specifically for the current priorities
+    const currentP1Key = currentWeeklyPriorities[0] ? `${normalizeLabel(currentWeeklyPriorities[0].label)}__${normalizeLabel(currentWeeklyPriorities[0].unit)}` : null;
+    const currentP2Key = currentWeeklyPriorities[1] ? `${normalizeLabel(currentWeeklyPriorities[1].label)}__${normalizeLabel(currentWeeklyPriorities[1].unit)}` : null;
+    const currentP3Key = currentWeeklyPriorities[2] ? `${normalizeLabel(currentWeeklyPriorities[2].label)}__${normalizeLabel(currentWeeklyPriorities[2].unit)}` : null;
+
+    const historicalP1 = currentP1Key ? (groupedByKey[currentP1Key] || []) : [];
+    const historicalP2 = currentP2Key ? (groupedByKey[currentP2Key] || []) : [];
+    const historicalP3 = currentP3Key ? (groupedByKey[currentP3Key] || []) : [];
+    // Get historical output data (Satisfaction)
+    const historicalOutput = userLogs.map(row => ({ date: new Date(row[CONFIG.COLUMNS.DATE - 1]), value: parseFloat(row[satisfactionColumnIndex]) })).filter(item => !isNaN(item.value));
+
+    // Prepare aligned data structure for stratification
+    const alignedDataMap = new Map();
+    const addDataToMap = (historicalData, valueProp) => { // Simplified helper
+      if (historicalData.length > 0) {
+        historicalData.forEach(item => {
+          try {
+             const dateStr = item.date.toISOString().split('T')[0];
+             if (!alignedDataMap.has(dateStr)) alignedDataMap.set(dateStr, { date: item.date });
+             alignedDataMap.get(dateStr)[valueProp] = item.value;
+          } catch(e) {/* Ignore invalid dates */}
+        });
+      }
+    };
+    addDataToMap(historicalP1, 'p1Value');
+    addDataToMap(historicalP2, 'p2Value');
+    addDataToMap(historicalP3, 'p3Value');
+    addDataToMap(historicalOutput, 'outputValue');
+    const analysisData = Array.from(alignedDataMap.values()).sort((a, b) => a.date - b.date);
+
+    // Calculate Medians for stratification splits
+    const p1Median = calculateMedian(historicalP1.map(e => e.value));
+    const p2Median = calculateMedian(historicalP2.map(e => e.value));
+    const p3Median = calculateMedian(historicalP3.map(e => e.value));
+
+    // --- Perform Pairwise Stratification ---
+    const stratificationHelper = performSinglePairStratification; // Assumed to exist
+    const runStratificationPair = (pAInfo, pBInfo, historicalA, historicalB, medianA, medianB, keyA, keyB) => {
+        if (pAInfo.label !== 'NotSet' && pBInfo.label !== 'NotSet') { // Basic check if priorities exist
+            const uniqueA = countUnique(historicalA.map(e => e.value)); // Assumed to exist
+            const uniqueB = countUnique(historicalB.map(e => e.value));
+            if (uniqueA < MIN_UNIQUE_INPUT_VALUES || uniqueB < MIN_UNIQUE_INPUT_VALUES) {
+                stats.skippedStratificationReason.push({ pair: [pAInfo.label, pBInfo.label], problemVar: uniqueA < MIN_UNIQUE_INPUT_VALUES ? pAInfo.label : pBInfo.label });
+            } else if (medianA !== null && medianB !== null) { // Check if medians are valid
+                const stratResult = stratificationHelper(analysisData,
+                    { valueKey: keyA, median: medianA, label: pAInfo.label, unit: pAInfo.unit },
+                    { valueKey: keyB, median: medianB, label: pBInfo.label, unit: pBInfo.unit },
+                    { valueKey: 'outputValue', label: outputLabel });
+                if (stratResult) stats.stratifiedAnalyses.push(stratResult);
+            }
+        }
+    };
+
+    // Run for P1 vs P2, P1 vs P3, P2 vs P3
+    runStratificationPair(currentPrioritiesInfoForStrat.Priority1, currentPrioritiesInfoForStrat.Priority2, historicalP1, historicalP2, p1Median, p2Median, 'p1Value', 'p2Value');
+    runStratificationPair(currentPrioritiesInfoForStrat.Priority1, currentPrioritiesInfoForStrat.Priority3, historicalP1, historicalP3, p1Median, p3Median, 'p1Value', 'p3Value');
+    runStratificationPair(currentPrioritiesInfoForStrat.Priority2, currentPrioritiesInfoForStrat.Priority3, historicalP2, historicalP3, p2Median, p3Median, 'p2Value', 'p3Value');
+    // --- End Stratification ---
+
+    return stats; // Return the final stats object
+
+  } catch (error) {
+    // Log any unexpected errors during the main calculation process
+    logError_('Error calculating user stats', {
+      action: STATS_ERROR_TYPES.CALCULATION, // Assumes STATS_ERROR_TYPES exists
+      error: error.toString(),
+      userId: userId, // Include userId in error context
+      userTag: userTag
+    });
+    return null; // Indicate failure
+  }
+} // End of calculateUserStats function
+
+
+
+
+// Helper for label normalization (place near your other utilities)
+function normalizeLabel(str) {
+  return str
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function calculateCorrelation(x, y) {
+  // Type checking
+  if (!Array.isArray(x) || !Array.isArray(y)) {
+    logError_('Invalid input to calculateCorrelation', {
+      action: STATS_ERROR_TYPES.VALIDATION,
+      error: 'Inputs must be arrays',
+      received: `x: ${typeof x}, y: ${typeof y}`
+    });
+    return null;
+  }
+
+  if (x.length !== y.length) {
+    logError_('Array length mismatch', {
+      action: STATS_ERROR_TYPES.VALIDATION,
+      error: 'Arrays must be same length',
+      lengths: `x: ${x.length}, y: ${y.length}`
+    });
+    return null;
+  }
+
+  try {
+    const n = x.length;
+    if (n < 4) return null; // Need at least 4 points for meaningful correlation
+
+    // Convert to numbers and remove any paired nulls
+    const pairs = x.map((val, i) => [parseFloat(val), parseFloat(y[i])])
+      .filter(pair => !isNaN(pair[0]) && !isNaN(pair[1]));
+    
+    if (pairs.length < 4) return null;
+
+    const xVals = pairs.map(p => p[0]);
+    const yVals = pairs.map(p => p[1]);
+
+    // Calculate means
+    const xMean = mean(xVals);
+    const yMean = mean(yVals);
+
+    // Calculate covariance and standard deviations
+    let covariance = 0;
+    let xStdDev = 0;
+    let yStdDev = 0;
+
+    for (let i = 0; i < pairs.length; i++) {
+      const xDiff = xVals[i] - xMean;
+      const yDiff = yVals[i] - yMean;
+      covariance += xDiff * yDiff;
+      xStdDev += xDiff * xDiff;
+      yStdDev += yDiff * yDiff;
+    }
+
+    const correlation = covariance / Math.sqrt(xStdDev * yStdDev);
+    
+    // Calculate p-value using t-test
+    const t = correlation * Math.sqrt((pairs.length - 2) / (1 - correlation * correlation));
+    const degreesOfFreedom = pairs.length - 2;
+    const pValue = 2 * (1 - studentT(Math.abs(t), degreesOfFreedom));
+
+    return {
+      coefficient: Math.round(correlation * 100) / 100,
+      pValue: pValue,
+      n: pairs.length
+    };
+
+  } catch (error) {
+    logError_('Error calculating correlation', {
+      action: STATS_ERROR_TYPES.CALCULATION,
+      error: error.toString()
+    });
+    return null;
+  }
+}
+
+function interpretCorrelation(correlationResult) {
+  if (!correlationResult) {
+    return null; // Only return null if calculation failed
+  }
+
+  const correlation = Math.abs(correlationResult.coefficient);
+  let strength = '';
+
+  if (correlation < 0.2) {
+      strength = 'very weak';
+  }
+  else if (correlation < 0.4) {
+    strength = 'weak';
+  } else if (correlation < 0.61) {
+    strength = 'moderate';
+  } else {
+    strength = 'strong';
+  }
+
+  const direction = correlationResult.coefficient > 0 ? 'positive' : 'negative';
+  
+  const significant = correlationResult.pValue < 0.05;
+    const confidenceText = significant ? '95% confidence there is' : 'There appears to be';
+    
+    return {
+      text: `${confidenceText} a **${strength} ${direction}** correlation with your daily satisfaction levels`,
+      strength: strength,
+      direction: direction,
+      significant: significant
+    };
+}
+
+function studentT(t, df) {
+  const x = df / (df + t * t);
+  return 1 - 0.5 * incompleteBeta(df/2, 0.5, x);
+}
+
+function incompleteBeta(a, b, x) {
+  const maxIterations = 100;
+  const epsilon = 1e-8;
+  
+  let sum = 0;
+  let term = 1;
+  
+  for (let i = 0; i < maxIterations; i++) {
+    term *= (a + i) * x / (a + b + i);
+    sum += term;
+    if (Math.abs(term) < epsilon) break;
+  }
+  
+  return sum * Math.pow(x, a) * Math.pow(1 - x, b) / a;
+}
+
+
+function storeUserStats(userStats) {
+  try {
+    Logger.log('1. Starting storage process...');
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    let statsSheet = ss.getSheetByName(STATS_CONFIG.SHEETS.WEEKLY_STATS);
+    
+    // Create sheet if needed
+    if (!statsSheet) {
+      Logger.log('2. Creating new sheet...');
+      statsSheet = ss.insertSheet(STATS_CONFIG.SHEETS.WEEKLY_STATS);
+      statsSheet.getRange('A1:C1').setValues([['UserTag', 'GeneratedAt', 'Stats']]);
+      statsSheet.setFrozenRows(1);
+    }
+
+    // Add consistency period info
+    userStats.priorities.forEach(priority => {
+      priority.consistencyPeriod = {
+        daysAnalyzed: priority.metrics.trend !== "insufficient_data" ? 
+          STATS_CONFIG.MINIMUM_LOGS : 0,
+        sameLabel: true,
+        sameUnit: true
+      };
+    });
+
+    // Get all current data
+    const data = statsSheet.getDataRange().getValues();
+    const statsDate = new Date(userStats.generatedAt);
+    const statsDateString = Utilities.formatDate(statsDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    
+    Logger.log(`Looking for existing entry for ${userStats.userTag} on ${statsDateString}`);
+    
+    // Remove any existing entries for this user and date
+    const rowsToKeep = data.filter((row, index) => {
+      if (index === 0) return true; // Keep header
+      
+      const rowDate = new Date(row[1]);
+      const rowDateString = Utilities.formatDate(rowDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      
+      // Keep rows that don't match both user and date
+      return !(row[0] === userStats.userTag && rowDateString === statsDateString);
+    });
+
+    // Add new stats row
+    rowsToKeep.push([
+      userStats.userTag,
+      userStats.generatedAt,
+      JSON.stringify(userStats)
+    ]);
+
+    // Replace sheet contents
+    statsSheet.clearContents();
+    statsSheet.getRange(1, 1, rowsToKeep.length, rowsToKeep[0].length)
+      .setValues(rowsToKeep);
+
+    Logger.log(`Updated stats for ${userStats.userTag} on ${statsDateString}`);
+    return true;
+
+  } catch (error) {
+    logError_('Error storing user stats', {
+      action: STATS_ERROR_TYPES.CALCULATION,
+      error: error.toString(),
+      userTag: userStats?.userTag || 'unknown'
+    });
+    return false;
+  }
+}
+
+function shouldRunCleanup_() {
+  // Run cleanup on Tuesdays
+  return new Date().getDay() === 2;
+}
+
+function cleanupOldStats_() {
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const statsSheet = ss.getSheetByName(STATS_CONFIG.SHEETS.WEEKLY_STATS);
+    if (!statsSheet) return;
+
+    const data = statsSheet.getDataRange().getValues();
+    if (data.length <= 1) return; // Just header row
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 60);
+
+    // Find rows to delete
+    let lastRow = data.length;
+    let rowsToDelete = [];
+    
+    // Work backwards to find old rows
+    for (let i = data.length - 1; i > 0; i--) {
+      const statsDate = new Date(data[i][1]);
+      if (statsDate < cutoffDate) {
+        rowsToDelete.push(i + 1); // +1 because sheet rows are 1-based
+      }
+    }
+
+    // Delete old rows in batches
+    if (rowsToDelete.length > 0) {
+      rowsToDelete.forEach(row => {
+        statsSheet.deleteRow(row);
+      });
+    }
+
+    return true;
+  } catch (error) {
+    logError_('Error cleaning up old stats', {
+      action: STATS_ERROR_TYPES.CALCULATION,
+      error: error.toString()
+    });
+    return false;
+  }
+}
+
+function deliverWeeklyStats() {
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const statsSheet = ss.getSheetByName(STATS_CONFIG.SHEETS.WEEKLY_STATS);
+    const data = statsSheet.getDataRange().getValues();
+    
+    // Get today's date in consistent format
+    const today = new Date();
+    const dateString = Utilities.formatDate(today, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    
+    // Process only today's stats
+    const todayStats = data.slice(1).filter(row => {
+      const rowDate = new Date(row[1]);
+      return Utilities.formatDate(rowDate, Session.getScriptTimeZone(), 'yyyy-MM-dd') === dateString;
+    });
+
+    // Send stats to each user
+    todayStats.forEach(row => {
+      const userTag = row[0];
+      const stats = JSON.parse(row[2]);
+      const message = formatWeeklyStatsMessage(stats);
+      
+      // Queue message for Discord delivery
+      queueDiscordDM(userTag, message);
+    });
+
+    return true;
+  } catch (error) {
+    logError_(error, {
+      action: 'deliver_weekly_stats',
+      context: 'Weekly stats delivery failed'
+    });
+    return false;
+  }
+}
+
+
+// Helper function to interpret stratification group keys (should already exist)
+function interpretGroupKey_(key, var1Name = 'Var1', var2Name = 'Var2') {
+  const v1 = key[0] === 'H' ? `${var1Name} was High` : `${var1Name} was Low`;
+  const v2 = key[1] === 'H' ? `${var2Name} was High` : `${var2Name} was Low`;
+  return `${v1} & ${v2}`;
+}
+
+  /**
+   * Calculates and stores stats for ONLY the specified userTag.
+   * Fetches the necessary userId and passes it to calculateUserStats.
+   * Intended to be called when a user hits a stats milestone (e.g., every 7 logs).
+   * @param {string} userTag The Discord User Tag (e.g., username#1234) to process.
+   * @returns {boolean} True if stats were successfully calculated and stored, false otherwise.
+   */
+function processAndStoreStatsForUser(userTag) {
+  Logger.log(`Processing stats for milestone trigger for ${userTag}...`);
+  try {
+    // Get userId needed for the updated calculateUserStats
+    // Assumes getUserDiscordId(userTag) function exists and returns the ID string or null
+    const userId = getUserDiscordId(userTag);
+    if (!userId) {
+        // Log the error and stop processing for this user if ID not found
+        Logger.log(`Error: Could not find Discord ID for user ${userTag} in processAndStoreStatsForUser.`);
+        logError_(new Error('Discord ID not found for stats processing'), {
+          action: 'milestone_stats_processing',
+          userTag: userTag,
+          context: 'Failed to find Discord ID before calling calculateUserStats'
+        });
+        return false; // Indicate failure: Cannot proceed without userId
+    }
+
+    // Get sheet data
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8'); // Define ss if not already available
+    const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER); // Assuming CONFIG exists
+    if (!masterSheet) {
+        Logger.log('Error: Master Data sheet not found during single user stats processing.');
+        throw new Error("Master Data sheet not found");
+     }
+    const data = masterSheet.getDataRange().getValues();
+
+    // Step 1: Calculate stats for the specific user, passing the required userId
+    // Assumes calculateUserStats(userId, userTag, data) is the updated function defined elsewhere
+    const userStats = calculateUserStats(userId, userTag, data);
+
+    // Check if stats could be generated (might be null if insufficient logs, no priorities set, etc.)
+    if (!userStats) {
+      Logger.log(`No stats generated for ${userTag} (check logs for reasons like insufficient data or no current priorities) during milestone processing.`);
+      // Don't treat as a hard error necessarily, but stats weren't generated/stored.
+      return false; // Indicate stats were not generated/stored
+    }
+
+    // Step 2: Store the calculated stats
+    // Assumes storeUserStats(userStats) function exists
+    const stored = storeUserStats(userStats);
+    if (!stored) {
+       Logger.log(`Failed to store stats for ${userTag} during milestone processing.`);
+       // storeUserStats should internally log errors via logError_
+       return false; // Indicate storage failure
+    }
+
+    // If everything succeeded
+    Logger.log(`Successfully processed and stored milestone stats for ${userTag}.`);
+    return true; // Indicate success
+
+  } catch (error) {
+    // Catch any unexpected errors during the process
+    console.error(`Error in processAndStoreStatsForUser for ${userTag}:`, error); // Log to console as well
+    Logger.log(`Error processing milestone stats for ${userTag}: ${error} Stack: ${error.stack}`);
+    // Assumes logError_ function exists
+    logError_(error, {
+      action: 'milestone_stats_processing',
+      userTag: userTag,
+      // Include userId if it was successfully fetched before the error
+      userId: typeof userId !== 'undefined' ? userId : 'unknown',
+      context: 'Failed to process/store stats on milestone: ' + error.message
+    });
+    return false; // Indicate failure
+  }
+} 
+
+function formatWeeklyStatsMessage(stats) {
+  // Initial check if stats object itself is valid
+  if (!stats || (!stats.priorities && !stats.skippedPriorities && !stats.stratifiedAnalyses && !stats.skippedStratificationReason)) {
+      logError_('Invalid or empty stats object passed to formatWeeklyStatsMessage', {
+         action: 'format_stats_message', context: 'Stats object missing or invalid', statsReceived: JSON.stringify(stats) });
+      return "Error: Could not generate stats report data.";
+  }
+
+  let message = "";
+  const hasCalculatedStats = stats.priorities && stats.priorities.length > 0;
+  const hasSkippedPriorityStats = stats.skippedPriorities && stats.skippedPriorities.length > 0;
+  const hasStratifiedResults = stats.stratifiedAnalyses && stats.stratifiedAnalyses.length > 0;
+  const hasSkippedStratification = stats.skippedStratificationReason && stats.skippedStratificationReason.length > 0;
+
+  // Determine the main header
+  if (hasCalculatedStats || hasSkippedPriorityStats) {
+       message += "📊 **Your Weekly Stats Report**\n(Check /insights7 for AI analysis)\n\n";
+  } else {
+       return "No recently logged metrics found to analyze this week.";
+  }
+
+  // Section 1: Calculated Priority Stats
+  if (hasCalculatedStats) {
+    message += "**Priority Metrics** (Recent metrics with >= 7 logs)\n";
+    stats.priorities.forEach(priority => {
+       if (!priority.metrics) { message += `\n**${priority.label || 'Unknown Priority'}** (${priority.unit || 'N/A'})\n• Stats could not be calculated.\n`; return; }
+       message += `\n**${priority.label}** (${priority.unit})\n`;
+       message += `• Average: ${priority.metrics.average}\n`;
+       message += `• Variation: ${priority.metrics.variation}%\n`;
+       if (priority.metrics.dataPoints !== undefined) { message += `• Based on: ${priority.metrics.dataPoints} historical logs\n`; }
+    });
+  }
+
+  // Section 2: Pending/Skipped Priority Stats
+  if (hasSkippedPriorityStats) {
+      message += "\n**Pending Stats** (Recent metrics with < 7 logs)\n";
+      stats.skippedPriorities.forEach(p => {
+          message += `• **${p.label}** (${p.unit}): Needs ${STATS_CONFIG.MINIMUM_LOGS} total logs for stats (currently has ${p.dataPoints}).\n`;
+      });
+  }
+
+   // Section 3: Individual Correlations
+  if (hasCalculatedStats && stats.correlations) {
+      if (stats.correlations.length > 0) {
+        message += "\n**Individual Correlations** (vs Satisfaction)\n";
+        stats.correlations.forEach(corr => {
+            message += `\n**${corr.priority}**\n`;
+            message += `• ${corr.interpretation}\n`;
+            if (corr.n !== undefined) { message += `• Based on ${corr.n} aligned data points\n`; }
+            });
+      } else {
+         if (stats.priorities.length > 0) {
+             message += "\n**Individual Correlations** (vs Satisfaction)\nNo significant correlations found this week, or not enough aligned data.\n";
+         }
+      }
+  }
+
+  // --- Section 4: Combined Effects (Stratified Analysis) ---
+  if (hasStratifiedResults || hasSkippedStratification) {
+      message += "\n**Combined Effects** (Comparing High/Low vs Avg Satisfaction)\n";
+      const MIN_N_FOR_COMPARISON = 3; // Min data points needed in a subgroup (HH, HL etc) to consider its average
+
+      // Define the pairs we attempted (using labels from the placeholders in calculateUserStats)
+      // TODO: Get these pairs dynamically later
+       const attemptedPairs = [
+          ["Exercise", "Water"],
+          ["Exercise", "Presence"], // Assuming "Presence (moments)" label is just "Presence" here
+          ["Water", "Presence"]
+      ];
+
+
+      attemptedPairs.forEach(pairLabels => {
+          const [label1, label2] = pairLabels;
+          let displayedMessage = false; // Flag to track if we printed anything for this pair
+
+          // Check if it was skipped due to low input variation
+          const skipReason = stats.skippedStratificationReason.find(r => r.pair.includes(label1) && r.pair.includes(label2));
+          if (skipReason) {
+              // Use the user-friendly message focusing on lack of change
+              message += `• **${label1} & ${label2}:** Combined analysis skipped because '${skipReason.problemVar}' needs more variety in logged values to distinguish high/low effects.\n`;
+              displayedMessage = true;
+          } else {
+              // Find the analysis result for this pair
+              const analysis = stats.stratifiedAnalyses.find(a =>
+                  (a.var1Label === label1 && a.var2Label === label2) || (a.var1Label === label2 && a.var2Label === label1)
+              );
+
+              if (!analysis) {
+                  // Not skipped for variance, but result missing (likely insufficient aligned points)
+                  message += `• **${label1} & ${label2}:** Combined analysis did not show a meaningful conclusion (more aligned data needed).\n`;
+                  displayedMessage = true;
+              } else {
+                  // Analysis ran, check results for significance
+                  const bestGroup = analysis.bestSignificantGroup;
+                  const worstGroup = analysis.worstSignificantGroup;
+
+                  if (!bestGroup && !worstGroup) {
+                      // Analysis ran but no groups met the significance threshold
+                      message += `• **${label1} & ${label2}:** Combined analysis did not show a meaningful conclusion.\n`;
+                      displayedMessage = true;
+                  } else {
+                      // Report significant findings
+                      // Use a flag to only add the header if there's something to report for this specific pair
+                      let addedPairHeader = false;
+                      const addHeaderIfNeeded = () => {
+                           if (!addedPairHeader) {
+                               message += `\n*Comparing **${analysis.var1Label}** & **${analysis.var2Label}***\n`;
+                               addedPairHeader = true;
+                           }
+                      };
+
+                      if (bestGroup) {
+                          addHeaderIfNeeded();
+                          const condition = interpretGroupKey_(bestGroup.key, analysis.var1Label, analysis.var2Label);
+                          message += `  • Avg ${analysis.outputLabel} was **significantly higher** (${bestGroup.avg}) when ${condition} (n=${bestGroup.n}).\n`;
+                          displayedMessage = true; // Mark that we displayed something
+                      }
+                      if (worstGroup) {
+                          addHeaderIfNeeded();
+                          // Add extra newline if also showing best group for readability
+                          if (bestGroup) message += ""; // Removed extra newline for compactness
+                          const condition = interpretGroupKey_(worstGroup.key, analysis.var1Label, analysis.var2Label);
+                          message += `  • Avg ${analysis.outputLabel} was **significantly lower** (${worstGroup.avg}) when ${condition} (n=${worstGroup.n}).\n`;
+                          displayedMessage = true; // Mark that we displayed something
+                      }
+                  }
+              }
+          }
+      });
+  } // --- End of Stratified Analysis Section ---
+
+
+  message += "\n_Type /insights7 to get your AI insights, and keep logging daily, Scientist!_";
+
+  return message;
+}
+
+
+
+function queueDiscordDM(userTag, message) {
+  const props = PropertiesService.getScriptProperties();
+  const key = `dm_queue_${Date.now()}_${userTag}`;
+  
+  try {
+    // Validate inputs
+    if (!userTag || !message) {
+      throw new Error('Invalid input: userTag and message are required');
+    }
+
+    // Get Discord ID
+    const userId = getUserDiscordId(userTag);
+    if (!userId) {
+      throw new Error(`Could not find Discord ID for user: ${userTag}`);
+    }
+
+    // Create message object
+    const queueItem = {
+      userTag: userTag,
+      userId: userId,  // Add Discord ID
+      message: message,
+      attempts: 0,
+      created: new Date().toISOString()
+    };
+
+    // Store in properties
+    props.setProperty(key, JSON.stringify(queueItem));
+    
+    // Verify storage
+    const stored = props.getProperty(key);
+    if (!stored) {
+      throw new Error('Message queuing failed: Could not verify storage');
+    }
+
+    return true;
+  } catch (error) {
+    Logger.log('Error in queueDiscordDM:', error.message);
+    logError_(error, {  // Add error logging
+      action: 'queue_discord_dm',
+      userTag: userTag,
+      context: 'Failed to queue Discord DM'
+    });
+    throw error;
+  }
+}
+
+/**
+ * Groups priority data by label+unit combinations from the most recent log
+ * @param {Array} data - Raw data from Master sheet
+ * @param {string} userTag - User's tag to filter data
+ * @returns {Object} Grouped priority data
+ */
+function groupPriorityData(data, userTag) {
+  try {
+    // Filter for user's data and sort by date (newest first)
+    const userLogs = data
+      .filter(row => row[CONFIG.COLUMNS.USERTAG - 1] === userTag)
+      .sort((a, b) => new Date(b[CONFIG.COLUMNS.DATE - 1]) - new Date(a[CONFIG.COLUMNS.DATE - 1]));
+
+    if (!userLogs.length) return null;
+
+    // Get active label+unit combinations from latest log
+    const latestLog = userLogs[0];
+    const activeCombinations = new Set();
+    
+    // Check each priority slot in latest log
+    for (let i = 1; i <= 3; i++) {
+      const labelCol = CONFIG.COLUMNS[`P${i}_LABEL`] - 1;
+      const unitCol = CONFIG.COLUMNS[`P${i}_UNIT`] - 1;
+      const key = `${latestLog[labelCol]}|${latestLog[unitCol]}`;
+      activeCombinations.add(key);
+    }
+
+    // Group all historical data by active combinations
+    const groupedData = {};
+    
+    userLogs.forEach(row => {
+      const date = new Date(row[CONFIG.COLUMNS.DATE - 1]);
+      
+      // Check each priority slot
+      for (let i = 1; i <= 3; i++) {
+        const labelCol = CONFIG.COLUMNS[`P${i}_LABEL`] - 1;
+        const unitCol = CONFIG.COLUMNS[`P${i}_UNIT`] - 1;
+        const valueCol = CONFIG.COLUMNS[`P${i}_VALUE`] - 1;
+        
+        const key = `${row[labelCol]}|${row[unitCol]}`;
+        
+        // Only process if this combination is active
+        if (activeCombinations.has(key)) {
+          if (!groupedData[key]) {
+            groupedData[key] = {
+              label: row[labelCol],
+              unit: row[unitCol],
+              entries: []
+            };
+          }
+          
+          groupedData[key].entries.push({
+            date: date,
+            value: parseFloat(row[valueCol])
+          });
+        }
+      }
+    });
+
+    return groupedData;
+    
+  } catch (error) {
+    logError_(error, {
+      action: STATS_ERROR_TYPES.CALCULATION,
+      context: 'groupPriorityData',
+      userTag: userTag
+    });
+    return null;
+  }
+}
+
+function getCacheData(request) {
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+    
+    if (!masterSheet) {
+      throw new Error('Master sheet not found');
+    }
+
+    // Get all data
+    const data = masterSheet.getDataRange().getValues();
+    const headers = data[0];
+
+    // Calculate cutoff date (7 days ago)
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 7);
+
+    const colIndices = {
+      date: CONFIG.COLUMNS.DATE - 1,
+      timestamp: CONFIG.COLUMNS.TIMESTAMP - 1,
+      userTag: CONFIG.COLUMNS.USERTAG - 1,
+      p1Label: CONFIG.COLUMNS.P1_LABEL - 1,
+      p1Value: CONFIG.COLUMNS.P1_VALUE - 1,
+      p1Unit: CONFIG.COLUMNS.P1_UNIT - 1,
+      p2Label: CONFIG.COLUMNS.P2_LABEL - 1,
+      p2Value: CONFIG.COLUMNS.P2_VALUE - 1,
+      p2Unit: CONFIG.COLUMNS.P2_UNIT - 1,
+      p3Label: CONFIG.COLUMNS.P3_LABEL - 1,
+      p3Value: CONFIG.COLUMNS.P3_VALUE - 1,
+      p3Unit: CONFIG.COLUMNS.P3_UNIT - 1
+    };
+
+    // Create a map to store the latest entry for each user
+    const latestUserEntries = new Map();
+
+    // Filter for last 7 days and find latest entry per user
+    data.slice(1) // Skip header row
+      .filter(row => new Date(row[colIndices.timestamp]) >= cutoffDate)
+      .forEach(row => {
+        const userTag = row[colIndices.userTag];
+        const timestamp = new Date(row[colIndices.timestamp]);
+        
+        // Only update if this is the first entry for this user
+        // or if this entry is more recent than the stored one
+        if (!latestUserEntries.has(userTag) || 
+            timestamp > new Date(latestUserEntries.get(userTag).Timestamp)) {
+          latestUserEntries.set(userTag, {
+            Timestamp: row[colIndices.timestamp],
+            UserTag: userTag,
+            Priority1_Label: row[colIndices.p1Label],
+            Priority1_Value: row[colIndices.p1Value],
+            Priority1_Unit: row[colIndices.p1Unit],
+            Priority2_Label: row[colIndices.p2Label],
+            Priority2_Value: row[colIndices.p2Value],
+            Priority2_Unit: row[colIndices.p2Unit],
+            Priority3_Label: row[colIndices.p3Label],
+            Priority3_Value: row[colIndices.p3Value],
+            Priority3_Unit: row[colIndices.p3Unit]
+          });
+        }
+    });
+
+    // Convert map values to array
+    const filteredData = Array.from(latestUserEntries.values());
+
+    return {
+      success: true,
+      data: filteredData
+    };
+    
+  } catch (error) {
+    logError_(error, {
+      action: 'get_cache_data',
+      context: 'Cache data retrieval failed'
+    });
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Manually triggers the calculation, formatting, and queueing of the stats+insights
+ * DM for a SPECIFIC user, simulating hitting an 'nth' log milestone.
+ * This bypasses the normal streak/log count checks in updateStreak_.
+ *
+ * @param {string} targetUserTag The Discord User Tag (e.g., 'Username#1234') of the user to send the DM to.
+ * @param {string} targetUserId The Discord User ID of the target user.
+ * @param {number} simulatedNthLog The log number milestone to simulate (e.g., 7 for the 7th log, 14 for the 14th, etc.).
+ */
+function testNthLogStatsDmForUser(targetUserTag, targetUserId, simulatedNthLog) {
+  // --- Input Validation ---
+  if (!targetUserTag || !targetUserId || !simulatedNthLog || typeof simulatedNthLog !== 'number' || simulatedNthLog <= 0) {
+    Logger.log("ERROR: Invalid input. Please provide targetUserTag (string), targetUserId (string), and simulatedNthLog (positive number).");
+    Logger.log(`Received: UserTag=${targetUserTag}, UserId=${targetUserId}, NthLog=${simulatedNthLog}`);
+    // Optional: throw new Error(...) or return;
+    return; // Stop execution if inputs are bad
+  }
+
+  // --- Start Test ---
+  Logger.log(`Starting manual test for ${simulatedNthLog}-log DM for ${targetUserTag} (ID: ${targetUserId})`);
+
+  try {
+    // 1. Get necessary data (Master sheet data for stats calculation)
+    const ss = SpreadsheetApp.getActiveSpreadsheet(); // Or openById if needed
+    const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER); // Assuming CONFIG is available
+    if (!masterSheet) {
+      throw new Error("Master Data sheet not found for test function.");
+    }
+    const masterData = masterSheet.getDataRange().getValues();
+
+    // 2. Calculate Stats using the updated function
+    // (This uses the user's current priorities from /setweek)
+    Logger.log(`Calculating stats for ${targetUserTag}...`);
+    // Assumes calculateUserStats(userId, userTag, data) function exists and is updated
+    const statsDataForDM = calculateUserStats(targetUserId, targetUserTag, masterData);
+
+    let finalMessage = "";
+    const insightsCommand = `/insights${simulatedNthLog}`; // Generate the corresponding insights command
+
+    // 3. Check if stats were generated and format the message
+    if (statsDataForDM) {
+       Logger.log(`Stats calculated successfully. Formatting message...`);
+       // Assumes formatWeeklyStatsMessage exists and works with the stats object structure
+       const formattedStats = formatWeeklyStatsMessage(statsDataForDM);
+       // Combine with the insights prompt, using the simulated log number
+       finalMessage = `${formattedStats}\n\n_Type \`${insightsCommand}\` to get AI analysis on this!_`;
+       Logger.log("Message formatted with stats.");
+    } else {
+       Logger.log(`Stats calculation failed or returned no data for ${targetUserTag}. Using fallback message.`);
+       // Fallback message if stats calculation fails
+       finalMessage = `You've hit ${simulatedNthLog} logs! Your weekly stats have been updated. Run ${insightsCommand} to see stats & insights. (Note: Stats display failed in test).`;
+    }
+
+    // 4. Queue the message for the specified user
+    Logger.log(`Queueing DM with final message for ${targetUserTag}...`);
+    // Assumes queueDiscordDM(userTag, message) function exists
+    queueDiscordDM(targetUserTag, finalMessage);
+    Logger.log(`DM queued successfully for ${targetUserTag}. Check the queue or wait for bot delivery.`);
+
+  } catch (error) {
+     // Log any errors during the test
+     Logger.log(`ERROR during manual test for ${simulatedNthLog}-log DM for ${targetUserTag}: ${error}`);
+     Logger.log(`Error Stack: ${error.stack}`);
+     // Assumes logError_ function exists
+     logError_(error, {
+        action: `test_${simulatedNthLog}_log_dm`, // Dynamic action name
+        userTag: targetUserTag,
+        userId: targetUserId,
+        context: 'Error in manual test function: ' + error.message
+     });
+  }
+
+  Logger.log(`Manual test for ${simulatedNthLog}-log DM completed for ${targetUserTag}.`);
+}
+
+// --- Example of how to call this test function ---
+// You can create another small function to easily run it with specific parameters
+function runSpecificUserTest() {
+  const userTagToTest = "davewolo"; // <<< CHANGE THIS
+  const userIdToTest = "1032380614290182174";       // <<< CHANGE THIS
+  const logMilestoneToTest = 6;              // <<< CHANGE THIS (e.g., 7, 14, 30)
+
+  testNthLogStatsDmForUser(userTagToTest, userIdToTest, logMilestoneToTest);
+}
+
+//end Stats.gs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//Insights.gs
+
+
+
+
+// Ensure access to shared utilities
+if (typeof logError_ === 'undefined') {
+  logError_ = function(error, context) {
+    console.error('Error:', error, 'Context:', context);
+  };
+}
+
+if (typeof findOrCreateUserRow_ === 'undefined') {
+  findOrCreateUserRow_ = function(sheet, data, userId, userTag) {
+    return -1;
+  };
+}
+
+
+  /**
+   * Gathers initial data required for insights generation based on the user's latest logs.
+   * @param {string} userId The Discord User ID.
+   * @param {string} userTag The Discord User Tag (e.g., username#1234).
+   * @param {number} periodDays The number of *most recent* logs to consider (e.g., 7 or 30).
+   * @returns {object} An object containing success status, and compiled data or an error message.
+   * The compiled data includes userTag, periodDays, streak info, dataPoints used, and date range of logs used.
+   * @private
+   */
+function gatherInsightsData_(userId, userTag, periodDays) {
+  Logger.log(`[Gather] Starting for ${userTag}, using last ${periodDays} logs.`);
+  try {
+    // Validate inputs - Basic check, more detailed in handleInsightsCommand_
+    if (!userId || !userTag || !periodDays) {
+        throw new Error("Missing required parameters for gatherInsightsData_");
+    }
+
+    // Get required sheets
+    Logger.log('[Gather] Accessing sheets...');
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+    const streakSheet = ss.getSheetByName(CONFIG.SHEETS.STREAK_DATA);
+    Logger.log(`[Gather] Master Sheet found: ${!!masterSheet}, Streak Sheet found: ${!!streakSheet}`);
+
+    if (!masterSheet) {
+      throw new Error('System error: Unable to access Master Data sheet.');
+    }
+    if (!streakSheet) {
+      Logger.log('[Gather] Warning: Streak_Data sheet not found. Streaks will default to 0.');
+    }
+
+    // --- New Logic: Get Last N Logs ---
+    Logger.log(`[Gather] Reading and filtering Master Data for user: ${userTag}`);
+    const masterData = masterSheet.getDataRange().getValues();
+    Logger.log(`[Gather] Read ${masterData.length} rows from Master Data.`);
+
+    const userLogs = masterData.slice(1) // Skip header
+        .filter(row => row[CONFIG.COLUMNS.USERTAG - 1] === userTag) // Filter by user ONLY
+        .sort((a, b) => { // Sort by Date (column 1, index 0) DESCENDING (Newest first)
+            try {
+                // Assuming Date is in Column A (index 0) based on CONFIG.COLUMNS.DATE = 1
+                return new Date(b[CONFIG.COLUMNS.DATE - 1]) - new Date(a[CONFIG.COLUMNS.DATE - 1]);
+            } catch (e) {
+                Logger.log(`[Gather] Error parsing date during sort for row: ${a}. Error: ${e}`);
+                return 0; // Handle potential invalid dates during sort
+            }
+        });
+
+    const totalUserLogCount = userLogs.length;
+    Logger.log(`[Gather] Found ${totalUserLogCount} total logs for user.`);
+
+    // --- Updated Minimum Logs Check ---
+    // Check if user has enough *total* logs first
+    if (totalUserLogCount < CONFIG.INSIGHTS.MIN_LOGS) {
+      Logger.log('[Gather] Insufficient total logs found.');
+      return {
+        success: false,
+        error: 'insufficient_logs',
+        // Updated Message:
+        message: `You need at least ${CONFIG.INSIGHTS.MIN_LOGS} total logs recorded to generate insights. You currently have ${totalUserLogCount}.`
+      };
+    }
+
+    // Take the latest 'periodDays' logs
+    const latestUserLogs = userLogs.slice(0, periodDays);
+    const dataPoints = latestUserLogs.length; // Actual number of logs we will use
+
+    Logger.log(`[Gather] Selected latest ${dataPoints} logs (up to ${periodDays}).`);
+
+    // Double-check if slicing resulted in fewer logs than required (e.g., if periodDays > total logs but total logs >= MIN_LOGS)
+     if (dataPoints < CONFIG.INSIGHTS.MIN_LOGS) {
+         Logger.log(`[Gather] Not enough logs (${dataPoints}) selected for the period (${periodDays}) even though total logs (${totalUserLogCount}) meet minimum. This shouldn't happen if total >= MIN_LOGS.`);
+         // This case is less likely now with the initial total check, but good safety measure.
+         return {
+            success: false,
+            error: 'insufficient_logs', // Keep same error type
+            message: `An issue occurred selecting your latest ${periodDays} logs. Requires at least ${CONFIG.INSIGHTS.MIN_LOGS} logs for analysis.`
+         };
+    }
+    // --- End New Logic ---
+
+
+    // Get streak data (same as before)
+    let currentStreak = 0;
+    let longestStreak = 0;
+    if (streakSheet) {
+        Logger.log('[Gather] Reading Streak Data...');
+        try {
+            const streakData = streakSheet.getDataRange().getValues();
+            Logger.log(`[Gather] Read ${streakData.length} rows from Streak Data.`);
+            const userStreakRow = streakData.slice(1).find(row => row[0] === userId); // Find by userId (Column A)
+            if (userStreakRow) {
+                 currentStreak = Number(userStreakRow[CONFIG.STREAK.COLUMNS.CURRENT_STREAK - 1]) || 0;
+                 longestStreak = Number(userStreakRow[CONFIG.STREAK.COLUMNS.LONGEST_STREAK - 1]) || 0;
+            } else {
+                 Logger.log(`[Gather] Streak row not found for userId: ${userId}`);
+            }
+        } catch (e) {
+             Logger.log(`[Gather] Error reading streak data: ${e}`);
+             logError_(e, { action: 'insights_gather_streak', userId: userId, userTag: userTag, context: 'Failed to read/parse streak data' });
+        }
+    }
+    Logger.log(`[Gather] Streak data: Current=${currentStreak}, Longest=${longestStreak}`);
+
+    // --- Updated Data Range Calculation ---
+    const firstLogDate = dataPoints > 0 ? new Date(latestUserLogs[dataPoints - 1][CONFIG.COLUMNS.DATE - 1]) : new Date(); // Date of the oldest log used
+    const lastLogDate = dataPoints > 0 ? new Date(latestUserLogs[0][CONFIG.COLUMNS.DATE - 1]) : new Date(); // Date of the newest log used
+
+    // Compile insights data structure
+    const compiledData = {
+      userTag: userTag,
+      periodDays: periodDays, // Represents number of logs now
+      streak: {
+        current: currentStreak,
+        longest: longestStreak
+      },
+      dataPoints: dataPoints, // Actual number of logs used
+      dataRange: { // Dates corresponding to the logs used
+        start: Utilities.formatDate(firstLogDate, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+        end: Utilities.formatDate(lastLogDate, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+      }
+      // Detailed priorities, notes, output/satisfaction will be added later by generateAIInsights_
+    };
+
+    Logger.log('[Gather] Successfully compiled initial data using last N logs.');
+    return {
+      success: true,
+      data: compiledData
+    };
+
+  } catch (error) {
+    Logger.log(`[Gather] ERROR in gatherInsightsData_: ${error} Stack: ${error.stack}`);
+    logError_(error, { action: 'insights_data_gathering', userId: userId, userTag: userTag, context: 'General error in gatherInsightsData_' });
+    return {
+      success: false,
+      error: 'processing_error',
+      message: 'An error occurred while gathering insights data: ' + error.message
+    };
+  }
+}
+
+
+// =====================================
+// Replace handleInsightsCommand_ in Insights.gs
+// with this FINAL version (Cache restored, final return uncommented):
+// =====================================
+function handleInsightsCommand_(userId, userTag, periodDays) {
+  Logger.log(`[Insights: ${userTag}] --- Function Start --- Period: ${periodDays}, UserID: ${userId}`);
+  let insightsSheet;
+  const generationTime = new Date(); // Define timestamp for use in return object
+
+  try {
+    // --- Initial Setup ---
+    Logger.log('[Insights] STEP 1: Validating inputs...');
+    if (!userId || !userTag || !CONFIG.INSIGHTS.VALID_PERIODS.includes(periodDays)) { throw new Error('Invalid input parameters'); }
+    Logger.log('[Insights] Inputs VALIDATED.');
+    Logger.log('[Insights] STEP 2: Accessing Spreadsheet...');
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    Logger.log('[Insights] Spreadsheet opened successfully.');
+    Logger.log('[Insights] STEP 3: Getting Insights sheet reference...');
+    insightsSheet = ss.getSheetByName(CONFIG.INSIGHTS.SHEET);
+    Logger.log(`[Insights] Insights sheet reference obtained: ${!!insightsSheet}`);
+    if (!insightsSheet) { throw new Error('Required sheet not found: ' + CONFIG.INSIGHTS.SHEET); }
+    Logger.log('[Insights] Initial setup and sheet access checks PASSED.');
+
+    // ============================================================
+    // === RESTORED CACHE CHECKING LOGIC ===
+    // ============================================================
+    Logger.log('[Insights] Checking cache...');
+    const cacheExpiry = new Date(generationTime.getTime() - (CONFIG.INSIGHTS.CACHE_DURATION_HOURS * 60 * 60 * 1000));
+    const fallbackExpiry = new Date(generationTime.getTime() - (24 * 60 * 60 * 1000));
+
+    const insightsDataSheet = insightsSheet.getDataRange().getValues();
+    const userInsights = insightsDataSheet.slice(1)
+      .filter(row => row[0] === userTag && row[2] === periodDays)
+      .sort((a, b) => new Date(b[1]) - new Date(a[1]));
+
+    const mostRecent = userInsights[0];
+    if (mostRecent) {
+        const generatedAtDate = new Date(mostRecent[1]);
+        const hasRecentCache = generatedAtDate > cacheExpiry;
+        const hasFallbackCache = generatedAtDate > fallbackExpiry;
+         Logger.log(`[Insights] Most recent cache entry found. GeneratedAt: ${generatedAtDate}, HasRecent: ${hasRecentCache}, HasFallback: ${hasFallbackCache}`);
+
+        if (hasRecentCache || hasFallbackCache) {
+             Logger.log('[Insights] Cache entry is within relevant period. Trying to parse...');
+             try {
+                 const cachedObject = JSON.parse(mostRecent[4]);
+                 const returnData = cachedObject.structuredData || {};
+                 const dataPointsValue = mostRecent[3] || returnData?.userMetrics?.dataPoints || 0;
+
+                 if (!returnData.priorities || returnData.priorities.length === 0) {
+                      Logger.log(`[Insights] Cached data missing priorities. Forcing regeneration.`);
+                      // Proceed to regeneration block
+                 } else {
+                      Logger.log(`[Insights] Returning VALID cached insights. Fallback: ${!hasRecentCache}`);
+                      // Return consistent cached structure
+                       return {
+                          success: true, cached: true, fallback: !hasRecentCache && hasFallbackCache,
+                          data: returnData, aiText: cachedObject.aiText || '',
+                          metadata: { generatedAt: generatedAtDate, periodDays: mostRecent[2], dataPoints: dataPointsValue }
+                      };
+                 }
+             } catch (parseError) {
+                  Logger.log(`[Insights] CACHE PARSE ERROR: ${parseError}. Forcing regeneration.`);
+                  logError_(parseError, { action: 'insights_cache_parse', userId: userId, userTag: userTag, context: 'Failed to parse cached insights JSON' });
+                  // Proceed to regeneration block
+             }
+        } else { Logger.log('[Insights] Cache entry found but expired.'); }
+    } else { Logger.log('[Insights] No cache entry found.'); }
+    // ============================================================
+    // === END RESTORED CACHE LOGIC ===
+    // ============================================================
+
+
+    // === REGENERATION BLOCK - FINAL VERSION ===
+    Logger.log('[Insights] Entering Regeneration Block Structure (Cache Miss/Invalid/Expired)...');
+    let gatherResult, aiDataResult;
+    try {
+      Logger.log('[Insights] Inside Regeneration TRY block.');
+
+      // --- Call gatherInsightsData_ ---
+      Logger.log('[Insights] STEP A: BEFORE calling gatherInsightsData_');
+      gatherResult = gatherInsightsData_(userId, userTag, periodDays);
+      Logger.log(`[Insights] STEP B: AFTER calling gatherInsightsData_. Success: ${gatherResult.success}`);
+      if (!gatherResult || !gatherResult.success) {
+        return gatherResult || { success: false, error: 'gather_failed', message: 'Data gathering failed unexpectedly.'};
+      }
+
+      // --- Call generateAIInsights_ ---
+      Logger.log('[Insights] STEP C: BEFORE calling generateAIInsights_');
+      aiDataResult = generateAIInsights_(gatherResult.data);
+      Logger.log(`[Insights] STEP D: AFTER calling generateAIInsights_. Success: ${aiDataResult.success}`);
+      if (!aiDataResult || !aiDataResult.success) {
+        return aiDataResult || { success: false, error: 'ai_prep_failed', message: 'AI data preparation failed unexpectedly.'};
+      }
+
+      // --- FINAL RETURN STATEMENT ---
+      Logger.log('[Insights] STEP E: Successfully generated new insights data. Returning final structure.');
+      return {
+        success: true,
+        cached: false, // It's newly generated
+        fallback: false, // Not fallback
+        data: aiDataResult.data, // This is the object with priorities, userMetrics etc.
+        aiText: null,            // Bot generates AI text
+        metadata: {
+            generatedAt: generationTime, // Use timestamp from start of function
+            periodDays: periodDays,
+            // Use optional chaining (?.) for safety when accessing nested dataPoints
+            dataPoints: aiDataResult?.data?.userMetrics?.dataPoints || gatherResult?.data?.dataPoints || 0 // Fallback
+        }
+     };
+     // --- END FINAL RETURN ---
+
+    } catch (genError) { // Inner catch for regeneration errors
+      Logger.log(`[Insights] --- ERROR INSIDE REGENERATION BLOCK (genError catch) ---`);
+      Logger.log(`Error Message: ${genError.toString()}`);
+      Logger.log(`Error Stack: ${genError.stack}`);
+      logError_(genError, { action: 'ai_insights_generation_INNER_CATCH', userId:userId, userTag:userTag, context: 'Error caught within insight generation try block' });
+      // Rethrow to outer catch, which returns the generic failure
+      throw genError;
+    }
+    // ============================================================
+    // === END REGENERATION BLOCK ===
+    // ============================================================
+
+  } catch (error) { // Outer catch block for setup errors or re-thrown genError
+     Logger.log(`[Insights] --- ERROR IN OUTER CATCH BLOCK ---`);
+     Logger.log(`Error Message: ${error.toString()}`);
+     Logger.log(`Error Stack: ${error.stack}`);
+     logError_(error, { action: 'ai_insights_processing_OUTER_CATCH', userId:userId, userTag:userTag, context: 'Outer catch in handleInsightsCommand_' });
+     Logger.log('[Insights] Returning generic failure from outer catch.');
+     return { success: false, error: 'Failed to process insights command (Outer Catch Error)', message: 'An error occurred during processing.' };
+  }
+}
+// =====================================
+// End of handleInsightsCommand_ function
+// =====================================
+
+
+  /**
+   * Processes the gathered data, retrieves detailed log entries (notes, satisfaction/output),
+   * and structures it for the AI prompt.
+   * @param {object} insightsData The initial data compiled by gatherInsightsData_.
+   * @returns {object} An object containing success status and the fully structured data for the AI, or an error message.
+   * The structured data includes userMetrics, priorities (from weekly stats), notes, output, and correlations.
+   * @private
+   */
+function generateAIInsights_(insightsData) {
+  Logger.log('[AIPrep] Entering generateAIInsights_');
+  try {
+    // Check input structure
+    if (!insightsData || !insightsData.userTag || !insightsData.periodDays || !insightsData.dataPoints) {
+        Logger.log('[AIPrep] ERROR: Invalid insightsData input received.');
+        return { success: false, error: 'internal_error', message: 'Invalid data for AI prep (missing basic info).' };
+    }
+    Logger.log(`[AIPrep] Preparing for ${insightsData.userTag}, Period: ${insightsData.periodDays} logs. Input data points: ${insightsData.dataPoints}`);
+
+     const structuredData = {
+          userMetrics: insightsData.streak ? {
+            currentStreak: insightsData.streak.current || 0, longestStreak: insightsData.streak.longest || 0,
+            periodDays: insightsData.periodDays, // Represents number of logs
+            dataPoints: insightsData.dataPoints
+          } : { currentStreak: 0, longestStreak: 0, periodDays: insightsData.periodDays, dataPoints: insightsData.dataPoints },
+          priorities: [], // Will be overwritten by the LATEST summary
+          notes: [],
+          output: { label: 'Output', unit: '', values: [] }, // Assuming this structure exists
+          correlations: [], // Will be overwritten by the LATEST summary
+          pastFourStatsSummaries: [] // <<< ADDED THIS FIELD initialization
+        };
+    Logger.log('[AIPrep] Initial structure created.');
+
+    // Get data from Weekly_Stats (same as before)
+     let weeklyStatsSummaries = []; // Store the 4 summaries here
+        try {
+            Logger.log('[AIPrep] Accessing Weekly_Stats sheet...');
+            const ss_stats = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8'); // Consider using getActiveSpreadsheet if appropriate
+            const statsSheet = ss_stats.getSheetByName(STATS_CONFIG.SHEETS.WEEKLY_STATS); // Assuming STATS_CONFIG exists
+            if (!statsSheet) throw new Error('Weekly_Stats sheet not found');
+            Logger.log('[AIPrep] Reading Weekly_Stats data...');
+            const statsData = statsSheet.getDataRange().getValues();
+            Logger.log(`[AIPrep] Read ${statsData.length} rows from Weekly_Stats.`);
+
+            // Filter for the user, sort by GeneratedAt date (column B, index 1) descending, take top 4
+            const userStatsRows = statsData
+                                    .slice(1) // Skip header
+                                    .filter(row => row[0] === insightsData.userTag) // Filter by userTag (column A, index 0)
+                                    .sort((a, b) => { // Sort by GeneratedAt (col B, index 1) DESC
+                                        try { return new Date(b[1]) - new Date(a[1]); }
+                                        catch(e) { return 0; } // Handle potential invalid dates during sort
+                                     })
+                                    .slice(0, 4); // Take the first 4 (most recent)
+
+            Logger.log(`[AIPrep] Found ${userStatsRows.length} Weekly_Stats rows for user ${insightsData.userTag} (max 4).`);
+
+            if (userStatsRows.length > 0) {
+                userStatsRows.forEach((row, index) => {
+                    const statsJson = row[2]; // Stats JSON is in column C (index 2)
+                    const generatedAt = row[1]; // GeneratedAt is in column B (index 1)
+                    if (statsJson) {
+                        try {
+                            const parsedStats = JSON.parse(statsJson);
+                            // Add generatedAt timestamp to each summary for context in the prompt
+                            // Ensure the date is valid before converting
+                            const generatedDate = new Date(generatedAt);
+                            parsedStats.summaryGeneratedAt = generatedDate instanceof Date && !isNaN(generatedDate) ? generatedDate.toISOString() : new Date().toISOString(); // Fallback to now if invalid
+
+                            weeklyStatsSummaries.push(parsedStats);
+                            Logger.log(`[AIPrep] Parsed Weekly_Stats JSON for row <span class="math-inline">\{index\+1\}/</span>{userStatsRows.length} (Date: ${generatedAt})`);
+                        } catch (parseErr) {
+                            Logger.log(`[AIPrep] Failed to parse Weekly_Stats JSON for row at ${generatedAt}: ${parseErr}`);
+                            // Log error using your standard function
+                            logError_(parseErr, { action: 'insights_ai_prep_stats_parse', userTag: insightsData.userTag, context: `Failed parsing stats JSON from ${generatedAt}` });
+                        }
+                    } else {
+                         Logger.log(`[AIPrep] Weekly_Stats JSON column (C) is empty for row at ${generatedAt}.`);
+                    }
+                });
+
+                // Assign the fetched summaries to the new field in structuredData
+                structuredData.pastFourStatsSummaries = weeklyStatsSummaries;
+
+                // Overwrite top-level priorities/correlations with the MOST RECENT summary's data
+                // This maintains compatibility with parts of the prompt expecting a single set,
+                // while the AI gets the full history via pastFourStatsSummaries.
+                if (weeklyStatsSummaries.length > 0 && weeklyStatsSummaries[0] && typeof weeklyStatsSummaries[0] === 'object') {
+                    structuredData.priorities = weeklyStatsSummaries[0].priorities || [];
+                    structuredData.correlations = weeklyStatsSummaries[0].correlations || [];
+                }
+
+            } else {
+                 Logger.log(`[AIPrep] No Weekly_Stats entry found for ${insightsData.userTag}.`);
+            }
+        } catch (e) {
+            Logger.log(`[AIPrep] ERROR reading or processing Weekly_Stats: ${e} Stack: ${e.stack}`); // Log stack too
+            logError_(e, { action: 'insights_ai_prep_stats', userTag: insightsData.userTag, context: 'Error processing Weekly_Stats data for 4 summaries' });
+            // Allow execution to continue; the AI prompt needs to handle potentially empty pastFourStatsSummaries
+        }
+
+    // --- New Logic: Get Details from Last N Logs ---
+    try {
+        Logger.log('[AIPrep] Accessing Master Data sheet for details...');
+        const ss_master = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+        const masterSheet = ss_master.getSheetByName(CONFIG.SHEETS.MASTER);
+        if (!masterSheet) throw new Error('Master Data sheet not found');
+        Logger.log('[AIPrep] Reading Master Data...');
+        const masterData = masterSheet.getDataRange().getValues();
+        Logger.log(`[AIPrep] Read ${masterData.length} rows from Master Data.`);
+
+        // Define column indices (ensure these match your CONFIG and previous changes)
+        const userTagColIndex = CONFIG.COLUMNS.USERTAG - 1;
+        const dateColIndex = CONFIG.COLUMNS.DATE - 1;
+        const notesColIndex = CONFIG.COLUMNS.NOTES - 1;
+        const outputLabelColIndex = CONFIG.COLUMNS.OUTPUT_LABEL - 1;
+        const outputValueColIndex = CONFIG.COLUMNS.OUTPUT_VALUE - 1;
+        const outputUnitColIndex = CONFIG.COLUMNS.OUTPUT_UNIT - 1;
+
+        // Filter user, Sort Descending (same as in gatherInsightsData_)
+        const allUserLogsSorted = masterData.slice(1) // Skip header
+            .filter(row => row[userTagColIndex] === insightsData.userTag)
+            .sort((a, b) => {
+                try {
+                    return new Date(b[dateColIndex]) - new Date(a[dateColIndex]);
+                } catch (e) { return 0; }
+            });
+
+        // Slice to get the exact same latest N logs (use insightsData.periodDays)
+        const relevantLogs = allUserLogsSorted.slice(0, insightsData.periodDays);
+
+        Logger.log(`[AIPrep] Using latest ${relevantLogs.length} logs for details (matching gatherInsightsData_).`);
+
+        // Extract Notes (from the selected logs)
+        structuredData.notes = relevantLogs
+             .map(row => ({ date: new Date(row[dateColIndex]), content: row[notesColIndex] }))
+             .filter(log => log.content && log.content.trim() !== '')
+             .map(log => ({ date: log.date.toISOString().split('T')[0], content: log.content.trim() })); // Trim notes
+
+        // Extract Output Label, Unit, and Values (from the selected logs)
+        let currentOutputLabel = 'Output'; // Default
+        let currentOutputUnit = '';      // Default
+        const outputValues = relevantLogs
+             .map(row => {
+                 // Attempt to get label/unit from the first valid row
+                 if (row[outputLabelColIndex] && currentOutputLabel === 'Output') { // Update only once from first row
+                    currentOutputLabel = row[outputLabelColIndex];
+                    currentOutputUnit = row[outputUnitColIndex] || '';
+                 }
+                 return {
+                    date: new Date(row[dateColIndex]).toISOString().split('T')[0],
+                    value: row[outputValueColIndex] // Get the value
+                };
+             })
+             .filter(log => log.value !== null && log.value !== '' && !isNaN(parseFloat(log.value))) // Filter out non-numeric
+             .map(log => ({ date: log.date, value: parseFloat(log.value) })); // Convert to number
+
+        // Assign to the structuredData.output object
+        structuredData.output.label = currentOutputLabel;
+        structuredData.output.unit = currentOutputUnit;
+        structuredData.output.values = outputValues;
+
+        Logger.log(`[AIPrep] Populated Notes: ${structuredData.notes.length}, Output (${currentOutputLabel}): ${structuredData.output.values.length} values`);
+
+    } catch (e) {
+        Logger.log(`[AIPrep] ERROR processing Master Data for details: ${e} Stack: ${e.stack}`);
+        logError_(e, { action: 'insights_ai_prep_master', userId: insightsData.userId, userTag: insightsData.userTag, context: 'Error processing Master Data for notes/output' });
+        return { success: false, error: 'processing_error', message: 'Failed to process historical log details.' };
+    }
+    // --- End New Logic ---
+
+    Logger.log('[AIPrep] Successfully structured data for AI using last N logs. Returning success.');
+    return { success: true, data: structuredData };
+
+  } catch (error) {
+     Logger.log(`[AIPrep] UNEXPECTED TOP-LEVEL ERROR in generateAIInsights_: ${error} Stack: ${error.stack}`);
+     logError_(error, { action: 'ai_insights_generation_structure', userTag: insightsData?.userTag || 'unknown', context: 'Outer catch in generateAIInsights_' });
+     return { success: false, error: 'Failed to prepare insights data', message: 'An error occurred while preparing your insights.' };
+  }
+}
+
+
+function getInsights(userId, userTag, periodDays) {
+  try {
+    logError_('Debug: Starting getInsights', {
+      action: 'getInsights_function',
+      userId: userId,
+      userTag: userTag,
+      context: `Starting insights processing for period: ${periodDays}`
+    });
+
+    const result = handleInsightsCommand_(userId, userTag, periodDays);
+    
+    logError_('Debug: getInsights result', {
+      action: 'getInsights_result',
+      userId: userId,
+      userTag: userTag,
+      context: JSON.stringify(result)
+    });
+
+    return result;
+  } catch (error) {
+    logError_(error, {
+      action: CONFIG.INSIGHTS.ERROR_TYPES.GATHERING,
+      userId: userId,
+      userTag: userTag,
+      context: 'Getting insights'
+    });
+    return {
+      success: false,
+      error: error.message || 'Failed to get insights'
+    };
+  }
+}
+
+
+function storeInsights(userId, userTag, periodDays, insights) {
+  try {
+    const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+    let insightsSheet = ss.getSheetByName(CONFIG.INSIGHTS.SHEET);
+
+    if (!insightsSheet) {
+      // ... (create sheet and headers if needed - keep existing logic) ...
+      insightsSheet = ss.insertSheet(CONFIG.INSIGHTS.SHEET);
+      // Ensure column order matches expected read order: UserTag, GeneratedAt, PeriodDays, DataPoints, InsightsJSON
+      insightsSheet.getRange('A1:E1').setValues([['UserTag', 'GeneratedAt', 'PeriodDays', 'DataPoints', 'InsightsJSON']]);
+      insightsSheet.setFrozenRows(1);
+    }
+
+    // --- CHANGE HERE: Store structuredData and aiText directly ---
+    const dataToStore = JSON.stringify({
+        structuredData: insights.structuredData, // Store the data object directly
+        aiText: insights.aiText                  // Store the AI text alongside it
+        // Removed nested metadata - rely on sheet columns
+    });
+
+    // Ensure dataPoints are stored correctly in the dedicated column (index 3 is column D)
+    const dataPointsValue = insights.dataPoints || insights.structuredData?.userMetrics?.dataPoints || 0;
+
+    insightsSheet.appendRow([
+      userTag,                // Column A
+      new Date(),             // Column B (GeneratedAt)
+      periodDays,             // Column C
+      dataPointsValue,        // Column D (DataPoints)
+      dataToStore             // Column E (InsightsJSON)
+      ]);
+
+    return { success: true, message: 'Insights stored successfully' };
+  } catch (error) {
+    logError_(error, { /* ... */ });
+    return { success: false, /* ... */ };
+  }
+}
+
+
+
+
+// Add this helper function first
+function getUserLogs_(userTag, periodDays) {
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+  const data = masterSheet.getDataRange().getValues();
+  const headers = data[0];
+  
+  // Get column indices
+  const dateCol = headers.indexOf('Date');
+  const userTagCol = headers.indexOf('UserTag');
+  const p1LabelCol = headers.indexOf('Priority1_Label');
+  const p1ValueCol = headers.indexOf('Priority1_Value');
+  const p1UnitCol = headers.indexOf('Priority1_Unit');
+  const p2LabelCol = headers.indexOf('Priority2_Label');
+  const p2ValueCol = headers.indexOf('Priority2_Value');
+  const p2UnitCol = headers.indexOf('Priority2_Unit');
+  const p3LabelCol = headers.indexOf('Priority3_Label');
+  const p3ValueCol = headers.indexOf('Priority3_Value');
+  const p3UnitCol = headers.indexOf('Priority3_Unit');
+  const satisfactionCol = headers.indexOf('Satisfaction');
+  const notesCol = headers.indexOf('Notes');
+
+  // Calculate date range
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - periodDays);
+
+  // Filter and map the data
+  const logs = data.slice(1) // Skip header row
+    .filter(row => {
+      const rowDate = new Date(row[dateCol]);
+      const rowUserTag = row[userTagCol];
+      return rowUserTag === userTag && 
+             rowDate >= startDate && 
+             rowDate <= endDate;
+    })
+    .map(row => ({
+      date: row[dateCol],
+      priorities: [
+        {
+          label: row[p1LabelCol],
+          value: row[p1ValueCol],
+          unit: row[p1UnitCol]
+        },
+        {
+          label: row[p2LabelCol],
+          value: row[p2ValueCol],
+          unit: row[p2UnitCol]
+        },
+        {
+          label: row[p3LabelCol],
+          value: row[p3ValueCol],
+          unit: row[p3UnitCol]
+        }
+      ],
+      satisfaction: row[satisfactionCol],
+      notes: row[notesCol]
+    }));
+
+  return logs;
+}
+
+function testUserLogs() {
+  const userTag = 'davewolo';
+  const ss = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8');
+  const masterSheet = ss.getSheetByName(CONFIG.SHEETS.MASTER);
+  const data = masterSheet.getDataRange().getValues();
+  
+  // Skip header and filter for user
+  const userLogs = data.slice(1)
+    .filter(row => row[2] === userTag)
+    .map(row => ({
+      date: row[0],
+      userTag: row[2]
+    }));
+  
+  // Get unique dates
+  const uniqueDates = [...new Set(userLogs.map(log => log.date))].sort();
+  
+  // Check for gaps
+  let gaps = [];
+  for(let i = 0; i < uniqueDates.length - 1; i++) {
+    const currentDate = new Date(uniqueDates[i]);
+    const nextDate = new Date(uniqueDates[i + 1]);
+    const diffDays = Math.floor((nextDate - currentDate) / (1000 * 60 * 60 * 24));
+    if(diffDays > 1) {
+      gaps.push({
+        between: [currentDate.toISOString().split('T')[0], 
+                 nextDate.toISOString().split('T')[0]],
+        gapSize: diffDays - 1
+      });
+    }
+  }
+  
+  console.log("Test Results:", {
+    totalRows: data.length,
+    userLogsFound: userLogs.length,
+    uniqueDates: uniqueDates.map(d => new Date(d).toISOString().split('T')[0]),
+    uniqueDatesCount: uniqueDates.length,
+    dateRange: {
+      first: new Date(uniqueDates[0]).toISOString().split('T')[0],
+      last: new Date(uniqueDates[uniqueDates.length - 1]).toISOString().split('T')[0]
+    },
+    gaps: gaps,
+    hasGaps: gaps.length > 0,
+    isConsecutive: gaps.length === 0
+  });
+  
+  return "Check logs for test results";
+}
+
+function testStatsAndInsights() {
+  const sheet = SpreadsheetApp.openById('1BAQIgJ0s2atU6OcXTPFsSrKCiUJPoDZLx8hzFYgEGp8').getSheetByName('Master Data');
+  const data = sheet.getDataRange().getValues();
+  const stats = calculateUserStats(data, 'davewolo');
+
+  Logger.log(JSON.stringify(stats, null, 2));
+}
+
+
+// =====================================
+// ADD THIS NEW TEST FUNCTION to your Apps Script project
+// =====================================
+function testInsightsManually() {
+  // --- !!! SET THESE TO A VALID USER FOR TESTING !!! ---
+  const testUserId = '1032380614290182174'; // Discord User ID for 'davewolo' (from previous logs)
+  const testUserTag = 'davewolo';         // Discord User Tag
+  const testPeriodDays = 7;              // Test insights period (7 or 30)
+  // -----------------------------------------------------
+
+  Logger.log(`Starting manual insights test for ${testUserTag} (ID: ${testUserId}), period: ${testPeriodDays}`);
+
+  try {
+    // Call the main insights handling function directly
+    const result = handleInsightsCommand_(testUserId, testUserTag, testPeriodDays);
+
+    // Log the entire result object returned
+    Logger.log("Result from handleInsightsCommand_:");
+    Logger.log(JSON.stringify(result, null, 2)); // Pretty-print the JSON result
+
+    if (result && result.success) {
+      Logger.log("Test function finished: handleInsightsCommand_ reported SUCCESS.");
+    } else {
+      Logger.log(`Test function finished: handleInsightsCommand_ reported FAILURE. Error: ${result ? result.error : 'N/A'}, Message: ${result ? result.message : 'N/A'}`);
+    }
+
+  } catch (error) {
+    // Catch any errors that might not have been caught inside handleInsightsCommand_ itself
+    Logger.log(`<<<<< UNCAUGHT ERROR in testInsightsManually >>>>>`);
+    Logger.log(`Error Message: ${error.toString()}`);
+    Logger.log(`Error Stack: ${error.stack}`);
+    Logger.log(`<<<<< END UNCAUGHT ERROR >>>>>`);
+  }
+  Logger.log(`Manual insights test completed for ${testUserTag}`);
+}
+// =====================================
+// End of new testInsightsManually function
+// =====================================
+
+// =====================================
+// ADD THIS NEW TEST FUNCTION to your Apps Script project
+// =====================================
+function testGatherInsightsDataOnly() {
+  // --- !!! Use the same valid user info !!! ---
+  const testUserId = '1032380614290182174'; // Discord User ID for 'davewolo'
+  const testUserTag = 'davewolo';         // Discord User Tag
+  const testPeriodDays = 7;              // Test insights period
+  // -----------------------------------------------------
+
+  Logger.log(`Starting manual test for gatherInsightsData_ ONLY for ${testUserTag}, period: ${testPeriodDays}`);
+
+  try {
+    // Call the data gathering function directly
+    const result = gatherInsightsData_(testUserId, testUserTag, testPeriodDays);
+
+    // Log the entire result object returned
+    Logger.log("Result from gatherInsightsData_:");
+    Logger.log(JSON.stringify(result, null, 2)); // Pretty-print the JSON result
+
+    if (result && result.success) {
+      Logger.log("Test function finished: gatherInsightsData_ reported SUCCESS.");
+    } else {
+      Logger.log(`Test function finished: gatherInsightsData_ reported FAILURE. Error: ${result ? result.error : 'N/A'}, Message: ${result ? result.message : 'N/A'}`);
+    }
+
+  } catch (error) {
+    // Catch any errors during the gather function call
+    Logger.log(`<<<<< UNCAUGHT ERROR in testGatherInsightsDataOnly >>>>>`);
+    Logger.log(`Error Message: ${error.toString()}`);
+    Logger.log(`Error Stack: ${error.stack}`);
+    Logger.log(`<<<<< END UNCAUGHT ERROR >>>>>`);
+  }
+   Logger.log(`Manual test for gatherInsightsData_ completed for ${testUserTag}`);
+}
+// =====================================
+// End of new testGatherInsightsDataOnly function
+// =====================================
