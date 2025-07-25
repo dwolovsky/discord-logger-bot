@@ -164,10 +164,9 @@ function buildHabitStatsPage(embed, metricData, habitNumber) {
  * @param {object} statsReportData - The full stats report data from Firestore.
  */
 function buildCorrelationsPage(embed, statsReportData) {
-    embed.setTitle('🔗 Habit Impacts')
-         .setDescription('How did your habits influence your outcome?');
+    let hasContent = false;
     if (statsReportData.correlations && typeof statsReportData.correlations === 'object' && Object.keys(statsReportData.correlations).length > 0) {
-        let hasDisplayedAnyCorrelation = false;
+        let foundSignificantCorrelation = false;
         for (const key in statsReportData.correlations) {
             const corr = statsReportData.correlations[key];
             if (!corr || corr.status !== 'calculated' || corr.coefficient === undefined || isNaN(corr.coefficient)) {
@@ -175,8 +174,14 @@ function buildCorrelationsPage(embed, statsReportData) {
             }
 
             const rSquared = corr.coefficient * corr.coefficient;
-            if (rSquared < 0.0225) { 
+            if (rSquared < 0.0225) { // This threshold is used in the backend too [cite: 50, 53]
                 continue;
+            }
+
+            // If we get here, it's a significant correlation, so we will have content
+            if (!hasContent) { // Add title and description only once, if content is found
+                embed.addFields({ name: '🔗 Habit Impacts', value: 'How did your habits influence your outcome?', inline: false });
+                hasContent = true;
             }
 
             const habitInfo = statsReportData.calculatedMetricStats?.[corr.label];
@@ -188,7 +193,6 @@ function buildCorrelationsPage(embed, statsReportData) {
             const outcomeDisplay = isOutcomeTime
                 ? (corr.coefficient >= 0 ? 'is later' : 'is earlier')
                 : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
-
             const isConfident = corr.pValue !== null && corr.pValue < 0.05;
             const confidenceText = isConfident ? "This is a statistically significant relationship." : "We need more data to confirm this.";
             let strengthText = "No detectable";
@@ -197,35 +201,28 @@ function buildCorrelationsPage(embed, statsReportData) {
             if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
             else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
             else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
-            else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
-            
+
             const title = `When **${corr.label}** ${habitDisplay}`;
             const value = `Your **${corr.vsOutputLabel}** ${outcomeDisplay}\n\n` +
                           `**Influence Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                           `*${confidenceText}*`;
             embed.addFields({ name: title, value, inline: false });
-            
-            hasDisplayedAnyCorrelation = true;
+
+            foundSignificantCorrelation = true;
         }
-        if (!hasDisplayedAnyCorrelation) {
-            embed.addFields({ name: 'Impacts', value: 'No significant habit impact data was calculated or found for this report.', inline: false });
-        }
-    } else {
-        embed.addFields({ name: 'Impacts', value: 'No habit impact data was calculated for this report.', inline: false });
     }
+    return hasContent; // Return true if any content was added
 }
 
 function buildCombinedEffectsPage(embed, statsReportData) {
-    embed.setTitle('✅ Habit Combo Effects');
-
+    let hasContent = false;
     const results = statsReportData.pairwiseInteractionResults;
-    let hasMeaningfulResults = false;
     if (results && typeof results === 'object' && Object.keys(results).length > 0) {
         const formatCondition = (conditionString) => {
             const parts = conditionString.split(' & ');
             return parts.map(part => {
                 const label = part.substring(0, part.lastIndexOf(' was '));
-                
+
                 const metricInfo = statsReportData.calculatedMetricStats?.[label];
                 const isMetricTime = isTimeMetric(metricInfo?.unit);
                 const state = part.endsWith('High')
@@ -239,20 +236,23 @@ function buildCombinedEffectsPage(embed, statsReportData) {
         for (const pairKey in results) {
             const pairData = results[pairKey];
             const summary = pairData.summary || "";
-            const isSignificant = !summary.toLowerCase().includes("skipped") &&
+            const isSignificant = !summary.toLowerCase().includes("skipped") && // Backend summary checks [cite: 55]
                                   !summary.toLowerCase().includes("no meaningful conclusion") &&
                                   !summary.toLowerCase().includes("did not show any group");
             if (isSignificant && pairData.input1Label && pairData.input2Label) {
+                if (!hasContent) { // Add title only once, if content is found
+                    embed.addFields({ name: '✅ Habit Combo Effects', value: '\u200B', inline: false });
+                    hasContent = true;
+                }
+
                 const bestGroup = summary.includes("higher") ? /Avg.*higher \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
                 const worstGroup = summary.includes("lower") ? /Avg.*lower \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
                 if (bestGroup) {
-                    hasMeaningfulResults = true;
                     const comboTitle = formatCondition(bestGroup[2]);
                     const value = `→ Your **'${pairData.outputMetricLabel}'** was significantly **higher** (average of **${bestGroup[1]}**).`;
                     embed.addFields({ name: comboTitle, value: value, inline: false });
                 }
                 if (worstGroup) {
-                    hasMeaningfulResults = true;
                     const comboTitle = formatCondition(worstGroup[2]);
                     const value = `→ Your **'${pairData.outputMetricLabel}'** was significantly **lower** (average of **${worstGroup[1]}**).`;
                     embed.addFields({ name: comboTitle, value: value, inline: false });
@@ -260,40 +260,37 @@ function buildCombinedEffectsPage(embed, statsReportData) {
             }
         }
     }
-
-    if (!hasMeaningfulResults) {
-        embed.addFields({ name: 'No Clear Combined Effects', value: "We couldn't find any statistically significant effects from combining habits in this experiment.", inline: false });
-    }
+    return hasContent; // Return true if any content was added
 }
 
 function buildLagTimePage(embed, statsReportData) {
-    embed.setTitle('⏳ Yesterday\'s Habits → Today\'s Outcome')
-         .setDescription("How do your habits on one day carry over to your outcome the next day?");
+    let hasContent = false;
     const results = statsReportData.lagTimeCorrelations;
     const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
-    let hasHabitToOutcomeLag = false;
     if (results && typeof results === 'object' && Object.keys(results).length > 0 && outcomeMetricLabel) {
         for (const key in results) {
             const lag = results[key];
             if (lag && lag.todayMetricLabel === outcomeMetricLabel) {
                 if (lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
                 const rSquared = lag.coefficient * lag.coefficient;
-                if (rSquared < 0.0225) {
+                if (rSquared < 0.09) { // This threshold is used in the backend [cite: 648]
                     continue;
                 }
-                
-                hasHabitToOutcomeLag = true;
-                
+
+                // If we get here, it's a significant lag correlation, so we will have content
+                if (!hasContent) { // Add title and description only once, if content is found
+                    embed.addFields({ name: '⏳ Yesterday\'s Habits → Today\'s Outcome', value: 'How do your habits on one day carry over to your outcome the next day?', inline: false });
+                    hasContent = true;
+                }
+
                 const yesterdayInfo = statsReportData.calculatedMetricStats?.[lag.yesterdayMetricLabel];
                 const todayInfo = statsReportData.calculatedMetricStats?.[lag.todayMetricLabel];
                 const isYesterdayTime = isTimeMetric(yesterdayInfo?.unit);
                 const isTodayTime = isTimeMetric(todayInfo?.unit);
-
                 const yesterdayDisplay = isYesterdayTime ? 'was later' : 'was higher ⤴️';
                 const todayDisplay = isTodayTime
                     ? (lag.coefficient >= 0 ? 'was later' : 'was earlier')
                     : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
-
                 const isConfident = lag.pValue !== null && lag.pValue < 0.05;
                 const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data may be needed to confirm this connection.";
                 let strengthText = "No detectable";
@@ -302,7 +299,7 @@ function buildLagTimePage(embed, statsReportData) {
                 if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
                 else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
                 else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
-                
+
                 const title = `When Yesterday's **${lag.yesterdayMetricLabel}** ${yesterdayDisplay}`;
                 const value = `→ Today's **${lag.todayMetricLabel}** ${todayDisplay}\n\n` +
                               `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
@@ -311,10 +308,7 @@ function buildLagTimePage(embed, statsReportData) {
             }
         }
     }
-
-    if (!hasHabitToOutcomeLag) {
-        embed.addFields({ name: 'No Connections Found', value: 'No significant day-to-day connections to your main outcome were found in this experiment.', inline: false });
-    }
+    return hasContent; // Return true if any content was added
 }
 
 // ADD THESE FIVE NEW FUNCTIONS AFTER buildLagTimePage
@@ -325,9 +319,9 @@ function buildLagTimePage(embed, statsReportData) {
  * @param {object} aiInsights - The AI-generated insights object.
  */
 function buildAhaMomentPage(embed, aiInsights) {
-    embed.setTitle('💡 Your Experiment\'s Insight!')
+    embed.setTitle('💡 Your Experiment\'s Big Insight!')
          .setDescription(
-             "Here's the most striking insight from your latest experiment, framed in a supportive way to empower you on your journey."
+             "Here's the most striking insight from your latest experiment.\n\nIf you don't feel good about it, keep in mind it's a tiny data point, and your whole life starts now.\n\nIf you do feel good, celebrate the healing and growth that's already here!"
             )
           .addFields(
              { 
@@ -350,7 +344,7 @@ function buildCoreOverviewPage(embed, statsReportData) {
         return;
     }
 
-    let description = "A high-level summary of your main outcome and habits. This is the raw data before we dive into the AI analysis.\n\n";
+    let description = "A summary of your outcome and habits. This is the raw data before we dive into the AI analysis.\n\n";
     
     // Outcome Snapshot
     const outcomeLabel = settings.output?.label;
