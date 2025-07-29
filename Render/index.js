@@ -8872,10 +8872,12 @@ client.on(Events.InteractionCreate, async interaction => {
             console.log(`[${interaction.customId} IN_MEMORY_UPDATE ${interactionId}] Updated in-memory state with Habit 3 data.`);
             
             const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
-            await setupStateRef.update({
-                inputs: setupData.inputs,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
+
+            await setupStateRef.set({ // Change update() to set()
+            inputs: setupData.inputs,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true }); // Add { merge: true }
+
             console.log(`[${interaction.customId} FIRESTORE_UPDATE_SUCCESS ${interactionId}] Successfully saved Habit 3 data to Firestore.`);
             
             const finishSetupButton = new ButtonBuilder().setCustomId('manual_finish_setup_btn').setLabel('✅ Looks Good, Finish Setup').setStyle(ButtonStyle.Success);

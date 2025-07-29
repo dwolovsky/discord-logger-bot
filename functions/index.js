@@ -226,18 +226,18 @@ Generate a JSON object with three keys: "strikingInsight", "experimentStory", an
 
 **1. "strikingInsight":**
 Identify the single most striking (and actionable) insight from the data. Use this hierarchy to decide:
-  a. **Combined Correlation + Lag Time Correlation:** A habit that has a different effect today vs. tomorrow. (e.g., "Habit X helps your outcome today but hurts it tomorrow" or "Habit X helps your outcome today but REALLY helps it tomorrow"). Requires both correlations to be at least moderate.
+  a. **Combined Correlation + Lag Time Correlation:** A habit that has a different effect today vs. tomorrow. (e.g., "Habit X helps your outcome today but hurts it tomorrow" or "Habit X helps your outcome today but REALLY helps it tomorrow"). Requires both correlations to be at least moderate. MAKE SURE you understand the effect and label it accurately.
   b. **Pairwise Interactions:** Two habits together having a significant effect.
   c. **Strong Lag Time Correlations:** A habit today clearly influencing an outcome tomorrow.
   d. **Strong Direct Correlations:** A single habit strongly impacting the outcome on the same day.
   e. **Significant Deviation/Consistency:** A metric dramatically differing from its goal or showing surprising consistency, especially if it resonates with the user's notes.
   f. **Fallback:** If none of the above are strong, find where the user was closest to their goal number (for outcome or habits) and frame it as a win, starting with "You may already know this, but...".
 
-Your insight must be a single, impactful sentence framed in a supportive, empowering tone, with a simple label for the relationship or effect being spotlighted. Example: "Your data reveals a fascinating 'rebound effect': high [Habit X] today often leads to lower [Outcome Y] tomorrow!"
+Your insight must be a single, impactful sentence framed in a supportive, empowering tone, with a simple label for the relationship or effect being spotlighted. Example: "Your data reveals a fascinating 'rebound effect': high [Habit X] today often leads to lower [Outcome Y] tomorrow!" MAKE SURE the label is accurate.
 
 **2. "experimentStory":**
 Write a concise narrative summary (2-4 sentences) of the user's experiment period.
-- Summarize the typical pattern of the week based on data trends.
+- Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human, and reiterate the value of doing the self science experiments they're doing. Find various ways to remind them that growth comes from experiments.
 - Look for subtle shifts in language in *this period's notes*, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress *within this experiment*.
 - Highlight 1-2 recurring themes from the notes that align with the data.
 - Integrate one short, impactful quote directly from their notes.
