@@ -4195,7 +4195,6 @@ client.on(Events.InteractionCreate, async interaction => {
         const userTag = interaction.user.tag;
         const interactionId = interaction.id;
         console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}.`);
-
         if (!dbAdmin) {
             console.error(`[${interaction.customId} CRITICAL ${interactionId}] dbAdmin not initialized.`);
             try {
@@ -4205,7 +4204,8 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         try {
-            const setupData = userExperimentSetupData.get(userId) || {};
+            const setupData = userExperimentSetupData.get(userId) ||
+            {};
             const cachedSettings = setupData.preFetchedWeeklySettings;
             setupData.messageToCleanUp = interaction.message.id;
 
@@ -4223,33 +4223,30 @@ client.on(Events.InteractionCreate, async interaction => {
             };
             userExperimentSetupData.set(userId, initialState);
             console.log(`[${interaction.customId} IN_MEMORY_INIT ${interactionId}] Initialized/updated in-memory state for ${userTag}.`);
-            
-            // Prepare and show the modal, pre-filling from cache if available
+
+            // Corrected lines for pre-filling modal, using robust optional chaining
             let deeperProblemValue = cachedSettings?.deeperProblem || "";
-            let outcomeLabelValue = cachedSettings?.output?.label || "";
-            let outcomeUnitValue = cachedSettings?.output?.unit || "";
-            let outcomeGoalValue = cachedSettings?.output?.goal !== null && cachedSettings.output.goal !== undefined ? String(cachedSettings.output.goal) : "";
+            let outcomeLabelValue = cachedSettings?.output?.label || ""; // Corrected
+            let outcomeUnitValue = cachedSettings?.output?.unit || "";   // Corrected
+            let outcomeGoalValue = (cachedSettings?.output?.goal !== null && cachedSettings?.output?.goal !== undefined) // Corrected
+                                   ? String(cachedSettings.output.goal) : "";
 
             const outcomeModal = new ModalBuilder()
                 .setCustomId('manual_setup_outcome_modal')
                 .setTitle('🧪 Experiment Setup (1/4): Outcome');
-            
             const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setPlaceholder("e.g., 'To be less stressed' or 'To have more energy.'").setStyle(TextInputStyle.Paragraph).setValue(deeperProblemValue).setRequired(true);
             const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setValue(outcomeLabelValue).setRequired(true);
             const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setValue(outcomeUnitValue).setRequired(true);
             const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setValue(outcomeGoalValue).setRequired(true);
-            
             outcomeModal.addComponents(
                 new ActionRowBuilder().addComponents(deeperProblemInput),
                 new ActionRowBuilder().addComponents(outcomeLabelInput),
                 new ActionRowBuilder().addComponents(outcomeGoalInput),
                 new ActionRowBuilder().addComponents(outcomeUnitInput)
             );
-
             await interaction.showModal(outcomeModal);
             const showModalTime = performance.now();
             console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Outcome modal shown to ${userTag}. Total time to show modal: ${(showModalTime - showFormStartTime).toFixed(2)}ms`);
-
             // Save the state to Firestore in the background
             (async () => {
                 try {
@@ -4259,11 +4256,11 @@ client.on(Events.InteractionCreate, async interaction => {
                         createdAt: admin.firestore.FieldValue.serverTimestamp()
                     });
                     console.log(`[${interaction.customId} FIRESTORE_INIT_ASYNC ${interactionId}] Successfully initialized Firestore state for ${userTag}.`);
-                } catch (firestoreError) {
+                } catch (firestoreError)
+                {
                   console.error(`[${interaction.customId} FIRESTORE_INIT_ASYNC_ERROR ${interactionId}] Failed to save initial state to Firestore for ${userTag}:`, firestoreError);
                 }
             })();
-
         } catch (error) {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing outcome modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
