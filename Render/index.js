@@ -360,7 +360,7 @@ function buildLagTimePage(embed, statsReportData) {
                     ? (lag.coefficient >= 0 ? 'was later' : 'was earlier')
                     : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
                 const isConfident = lag.pValue !== null && lag.pValue < 0.05;
-                const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data may be needed to confirm this connection.";
+                const confidenceText = isConfident ? "This is a statistically significant relationship." : "We need more data to confirm this.";
                 let strengthText = "No detectable";
                 let strengthEmoji = "🟦";
                 const absCoeff = Math.abs(lag.coefficient);
@@ -723,6 +723,11 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
         );
     }
 
+    const messagePayload = {
+        embeds: [embed],
+        components: row.components.length > 0 ? [row] : []
+    };
+    
         try {
             if (isInteraction) {
                 await interactionOrUser.editReply(messagePayload);
@@ -4496,124 +4501,6 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
-    else if (interaction.customId === 'continue_to_manual_form_btn') {
-      const continueButtonStartTime = performance.now();
-      const userId = interaction.user.id;
-      const userTag = interaction.user.tag;
-      const interactionId = interaction.id;
-      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}. Attempting to show manual experiment setup modal. Time: ${continueButtonStartTime.toFixed(2)}ms`);
-      
-      // Retrieve pre-fetched data
-      const setupData = userExperimentSetupData.get(userId);
-      // CORRECTED: Read from preFetchedWeeklySettings
-      const cachedSettings = setupData?.preFetchedWeeklySettings; 
-      const originalInteractionId = setupData?.interactionId; 
-
-      console.log(`[${interaction.customId} CACHE_CHECK ${interactionId}] Checking for cached settings (key: preFetchedWeeklySettings) for ${userTag}. Original Interaction ID for this flow: ${originalInteractionId}`);
-      let deeperProblemValue = "";
-      let outputValue = "";
-      let input1Value = "";
-      let input2Value = "";
-      let input3Value = "";
-      
-      if (cachedSettings) {
-        console.log(`[${interaction.customId} CACHE_HIT ${interactionId}] Found cached settings (from preFetchedWeeklySettings) for ${userTag}. Populating modal fields.`);
-        deeperProblemValue = cachedSettings.deeperProblem || "";
-
-        const formatSettingToString = (setting) => {
-          if (setting && typeof setting.label === 'string' && setting.label.trim() !== "" && setting.goal !== null && setting.unit !== undefined) {
-            return `${setting.goal}, ${setting.unit}, ${setting.label}`;
-          }
-          return "";
-        };
-
-        outputValue = formatSettingToString(cachedSettings.output);
-        input1Value = formatSettingToString(cachedSettings.input1);
-        input2Value = formatSettingToString(cachedSettings.input2);
-        input3Value = formatSettingToString(cachedSettings.input3);
-      } else {
-        console.log(`[${interaction.customId} CACHE_MISS ${interactionId}] No cached settings found (in preFetchedWeeklySettings) for ${userTag}. Modal will use placeholders.`);
-      }
-
-      try {
-        const modal = new ModalBuilder()
-          .setCustomId('experiment_setup_modal') 
-          .setTitle('🧪 Set Weekly Experiment (Manual)');
-        const deeperProblemInput = new TextInputBuilder()
-          .setCustomId('deeper_problem')
-          .setLabel("🧭 Deeper Wish?")
-          .setPlaceholder("e.g. 'Reduce distractions' OR 'Go to sleep earlier.'")
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true);
-        if (deeperProblemValue) deeperProblemInput.setValue(deeperProblemValue);
-
-        const outputSettingInput = new TextInputBuilder()
-          .setCustomId('output_setting')
-          .setLabel("🎯 Daily Outcome (Goal #, Unit, Label)")
-          .setPlaceholder("e.g. '7.5, hours, Sleep Quality'")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-        if (outputValue) outputSettingInput.setValue(outputValue);
-
-        const input1SettingInput = new TextInputBuilder()
-          .setCustomId('input1_setting')
-          .setLabel("🛠️ Daily Habit 1 (Goal #, Unit, Label)")
-          .setPlaceholder("e.g. '15, minutes, Meditation'")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-        if (input1Value) input1SettingInput.setValue(input1Value);
-
-        const input2SettingInput = new TextInputBuilder()
-          .setCustomId('input2_setting')
-          .setLabel("🛠️ Daily Habit 2 (Optional - #, Unit, Label)")
-          .setPlaceholder("e.g. '8, 0-10 effort, Relationships'")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-        if (input2Value) input2SettingInput.setValue(input2Value);
-
-        const input3SettingInput = new TextInputBuilder()
-          .setCustomId('input3_setting')
-          .setLabel("🛠️ Daily Habit 3 (Optional - #, Unit, Label)")
-          .setPlaceholder("e.g. '10, glasses, Water'")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-        if (input3Value) input3SettingInput.setValue(input3Value);
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(deeperProblemInput),
-          new ActionRowBuilder().addComponents(outputSettingInput),
-          new ActionRowBuilder().addComponents(input1SettingInput),
-          new ActionRowBuilder().addComponents(input2SettingInput),
-          new ActionRowBuilder().addComponents(input3SettingInput)
-        );
-        await interaction.showModal(modal);
-        const showModalTime = performance.now();
-        console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Manual setup modal shown to ${userTag}. Pre-population with cached data (if any from preFetchedWeeklySettings) complete. Took: ${(showModalTime - continueButtonStartTime).toFixed(2)}ms`);
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing manual setup modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
-        console.error(`[${interaction.customId} ERROR_DETAILS ${interactionId}] Error Name: ${error.name}, Message: ${error.message}, Code: ${error.code}`);
-        if (error.stack) {
-          console.error(`[${interaction.customId} ERROR_STACK ${interactionId}] Error Stack: ${error.stack}`);
-        }
-        if (!interaction.replied && !interaction.deferred) { 
-            try {
-                await interaction.reply({content: "Sorry, I couldn't open the manual setup form at this moment. Please try clicking 'Continue to Setup Form' again.", flags: MessageFlags.Ephemeral});
-            } catch (replyError) {
-                 console.error(`[${interaction.customId} FALLBACK_REPLY_ERROR ${interactionId}] Fallback error reply failed:`, replyError);
-            }
-        } else {
-             try {
-                await interaction.followUp({content: "Sorry, I couldn't open the manual setup form. Please try clicking 'Continue to Setup Form' again.", flags: MessageFlags.Ephemeral});
-            } catch (followUpError) {
-                 console.error(`[${interaction.customId} FALLBACK_FOLLOWUP_ERROR ${interactionId}] Fallback error followup failed:`, followUpError);
-            }
-        }
-      }
-      const handlerEndPerfNow = performance.now();
-      console.log(`[${interaction.customId} END ${interactionId}] User: ${userTag}. TotalInHandler: ${(handlerEndPerfNow - continueButtonStartTime).toFixed(2)}ms.`);
-    } 
-
     else if (interaction.customId === 'manual_finish_setup_btn') {
         const buttonClickStartTime = performance.now();
         const userId = interaction.user.id;
@@ -5856,7 +5743,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     else if (metric.label === settings.input3.label) customId = 'log_input3_value';
 
                     return new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
                     );
                 });
             const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
