@@ -246,8 +246,7 @@ function buildCorrelationsPage(embed, statsReportData) {
             }
 
             if (!hasContent) { 
-                embed.addFields({ name: '**🔗 Habit-Outcome Correlations**', value: '\u200B', inline: false });
-                embed.addFields({ name: '\u200B', value: '\u200B' }); 
+                embed.addFields({ name: '**🔗 Habit-Outcome Correlations**', value: '\u200B', inline: false }); 
                 hasContent = true;
             }
 
@@ -454,21 +453,6 @@ function buildCoreOverviewPage(embed, statsReportData) {
 }
 
 /**
- * Builds the embed for Page 3: Hidden Levers & Relationships.
- * @param {EmbedBuilder} embed - The embed to add fields to.
- * @param {object} statsReportData - The full stats report data.
- */
-function buildHiddenLeversPage(embed, statsReportData) {
-    embed.setTitle('Hidden Habit Relationships')
-         .setDescription("Let's see how your habits influenced your outcome.");
-
-    // This reuses the existing builder functions to construct the page, ensuring minimal code duplication.
-    buildCorrelationsPage(embed, statsReportData);
-    buildCombinedEffectsPage(embed, statsReportData);
-    buildLagTimePage(embed, statsReportData);
-}
-
-/**
  * Builds the embed for Page 4: Your Experiment Story.
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} aiInsights - The AI-generated insights object.
@@ -547,25 +531,30 @@ function buildCoreStatsSummary(embed, statsReportData) {
  * @param {Array<object>} pageConfig - The dynamically generated page configuration.
  */
 function buildFinalSummaryPage(embed, statsReportData, pageConfig) {
-    // Helper to check if a specific analysis page was included in this report
-    const wasPageIncluded = (builderFunction) => pageConfig.some(p => p.builder === builderFunction);
 
     // --- 1. Core Statistics ---
     buildCoreStatsSummary(embed, statsReportData);
 
     // --- 2. Habit Impacts ---
-        embed.addFields({ name: '\u200B', value: '**ANALYSIS**' });
-        buildCorrelationsPage(embed, statsReportData);
+    // Use the return value to check if content was added
+    const hasCorrelations = buildCorrelationsPage(embed, statsReportData);
     
     // --- 3. Combined Effects ---
-        buildCombinedEffectsPage(embed, statsReportData);
+    // If the previous section added content, add a spacer before this one.
+    if (hasCorrelations) {
+        embed.addFields({ name: '\u200B', value: '\u200B' });
+    }
+    const hasCombinedEffects = buildCombinedEffectsPage(embed, statsReportData);
 
     // --- 4. Day-to-Day Connections ---
-        buildLagTimePage(embed, statsReportData);
+    // If the previous section added content, add a spacer before this one.
+    if (hasCombinedEffects) {
+        embed.addFields({ name: '\u200B', value: '\u200B' });
+    }
+    buildLagTimePage(embed, statsReportData);
 
     embed.setTitle('📊 Experiment Summary')
-         .setDescription(`This is a complete overview of your experiment. Click "Next" to plan your next steps.`);
-
+         .setDescription(`This is a complete overview of your experiment.`);
 }
 
 /**
