@@ -269,13 +269,15 @@ function buildCorrelationsPage(embed, statsReportData) {
             else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
             else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
 
-            const title = `When **${corr.label}** ${habitDisplay}`;
-            const value = `● **${corr.vsOutputLabel}** ${outcomeDisplay}\n` +
-                          `**Correlation Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
-                          `*${confidenceText}*\n\n`;
-            embed.addFields({ name: title, value, inline: false });
+            // All content is now in a single 'value' string for full spacing control.
+            const value = `**When ${corr.label} ${habitDisplay}**\n` +
+            `→ **${corr.vsOutputLabel}** ${outcomeDisplay}\n\n` +
+            `**Correlation Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
+            `*${confidenceText}*\n\n`;
 
-            foundSignificantCorrelation = true;
+            // The 'name' is now blank, and the 'value' contains the full text block.
+            embed.addFields({ name: '\u200B', value: value, inline: false });
+
         }
     }
     return hasContent; 
@@ -367,11 +369,15 @@ function buildLagTimePage(embed, statsReportData) {
                 else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
                 else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
 
-                const title = `When Yesterday's **${lag.yesterdayMetricLabel}** ${yesterdayDisplay}`;
-                const value = `→ Today's **${lag.todayMetricLabel}** ${todayDisplay}\n\n` +
-                              `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
-                              `*${confidenceText}*`;
-                embed.addFields({ name: title, value, inline: false });
+                // All content is now in a single 'value' string for full spacing control.
+                const value = `**When Yesterday's ${lag.yesterdayMetricLabel} ${yesterdayDisplay}**\n` +
+                `→ Today's **${lag.todayMetricLabel}** ${todayDisplay}\n\n` +
+                `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
+                `*${confidenceText}*\n\n`;
+
+                // The 'name' is now blank, and the 'value' contains the full text block.
+                embed.addFields({ name: '\u200B', value: value, inline: false });
+
             }
         }
     }
