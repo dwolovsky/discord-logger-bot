@@ -80,6 +80,73 @@ function buildCoverPage(embed) {
 }
 
 /**
+ * Checks if there are any significant correlations to display.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @returns {boolean} True if there is content to show.
+ */
+function hasCorrelations(statsReportData) {
+    if (statsReportData.correlations && typeof statsReportData.correlations === 'object') {
+        for (const key in statsReportData.correlations) {
+            const corr = statsReportData.correlations[key];
+            if (corr && corr.status === 'calculated' && corr.coefficient !== undefined && !isNaN(corr.coefficient)) {
+                const rSquared = corr.coefficient * corr.coefficient;
+                if (rSquared >= 0.0225) {
+                    return true; // Found at least one significant correlation
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Checks if there are any significant combined effects to display.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @returns {boolean} True if there is content to show.
+ */
+function hasCombinedEffects(statsReportData) {
+    const results = statsReportData.pairwiseInteractionResults;
+    if (results && typeof results === 'object') {
+        for (const pairKey in results) {
+            const pairData = results[pairKey];
+            const summary = pairData.summary || "";
+            const isSignificant = !summary.toLowerCase().includes("skipped") &&
+                                  !summary.toLowerCase().includes("no meaningful conclusion") &&
+                                  !summary.toLowerCase().includes("did not show any group");
+            if (isSignificant && pairData.input1Label && pairData.input2Label) {
+                return true; // Found at least one significant combo effect
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Checks if there are any significant lag time correlations to display.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @returns {boolean} True if there is content to show.
+ */
+function hasLagTime(statsReportData) {
+    const results = statsReportData.lagTimeCorrelations;
+    const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
+    if (results && typeof results === 'object' && outcomeMetricLabel) {
+        for (const key in results) {
+            const lag = results[key];
+            if (lag && lag.todayMetricLabel === outcomeMetricLabel) {
+                if (lag.coefficient !== undefined && !isNaN(lag.coefficient)) {
+                    const rSquared = lag.coefficient * lag.coefficient;
+                    if (rSquared >= 0.09) {
+                        return true; // Found at least one significant lag time effect
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+
+/**
  * Builds the embed fields for the Outcome Statistics page.
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} metricData - The specific metric data object for the outcome.
@@ -174,13 +241,13 @@ function buildCorrelationsPage(embed, statsReportData) {
             }
 
             const rSquared = corr.coefficient * corr.coefficient;
-            if (rSquared < 0.0225) { // This threshold is used in the backend too [cite: 50, 53]
+            if (rSquared < 0.0225) { 
                 continue;
             }
 
-            // If we get here, it's a significant correlation, so we will have content
-            if (!hasContent) { // Add title and description only once, if content is found
-                embed.addFields({ name: '🔗 Habit Impacts', value: 'How did your habits influence your outcome?', inline: false });
+            if (!hasContent) { 
+                embed.addFields({ name: '**🔗 Habit-Outcome Correlations**', value: '\u200B', inline: false });
+                embed.addFields({ name: '\u200B', value: '\u200B' }); 
                 hasContent = true;
             }
 
@@ -201,17 +268,18 @@ function buildCorrelationsPage(embed, statsReportData) {
             if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
             else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
             else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+            else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
 
-            const title = `When **${corr.label}** ${habitDisplay}`;
-            const value = `Your **${corr.vsOutputLabel}** ${outcomeDisplay}\n\n` +
-                          `**Influence Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
-                          `*${confidenceText}*`;
+            const title = `● When **${corr.label}** ${habitDisplay}`;
+            const value = `● **${corr.vsOutputLabel}** ${outcomeDisplay}\n` +
+                          `**Correlation Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
+                          `*${confidenceText}*\n\n`;
             embed.addFields({ name: title, value, inline: false });
 
             foundSignificantCorrelation = true;
         }
     }
-    return hasContent; // Return true if any content was added
+    return hasContent; 
 }
 
 function buildCombinedEffectsPage(embed, statsReportData) {
@@ -236,12 +304,12 @@ function buildCombinedEffectsPage(embed, statsReportData) {
         for (const pairKey in results) {
             const pairData = results[pairKey];
             const summary = pairData.summary || "";
-            const isSignificant = !summary.toLowerCase().includes("skipped") && // Backend summary checks [cite: 55]
+            const isSignificant = !summary.toLowerCase().includes("skipped") && 
                                   !summary.toLowerCase().includes("no meaningful conclusion") &&
                                   !summary.toLowerCase().includes("did not show any group");
             if (isSignificant && pairData.input1Label && pairData.input2Label) {
-                if (!hasContent) { // Add title only once, if content is found
-                    embed.addFields({ name: '✅ Habit Combo Effects', value: '\u200B', inline: false });
+                if (!hasContent) { 
+                    embed.addFields({ name: '🔀 Habit Combo Effects', value: '\u200B', inline: false });
                     hasContent = true;
                 }
 
@@ -249,7 +317,7 @@ function buildCombinedEffectsPage(embed, statsReportData) {
                 const worstGroup = summary.includes("lower") ? /Avg.*lower \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
                 if (bestGroup) {
                     const comboTitle = formatCondition(bestGroup[2]);
-                    const value = `→ Your **'${pairData.outputMetricLabel}'** was significantly **higher** (average of **${bestGroup[1]}**).`;
+                    const value = `→ **'${pairData.outputMetricLabel}'** was significantly **higher** (average of **${bestGroup[1]}**).`;
                     embed.addFields({ name: comboTitle, value: value, inline: false });
                 }
                 if (worstGroup) {
@@ -260,7 +328,7 @@ function buildCombinedEffectsPage(embed, statsReportData) {
             }
         }
     }
-    return hasContent; // Return true if any content was added
+    return hasContent; 
 }
 
 function buildLagTimePage(embed, statsReportData) {
@@ -273,13 +341,12 @@ function buildLagTimePage(embed, statsReportData) {
             if (lag && lag.todayMetricLabel === outcomeMetricLabel) {
                 if (lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
                 const rSquared = lag.coefficient * lag.coefficient;
-                if (rSquared < 0.09) { // This threshold is used in the backend [cite: 648]
+                if (rSquared < 0.09) { 
                     continue;
                 }
 
-                // If we get here, it's a significant lag correlation, so we will have content
-                if (!hasContent) { // Add title and description only once, if content is found
-                    embed.addFields({ name: '⏳ Yesterday\'s Habits → Today\'s Outcome', value: 'How do your habits on one day carry over to your outcome the next day?', inline: false });
+                if (!hasContent) { 
+                    embed.addFields({ name: '🕑 **Today\'s Habits → Tomorrow\'s Outcome**', value: 'Here\'s how your habits today correlate with your outcome tomorrow.\n\n', inline: false });
                     hasContent = true;
                 }
 
@@ -299,6 +366,7 @@ function buildLagTimePage(embed, statsReportData) {
                 if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
                 else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
                 else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+                else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
 
                 const title = `When Yesterday's **${lag.yesterdayMetricLabel}** ${yesterdayDisplay}`;
                 const value = `→ Today's **${lag.todayMetricLabel}** ${todayDisplay}\n\n` +
@@ -308,7 +376,18 @@ function buildLagTimePage(embed, statsReportData) {
             }
         }
     }
-    return hasContent; // Return true if any content was added
+    return hasContent;
+}
+
+/**
+ * Builds the embed for the combined Correlations and Combo Effects page.
+ * @param {EmbedBuilder} embed - The embed to add fields to.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ */
+function buildCorrelationsAndComboPage(embed, statsReportData) {
+    embed.setTitle('Correlations & Combo Effects');
+    buildCorrelationsPage(embed, statsReportData);
+    buildCombinedEffectsPage(embed, statsReportData);
 }
 
 // ADD THESE FIVE NEW FUNCTIONS AFTER buildLagTimePage
@@ -344,7 +423,7 @@ function buildCoreOverviewPage(embed, statsReportData) {
         return;
     }
 
-    let description = "A summary of your outcome and habits. This is the raw data before we dive into the AI analysis.\n\n";
+    let description = "Your basic stats before the AI analysis.\n\n";
     
     // Outcome Snapshot
     const outcomeLabel = settings.output?.label;
@@ -353,7 +432,7 @@ function buildCoreOverviewPage(embed, statsReportData) {
         if (data.status === 'skipped_insufficient_data') {
             description += `**Outcome: ${outcomeLabel}**\n*Not enough data to calculate stats.*\n\n`;
         } else {
-            description += `**Outcome: ${outcomeLabel}**\nAveraged: **${data.average}** ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
+            description += `**Outcome:** ${outcomeLabel}\nAverage: **${data.average}** ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
         }
     }
 
@@ -367,7 +446,7 @@ function buildCoreOverviewPage(embed, statsReportData) {
              if (data.status === 'skipped_insufficient_data') {
                 description += `*${inputLabel}: Not enough data.*\n`;
             } else {
-                description += `*${inputLabel}:* Avg **${data.average}** ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
+                description += `**${inputLabel}:** Avg ${data.average} ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
             }
         }
     }
@@ -380,8 +459,8 @@ function buildCoreOverviewPage(embed, statsReportData) {
  * @param {object} statsReportData - The full stats report data.
  */
 function buildHiddenLeversPage(embed, statsReportData) {
-    embed.setTitle('🕵️‍♀️ Hidden Levers & Relationships')
-         .setDescription("Here, we combine all the relational data to see how your habits influenced your outcome.");
+    embed.setTitle('Hidden Habit Relationships')
+         .setDescription("Let's see how your habits influenced your outcome.");
 
     // This reuses the existing builder functions to construct the page, ensuring minimal code duplication.
     buildCorrelationsPage(embed, statsReportData);
@@ -533,9 +612,10 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
                     const pageConfigWithBuilders = persistedData.pageConfig.map(p => {
                         const builders = {
                             aha: buildAhaMomentPage,
-                            overview: buildCoreOverviewPage,
-                            levers: buildHiddenLeversPage,
                             story: buildExperimentStoryPage,
+                            overview: buildCoreOverviewPage,
+                            correlations_combo: buildCorrelationsAndComboPage,
+                            lag_time: buildLagTimePage,
                             next_steps: buildNextStepsPage,
                             raw_stats: buildFinalSummaryPage
                         };
@@ -568,7 +648,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     const pageIndex = targetPage - 1;
 
     if (pageIndex < 0 || pageIndex >= totalPages) {
-        console.error(`[sendStatsPage] Invalid targetPage requested: ${targetPage}.`);
+        console.error(`[sendStatsPage] Invalid targetPage requested: ${targetPage}. Total pages: ${totalPages}`);
         if (isInteraction) await interactionOrUser.editReply({ content: "An error occurred while navigating the report.", embeds: [], components: [] });
         return;
     }
@@ -579,24 +659,27 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
         .setFooter({ text: `Experiment ID: ${experimentId}` });
 
     // Call the correct builder function based on page type
+    // Call the correct builder function based on the dynamic page type
     switch (currentPageConfig.type) {
         case 'aha':
             buildAhaMomentPage(embed, aiEnhancedInsights);
             break;
+        case 'story':
+            buildExperimentStoryPage(embed, aiEnhancedInsights);
+            break;
         case 'overview':
             buildCoreOverviewPage(embed, statsReportData);
             break;
-        case 'levers':
-            buildHiddenLeversPage(embed, statsReportData);
+        case 'correlations_combo':
+            buildCorrelationsAndComboPage(embed, statsReportData);
             break;
-        case 'story':
-            buildExperimentStoryPage(embed, aiEnhancedInsights);
+        case 'lag_time':
+            buildLagTimePage(embed, statsReportData);
             break;
         case 'next_steps':
             buildNextStepsPage(embed, aiEnhancedInsights);
             break;
         case 'raw_stats':
-            embed.setTitle('📈 Full Raw Stats Report'); // Override default title for clarity
             buildFinalSummaryPage(embed, statsReportData, pageConfig);
             break;
         default:
@@ -606,35 +689,40 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     
     embed.setTitle(`${embed.data.title} (Page ${targetPage} of ${totalPages})`);
 
-    // --- DYNAMIC BUTTON LOGIC ---
+    // --- NEW: DYNAMIC & GENERIC BUTTON LOGIC ---
     const row = new ActionRowBuilder();
-    if (targetPage === 1) {
-        row.addComponents(new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_2`).setLabel('Tell Me More! ➡️').setStyle(ButtonStyle.Primary));
-    } else if (targetPage === 2) {
-        row.addComponents(new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_3`).setLabel('Uncover AI Insights 🧠').setStyle(ButtonStyle.Primary));
-    } else if (targetPage === 3) {
+
+    // Add a "Back" button if it's not the first page
+    if (targetPage > 1) {
         row.addComponents(
-            new ButtonBuilder().setCustomId(`stats_nav_back_${experimentId}_2`).setLabel('⬅️ Previous Page').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_4`).setLabel('Experiment Story ➡️').setStyle(ButtonStyle.Primary)
-        );
-    } else if (targetPage === 4) {
-        row.addComponents(
-            new ButtonBuilder().setCustomId(`stats_nav_back_${experimentId}_3`).setLabel('⬅️ Previous Page').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_5`).setLabel('Next Experiment Ideas ➡️').setStyle(ButtonStyle.Primary)
-        );
-    } else if (targetPage === 5) {
-        row.addComponents(
-            new ButtonBuilder().setCustomId(`stats_nav_back_${experimentId}_4`).setLabel('⬅️ Previous Page').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`stats_nav_next_${experimentId}_6`).setLabel('📊 See All Raw Data').setStyle(ButtonStyle.Primary)
-        );
-    } else if (targetPage === totalPages) { // This is the last page (Page 6)
-        row.addComponents(
-            new ButtonBuilder().setCustomId(`stats_nav_back_${experimentId}_5`).setLabel('⬅️ Previous Page').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`stats_show_continuous_mode_prompt_${experimentId}`).setLabel('🚀 Start a New Experiment').setStyle(ButtonStyle.Success)
+            new ButtonBuilder()
+                .setCustomId(`stats_nav_back_${experimentId}_${targetPage - 1}`)
+                .setLabel('⬅️ Back')
+                .setStyle(ButtonStyle.Secondary)
         );
     }
 
-    const messagePayload = { embeds: [embed], components: [row] };
+    // Add a "Next" button if it's not the last page
+    if (targetPage < totalPages) {
+        row.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`stats_nav_next_${experimentId}_${targetPage + 1}`)
+                .setLabel('Next ➡️')
+                .setStyle(ButtonStyle.Primary)
+        );
+    }
+
+    // Special case for the VERY LAST page: Add "Start New Experiment" button
+    if (targetPage === totalPages) {
+        row.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`stats_show_continuous_mode_prompt_${experimentId}`)
+                .setLabel('🚀 Start a New Experiment')
+                .setStyle(ButtonStyle.Success)
+        );
+    }
+
+    const messagePayload = { embeds: [embed], components: row.components.length > 0 ? [row] : [] };
     if (isInteraction) {
         await interactionOrUser.editReply(messagePayload);
     } else {
@@ -5343,8 +5431,9 @@ client.on(Events.InteractionCreate, async interaction => {
             return;
         }
 
+        // Flag that we are in an editing session, not the initial setup.
+        setupData.isEditing = true;
         // Store the ID of the message containing the button that was just clicked.
-        // This allows the next step (modal submission) to find and disable it.
         setupData.messageToCleanUp = interaction.message.id;
         userExperimentSetupData.set(userId, setupData);
 
@@ -5945,18 +6034,32 @@ client.on(Events.InteractionCreate, async interaction => {
                  throw new Error("The AI insights for this report could not be found.");
             }
 
-            // 2. Build the session data (page config, builders, etc.)
-            const pageConfig = [
-                { type: 'aha' }, { type: 'overview' }, { type: 'levers' },
-                { type: 'story' }, { type: 'next_steps' }, { type: 'raw_stats' }
-            ];
+            // 2. Build the dynamic page configuration based on available data
+            const pageConfig = [];
+            pageConfig.push({ type: 'aha' });
+            pageConfig.push({ type: 'story' });
+            pageConfig.push({ type: 'overview' });
+
+            // Conditionally add the combined Correlations & Combo Effects page
+            if (hasCorrelations(statsReportData) || hasCombinedEffects(statsReportData)) {
+                pageConfig.push({ type: 'correlations_combo' });
+            }
+
+            // Conditionally add the Lag Time page
+            if (hasLagTime(statsReportData)) {
+                pageConfig.push({ type: 'lag_time' });
+            }
+
+            pageConfig.push({ type: 'next_steps' });
+            pageConfig.push({ type: 'raw_stats' });
             
             const pageConfigWithBuilders = pageConfig.map(p => {
                 const builders = {
                     aha: buildAhaMomentPage,
-                    overview: buildCoreOverviewPage,
-                    levers: buildHiddenLeversPage,
                     story: buildExperimentStoryPage,
+                    overview: buildCoreOverviewPage,
+                    correlations_combo: buildCorrelationsAndComboPage,
+                    lag_time: buildLagTimePage,
                     next_steps: buildNextStepsPage,
                     raw_stats: buildFinalSummaryPage
                 };
@@ -8370,16 +8473,15 @@ client.on(Events.InteractionCreate, async interaction => {
             setupData.inputs = [];
         }
 
-        if (setupData.flowType === 'AI_ASSISTED') {
+        if (setupData.flowType === 'AI_ASSISTED' && !setupData.isEditing) {
             setupData.dmFlowState = 'processing_input1_label_suggestions';
             userExperimentSetupData.set(userId, setupData);
             console.log(`[${interaction.customId} AI_PATH ${interactionId}] User confirmed custom outcome. State is now '${setupData.dmFlowState}'.`);
             await interaction.editReply({
-                content: `✅ **Custom Outcome Confirmed!**\n\n> **${outcomeLabel}** (${outcomeGoalStr} ${outcomeUnit})\n\nGreat! Now, let's find your first **Daily Habit**.\n\n🧠 I'll brainstorm some ideas based on your new outcome...`,
+                content: `✅ **Custom Outcome Confirmed!**\n\n> **${outcomeLabel}** (${outcomeGoalStr} ${outcomeUnit})\n\nGreat! Now, let's find your first **Daily Habit**.\n\n🧠 I'll brainstorm some ideas...`,
                 embeds: [],
                 components: []
             });
-
             try {
                 const habitSuggestionsResult = await callFirebaseFunction(
                     'generateInputLabelSuggestions', {
@@ -8413,9 +8515,9 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.followUp({ content: 'Sorry, I had trouble brainstorming habit ideas right now. Please type `cancel` and try again.', ephemeral: true });
             }
         } else {
-            // Manual Flow
+            // Manual Flow OR AI Flow in Edit Mode
             userExperimentSetupData.set(userId, setupData);
-            console.log(`[${interaction.customId} MANUAL_PATH ${interactionId}] Updated in-memory state with outcome data for ${userTag}.`);
+            console.log(`[${interaction.customId} MANUAL_PATH_OR_EDIT_MODE ${interactionId}] Updated in-memory state with outcome data for ${userTag}.`);
             
             const continueToHabit1Button = new ButtonBuilder().setCustomId('manual_continue_to_habit1_btn').setLabel('➡️ Define Habit 1').setStyle(ButtonStyle.Success);
             const row = new ActionRowBuilder().addComponents(continueToHabit1Button);
