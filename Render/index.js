@@ -723,13 +723,20 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
         );
     }
 
-    const messagePayload = { embeds: [embed], components: row.components.length > 0 ? [row] : [] };
-    if (isInteraction) {
-        await interactionOrUser.editReply(messagePayload);
-    } else {
-        await user.send(messagePayload);
-    }
-    console.log(`[sendStatsPage] Sent page ${targetPage}/${totalPages} of narrative report for experiment ${experimentId} to user ${userId}.`);
+        try {
+            if (isInteraction) {
+                await interactionOrUser.editReply(messagePayload);
+            } else {
+                await user.send(messagePayload);
+            }
+            console.log(`[sendStatsPage] Sent page ${targetPage}/${totalPages} of narrative report for experiment ${experimentId} to user ${userId}.`);
+        } catch (error) {
+            if (error.code === 10015) { // Unknown Webhook
+                console.warn(`[sendStatsPage] Failed to edit reply for page ${targetPage}, interaction likely expired or was superseded by another action.`);
+            } else {
+                console.error(`[sendStatsPage] Error sending/editing message for page ${targetPage}:`, error);
+            }
+        }
 
     // --- TIMEOUT MECHANISM: Set a new timer ---
     const timeout = setTimeout(async () => {
