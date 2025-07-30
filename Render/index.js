@@ -269,7 +269,7 @@ function buildCorrelationsPage(embed, statsReportData) {
             else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
             else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
 
-            const title = `● When **${corr.label}** ${habitDisplay}`;
+            const title = `When **${corr.label}** ${habitDisplay}`;
             const value = `● **${corr.vsOutputLabel}** ${outcomeDisplay}\n` +
                           `**Correlation Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
                           `*${confidenceText}*\n\n`;
@@ -422,16 +422,19 @@ function buildCoreOverviewPage(embed, statsReportData) {
         return;
     }
 
-    let description = "Your basic stats before the AI analysis.\n\n";
-    
+    let description = "A summary of your outcome and habits. This is the raw data before we dive into the AI analysis.\n\n";
     // Outcome Snapshot
     const outcomeLabel = settings.output?.label;
     if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
         const data = statsReportData.calculatedMetricStats[outcomeLabel];
+        description += `**Outcome: ${outcomeLabel}**\n`;
         if (data.status === 'skipped_insufficient_data') {
-            description += `**Outcome: ${outcomeLabel}**\n*Not enough data to calculate stats.*\n\n`;
+            description += `*Not enough data to calculate stats.*\n\n`;
+        } else if (isYesNoMetric(data.unit)) {
+            const percentage = (data.average * 100).toFixed(0);
+            description += `Completion: **${percentage}%** (Goal: ${settings.output.goal})\n\n`;
         } else {
-            description += `**Outcome:** ${outcomeLabel}\nAverage: **${data.average}** ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
+            description += `Averaged: **${data.average}** ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
         }
     }
 
@@ -442,10 +445,13 @@ function buildCoreOverviewPage(embed, statsReportData) {
         const inputLabel = inputSetting?.label;
         if (inputLabel && statsReportData.calculatedMetricStats?.[inputLabel]) {
             const data = statsReportData.calculatedMetricStats[inputLabel];
-             if (data.status === 'skipped_insufficient_data') {
+            if (data.status === 'skipped_insufficient_data') {
                 description += `*${inputLabel}: Not enough data.*\n`;
+            } else if (isYesNoMetric(data.unit)) {
+                const percentage = (data.average * 100).toFixed(0);
+                description += `*${inputLabel}:* **${percentage}%** Completion (Goal: ${inputSetting.goal})\n`;
             } else {
-                description += `**${inputLabel}:** Avg ${data.average} ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
+                description += `*${inputLabel}:* Avg **${data.average}** ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
             }
         }
     }
@@ -6081,8 +6087,12 @@ client.on(Events.InteractionCreate, async interaction => {
 
         } catch (error) {
             console.error(`[start_narrative_report ERROR ${interactionId}] Error starting report for ${userId}:`, error);
-            if (interaction.deferred || interaction.replied) {
-                 await interaction.editReply({ content: `❌ An error occurred while loading your report: ${error.message}`, components: [], embeds: [] });
+            try {
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.editReply({ content: `❌ An error occurred while loading your report: ${error.message}`, components: [], embeds: [] });
+                }
+            } catch (replyError) {
+                console.warn(`[start_narrative_report FALLBACK_ERROR ${interactionId}] Failed to send error reply (interaction likely expired):`, replyError.message);
             }
         }
     }
