@@ -4336,7 +4336,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setCustomId('manual_setup_outcome_modal')
                 .setTitle('🧪 Experiment Setup (1/4): Outcome');
             const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setPlaceholder("e.g., 'To be less stressed' or 'To have more energy.'").setStyle(TextInputStyle.Paragraph).setValue(deeperProblemValue).setRequired(true);
-            const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setValue(outcomeLabelValue).setRequired(true);
+            const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Outcome Label (under 40 chars)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setValue(outcomeLabelValue).setRequired(true);
             const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setValue(outcomeUnitValue).setRequired(true);
             const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setValue(outcomeGoalValue).setRequired(true);
             outcomeModal.addComponents(
@@ -4414,7 +4414,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const habit1Modal = new ModalBuilder()
                 .setCustomId('manual_setup_habit1_modal')
                 .setTitle('🧪 Experiment Setup (2/4): Habit 1');
-            const habit1LabelInput = new TextInputBuilder().setCustomId('habit1_label_manual').setLabel("🛠️ Daily Habit 1 (The Label)").setPlaceholder("e.g., '15-Min Afternoon Walk'").setStyle(TextInputStyle.Short).setValue(habit1LabelValue).setRequired(true);
+            const habit1LabelInput = new TextInputBuilder().setCustomId('habit1_label_manual').setLabel("🛠️ Daily Habit 1 (under 40 chars)").setPlaceholder("e.g., '15-Min Afternoon Walk'").setStyle(TextInputStyle.Short).setValue(habit1LabelValue).setRequired(true);
             const habit1UnitInput = new TextInputBuilder().setCustomId('habit1_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'minutes', 'steps', 'yes/no'").setStyle(TextInputStyle.Short).setValue(habit1UnitValue).setRequired(true);
             const habit1GoalInput = new TextInputBuilder().setCustomId('habit1_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '15', '2000', '1'").setStyle(TextInputStyle.Short).setValue(habit1GoalValue).setRequired(true);
             habit1Modal.addComponents(
@@ -4656,7 +4656,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 const outcomeLabelInput = new TextInputBuilder()
                     .setCustomId('outcome_label_manual')
-                    .setLabel("📊 Measurable Outcome (The Label)")
+                    .setLabel("📊 Outcome Label (under 40 chars)")
                     .setStyle(TextInputStyle.Short)
                     .setValue(setupData.outcome.label)
                     .setRequired(true);
@@ -5344,7 +5344,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setRequired(true);
         const outcomeLabelInput = new TextInputBuilder()
             .setCustomId('outcome_label_manual')
-            .setLabel("📊 Measurable Outcome (The Label)")
+            .setLabel("📊 Outcome Label (under 40 chars)")
             .setStyle(TextInputStyle.Short)
             .setValue(setupData.outcome.label)
             .setRequired(true);
@@ -7191,7 +7191,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setCustomId('manual_setup_outcome_modal')
                     .setTitle('🧪 Custom Outcome Metric');
                 const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setStyle(TextInputStyle.Paragraph).setValue(setupData.deeperWish || "").setRequired(true);
-                const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setRequired(true);
+                const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Outcome Label (under 40 chars)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setRequired(true);
                 const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setRequired(true);
                 const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setRequired(true);
                 manualOutcomeModal.addComponents(
@@ -7273,7 +7273,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setCustomId('manual_setup_habit1_modal')
                     .setTitle('🧪 Custom Daily Habit 1');
                 
-                const habit1LabelInput = new TextInputBuilder().setCustomId('habit1_label_manual').setLabel("🛠️ Daily Habit 1 (The Label)").setPlaceholder("e.g., '15-Min Afternoon Walk'").setStyle(TextInputStyle.Short).setRequired(true);
+                const habit1LabelInput = new TextInputBuilder().setCustomId('habit1_label_manual').setLabel("🛠️ Daily Habit 1 (under 40 chars)").setPlaceholder("e.g., '15-Min Afternoon Walk'").setStyle(TextInputStyle.Short).setRequired(true);
                 const habit1UnitInput = new TextInputBuilder().setCustomId('habit1_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'minutes', 'steps', 'yes/no'").setStyle(TextInputStyle.Short).setRequired(true);
                 const habit1GoalInput = new TextInputBuilder().setCustomId('habit1_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '15', '2000', '1'").setStyle(TextInputStyle.Short).setRequired(true);
                 
@@ -7310,7 +7310,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setCustomId('confirm_ai_habit_modal_1') // ID specifies this is for Habit 1
                     .setTitle('Confirm Your 1st Habit');
 
-                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Daily Habit Label").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
+                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Habit Label (under 40 chars)").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
                 const habitGoalInput = new TextInputBuilder().setCustomId('habit_goal_manual').setLabel("🎯 Daily Target").setStyle(TextInputStyle.Short).setValue(String(chosenSuggestion.goal)).setRequired(true);
                 const habitUnitInput = new TextInputBuilder().setCustomId('habit_unit_manual').setLabel("📏 Unit / Scale").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.unit).setRequired(true);
                 
@@ -7381,7 +7381,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const confirmHabitModal = new ModalBuilder()
                     .setCustomId('confirm_ai_habit_modal_2') // New modal ID for habit 2
                     .setTitle('Confirm Your 2nd Habit');
-                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Daily Habit Label").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
+                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Habit Label (under 40 chars)").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
                 const habitGoalInput = new TextInputBuilder().setCustomId('habit_goal_manual').setLabel("🎯 Daily Target").setStyle(TextInputStyle.Short).setValue(String(chosenSuggestion.goal)).setRequired(true);
                 const habitUnitInput = new TextInputBuilder().setCustomId('habit_unit_manual').setLabel("📏 Unit / Scale").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.unit).setRequired(true);
                 
@@ -7888,12 +7888,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
             
+            /*
             if (validationErrors.length > 0) {
                 console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`); 
                 const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and restart the setup:\n\n' + validationErrors.map(e => `• ${e}`).join('\n')); // [cite: 2033]
                 await interaction.editReply({ embeds: [errorEmbed], components: [] }); // [cite: 2034]
                 return; // [cite: 2034]
             }
+            */
             
             // --- Validation Passed: Update state and proceed ---
             setupData.deeperProblem = deeperProblem; // [cite: 2034]
@@ -8011,6 +8013,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
             
+            /*
             if (validationErrors.length > 0) {
                  const errorEmbed = new EmbedBuilder()
                     .setColor('#ED4245')
@@ -8020,6 +8023,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
             
             // --- Validation Passed: Update state and proceed ---
             if (!setupData.inputs) setupData.inputs = [];
@@ -8118,6 +8122,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
             
+            /*
             if (validationErrors.length > 0) {
                  const errorEmbed = new EmbedBuilder()
                     .setColor('#ED4245')
@@ -8127,6 +8132,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
             
             // --- Validation Passed: Update state and proceed ---
             if (!setupData.inputs) setupData.inputs = [];
@@ -8224,6 +8230,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
             
+            /*
             if (validationErrors.length > 0) {
                  const errorEmbed = new EmbedBuilder()
                     .setColor('#ED4245')
@@ -8233,6 +8240,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
             
             // --- Validation Passed: Update state and proceed ---
             if (!setupData.inputs) setupData.inputs = [];
@@ -8355,12 +8363,14 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         }
 
+        /*
         if (validationErrors.length > 0) {
             console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`);
             const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and try submitting the form again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
             await interaction.editReply({ embeds: [errorEmbed], components: [] });
             return;
         }
+        */
 
         // --- Validation Passed ---
         setupData.deeperProblem = deeperProblem;
@@ -8511,12 +8521,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
 
+            /*
             if (validationErrors.length > 0) {
                 console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 1.`);
                 const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 1').setDescription('Please correct the following issues and try defining Habit 1 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
 
             if (!setupData.inputs) setupData.inputs = [];
             setupData.inputs[0] = { label: habit1Label, unit: habit1Unit, goal: habit1Goal };
@@ -8631,12 +8643,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
 
+            /*
             if (validationErrors.length > 0) {
                 console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 2.`);
                 const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 2').setDescription('Please correct the following issues and try defining Habit 2 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
 
             setupData.inputs[1] = { label: habit2Label, unit: habit2Unit, goal: habit2Goal };
             setupData.dmFlowState = 'awaiting_add_another_habit_choice';
@@ -8750,12 +8764,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
 
+            /*
             if (validationErrors.length > 0) {
                 console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 3.`);
                 const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 3').setDescription('Please correct the following issues and try defining Habit 3 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
 
             setupData.inputs[2] = { label: habit3Label, unit: habit3Unit, goal: habit3Goal };
             userExperimentSetupData.set(userId, setupData);
