@@ -470,10 +470,37 @@ function buildCoreOverviewPage(embed, statsReportData) {
  * @param {object} aiInsights - The AI-generated insights object.
  */
 function buildExperimentStoryPage(embed, aiInsights) {
-    embed.setTitle('📖 Your Experiment Story')
-         .setDescription(
-             aiInsights.experimentStory || "The AI could not generate a narrative for this experiment, but the data still tells a story."
-         );
+    embed.setTitle('📖 Your Experiment Story');
+
+    const storyData = aiInsights.experimentStory;
+    let description = "The AI could not generate a narrative for this experiment, but the data still tells a story.";
+
+    // Check if storyData is a non-null object
+    if (storyData && typeof storyData === 'object') {
+        const biggestStruggle = storyData['Biggest Struggle'] || storyData.biggestStruggle;
+        const hiddenGrowth = storyData['Hidden Growth'] || storyData.hiddenGrowth;
+        const futurePrediction = storyData['Future Prediction'] || storyData.futurePrediction;
+        const questionToPonder = storyData['A Question to Ponder'] || storyData.questionToPonder;
+
+        description = ''; // Reset description to build it from parts
+        if (biggestStruggle) {
+            description += `**Biggest Struggle**\n${biggestStruggle}\n\n`;
+        }
+        if (hiddenGrowth) {
+            description += `**Hidden Growth**\n${hiddenGrowth}\n\n`;
+        }
+        if (futurePrediction) {
+            description += `**Future Prediction**\n${futurePrediction}`;
+        }
+        if (questionToPonder) {
+            description += `**A Question to Ponder**\n${questionToPonder}`;
+        }
+    } else if (typeof storyData === 'string' && storyData.trim() !== '') {
+        // Fallback for if the AI ever returns a simple string again
+        description = storyData;
+    }
+
+    embed.setDescription(description.trim());
 }
 
 /**

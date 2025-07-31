@@ -236,16 +236,6 @@ Identify the single most striking (and actionable) insight from the data. Use th
 Your insight must be a single, impactful sentence framed in a supportive, empowering tone, with a simple label for the relationship or effect being spotlighted. Example: "Your data reveals a fascinating 'rebound effect': high [Habit X] today often leads to lower [Outcome Y] tomorrow!" MAKE SURE the label is accurate.
 
 **2. "experimentStory":**
-Write a concise narrative summary of the user's experiment period. Use "\\n\\n" for paragraph breaks to ensure proper formatting.
-- Break it into 3 sections, using  bold labels to designate each section. Each section should be 1-2 sentences. The 3 sections are: Biggest Struggle, Hidden Growth, Future Prediction.
-- Biggest Struggle: Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human, and reiterate the value of doing the self science experiments they're doing. Find various ways to remind them that growth comes from experiments.
-- Hidden Growth: Look for subtle shifts in language in *this period's notes*, "hidden wins" (e.g., maintaining effort despite challenges), or emerging positive patterns that signal progress *within this experiment*.
-- Future Prediction: paint a picture of who they will become if they keep doing the kind of reflection and positive action they've been taking.
-- Overall: Highlight 1-2 recurring themes from the notes that align with the data.
-- Integrate one short, impactful quote directly from their notes.
-- Use cautious, observational language ("It seems like...", "You often mentioned..."). Do not invent feelings. Remind them that everything is just data, and insight (and especially behavior change) sometimes takes many times seeing the same data.
-
-**2. "experimentStory":**
 Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long. Use bold labels for each section and use "\\n\\n" for paragraph breaks.
 - Throughout all sections, highlight recurring themes from the user's notes that align with the data.
 - Weave 1 short, impactful quote directly from their notes into a relevant section.
