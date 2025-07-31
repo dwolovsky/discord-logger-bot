@@ -631,26 +631,29 @@ function buildFinalSummaryPage(embed, statsReportData, aiInsights, pageConfig) {
 
     // --- ADD AI INSIGHTS SECTION ---
     if (aiInsights) {
-    // Add a spacer before the AI content
-    embed.addFields({ name: '\u200B', value: '\u200B' });
-    
-    // --- Build the Story ---
-    const storyEmbed = new EmbedBuilder();
-    buildExperimentStoryPage(storyEmbed, aiInsights);
-    const storyText = `**📖 ${storyEmbed.data.title}**\n${storyEmbed.data.description || "No story was generated."}`;
+        // Add a spacer before the AI content
+        embed.addFields({ name: '\u200B', value: '\u200B' });
 
-    // --- Build the Suggestions ---
-    const nextStepsEmbed = new EmbedBuilder();
-    buildNextStepsPage(nextStepsEmbed, aiInsights);
-    let suggestionsText = `\n\n**🧪 ${nextStepsEmbed.data.title}**\n${nextStepsEmbed.data.description || ""}`;
-    if(nextStepsEmbed.data.fields) {
-        nextStepsEmbed.data.fields.forEach(field => {
-            suggestionsText += `\n\n${field.name}\n${field.value}`;
-        });
-    }
+        // --- Build the Story ---
+        const storyEmbed = new EmbedBuilder();
+        buildExperimentStoryPage(storyEmbed, aiInsights); // This populates the storyEmbed
+        const storyTitle = storyEmbed.data.title || "Your Experiment Story";
+        const storyDescription = storyEmbed.data.description || "No story was generated.";
+        const storyText = `**📖 ${storyTitle}**\n${storyDescription}`;
 
-    // --- Combine them into a single field ---
-    embed.addFields({ name: '🤖 AI Insights', value: storyText + suggestionsText });
+        // --- Build the Suggestions ---
+        const nextStepsEmbed = new EmbedBuilder();
+        buildNextStepsPage(nextStepsEmbed, aiInsights); // This populates the nextStepsEmbed
+        const nextStepsTitle = nextStepsEmbed.data.title || "Next Experiment Suggestions";
+        let suggestionsText = `\n\n**🧪 ${nextStepsTitle}**\n${nextStepsEmbed.data.description || ""}`;
+        if(nextStepsEmbed.data.fields) {
+            nextStepsEmbed.data.fields.forEach(field => {
+                suggestionsText += `\n\n${field.name}\n${field.value}`;
+            });
+        }
+
+        // --- Combine them into a single field ---
+        embed.addFields({ name: '🤖 AI Insights', value: storyText + suggestionsText });
     }
 }
 
