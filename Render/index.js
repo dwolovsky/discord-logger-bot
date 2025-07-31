@@ -589,31 +589,69 @@ function buildCoreStatsSummary(embed, statsReportData) {
  * @param {object} statsReportData - The full stats report data from Firestore.
  * @param {Array<object>} pageConfig - The dynamically generated page configuration.
  */
-function buildFinalSummaryPage(embed, statsReportData, pageConfig) {
+// The function now takes `aiInsights` as an argument
+function buildFinalSummaryPage(embed, statsReportData, aiInsights, pageConfig) {
+
+    embed.setTitle('📊 Experiment Summary')
+         .setDescription(`This is a complete overview of your experiment.`);
 
     // --- 1. Core Statistics ---
     buildCoreStatsSummary(embed, statsReportData);
 
-    // --- 2. Habit Impacts ---
-    // Use the return value to check if content was added
-    const hasCorrelations = buildCorrelationsPage(embed, statsReportData);
-    
-    // --- 3. Combined Effects ---
-    // If the previous section added content, add a spacer before this one.
+    // --- Check which optional sections have content ---
+    const hasCorrelations = buildCorrelationsPage(new EmbedBuilder(), statsReportData);
+    const hasCombinedEffects = buildCombinedEffectsPage(new EmbedBuilder(), statsReportData);
+    const hasLagTime = buildLagTimePage(new EmbedBuilder(), statsReportData);
+
+    let previousSectionHadContent = true; 
+
     if (hasCorrelations) {
-        embed.addFields({ name: '\u200B', value: '\u200B' });
+        if (previousSectionHadContent) {
+            embed.addFields({ name: '\u200B', value: '\u200B' }); 
+        }
+        buildCorrelationsPage(embed, statsReportData);
+        previousSectionHadContent = true;
     }
-    const hasCombinedEffects = buildCombinedEffectsPage(embed, statsReportData);
 
-    // --- 4. Day-to-Day Connections ---
-    // If the previous section added content, add a spacer before this one.
     if (hasCombinedEffects) {
-        embed.addFields({ name: '\u200B', value: '\u200B' });
+        if (previousSectionHadContent) {
+            embed.addFields({ name: '\u200B', value: '\u200B' });
+        }
+        buildCombinedEffectsPage(embed, statsReportData);
+        previousSectionHadContent = true;
     }
-    buildLagTimePage(embed, statsReportData);
 
-    embed.setTitle('📊 Experiment Summary')
-         .setDescription(`This is a complete overview of your experiment.`);
+    if (hasLagTime) {
+        if (previousSectionHadContent) {
+            embed.addFields({ name: '\u200B', value: '\u200B' }); 
+        }
+        buildLagTimePage(embed, statsReportData);
+        previousSectionHadContent = true;
+    }
+
+    // --- ADD AI INSIGHTS SECTION ---
+    if (aiInsights) {
+    // Add a spacer before the AI content
+    embed.addFields({ name: '\u200B', value: '\u200B' });
+    
+    // --- Build the Story ---
+    const storyEmbed = new EmbedBuilder();
+    buildExperimentStoryPage(storyEmbed, aiInsights);
+    const storyText = `**📖 ${storyEmbed.data.title}**\n${storyEmbed.data.description || "No story was generated."}`;
+
+    // --- Build the Suggestions ---
+    const nextStepsEmbed = new EmbedBuilder();
+    buildNextStepsPage(nextStepsEmbed, aiInsights);
+    let suggestionsText = `\n\n**🧪 ${nextStepsEmbed.data.title}**\n${nextStepsEmbed.data.description || ""}`;
+    if(nextStepsEmbed.data.fields) {
+        nextStepsEmbed.data.fields.forEach(field => {
+            suggestionsText += `\n\n${field.name}\n${field.value}`;
+        });
+    }
+
+    // --- Combine them into a single field ---
+    embed.addFields({ name: '🤖 AI Insights', value: storyText + suggestionsText });
+    }
 }
 
 /**
