@@ -414,7 +414,7 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
                 updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = FieldValue.delete();
             } else if (newState.streakBroken) {
                 dmMessageText = STREAK_CONFIG.MESSAGES.DM.STREAK_RESET;
-                tempPublicMessage = `<@${userId}> just broke their streak and restarted it! The hardest thing to do! 🙌🏼 Their log total is #${newTotalLogs} so far. That's grit, baby!`;
+                tempPublicMessage = `<@${userId}> just broke their streak and restarted it! The hardest thing to do! 🙌🏼 They've logged a total of ${newTotalLogs} days of data so far. That's grit, baby!`;
                 roleInfo = STREAK_CONFIG.MILESTONES.ROLES.find(role => role.days === 1);
                 updateData[STREAK_CONFIG.FIELDS.PENDING_ROLE_CLEANUP] = true;
             } else if (newState.newStreak > previousStreak) {
