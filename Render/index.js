@@ -246,7 +246,7 @@ function buildCorrelationsPage(embed, statsReportData) {
             }
 
             if (!hasContent) { 
-                embed.addFields({ name: '**🔗 Habit-Outcome Correlations**', value: '\u200B', inline: false }); 
+                embed.addFields({ name: '**🔗 Habit-Outcome Correlations**', value: 'See how your habits influence your desired outcome.', inline: false }); 
                 hasContent = true;
             }
 
@@ -333,6 +333,7 @@ function buildCombinedEffectsPage(embed, statsReportData) {
 }
 
 function buildLagTimePage(embed, statsReportData) {
+    embed.setTitle('🕑 Day-After Effects');
     let hasContent = false;
     const results = statsReportData.lagTimeCorrelations;
     const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
@@ -347,7 +348,7 @@ function buildLagTimePage(embed, statsReportData) {
                 }
 
                 if (!hasContent) { 
-                    embed.addFields({ name: '🕑 **Today\'s Habits → Tomorrow\'s Outcome**', value: 'Here\'s how your habits today correlate with your outcome tomorrow.\n\n', inline: false });
+                    embed.addFields({ name: '**Today\'s Habits → Tomorrow\'s Outcome**', value: 'Here\'s how your habits today correlate with your outcome tomorrow.\n\n', inline: false });
                     hasContent = true;
                 }
 
@@ -405,14 +406,24 @@ function buildCorrelationsAndComboPage(embed, statsReportData) {
 function buildAhaMomentPage(embed, aiInsights) {
     embed.setTitle('💡 Your Experiment\'s Big Insight!')
          .setDescription(
-             "Here's the most striking insight from your latest experiment.\n\nIf you don't feel good about it, keep in mind it's a tiny data point, and your whole life starts now.\n\nIf you do feel good, celebrate the healing and growth that's already here!"
-            )
-          .addFields(
-             { 
-                 name: `"${aiInsights.strikingInsight.label}"`, // Access the label from the nested object
-                 value: aiInsights.strikingInsight.insight,      // Access the insight string from the nested object
-                 inline: false 
-})
+             "Here's the most striking insight from your latest experiment.\nRemember, it's just more data.\n\nWisdom fuel for your future self!"
+         );
+
+    const insightData = aiInsights.strikingInsight;
+    let fieldName = "Striking Insight";
+    let fieldValue = "The AI could not generate a striking insight for this period.";
+
+    // Check if insightData is an object with the expected properties
+    if (insightData && typeof insightData === 'object' && insightData.label && insightData.insight) {
+        fieldName = `"${insightData.label}"`;
+        fieldValue = insightData.insight;
+    } 
+    // Fallback for if the AI returns a simple string
+    else if (typeof insightData === 'string' && insightData.trim() !== '') {
+        fieldValue = insightData;
+    }
+
+    embed.addFields({ name: fieldName, value: fieldValue, inline: false });
 }
 
 /**
@@ -433,14 +444,14 @@ function buildCoreOverviewPage(embed, statsReportData) {
     const outcomeLabel = settings.output?.label;
     if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
         const data = statsReportData.calculatedMetricStats[outcomeLabel];
-        description += `**Outcome: ${outcomeLabel}**\n`;
+        description += `**Outcome:** ${outcomeLabel}\n`;
         if (data.status === 'skipped_insufficient_data') {
             description += `*Not enough data to calculate stats.*\n\n`;
         } else if (isYesNoMetric(data.unit)) {
             const percentage = (data.average * 100).toFixed(0);
-            description += `Completion: **${percentage}%** (Goal: ${settings.output.goal})\n\n`;
+            description += `**Completion =** ${percentage}% (Goal: ${settings.output.goal})\n\n`;
         } else {
-            description += `Averaged: **${data.average}** ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
+            description += `**Average =** ${data.average} ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
         }
     }
 
@@ -455,9 +466,9 @@ function buildCoreOverviewPage(embed, statsReportData) {
                 description += `*${inputLabel}: Not enough data.*\n`;
             } else if (isYesNoMetric(data.unit)) {
                 const percentage = (data.average * 100).toFixed(0);
-                description += `*${inputLabel}:* **${percentage}%** Completion (Goal: ${inputSetting.goal})\n`;
+                description += `*${inputLabel}*: Completion = ${percentage}% (Goal: ${inputSetting.goal})\n`;
             } else {
-                description += `*${inputLabel}:* Avg **${data.average}** ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
+                description += `*${inputLabel}*: Avg = ${data.average} ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
             }
         }
     }
@@ -508,17 +519,26 @@ function buildExperimentStoryPage(embed, aiInsights) {
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} aiInsights - The AI-generated insights object.
  */
+// AFTER (Correct and Safer)
 function buildNextStepsPage(embed, aiInsights) {
     embed.setTitle('🧪 Next Experiment Suggestions')
          .setDescription("A few ideas for your next experiment.");
 
-    if (aiInsights.nextExperimentSuggestions && Array.isArray(aiInsights.nextExperimentSuggestions)) {
-        aiInsights.nextExperimentSuggestions.forEach((suggestion, index) => {
-            // Suggestion is expected to be a string directly from the AI based on the new prompt.
-            // We'll split it by the colon for formatting, assuming the AI follows the "Title: Body" format.
-            const framework = suggestion.framework; // Correctly access framework from the 'suggestion' object
-            const idea = suggestion.suggestion; // Correctly access the 'suggestion' string from the 'suggestion' object
-            embed.addFields({ name: `**${index + 1}. ${framework}**`, value: idea, inline: false });
+    const suggestions = aiInsights.nextExperimentSuggestions;
+
+    if (suggestions && Array.isArray(suggestions) && suggestions.length > 0) {
+        suggestions.forEach((suggestion, index) => {
+            // Check if the suggestion is a valid object with the properties we need
+            if (suggestion && typeof suggestion.framework === 'string' && typeof suggestion.suggestion === 'string') {
+                embed.addFields({ 
+                    name: `**${index + 1}. ${suggestion.framework}**`, 
+                    value: suggestion.suggestion, 
+                    inline: false 
+                });
+            } else {
+                // Log an error if the format is wrong, but don't crash
+                console.warn(`[buildNextStepsPage] Suggestion at index ${index} has an invalid format:`, suggestion);
+            }
         });
     } else {
         embed.addFields({ name: 'No Suggestions', value: 'The AI did not generate specific suggestions for this experiment.' });

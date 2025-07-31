@@ -234,6 +234,7 @@ Identify the single most striking (and actionable) insight from the data. Use th
   f. **Fallback:** If none of the above are strong, find where the user was closest to their goal number (for outcome or habits) and frame it as a win, starting with "You may already know this, but...".
 
 Your insight must be a single, impactful sentence framed in a supportive, empowering tone, with a simple label for the relationship or effect being spotlighted. Example: "Your data reveals a fascinating 'rebound effect': high [Habit X] today often leads to lower [Outcome Y] tomorrow!" MAKE SURE the label is accurate.
+You MUST return this as a JSON object with two keys: "label" (string) and "insight" (string).
 
 **2. "experimentStory":**
 Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long. Use bold labels for each section and use "\\n\\n" for paragraph breaks.
@@ -243,24 +244,23 @@ Write a summary of the user's experiment, broken into 3 distinct sections, each 
 - The 3 sections are:
 - **Biggest Struggle:** Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human. Reiterate the value of these experiments for growth.
 - **Hidden Growth:** Look for "hidden wins" (e.g., maintaining effort despite challenges, or insights, or mindset shifts) or emerging positive patterns of action *within this experiment's notes* that signal progress.
-- **A Question to Ponder:** Look for a surprising or contradictory pattern in the data or notes. Based on this, pose a single, thoughtful question to encourage the user's curiosity. For example: "Your data shows 'Energy' was highest on days you also logged high 'Stress'. What hidden truth does this point to'?"
+- **A Question to Ponder:** Look for a surprising or contradictory pattern in the data or notes. Based on this, pose a single, thoughtful coaching question to encourage the user's curiosity and inspire more experimentation. For example: "Your data shows 'Energy' was highest on days you also logged high 'Stress'. How can you probe this relationship to understand it more'?"
+You MUST return this as a JSON object with three keys: "biggestStruggle", "hiddenGrowth", and "aQuestionToPonder".
 
-**3. "nextExperimentSuggestions":**
-Provide an array of exactly 3 actionable, concise experiment ideas based on the data and notes. Frame them as curious explorations. **Choose 3 distinct frameworks from the list below**, ensuring variety in your suggestions.
-- **Seek More Evidence:** A small tweak to an existing habit to confirm or disprove a potential pattern.
-  - **Format:** "To gain more clarity: Try [tweak, e.g., 'increasing Meditation by 5 minutes'] to observe if [specific effect, e.g., 'your Focus score shifts']."
-- **Minimum Effective Dose:** Find an easier version of a habit that is still effective.
-  - **Format:** "To find the easiest effective version: Try reducing [Habit Y] to [smaller amount] and see if you still notice a benefit in your [Outcome]."
-- **What if Not?:** Intentionally remove a habit to see its true impact.
-  - **Format:** "To see what happens without it: For one or two days, try *skipping* [Habit X] and notice how it affects your [Outcome]."
-- **Context Swap:** Test if the timing or trigger of a habit is key.
-  - **Format:** "To test a different trigger: Try doing [Habit Z] at [different time or location] and see how it impacts your [Outcome]."
-- **Flavor Swap:** Try a slight variation of a habit to find a more enjoyable version.
-  - **Format:** "To try a different flavor: Instead of [Habit A], try [a similar but different Habit B] and see if it affects your [Outcome] differently."
-- **Upstream Intervention:** Based on the "Chain of Behavior" concept, suggest a small, indirect habit that addresses a root cause mentioned in the user's notes.
-  - **Format:** "An upstream lever: Your notes mention [problem X]. What if you try [small, indirect habit Y that may precede more relevant events] to address that?"
+  **3. "nextExperimentSuggestions":**
+Provide an array of exactly 3 actionable, concise experiment ideas based on the data. For each idea, you MUST provide a JSON object with a "framework" (string) and a "suggestion" (string). Choose 3 distinct frameworks from the list below, ensuring variety, randomness, and relevance to the user's most recent experiment.
+- **Framework "Seek More Evidence":** A small tweak to an existing habit to confirm or disprove a potential pattern. (Suggestion format: "To gain more clarity: Try [tweak] to observe if [specific effect].")
+- **Framework "Minimum Effective Dose":** Find an easier version of a habit that is still effective. (Suggestion format: "To find the easiest effective version: Try reducing [Habit Y] to [smaller amount] and see if you still notice a benefit in your [Outcome].")
+- **Framework "What if Not?":** Intentionally remove a habit to see its true impact. (Suggestion format: "To see what happens without it: For one or two days, try *skipping* [Habit X] and notice how it affects your [Outcome].")
+- **Framework "Context Swap":** Test if the timing or trigger of a habit is key. (Suggestion format: "To test a different trigger: Try doing [Habit Z] at [different time or location] and see how it impacts your [Outcome].")
+- **Framework "Flavor Swap":** Try a slight variation of a habit to find a more enjoyable version. (Suggestion format: "To try a different flavor: Instead of [Habit A], try [a similar but different Habit B] and see if it affects your [Outcome] differently.")
+- **Framework "Upstream Intervention":** Based on the "Chain of Behavior" concept, suggest a small, indirect habit that addresses a root cause. (Suggestion format: "An upstream lever: Your notes mention [problem X]. What if you try [small, indirect habit Y] to address that?")
 
-Return ONLY the raw JSON object. Do not include markdown or any other text.
+Return ONLY the raw JSON object. Do not include markdown or any other text. Ensure the "nextExperimentSuggestions" key contains an array of 3 objects, like this:
+[
+    { "framework": "Seek More Evidence", "suggestion": "To gain more clarity: Try increasing Meditation by 5 minutes to observe if your Focus score shifts." },
+    ...
+]
 `;
 };
 // ============== END OF AI INSIGHTS SETUP ==================
