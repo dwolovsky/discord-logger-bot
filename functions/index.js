@@ -256,6 +256,7 @@ Provide an array of exactly 3 actionable, concise experiment ideas based on the 
 - **Framework "Flavor Swap":** Try a slight variation of a habit to find a more enjoyable version. (Suggestion format: "To try a different flavor: Instead of [Habit A], try [a similar but different Habit B] and see if it affects your [Outcome] differently.")
 - **Framework "Upstream Intervention":** Based on the "Chain of Behavior" concept, suggest a small, indirect habit that addresses a root cause. (Suggestion format: "An upstream lever: Your notes mention [problem X]. What if you try [small, indirect habit Y] to address that?")
 
+CRITICAL: If you include a quote from the user's notes that contains double quotes, you MUST escape them with a backslash (e.g., "He said \\"hello\\""). Failure to do so will result in invalid JSON.
 Return ONLY the raw JSON object. Do not include markdown or any other text. Ensure the "nextExperimentSuggestions" key contains an array of 3 objects, like this:
 [
     { "framework": "Seek More Evidence", "suggestion": "To gain more clarity: Try increasing Meditation by 5 minutes to observe if your Focus score shifts." },
