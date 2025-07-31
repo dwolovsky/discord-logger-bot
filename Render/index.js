@@ -490,24 +490,19 @@ function buildExperimentStoryPage(embed, aiInsights) {
     if (storyData && typeof storyData === 'object') {
         const biggestStruggle = storyData['Biggest Struggle'] || storyData.biggestStruggle;
         const hiddenGrowth = storyData['Hidden Growth'] || storyData.hiddenGrowth;
-        const futurePrediction = storyData['Future Prediction'] || storyData.futurePrediction;
-        const questionToPonder = storyData['A Question to Ponder'] || storyData.questionToPonder;
+        const questionToPonder = storyData['A Question to Ponder'] || storyData.aQuestionToPonder;
 
         description = ''; // Reset description to build it from parts
         if (biggestStruggle) {
-            description += `**Biggest Struggle**\n${biggestStruggle}\n\n`;
+            description += `${biggestStruggle}\n\n`;
         }
         if (hiddenGrowth) {
-            description += `**Hidden Growth**\n${hiddenGrowth}\n\n`;
-        }
-        if (futurePrediction) {
-            description += `**Future Prediction**\n${futurePrediction}`;
+            description += `${hiddenGrowth}\n\n`;
         }
         if (questionToPonder) {
-            description += `**A Question to Ponder**\n${questionToPonder}`;
+            description += `${questionToPonder}`; 
         }
     } else if (typeof storyData === 'string' && storyData.trim() !== '') {
-        // Fallback for if the AI ever returns a simple string again
         description = storyData;
     }
 
