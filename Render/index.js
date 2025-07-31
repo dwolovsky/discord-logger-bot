@@ -439,7 +439,7 @@ function buildCoreOverviewPage(embed, statsReportData) {
         return;
     }
 
-    let description = "A summary of your outcome and habits. This is the raw data before we dive into the AI analysis.\n\n";
+    let description = "A summary of your basic outcome and habit stats.\n\n";
     // Outcome Snapshot
     const outcomeLabel = settings.output?.label;
     if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
