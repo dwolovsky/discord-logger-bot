@@ -237,7 +237,7 @@ Your insight must be a single, impactful sentence framed in a supportive, empowe
 You MUST return this as a JSON object with two keys: "label" (string) and "insight" (string).
 
 **2. "experimentStory":**
-Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long. Use bold labels for each section and use "\\n\\n" for paragraph breaks.
+Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long (include titles too). Use bold labels for each section and use "\\n\\n" for paragraph breaks.
 - Throughout all sections, highlight recurring themes from the user's notes that align with the data.
 - Weave 1 short, impactful quote directly from their notes into a relevant section.
 - Use cautious, observational language ("It seems like...", "You often mentioned..."). Do not invent feelings.

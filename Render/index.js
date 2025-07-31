@@ -764,7 +764,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
             buildNextStepsPage(embed, aiEnhancedInsights);
             break;
         case 'raw_stats':
-            buildFinalSummaryPage(embed, statsReportData, pageConfig);
+            buildFinalSummaryPage(embed, statsReportData, aiEnhancedInsights, pageConfig);
             break;
         default:
             console.error("Unknown page type in pageConfig:", currentPageConfig.type);
