@@ -6111,7 +6111,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // 2. Build the dynamic page configuration based on available data
             const pageConfig = [];
-            pageConfig.push({ type: 'aha' });
             pageConfig.push({ type: 'story' });
             pageConfig.push({ type: 'overview' });
 
