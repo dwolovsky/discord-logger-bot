@@ -222,33 +222,29 @@ ${data.experimentNotesSummary && data.experimentNotesSummary.trim() !== "" ? dat
 
 ---
 **YOUR TASK:**
-Generate a JSON object with three keys: "strikingInsight", "experimentStory", and "nextExperimentSuggestions".
+Generate a single, valid JSON object with three keys: "strikingInsight", "experimentStory", and "nextExperimentSuggestions".
 
 **1. "strikingInsight":**
+This key's value must be a JSON object with two keys: "label" (string) and "insight" (string).
 Identify the single most striking (and actionable) insight from the data. Use this hierarchy to decide:
-  a. **Combined Correlation + Lag Time Correlation:** A habit that has a different effect today vs. tomorrow. (e.g., "Habit X helps your outcome today but hurts it tomorrow" or "Habit X helps your outcome today but REALLY helps it tomorrow"). Requires both correlations to be at least moderate. MAKE SURE you understand the effect and label it accurately.
-  b. **Pairwise Interactions:** Two habits together having a significant effect.
-  c. **Strong Lag Time Correlations:** A habit today clearly influencing an outcome tomorrow.
-  d. **Strong Direct Correlations:** A single habit strongly impacting the outcome on the same day.
-  e. **Significant Deviation/Consistency:** A metric dramatically differing from its goal or showing surprising consistency, especially if it resonates with the user's notes.
-  f. **Fallback:** If none of the above are strong, find where the user was closest to their goal number (for outcome or habits) and frame it as a win, starting with "You may already know this, but...".
-
-Your insight must be a single, impactful sentence framed in a supportive, empowering tone, with a simple label for the relationship or effect being spotlighted. Example: "Your data reveals a fascinating 'rebound effect': high [Habit X] today often leads to lower [Outcome Y] tomorrow!" MAKE SURE the label is accurate.
-You MUST return this as a JSON object with two keys: "label" (string) and "insight" (string).
+  a. Combined Correlation + Lag Time Correlation: A habit that has a different effect today vs. tomorrow.
+  b. Pairwise Interactions: Two habits together having a significant effect.
+  c. Strong Lag Time Correlations: A habit today clearly influencing an outcome tomorrow.
+  d. Strong Direct Correlations: A single habit strongly impacting the outcome on the same day.
+  e. Significant Deviation/Consistency: A metric dramatically differing from its goal or showing surprising consistency.
+  f. Fallback: If none of the above are strong, find where the user was closest to their goal and frame it as a win.
+Your insight must be a single, impactful sentence framed in a supportive, empowering tone.
 
 **2. "experimentStory":**
-Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long (include titles too). Use bold labels for each section and use "\\n\\n" for paragraph breaks.
-- Throughout all sections, highlight recurring themes from the user's notes that align with the data.
-- Weave 1 short, impactful quote directly from their notes into a relevant section.
-- Use cautious, observational language ("It seems like...", "You often mentioned..."). Do not invent feelings.
-- The 3 sections are:
-- **Biggest Struggle:** Acknowledge any struggles mentioned *in the notes for this period* with compassion and normalize them as part of being human. Reiterate the value of these experiments for growth.
-- **Hidden Growth:** Look for "hidden wins" (e.g., maintaining effort despite challenges, or insights, or mindset shifts) or emerging positive patterns of action *within this experiment's notes* that signal progress.
-- **A Question to Ponder:** Look for a surprising or contradictory pattern in the data or notes. Based on this, pose a single, thoughtful coaching question to encourage the user's curiosity and inspire more experimentation. For example: "Your data shows 'Energy' was highest on days you also logged high 'Stress'. How can you probe this relationship to understand it more'?"
-You MUST return this as a JSON object with three keys: "biggestStruggle", "hiddenGrowth", and "aQuestionToPonder".
+This key's value must be a JSON object with three keys: "biggestStruggle", "hiddenGrowth", and "aQuestionToPonder".
+Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long. Weave in themes or a short quote from their notes. Use cautious, observational language ("It seems like...").
+- **biggestStruggle:** Acknowledge struggles mentioned in the notes with compassion.
+- **hiddenGrowth:** Look for "hidden wins" like maintaining effort or mindset shifts.
+- **aQuestionToPonder:** Pose a single, thoughtful coaching question based on a surprising pattern to inspire curiosity.
 
-  **3. "nextExperimentSuggestions":**
-Provide an array of exactly 3 actionable, concise experiment ideas based on the data. For each idea, you MUST provide a JSON object with a "framework" (string) and a "suggestion" (string). Choose 3 distinct frameworks from the list below, ensuring variety, randomness, and relevance to the user's most recent experiment.
+**3. "nextExperimentSuggestions":**
+This key's value must be an array of exactly 3 JSON objects. Each object must have a "framework" (string) and a "suggestion" (string).
+Provide actionable, concise experiment ideas based on the data. Choose 3 distinct frameworks from the list below, ensuring variety and relevance.
 - **Framework "Seek More Evidence":** A small tweak to an existing habit to confirm or disprove a potential pattern. (Suggestion format: "To gain more clarity: Try [tweak] to observe if [specific effect].")
 - **Framework "Minimum Effective Dose":** Find an easier version of a habit that is still effective. (Suggestion format: "To find the easiest effective version: Try reducing [Habit Y] to [smaller amount] and see if you still notice a benefit in your [Outcome].")
 - **Framework "What if Not?":** Intentionally remove a habit to see its true impact. (Suggestion format: "To see what happens without it: For one or two days, try *skipping* [Habit X] and notice how it affects your [Outcome].")
@@ -256,12 +252,8 @@ Provide an array of exactly 3 actionable, concise experiment ideas based on the 
 - **Framework "Flavor Swap":** Try a slight variation of a habit to find a more enjoyable version. (Suggestion format: "To try a different flavor: Instead of [Habit A], try [a similar but different Habit B] and see if it affects your [Outcome] differently.")
 - **Framework "Upstream Intervention":** Based on the "Chain of Behavior" concept, suggest a small, indirect habit that addresses a root cause. (Suggestion format: "An upstream lever: Your notes mention [problem X]. What if you try [small, indirect habit Y] to address that?")
 
-CRITICAL: If you include a quote from the user's notes that contains double quotes, you MUST escape them with a backslash (e.g., "He said \\"hello\\""). Failure to do so will result in invalid JSON.
-Return ONLY the raw JSON object. Do not include markdown or any other text. Ensure the "nextExperimentSuggestions" key contains an array of 3 objects, like this:
-[
-    { "framework": "Seek More Evidence", "suggestion": "To gain more clarity: Try increasing Meditation by 5 minutes to observe if your Focus score shifts." },
-    ...
-]
+CRITICAL: If you include a quote from the user's notes that contains double quotes, you MUST escape them with a backslash (e.g., "He said \\"hello\\"").
+Return ONLY the raw JSON object. Do not include markdown or any other text.
 `;
 };
 // ============== END OF AI INSIGHTS SETUP ==================
