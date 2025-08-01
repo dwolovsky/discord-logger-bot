@@ -246,7 +246,7 @@ function buildCorrelationsPage(embed, statsReportData) {
             }
 
             if (!hasContent) { 
-                embed.addFields({ name: '**🔗 Habit-Outcome Correlations**', value: '\u200B', inline: false }); 
+                embed.addFields({ name: '**🔗 Habit-Outcome Correlations**', value: 'See how your habits influence your desired outcome.', inline: false }); 
                 hasContent = true;
             }
 
@@ -333,6 +333,7 @@ function buildCombinedEffectsPage(embed, statsReportData) {
 }
 
 function buildLagTimePage(embed, statsReportData) {
+    embed.setTitle('🕑 Day-After Effects');
     let hasContent = false;
     const results = statsReportData.lagTimeCorrelations;
     const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
@@ -347,7 +348,7 @@ function buildLagTimePage(embed, statsReportData) {
                 }
 
                 if (!hasContent) { 
-                    embed.addFields({ name: '🕑 **Today\'s Habits → Tomorrow\'s Outcome**', value: 'Here\'s how your habits today correlate with your outcome tomorrow.\n\n', inline: false });
+                    embed.addFields({ name: '**Today\'s Habits → Tomorrow\'s Outcome**', value: 'Here\'s how your habits today correlate with your outcome tomorrow.\n\n', inline: false });
                     hasContent = true;
                 }
 
@@ -405,14 +406,24 @@ function buildCorrelationsAndComboPage(embed, statsReportData) {
 function buildAhaMomentPage(embed, aiInsights) {
     embed.setTitle('💡 Your Experiment\'s Big Insight!')
          .setDescription(
-             "Here's the most striking insight from your latest experiment.\n\nIf you don't feel good about it, keep in mind it's a tiny data point, and your whole life starts now.\n\nIf you do feel good, celebrate the healing and growth that's already here!"
-            )
-          .addFields(
-             { 
-                 name: `"${aiInsights.strikingInsight.label}"`, // Access the label from the nested object
-                 value: aiInsights.strikingInsight.insight,      // Access the insight string from the nested object
-                 inline: false 
-})
+             "Here's the most striking insight from your latest experiment.\nRemember, it's just more data.\n\nWisdom fuel for your future self!"
+         );
+
+    const insightData = aiInsights.strikingInsight;
+    let fieldName = "Striking Insight";
+    let fieldValue = "The AI could not generate a striking insight for this period.";
+
+    // Check if insightData is an object with the expected properties
+    if (insightData && typeof insightData === 'object' && insightData.label && insightData.insight) {
+        fieldName = `"${insightData.label}"`;
+        fieldValue = insightData.insight;
+    } 
+    // Fallback for if the AI returns a simple string
+    else if (typeof insightData === 'string' && insightData.trim() !== '') {
+        fieldValue = insightData;
+    }
+
+    embed.addFields({ name: fieldName, value: fieldValue, inline: false });
 }
 
 /**
@@ -428,19 +439,19 @@ function buildCoreOverviewPage(embed, statsReportData) {
         return;
     }
 
-    let description = "A summary of your outcome and habits. This is the raw data before we dive into the AI analysis.\n\n";
+    let description = "A summary of your basic outcome and habit stats.\n\n";
     // Outcome Snapshot
     const outcomeLabel = settings.output?.label;
     if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
         const data = statsReportData.calculatedMetricStats[outcomeLabel];
-        description += `**Outcome: ${outcomeLabel}**\n`;
+        description += `**Outcome:** ${outcomeLabel}\n`;
         if (data.status === 'skipped_insufficient_data') {
             description += `*Not enough data to calculate stats.*\n\n`;
         } else if (isYesNoMetric(data.unit)) {
             const percentage = (data.average * 100).toFixed(0);
-            description += `Completion: **${percentage}%** (Goal: ${settings.output.goal})\n\n`;
+            description += `**Completion =** ${percentage}% (Goal: ${settings.output.goal})\n\n`;
         } else {
-            description += `Averaged: **${data.average}** ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
+            description += `**Average =** ${data.average} ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
         }
     }
 
@@ -455,9 +466,9 @@ function buildCoreOverviewPage(embed, statsReportData) {
                 description += `*${inputLabel}: Not enough data.*\n`;
             } else if (isYesNoMetric(data.unit)) {
                 const percentage = (data.average * 100).toFixed(0);
-                description += `*${inputLabel}:* **${percentage}%** Completion (Goal: ${inputSetting.goal})\n`;
+                description += `*${inputLabel}*: Completion = ${percentage}% (Goal: ${inputSetting.goal})\n`;
             } else {
-                description += `*${inputLabel}:* Avg **${data.average}** ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
+                description += `*${inputLabel}*: Avg = ${data.average} ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
             }
         }
     }
@@ -470,10 +481,32 @@ function buildCoreOverviewPage(embed, statsReportData) {
  * @param {object} aiInsights - The AI-generated insights object.
  */
 function buildExperimentStoryPage(embed, aiInsights) {
-    embed.setTitle('📖 Your Experiment Story')
-         .setDescription(
-             aiInsights.experimentStory || "The AI could not generate a narrative for this experiment, but the data still tells a story."
-         );
+    embed.setTitle('📖 Your Experiment Story');
+
+    const storyData = aiInsights.experimentStory;
+    let description = "The AI could not generate a narrative for this experiment, but the data still tells a story.";
+
+    // Check if storyData is a non-null object
+    if (storyData && typeof storyData === 'object') {
+        const biggestStruggle = storyData['Biggest Struggle'] || storyData.biggestStruggle;
+        const hiddenGrowth = storyData['Hidden Growth'] || storyData.hiddenGrowth;
+        const questionToPonder = storyData['A Question to Ponder'] || storyData.aQuestionToPonder;
+
+        description = ''; // Reset description to build it from parts
+        if (biggestStruggle) {
+            description += `${biggestStruggle}\n\n`;
+        }
+        if (hiddenGrowth) {
+            description += `${hiddenGrowth}\n\n`;
+        }
+        if (questionToPonder) {
+            description += `${questionToPonder}`; 
+        }
+    } else if (typeof storyData === 'string' && storyData.trim() !== '') {
+        description = storyData;
+    }
+
+    embed.setDescription(description.trim());
 }
 
 /**
@@ -481,17 +514,26 @@ function buildExperimentStoryPage(embed, aiInsights) {
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} aiInsights - The AI-generated insights object.
  */
+// AFTER (Correct and Safer)
 function buildNextStepsPage(embed, aiInsights) {
     embed.setTitle('🧪 Next Experiment Suggestions')
          .setDescription("A few ideas for your next experiment.");
 
-    if (aiInsights.nextExperimentSuggestions && Array.isArray(aiInsights.nextExperimentSuggestions)) {
-        aiInsights.nextExperimentSuggestions.forEach((suggestion, index) => {
-            // Suggestion is expected to be a string directly from the AI based on the new prompt.
-            // We'll split it by the colon for formatting, assuming the AI follows the "Title: Body" format.
-            const framework = suggestion.framework; // Correctly access framework from the 'suggestion' object
-            const idea = suggestion.suggestion; // Correctly access the 'suggestion' string from the 'suggestion' object
-            embed.addFields({ name: `**${index + 1}. ${framework}**`, value: idea, inline: false });
+    const suggestions = aiInsights.nextExperimentSuggestions;
+
+    if (suggestions && Array.isArray(suggestions) && suggestions.length > 0) {
+        suggestions.forEach((suggestion, index) => {
+            // Check if the suggestion is a valid object with the properties we need
+            if (suggestion && typeof suggestion.framework === 'string' && typeof suggestion.suggestion === 'string') {
+                embed.addFields({ 
+                    name: `**${index + 1}. ${suggestion.framework}**`, 
+                    value: suggestion.suggestion, 
+                    inline: false 
+                });
+            } else {
+                // Log an error if the format is wrong, but don't crash
+                console.warn(`[buildNextStepsPage] Suggestion at index ${index} has an invalid format:`, suggestion);
+            }
         });
     } else {
         embed.addFields({ name: 'No Suggestions', value: 'The AI did not generate specific suggestions for this experiment.' });
@@ -542,31 +584,72 @@ function buildCoreStatsSummary(embed, statsReportData) {
  * @param {object} statsReportData - The full stats report data from Firestore.
  * @param {Array<object>} pageConfig - The dynamically generated page configuration.
  */
-function buildFinalSummaryPage(embed, statsReportData, pageConfig) {
+// The function now takes `aiInsights` as an argument
+function buildFinalSummaryPage(embed, statsReportData, aiInsights, pageConfig) {
+
+    embed.setTitle('📊 Experiment Summary')
+         .setDescription(`This is a complete overview of your experiment.`);
 
     // --- 1. Core Statistics ---
     buildCoreStatsSummary(embed, statsReportData);
 
-    // --- 2. Habit Impacts ---
-    // Use the return value to check if content was added
-    const hasCorrelations = buildCorrelationsPage(embed, statsReportData);
-    
-    // --- 3. Combined Effects ---
-    // If the previous section added content, add a spacer before this one.
+    // --- Check which optional sections have content ---
+    const hasCorrelations = buildCorrelationsPage(new EmbedBuilder(), statsReportData);
+    const hasCombinedEffects = buildCombinedEffectsPage(new EmbedBuilder(), statsReportData);
+    const hasLagTime = buildLagTimePage(new EmbedBuilder(), statsReportData);
+
+    let previousSectionHadContent = true; 
+
     if (hasCorrelations) {
-        embed.addFields({ name: '\u200B', value: '\u200B' });
+        if (previousSectionHadContent) {
+            embed.addFields({ name: '\u200B', value: '\u200B' }); 
+        }
+        buildCorrelationsPage(embed, statsReportData);
+        previousSectionHadContent = true;
     }
-    const hasCombinedEffects = buildCombinedEffectsPage(embed, statsReportData);
 
-    // --- 4. Day-to-Day Connections ---
-    // If the previous section added content, add a spacer before this one.
     if (hasCombinedEffects) {
-        embed.addFields({ name: '\u200B', value: '\u200B' });
+        if (previousSectionHadContent) {
+            embed.addFields({ name: '\u200B', value: '\u200B' });
+        }
+        buildCombinedEffectsPage(embed, statsReportData);
+        previousSectionHadContent = true;
     }
-    buildLagTimePage(embed, statsReportData);
 
-    embed.setTitle('📊 Experiment Summary')
-         .setDescription(`This is a complete overview of your experiment.`);
+    if (hasLagTime) {
+        if (previousSectionHadContent) {
+            embed.addFields({ name: '\u200B', value: '\u200B' }); 
+        }
+        buildLagTimePage(embed, statsReportData);
+        previousSectionHadContent = true;
+    }
+
+    // --- ADD AI INSIGHTS SECTION ---
+    if (aiInsights) {
+        // Add a spacer before the AI content
+        embed.addFields({ name: '\u200B', value: '\u200B' });
+
+        // --- Build the Story ---
+        const storyEmbed = new EmbedBuilder();
+        buildExperimentStoryPage(storyEmbed, aiInsights); // This populates the storyEmbed
+        const storyTitle = storyEmbed.data.title || "Your Experiment Story";
+        const storyDescription = storyEmbed.data.description || "No story was generated.";
+        const storyText = `**📖 ${storyTitle}**\n${storyDescription}`;
+
+        // --- Build the Suggestions ---
+        const nextStepsEmbed = new EmbedBuilder();
+        buildNextStepsPage(nextStepsEmbed, aiInsights); // This populates the nextStepsEmbed
+        const nextStepsTitle = nextStepsEmbed.data.title || "Next Experiment Suggestions";
+        let suggestionsText = `\n\n**🧪 ${nextStepsTitle}**\n${nextStepsEmbed.data.description || ""}`;
+        if(nextStepsEmbed.data.fields) {
+            nextStepsEmbed.data.fields.forEach(field => {
+                suggestionsText += `\n\n${field.name}\n${field.value}`;
+            });
+        }
+
+        // --- Combine them into a single field ---
+        embed.addFields({ name: '🤖 AI Insights', value: storyText + suggestionsText });
+    }
 }
 
 /**
@@ -681,7 +764,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
             buildNextStepsPage(embed, aiEnhancedInsights);
             break;
         case 'raw_stats':
-            buildFinalSummaryPage(embed, statsReportData, pageConfig);
+            buildFinalSummaryPage(embed, statsReportData, aiEnhancedInsights, pageConfig);
             break;
         default:
             console.error("Unknown page type in pageConfig:", currentPageConfig.type);
@@ -723,6 +806,11 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
         );
     }
 
+    const messagePayload = {
+        embeds: [embed],
+        components: row.components.length > 0 ? [row] : []
+    };
+    
         try {
             if (isInteraction) {
                 await interactionOrUser.editReply(messagePayload);
@@ -4331,7 +4419,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setCustomId('manual_setup_outcome_modal')
                 .setTitle('🧪 Experiment Setup (1/4): Outcome');
             const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setPlaceholder("e.g., 'To be less stressed' or 'To have more energy.'").setStyle(TextInputStyle.Paragraph).setValue(deeperProblemValue).setRequired(true);
-            const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setValue(outcomeLabelValue).setRequired(true);
+            const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Outcome Label (under 40 chars)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setValue(outcomeLabelValue).setRequired(true);
             const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setValue(outcomeUnitValue).setRequired(true);
             const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setValue(outcomeGoalValue).setRequired(true);
             outcomeModal.addComponents(
@@ -4409,7 +4497,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const habit1Modal = new ModalBuilder()
                 .setCustomId('manual_setup_habit1_modal')
                 .setTitle('🧪 Experiment Setup (2/4): Habit 1');
-            const habit1LabelInput = new TextInputBuilder().setCustomId('habit1_label_manual').setLabel("🛠️ Daily Habit 1 (The Label)").setPlaceholder("e.g., '15-Min Afternoon Walk'").setStyle(TextInputStyle.Short).setValue(habit1LabelValue).setRequired(true);
+            const habit1LabelInput = new TextInputBuilder().setCustomId('habit1_label_manual').setLabel("🛠️ Daily Habit 1 (under 40 chars)").setPlaceholder("e.g., '15-Min Afternoon Walk'").setStyle(TextInputStyle.Short).setValue(habit1LabelValue).setRequired(true);
             const habit1UnitInput = new TextInputBuilder().setCustomId('habit1_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'minutes', 'steps', 'yes/no'").setStyle(TextInputStyle.Short).setValue(habit1UnitValue).setRequired(true);
             const habit1GoalInput = new TextInputBuilder().setCustomId('habit1_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '15', '2000', '1'").setStyle(TextInputStyle.Short).setValue(habit1GoalValue).setRequired(true);
             habit1Modal.addComponents(
@@ -4495,124 +4583,6 @@ client.on(Events.InteractionCreate, async interaction => {
             console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing Habit modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
         }
     }
-
-    else if (interaction.customId === 'continue_to_manual_form_btn') {
-      const continueButtonStartTime = performance.now();
-      const userId = interaction.user.id;
-      const userTag = interaction.user.tag;
-      const interactionId = interaction.id;
-      console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}. Attempting to show manual experiment setup modal. Time: ${continueButtonStartTime.toFixed(2)}ms`);
-      
-      // Retrieve pre-fetched data
-      const setupData = userExperimentSetupData.get(userId);
-      // CORRECTED: Read from preFetchedWeeklySettings
-      const cachedSettings = setupData?.preFetchedWeeklySettings; 
-      const originalInteractionId = setupData?.interactionId; 
-
-      console.log(`[${interaction.customId} CACHE_CHECK ${interactionId}] Checking for cached settings (key: preFetchedWeeklySettings) for ${userTag}. Original Interaction ID for this flow: ${originalInteractionId}`);
-      let deeperProblemValue = "";
-      let outputValue = "";
-      let input1Value = "";
-      let input2Value = "";
-      let input3Value = "";
-      
-      if (cachedSettings) {
-        console.log(`[${interaction.customId} CACHE_HIT ${interactionId}] Found cached settings (from preFetchedWeeklySettings) for ${userTag}. Populating modal fields.`);
-        deeperProblemValue = cachedSettings.deeperProblem || "";
-
-        const formatSettingToString = (setting) => {
-          if (setting && typeof setting.label === 'string' && setting.label.trim() !== "" && setting.goal !== null && setting.unit !== undefined) {
-            return `${setting.goal}, ${setting.unit}, ${setting.label}`;
-          }
-          return "";
-        };
-
-        outputValue = formatSettingToString(cachedSettings.output);
-        input1Value = formatSettingToString(cachedSettings.input1);
-        input2Value = formatSettingToString(cachedSettings.input2);
-        input3Value = formatSettingToString(cachedSettings.input3);
-      } else {
-        console.log(`[${interaction.customId} CACHE_MISS ${interactionId}] No cached settings found (in preFetchedWeeklySettings) for ${userTag}. Modal will use placeholders.`);
-      }
-
-      try {
-        const modal = new ModalBuilder()
-          .setCustomId('experiment_setup_modal') 
-          .setTitle('🧪 Set Weekly Experiment (Manual)');
-        const deeperProblemInput = new TextInputBuilder()
-          .setCustomId('deeper_problem')
-          .setLabel("🧭 Deeper Wish?")
-          .setPlaceholder("e.g. 'Reduce distractions' OR 'Go to sleep earlier.'")
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true);
-        if (deeperProblemValue) deeperProblemInput.setValue(deeperProblemValue);
-
-        const outputSettingInput = new TextInputBuilder()
-          .setCustomId('output_setting')
-          .setLabel("🎯 Daily Outcome (Goal #, Unit, Label)")
-          .setPlaceholder("e.g. '7.5, hours, Sleep Quality'")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-        if (outputValue) outputSettingInput.setValue(outputValue);
-
-        const input1SettingInput = new TextInputBuilder()
-          .setCustomId('input1_setting')
-          .setLabel("🛠️ Daily Habit 1 (Goal #, Unit, Label)")
-          .setPlaceholder("e.g. '15, minutes, Meditation'")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-        if (input1Value) input1SettingInput.setValue(input1Value);
-
-        const input2SettingInput = new TextInputBuilder()
-          .setCustomId('input2_setting')
-          .setLabel("🛠️ Daily Habit 2 (Optional - #, Unit, Label)")
-          .setPlaceholder("e.g. '8, 0-10 effort, Relationships'")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-        if (input2Value) input2SettingInput.setValue(input2Value);
-
-        const input3SettingInput = new TextInputBuilder()
-          .setCustomId('input3_setting')
-          .setLabel("🛠️ Daily Habit 3 (Optional - #, Unit, Label)")
-          .setPlaceholder("e.g. '10, glasses, Water'")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-        if (input3Value) input3SettingInput.setValue(input3Value);
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(deeperProblemInput),
-          new ActionRowBuilder().addComponents(outputSettingInput),
-          new ActionRowBuilder().addComponents(input1SettingInput),
-          new ActionRowBuilder().addComponents(input2SettingInput),
-          new ActionRowBuilder().addComponents(input3SettingInput)
-        );
-        await interaction.showModal(modal);
-        const showModalTime = performance.now();
-        console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Manual setup modal shown to ${userTag}. Pre-population with cached data (if any from preFetchedWeeklySettings) complete. Took: ${(showModalTime - continueButtonStartTime).toFixed(2)}ms`);
-      } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing manual setup modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
-        console.error(`[${interaction.customId} ERROR_DETAILS ${interactionId}] Error Name: ${error.name}, Message: ${error.message}, Code: ${error.code}`);
-        if (error.stack) {
-          console.error(`[${interaction.customId} ERROR_STACK ${interactionId}] Error Stack: ${error.stack}`);
-        }
-        if (!interaction.replied && !interaction.deferred) { 
-            try {
-                await interaction.reply({content: "Sorry, I couldn't open the manual setup form at this moment. Please try clicking 'Continue to Setup Form' again.", flags: MessageFlags.Ephemeral});
-            } catch (replyError) {
-                 console.error(`[${interaction.customId} FALLBACK_REPLY_ERROR ${interactionId}] Fallback error reply failed:`, replyError);
-            }
-        } else {
-             try {
-                await interaction.followUp({content: "Sorry, I couldn't open the manual setup form. Please try clicking 'Continue to Setup Form' again.", flags: MessageFlags.Ephemeral});
-            } catch (followUpError) {
-                 console.error(`[${interaction.customId} FALLBACK_FOLLOWUP_ERROR ${interactionId}] Fallback error followup failed:`, followUpError);
-            }
-        }
-      }
-      const handlerEndPerfNow = performance.now();
-      console.log(`[${interaction.customId} END ${interactionId}] User: ${userTag}. TotalInHandler: ${(handlerEndPerfNow - continueButtonStartTime).toFixed(2)}ms.`);
-    } 
 
     else if (interaction.customId === 'manual_finish_setup_btn') {
         const buttonClickStartTime = performance.now();
@@ -4769,7 +4739,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 const outcomeLabelInput = new TextInputBuilder()
                     .setCustomId('outcome_label_manual')
-                    .setLabel("📊 Measurable Outcome (The Label)")
+                    .setLabel("📊 Outcome Label (under 40 chars)")
                     .setStyle(TextInputStyle.Short)
                     .setValue(setupData.outcome.label)
                     .setRequired(true);
@@ -5457,7 +5427,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setRequired(true);
         const outcomeLabelInput = new TextInputBuilder()
             .setCustomId('outcome_label_manual')
-            .setLabel("📊 Measurable Outcome (The Label)")
+            .setLabel("📊 Outcome Label (under 40 chars)")
             .setStyle(TextInputStyle.Short)
             .setValue(setupData.outcome.label)
             .setRequired(true);
@@ -5631,7 +5601,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         else if (metric.label === settings.input3.label) customId = 'log_input3_value';
 
                         return new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} ${metric.unit}`).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} ${metric.unit}`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
                         );
                     });
                 const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
@@ -5804,7 +5774,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (customId) {
                     components.push(
                         new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} ${metric.unit}`).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
                         )
                     );
                 }
@@ -5856,7 +5826,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     else if (metric.label === settings.input3.label) customId = 'log_input3_value';
 
                     return new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
                     );
                 });
             const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
@@ -7304,7 +7274,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setCustomId('manual_setup_outcome_modal')
                     .setTitle('🧪 Custom Outcome Metric');
                 const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setStyle(TextInputStyle.Paragraph).setValue(setupData.deeperWish || "").setRequired(true);
-                const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Measurable Outcome (The Label)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setRequired(true);
+                const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Outcome Label (under 40 chars)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setRequired(true);
                 const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setRequired(true);
                 const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setRequired(true);
                 manualOutcomeModal.addComponents(
@@ -7386,7 +7356,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setCustomId('manual_setup_habit1_modal')
                     .setTitle('🧪 Custom Daily Habit 1');
                 
-                const habit1LabelInput = new TextInputBuilder().setCustomId('habit1_label_manual').setLabel("🛠️ Daily Habit 1 (The Label)").setPlaceholder("e.g., '15-Min Afternoon Walk'").setStyle(TextInputStyle.Short).setRequired(true);
+                const habit1LabelInput = new TextInputBuilder().setCustomId('habit1_label_manual').setLabel("🛠️ Daily Habit 1 (under 40 chars)").setPlaceholder("e.g., '15-Min Afternoon Walk'").setStyle(TextInputStyle.Short).setRequired(true);
                 const habit1UnitInput = new TextInputBuilder().setCustomId('habit1_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'minutes', 'steps', 'yes/no'").setStyle(TextInputStyle.Short).setRequired(true);
                 const habit1GoalInput = new TextInputBuilder().setCustomId('habit1_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '15', '2000', '1'").setStyle(TextInputStyle.Short).setRequired(true);
                 
@@ -7423,7 +7393,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setCustomId('confirm_ai_habit_modal_1') // ID specifies this is for Habit 1
                     .setTitle('Confirm Your 1st Habit');
 
-                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Daily Habit Label").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
+                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Habit Label (under 40 chars)").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
                 const habitGoalInput = new TextInputBuilder().setCustomId('habit_goal_manual').setLabel("🎯 Daily Target").setStyle(TextInputStyle.Short).setValue(String(chosenSuggestion.goal)).setRequired(true);
                 const habitUnitInput = new TextInputBuilder().setCustomId('habit_unit_manual').setLabel("📏 Unit / Scale").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.unit).setRequired(true);
                 
@@ -7494,7 +7464,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const confirmHabitModal = new ModalBuilder()
                     .setCustomId('confirm_ai_habit_modal_2') // New modal ID for habit 2
                     .setTitle('Confirm Your 2nd Habit');
-                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Daily Habit Label").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
+                const habitLabelInput = new TextInputBuilder().setCustomId('habit_label_manual').setLabel("🛠️ Habit Label (under 40 chars)").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.label).setRequired(true);
                 const habitGoalInput = new TextInputBuilder().setCustomId('habit_goal_manual').setLabel("🎯 Daily Target").setStyle(TextInputStyle.Short).setValue(String(chosenSuggestion.goal)).setRequired(true);
                 const habitUnitInput = new TextInputBuilder().setCustomId('habit_unit_manual').setLabel("📏 Unit / Scale").setStyle(TextInputStyle.Short).setValue(chosenSuggestion.unit).setRequired(true);
                 
@@ -8001,12 +7971,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
             
+            /*
             if (validationErrors.length > 0) {
                 console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`); 
                 const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and restart the setup:\n\n' + validationErrors.map(e => `• ${e}`).join('\n')); // [cite: 2033]
                 await interaction.editReply({ embeds: [errorEmbed], components: [] }); // [cite: 2034]
                 return; // [cite: 2034]
             }
+            */
             
             // --- Validation Passed: Update state and proceed ---
             setupData.deeperProblem = deeperProblem; // [cite: 2034]
@@ -8124,6 +8096,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
             
+            /*
             if (validationErrors.length > 0) {
                  const errorEmbed = new EmbedBuilder()
                     .setColor('#ED4245')
@@ -8133,6 +8106,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
             
             // --- Validation Passed: Update state and proceed ---
             if (!setupData.inputs) setupData.inputs = [];
@@ -8231,6 +8205,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
             
+            /*
             if (validationErrors.length > 0) {
                  const errorEmbed = new EmbedBuilder()
                     .setColor('#ED4245')
@@ -8240,6 +8215,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
             
             // --- Validation Passed: Update state and proceed ---
             if (!setupData.inputs) setupData.inputs = [];
@@ -8337,6 +8313,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
             
+            /*
             if (validationErrors.length > 0) {
                  const errorEmbed = new EmbedBuilder()
                     .setColor('#ED4245')
@@ -8346,6 +8323,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
             
             // --- Validation Passed: Update state and proceed ---
             if (!setupData.inputs) setupData.inputs = [];
@@ -8468,12 +8446,14 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         }
 
+        /*
         if (validationErrors.length > 0) {
             console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors.`);
             const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error').setDescription('Please correct the following issues and try submitting the form again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
             await interaction.editReply({ embeds: [errorEmbed], components: [] });
             return;
         }
+        */
 
         // --- Validation Passed ---
         setupData.deeperProblem = deeperProblem;
@@ -8553,114 +8533,6 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     }
 
-    else if (interaction.customId === 'confirm_ai_habit_modal_1') {
-        const modalSubmitStartTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        const userTag = interaction.user.tag;
-        console.log(`[${interaction.customId} START ${interactionId}] Modal for Habit 1 submitted by ${userTag}.`);
-
-        try {
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-            const setupData = userExperimentSetupData.get(userId);
-
-            if (!setupData || !setupData.aiGeneratedInputSuggestions) {
-                console.error(`[${interaction.customId} CRITICAL ${interactionId}] State missing or invalid for user ${userTag}.`);
-                await interaction.editReply({ content: '❌ Error: Your setup session has expired or is invalid. Please restart the setup.', components: [], embeds: [] });
-                return;
-            }
-
-            const habitLabel = interaction.fields.getTextInputValue('habit_label_manual')?.trim();
-            const habitUnit = interaction.fields.getTextInputValue('habit_unit_manual')?.trim();
-            const habitGoalStr = interaction.fields.getTextInputValue('habit_goal_manual')?.trim();
-
-            // --- Validation of user's input ---
-            const validationErrors = [];
-            if (!habitLabel) {
-                validationErrors.push("The 'Habit Label' is required.");
-            } else if (habitLabel.length > 30) {
-                 validationErrors.push(`The Habit Label is too long (max 30 characters).`);
-            }
-
-            if (!habitUnit) {
-                validationErrors.push("The 'Unit / Scale' is required.");
-            } else if (habitUnit.length > 15) {
-                validationErrors.push(`The Unit/Scale is too long (max 15 characters).`);
-            }
-            
-            // NEW: Combined Length Validation
-            if (habitLabel && habitUnit && (habitLabel.length + habitUnit.length + 1) > 45) {
-                validationErrors.push(`The combined Label and Unit are too long for the daily log form (max 45 chars). Please shorten one or both.`);
-            }
-
-            let habitGoal = null;
-            const isTimeMetric = TIME_OF_DAY_KEYWORDS.some(keyword => habitUnit.toLowerCase().includes(keyword));
-            if (isTimeMetric) {
-                habitGoal = parseTimeGoal(habitGoalStr);
-                if (habitGoal === null) {
-                    validationErrors.push(`The Target ("${habitGoalStr}") must be a valid time (e.g., '8am', '17:30').`);
-                }
-            } else {
-                const goalResult = parseGoalValue(habitGoalStr);
-                if (goalResult.error) {
-                    validationErrors.push(goalResult.error);
-                } else {
-                    habitGoal = goalResult.goal;
-                }
-            }
-            
-            if (validationErrors.length > 0) {
-                 const errorEmbed = new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setTitle('Validation Error')
-                    .setDescription('Please correct the following issues:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'))
-                    .setFooter({text: "Click the 'Edit' button on the summary screen to try again."});
-                await interaction.editReply({ embeds: [errorEmbed], components: [] });
-                return;
-            }
-            
-            // --- Validation Passed: Update state and proceed ---
-            if (!setupData.inputs) setupData.inputs = [];
-            setupData.inputs[0] = { label: habitLabel, unit: habitUnit, goal: habitGoal };
-            
-            delete setupData.tempSelectedInput; // Clean up temp state
-            
-            // This is the correct next step after confirming the first habit
-            setupData.dmFlowState = 'awaiting_add_another_habit_choice';
-            userExperimentSetupData.set(userId, setupData);
-
-            console.log(`[${interaction.customId} HABIT1_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 1. State is now '${setupData.dmFlowState}'.`);
-            
-            // --- Ask to add another habit or finish ---
-            const confirmationEmbed = new EmbedBuilder()
-                .setColor('#57F287')
-                .setTitle('✅ Habit 1 Confirmed!')
-                .setDescription(`**${formatGoalForDisplay(habitGoal, habitUnit)} ${habitUnit}, ${habitLabel}**`)
-                .addFields({ name: '\u200B', value: "Would you like to add another daily habit to test (up to 3 total)?" });
-
-            const addHabitButtons = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('add_another_habit_yes_btn')
-                        .setLabel('➕ Yes, Add Another')
-                        .setStyle(ButtonStyle.Success),
-                    new ButtonBuilder()
-                        .setCustomId('add_another_habit_no_btn')
-                        .setLabel('⏭️ No More Habits')
-                        .setStyle(ButtonStyle.Primary)
-                );
-
-            await interaction.editReply({
-                embeds: [confirmationEmbed],
-                components: [addHabitButtons]
-            });
-
-            console.log(`[${interaction.customId} PROMPT_ADD_ANOTHER_SENT ${interactionId}] Prompted user to add another habit or finish.`);
-        } catch (error) {
-            console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing modal for ${userTag}:`, error);
-        }
-    }
-
     else if (interaction.customId === 'manual_setup_habit1_modal') {
         const modalSubmitStartTime = performance.now();
         const userId = interaction.user.id;
@@ -8732,12 +8604,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
 
+            /*
             if (validationErrors.length > 0) {
                 console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 1.`);
                 const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 1').setDescription('Please correct the following issues and try defining Habit 1 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
 
             if (!setupData.inputs) setupData.inputs = [];
             setupData.inputs[0] = { label: habit1Label, unit: habit1Unit, goal: habit1Goal };
@@ -8852,12 +8726,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
 
+            /*
             if (validationErrors.length > 0) {
                 console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 2.`);
                 const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 2').setDescription('Please correct the following issues and try defining Habit 2 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
 
             setupData.inputs[1] = { label: habit2Label, unit: habit2Unit, goal: habit2Goal };
             setupData.dmFlowState = 'awaiting_add_another_habit_choice';
@@ -8971,12 +8847,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
             }
 
+            /*
             if (validationErrors.length > 0) {
                 console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 3.`);
                 const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 3').setDescription('Please correct the following issues and try defining Habit 3 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
                 await interaction.editReply({ embeds: [errorEmbed], components: [] });
                 return;
             }
+            */
 
             setupData.inputs[2] = { label: habit3Label, unit: habit3Unit, goal: habit3Goal };
             userExperimentSetupData.set(userId, setupData);

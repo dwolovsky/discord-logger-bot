@@ -3451,10 +3451,23 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     let newEnhancedInsights;
     try {
+        // First, try to parse the response directly
         newEnhancedInsights = JSON.parse(responseText);
-    } catch (parseError) {
-        logger.error(`[fetchOrGenerateAiInsights] Failed to parse Gemini JSON response for log ${targetExperimentId}. Raw: "${responseText}". Error:`, parseError);
-        throw new HttpsError('internal', `AI returned an invalid format: ${parseError.message}`);
+    } catch (initialParseError) {
+        // If the first parse fails, attempt to clean the string and retry
+        logger.warn(`[fetchOrGenerateAiInsights] Initial JSON parse failed for log ${targetExperimentId}. Attempting to clean the response. Error:`, initialParseError.message);
+        
+        // This removes common markdown code fences that the AI sometimes adds
+        const cleanText = responseText.replace(/```json\n/g, '').replace(/\n```/g, '').trim();
+
+        try {
+            newEnhancedInsights = JSON.parse(cleanText);
+            logger.log(`[fetchOrGenerateAiInsights] Successfully parsed AI response after cleaning markdown fences.`);
+        } catch (finalParseError) {
+            // If it still fails after cleaning, then we log the error and throw
+            logger.error(`[fetchOrGenerateAiInsights] Failed to parse Gemini JSON response even after cleaning for log ${targetExperimentId}. Raw: "${responseText}". Error:`, finalParseError);
+            throw new HttpsError('internal', `AI returned an invalid format that could not be automatically corrected: ${finalParseError.message}`);
+        }
     }
 
     if (!newEnhancedInsights.strikingInsight || !newEnhancedInsights.experimentStory || !newEnhancedInsights.nextExperimentSuggestions) {

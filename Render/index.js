@@ -396,6 +396,113 @@ function buildCorrelationsAndComboPage(embed, statsReportData) {
     buildCombinedEffectsPage(embed, statsReportData);
 }
 
+/**
+ * Formats all significant correlation data into a single string.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @returns {string | null} A formatted string or null if no significant correlations.
+ */
+function formatCorrelationsAsString(statsReportData) {
+    const parts = [];
+    if (statsReportData.correlations && typeof statsReportData.correlations === 'object') {
+        for (const key in statsReportData.correlations) {
+            const corr = statsReportData.correlations[key];
+            if (!corr || corr.status !== 'calculated' || corr.coefficient === undefined || isNaN(corr.coefficient)) continue;
+
+            const rSquared = corr.coefficient * corr.coefficient;
+            if (rSquared < 0.0225) continue;
+
+            const habitInfo = statsReportData.calculatedMetricStats?.[corr.label];
+            const outcomeInfo = statsReportData.calculatedMetricStats?.[corr.vsOutputLabel];
+            const isHabitTime = isTimeMetric(habitInfo?.unit);
+            const isOutcomeTime = isTimeMetric(outcomeInfo?.unit);
+            const habitDisplay = isHabitTime ? 'is later' : 'goes up ⤴️';
+            const outcomeDisplay = isOutcomeTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
+            const isConfident = corr.pValue !== null && corr.pValue < 0.05;
+            const confidenceText = isConfident ? "This is a statistically significant relationship." : "We need more data to confirm this.";
+            let strengthText = "No detectable";
+            let strengthEmoji = "🟦";
+            const absCoeff = Math.abs(corr.coefficient);
+            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+            else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+            else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+            else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
+            
+            parts.push(`**When ${corr.label} ${habitDisplay}**\n→ **${corr.vsOutputLabel}** ${outcomeDisplay}\n*Strength: ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)*`);
+        }
+    }
+    return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
+/**
+ * Formats all significant combined effects data into a single string.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @returns {string | null} A formatted string or null if no significant effects.
+ */
+function formatCombinedEffectsAsString(statsReportData) {
+    const parts = [];
+    const results = statsReportData.pairwiseInteractionResults;
+    if (results && typeof results === 'object') {
+        const formatCondition = (conditionString, input1Label, input2Label) => {
+            const partStrings = conditionString.split(' & ').map(part => {
+                const label = part.substring(0, part.lastIndexOf(' was '));
+                const metricInfo = statsReportData.calculatedMetricStats?.[label];
+                const isMetricTime = isTimeMetric(metricInfo?.unit);
+                const state = part.endsWith('High') ? (isMetricTime ? 'Later' : 'Higher ⤴️') : (isMetricTime ? 'Earlier' : 'Lower ⤵️');
+                return `**${label}** was ${state}`;
+            });
+            return partStrings.join(' + ');
+        };
+
+        for (const pairKey in results) {
+            const pairData = results[pairKey];
+            const summary = pairData.summary || "";
+            const isSignificant = !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("did not show any group");
+            if (isSignificant && pairData.input1Label && pairData.input2Label) {
+                const bestGroup = summary.includes("higher") ? /Avg.*higher \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
+                const worstGroup = summary.includes("lower") ? /Avg.*lower \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
+                if (bestGroup) {
+                    parts.push(`${formatCondition(bestGroup[2], pairData.input1Label, pairData.input2Label)}\n→ **'${pairData.outputMetricLabel}'** was significantly **higher** (avg ${bestGroup[1]}).`);
+                }
+                if (worstGroup) {
+                    parts.push(`${formatCondition(worstGroup[2], pairData.input1Label, pairData.input2Label)}\n→ **'${pairData.outputMetricLabel}'** was significantly **lower** (avg ${worstGroup[1]}).`);
+                }
+            }
+        }
+    }
+    return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
+/**
+ * Formats all significant lag time effects into a single string.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @returns {string | null} A formatted string or null if no significant lag effects.
+ */
+function formatLagTimeAsString(statsReportData) {
+    const parts = [];
+    const results = statsReportData.lagTimeCorrelations;
+    const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
+    if (results && typeof results === 'object' && outcomeMetricLabel) {
+        for (const key in results) {
+            const lag = results[key];
+            if (lag && lag.todayMetricLabel === outcomeMetricLabel) {
+                if (lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
+                const rSquared = lag.coefficient * lag.coefficient;
+                if (rSquared < 0.09) continue;
+
+                const yesterdayInfo = statsReportData.calculatedMetricStats?.[lag.yesterdayMetricLabel];
+                const todayInfo = statsReportData.calculatedMetricStats?.[lag.todayMetricLabel];
+                const isYesterdayTime = isTimeMetric(yesterdayInfo?.unit);
+                const isTodayTime = isTimeMetric(todayInfo?.unit);
+                const yesterdayDisplay = isYesterdayTime ? 'was later' : 'was higher ⤴️';
+                const todayDisplay = isTodayTime ? (lag.coefficient >= 0 ? 'was later' : 'was earlier') : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
+                
+                parts.push(`**When Yesterday's ${lag.yesterdayMetricLabel} ${yesterdayDisplay}**\n→ Today's **${lag.todayMetricLabel}** ${todayDisplay}`);
+            }
+        }
+    }
+    return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
 // ADD THESE FIVE NEW FUNCTIONS AFTER buildLagTimePage
 
 /**
@@ -514,7 +621,6 @@ function buildExperimentStoryPage(embed, aiInsights) {
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} aiInsights - The AI-generated insights object.
  */
-// AFTER (Correct and Safer)
 function buildNextStepsPage(embed, aiInsights) {
     embed.setTitle('🧪 Next Experiment Suggestions')
          .setDescription("A few ideas for your next experiment.");
@@ -579,12 +685,12 @@ function buildCoreStatsSummary(embed, statsReportData) {
 }
 
 /**
- * Builds the embed for the final summary page.
+ * Builds the embed for the final summary page, including all data in consolidated fields.
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} statsReportData - The full stats report data from Firestore.
+ * @param {object} aiInsights - The AI-generated insights object.
  * @param {Array<object>} pageConfig - The dynamically generated page configuration.
  */
-// The function now takes `aiInsights` as an argument
 function buildFinalSummaryPage(embed, statsReportData, aiInsights, pageConfig) {
 
     embed.setTitle('📊 Experiment Summary')
@@ -593,62 +699,54 @@ function buildFinalSummaryPage(embed, statsReportData, aiInsights, pageConfig) {
     // --- 1. Core Statistics ---
     buildCoreStatsSummary(embed, statsReportData);
 
-    // --- Check which optional sections have content ---
-    const hasCorrelations = buildCorrelationsPage(new EmbedBuilder(), statsReportData);
-    const hasCombinedEffects = buildCombinedEffectsPage(new EmbedBuilder(), statsReportData);
-    const hasLagTime = buildLagTimePage(new EmbedBuilder(), statsReportData);
-
-    let previousSectionHadContent = true; 
-
-    if (hasCorrelations) {
-        if (previousSectionHadContent) {
-            embed.addFields({ name: '\u200B', value: '\u200B' }); 
-        }
-        buildCorrelationsPage(embed, statsReportData);
-        previousSectionHadContent = true;
+    // --- 2. Consolidated Correlations ---
+    const correlationsString = formatCorrelationsAsString(statsReportData);
+    if (correlationsString) {
+        embed.addFields({ name: '🔗 Habit-Outcome Correlations', value: correlationsString.substring(0, 1024) });
     }
 
-    if (hasCombinedEffects) {
-        if (previousSectionHadContent) {
-            embed.addFields({ name: '\u200B', value: '\u200B' });
-        }
-        buildCombinedEffectsPage(embed, statsReportData);
-        previousSectionHadContent = true;
+    // --- 3. Consolidated Combined Effects ---
+    const combosString = formatCombinedEffectsAsString(statsReportData);
+    if (combosString) {
+        embed.addFields({ name: '🔀 Habit Combo Effects', value: combosString.substring(0, 1024) });
     }
 
-    if (hasLagTime) {
-        if (previousSectionHadContent) {
-            embed.addFields({ name: '\u200B', value: '\u200B' }); 
-        }
-        buildLagTimePage(embed, statsReportData);
-        previousSectionHadContent = true;
+    // --- 4. Consolidated Day-After Effects ---
+    const lagString = formatLagTimeAsString(statsReportData);
+    if (lagString) {
+        embed.addFields({ name: '🕑 Day-After Effects', value: lagString.substring(0, 1024) });
     }
-
-    // --- ADD AI INSIGHTS SECTION ---
+    
+    // --- 5. AI Insights (as two separate fields) ---
     if (aiInsights) {
-        // Add a spacer before the AI content
-        embed.addFields({ name: '\u200B', value: '\u200B' });
+        embed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
 
-        // --- Build the Story ---
         const storyEmbed = new EmbedBuilder();
-        buildExperimentStoryPage(storyEmbed, aiInsights); // This populates the storyEmbed
+        buildExperimentStoryPage(storyEmbed, aiInsights);
         const storyTitle = storyEmbed.data.title || "Your Experiment Story";
         const storyDescription = storyEmbed.data.description || "No story was generated.";
-        const storyText = `**📖 ${storyTitle}**\n${storyDescription}`;
+        if (storyDescription.trim()) {
+             embed.addFields({ 
+                name: `📖 ${storyTitle}`, 
+                value: storyDescription.substring(0, 1024) 
+            });
+        }
 
-        // --- Build the Suggestions ---
         const nextStepsEmbed = new EmbedBuilder();
-        buildNextStepsPage(nextStepsEmbed, aiInsights); // This populates the nextStepsEmbed
+        buildNextStepsPage(nextStepsEmbed, aiInsights);
         const nextStepsTitle = nextStepsEmbed.data.title || "Next Experiment Suggestions";
-        let suggestionsText = `\n\n**🧪 ${nextStepsTitle}**\n${nextStepsEmbed.data.description || ""}`;
+        let suggestionsText = nextStepsEmbed.data.description || "";
         if(nextStepsEmbed.data.fields) {
             nextStepsEmbed.data.fields.forEach(field => {
                 suggestionsText += `\n\n${field.name}\n${field.value}`;
             });
         }
-
-        // --- Combine them into a single field ---
-        embed.addFields({ name: '🤖 AI Insights', value: storyText + suggestionsText });
+        if (suggestionsText.trim()) {
+            embed.addFields({ 
+                name: `🧪 ${nextStepsTitle}`, 
+                value: suggestionsText.substring(0, 1024) 
+            });
+        }
     }
 }
 
