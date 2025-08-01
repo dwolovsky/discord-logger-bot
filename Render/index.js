@@ -694,32 +694,31 @@ function buildCoreStatsSummary(embed, statsReportData) {
 function buildFinalSummaryPage(embed, statsReportData, aiInsights, pageConfig) {
 
     embed.setTitle('📊 Experiment Summary')
-         .setDescription(`This is a complete overview of your experiment.`);
 
     // --- 1. Core Statistics ---
+    embed.addFields({ name: '📈 Core Metrics', value: '\u200B' });
     buildCoreStatsSummary(embed, statsReportData);
 
     // --- 2. Consolidated Correlations ---
     const correlationsString = formatCorrelationsAsString(statsReportData);
     if (correlationsString) {
-        embed.addFields({ name: '🔗 Habit-Outcome Correlations', value: correlationsString.substring(0, 1024) });
+        embed.addFields({ name: '\n\n🔗 Habit-Outcome Correlations', value: correlationsString.substring(0, 1024) });
     }
 
     // --- 3. Consolidated Combined Effects ---
     const combosString = formatCombinedEffectsAsString(statsReportData);
     if (combosString) {
-        embed.addFields({ name: '🔀 Habit Combo Effects', value: combosString.substring(0, 1024) });
+        embed.addFields({ name: '\n\n🔀 Habit Combo Effects', value: combosString.substring(0, 1024) });
     }
 
     // --- 4. Consolidated Day-After Effects ---
     const lagString = formatLagTimeAsString(statsReportData);
     if (lagString) {
-        embed.addFields({ name: '🕑 Day-After Effects', value: lagString.substring(0, 1024) });
+        embed.addFields({ name: '\n\n🕑 Day-After Effects', value: lagString.substring(0, 1024) });
     }
     
     // --- 5. AI Insights (as two separate fields) ---
     if (aiInsights) {
-        embed.addFields({ name: '\u200B', value: '\u200B' }); // Spacer
 
         const storyEmbed = new EmbedBuilder();
         buildExperimentStoryPage(storyEmbed, aiInsights);
@@ -727,7 +726,7 @@ function buildFinalSummaryPage(embed, statsReportData, aiInsights, pageConfig) {
         const storyDescription = storyEmbed.data.description || "No story was generated.";
         if (storyDescription.trim()) {
              embed.addFields({ 
-                name: `📖 ${storyTitle}`, 
+                name: `\n\n📖 ${storyTitle}`, 
                 value: storyDescription.substring(0, 1024) 
             });
         }
@@ -743,7 +742,7 @@ function buildFinalSummaryPage(embed, statsReportData, aiInsights, pageConfig) {
         }
         if (suggestionsText.trim()) {
             embed.addFields({ 
-                name: `🧪 ${nextStepsTitle}`, 
+                name: `\n\n🧪 ${nextStepsTitle}`, 
                 value: suggestionsText.substring(0, 1024) 
             });
         }
