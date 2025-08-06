@@ -2099,20 +2099,18 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
  * @param {string} userId - The user's ID.
  */
 async function presentHistoricalMatchConfirmation(interaction, userId) {
-
-    const analysisData = userHistoricalAnalysisData.get(userId); // Use the correct map
-    if (!analysisData || !analysisData.historicalAnalysisData) { // Check the correct variable
+    const analysisData = userHistoricalAnalysisData.get(userId);
+    if (!analysisData || !analysisData.historicalAnalysisData) {
         await interaction.editReply({ content: "Your session has expired. Please start over with `/stats`.", components: [], embeds: [] });
         return;
     }
 
-    const { matches, matchIndex = 0 } = setupData.historicalAnalysisData;
+    const { matches, matchIndex = 0 } = analysisData.historicalAnalysisData;
 
-    // If we have processed all matches, move to the next step.
     if (matchIndex >= matches.length) {
         await promptForDateRange(interaction, userId);
-                return;
-            }
+        return;
+    }
 
     const currentMatch = matches[matchIndex];
 
@@ -2130,7 +2128,7 @@ async function presentHistoricalMatchConfirmation(interaction, userId) {
         .setCustomId('historical_match_skip_btn')
         .setLabel('❌ Skip')
         .setStyle(ButtonStyle.Secondary);
-    
+
     const finishButton = new ButtonBuilder()
         .setCustomId('historical_match_finish_btn')
         .setLabel('Done Reviewing ➡️')
