@@ -8195,7 +8195,7 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[${interaction.customId} END ${interactionId}] Finished processing Input ${inputIndex} Unit selection. Total time: ${(processEndTime - habitUnitSelectSubmitTime).toFixed(2)}ms`);
     }
 
-      else if (interaction.isStringSelectMenu() && interaction.customId.startsWith('reminder_select_')) {
+    else if (interaction.isStringSelectMenu() && interaction.customId.startsWith('reminder_select_')) {
       const selectSubmitTime = performance.now();
       const interactionId = interaction.id; // For logging
       const userId = interaction.user.id;
@@ -8282,22 +8282,20 @@ client.on(Events.InteractionCreate, async interaction => {
         const interactionId = interaction.id;
         const userId = interaction.user.id;
         console.log(`[${interaction.customId} START ${interactionId}] User selected a metric for historical analysis.`);
-
         try {
             await interaction.deferUpdate();
 
-            const analysisData = userHistoricalAnalysisData.get(userId);
-            if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_metric_selection' || !analysisData.historicalAnalysisData?.currentSettings) {
+            const analysisData = userHistoricalAnalysisData.get(userId); // CORRECTED VARIABLE NAME
+            if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_metric_selection' || !analysisData.historicalAnalysisData?.currentSettings) { // CORRECTED VARIABLE NAME
                 await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
                 return;
             }
 
             await interaction.editReply({ content: '🧠 Searching your history for similar metrics...', embeds: [], components: [] });
-
             const selectedLabel = interaction.values[0];
             const metrics = [
-                setupData.historicalAnalysisData.currentSettings.output,
-                ...Object.values(setupData.historicalAnalysisData.currentSettings).filter(v => v && v.label && v.unit) // A safer way to get inputs
+                analysisData.historicalAnalysisData.currentSettings.output, // CORRECTED VARIABLE NAME
+                ...Object.values(analysisData.historicalAnalysisData.currentSettings).filter(v => v && v.label && v.unit) // CORRECTED VARIABLE NAME
             ];
             const selectedMetric = metrics.find(m => m.label === selectedLabel);
 
@@ -8308,22 +8306,21 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // Call the new Firebase function
             const result = await callFirebaseFunction('getHistoricalMetricMatches', { selectedMetric }, userId);
-
             if (!result || !result.success) {
                 throw new Error(result?.message || 'Failed to get historical matches from the server.');
             }
 
             // Store the results and initialize the confirmation flow
-            setupData.historicalAnalysisData.primaryMetric = selectedMetric;
-            setupData.historicalAnalysisData.matches = result.matches || [];
-            analysisData.historicalAnalysisData.matchIndex = 0;
-            analysisData.historicalAnalysisData.includedMetrics = [selectedMetric];
-            analysisData.dmFlowState = 'awaiting_historical_match_confirmation';
-            userHistoricalAnalysisData.set(userId, analysisData);
+            analysisData.historicalAnalysisData.primaryMetric = selectedMetric; // CORRECTED VARIABLE NAME
+            analysisData.historicalAnalysisData.matches = result.matches || []; // CORRECTED VARIABLE NAME
+            analysisData.historicalAnalysisData.matchIndex = 0; // CORRECTED VARIABLE NAME
+            analysisData.historicalAnalysisData.includedMetrics = [selectedMetric]; // CORRECTED VARIABLE NAME
+            analysisData.dmFlowState = 'awaiting_historical_match_confirmation'; // CORRECTED VARIABLE NAME
+            userHistoricalAnalysisData.set(userId, analysisData); // CORRECTED MAP AND VARIABLE NAME
             
             if (result.matches.length === 0) {
                  await interaction.editReply({ content: "I didn't find any other similar metrics in your history. The next step is to select the date range.", components: [] });
-                 // In the future, this will call: await promptForDateRange(interaction, userId);
+                 await promptForDateRange(interaction, userId);
             } else {
                 // Start the one-by-one confirmation process
                 await presentHistoricalMatchConfirmation(interaction, userId);
