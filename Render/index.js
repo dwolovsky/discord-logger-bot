@@ -2099,8 +2099,9 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
  * @param {string} userId - The user's ID.
  */
 async function presentHistoricalMatchConfirmation(interaction, userId) {
-    const setupData = userExperimentSetupData.get(userId);
-    if (!setupData || !setupData.historicalAnalysisData) {
+
+    const analysisData = userHistoricalAnalysisData.get(userId); // Use the correct map
+    if (!analysisData || !analysisData.historicalAnalysisData) { // Check the correct variable
         await interaction.editReply({ content: "Your session has expired. Please start over with `/stats`.", components: [], embeds: [] });
         return;
     }
