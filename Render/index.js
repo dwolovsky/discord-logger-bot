@@ -2145,17 +2145,17 @@ async function presentHistoricalMatchConfirmation(interaction, userId) {
  * @param {string} userId - The user's ID.
  */
 async function promptForDateRange(interaction, userId) {
-    const setupData = userExperimentSetupData.get(userId);
-    if (!setupData) {
+    const analysisData = userHistoricalAnalysisData.get(userId);
+    if (!analysisData) {
         await interaction.editReply({ content: "Your session has expired. Please start over with `/stats`.", components: [], embeds: [] });
         return;
     }
 
-    setupData.dmFlowState = 'awaiting_date_range_selection';
-    userExperimentSetupData.set(userId, setupData);
+    analysisData.dmFlowState = 'awaiting_date_range_selection';
+    userHistoricalAnalysisData.set(userId, analysisData);
 
-    const includedCount = setupData.historicalAnalysisData.includedMetrics.length;
-    const includedLabels = setupData.historicalAnalysisData.includedMetrics.map(m => `\`${m.label}\``).join(', ');
+    const includedCount = analysisData.historicalAnalysisData.includedMetrics.length;
+    const includedLabels = analysisData.historicalAnalysisData.includedMetrics.map(m => `\`${m.label}\``).join(', ');
 
     const dateOptions = [
         { label: 'Last 7 Days', value: '7' },
@@ -2175,7 +2175,7 @@ async function promptForDateRange(interaction, userId) {
         .setCustomId('historical_end_date_select')
         .setPlaceholder('Select an End Date...')
         .addOptions(dateOptions.map(opt => new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
-    
+
     const runButton = new ButtonBuilder()
         .setCustomId('historical_run_analysis_btn')
         .setLabel('📈 Run Analysis')
@@ -6465,50 +6465,45 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.isButton() && interaction.customId.startsWith('historical_match_')) {
-        const matchButtonStartTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        console.log(`[HistoricalMatchButton START ${interactionId}] User: ${userId} clicked ${interaction.customId}.`);
+    const matchButtonStartTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    console.log(`[HistoricalMatchButton START ${interactionId}] User: ${userId} clicked ${interaction.customId}.`);
+    try {
+        await interaction.deferUpdate();
 
-        try {
-            await interaction.deferUpdate();
-
-            const analysisData = userHistoricalAnalysisData.get(userId);
-            if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_match_confirmation' || !analysisData.historicalAnalysisData) {
-                await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
-                return;
-            }
-
-            const { matches, matchIndex = 0, includedMetrics } = analysisData.historicalAnalysisData;
-            
-            if (interaction.customId === 'historical_match_include_btn') {
-                const currentMatch = matches[matchIndex];
-                if (currentMatch) {
-                    includedMetrics.push(currentMatch);
-                    console.log(`[HistoricalMatchButton INFO ${interactionId}] Included metric: "${currentMatch.label}" for user ${userId}.`);
-                }
-            } else if (interaction.customId === 'historical_match_finish_btn') {
-                // Force the loop to end by setting the index to the end
-                setupData.historicalAnalysisData.matchIndex = matches.length;
-            }
-            // For 'historical_match_skip_btn', we do nothing but advance the index.
-
-            // Advance the index unless we are finishing now
-            if (interaction.customId !== 'historical_match_finish_btn') {
-                analysisData.historicalAnalysisData.matchIndex = matchIndex + 1;
-            }
-
-            userHistoricalAnalysisData.set(userId, analysisData);
-
-            // Present the next match or the completion message
-            await presentHistoricalMatchConfirmation(interaction, userId);
-
-        } catch (error) {
-            console.error(`[HistoricalMatchButton ERROR ${interactionId}] for user ${userId}:`, error);
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: `An error occurred while processing your choice. Please try again.`, components: [] });
-            }
+        const analysisData = userHistoricalAnalysisData.get(userId);
+        if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_match_confirmation' || !analysisData.historicalAnalysisData) {
+            await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
+            return;
         }
+
+        const { matches, matchIndex = 0, includedMetrics } = analysisData.historicalAnalysisData;
+        if (interaction.customId === 'historical_match_include_btn') {
+            const currentMatch = matches[matchIndex];
+            if (currentMatch) {
+                includedMetrics.push(currentMatch);
+                console.log(`[HistoricalMatchButton INFO ${interactionId}] Included metric: "${currentMatch.label}" for user ${userId}.`);
+            }
+        } else if (interaction.customId === 'historical_match_finish_btn') {
+            // Force the loop to end by setting the index to the end
+            analysisData.historicalAnalysisData.matchIndex = matches.length;
+        }
+        // For 'historical_match_skip_btn', we do nothing but advance the index.
+        // Advance the index unless we are finishing now
+        if (interaction.customId !== 'historical_match_finish_btn') {
+            analysisData.historicalAnalysisData.matchIndex = matchIndex + 1;
+        }
+
+        userHistoricalAnalysisData.set(userId, analysisData);
+        // Present the next match or the completion message
+        await presentHistoricalMatchConfirmation(interaction, userId);
+    } catch (error) {
+        console.error(`[HistoricalMatchButton ERROR ${interactionId}] for user ${userId}:`, error);
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: `An error occurred while processing your choice. Please try again.`, components: [] });
+        }
+    }
     }
     
     else if (interaction.customId === 'historical_run_analysis_btn') {
