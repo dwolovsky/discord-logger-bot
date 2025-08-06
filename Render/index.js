@@ -6034,6 +6034,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     await sendNextTimeLogPrompt(interaction, userId);
                 } else {
                     console.log(`[log_daily_progress_btn FALLBACK_NO_TIME_METRICS ${interactionId}] Path D: Fetched settings have no time metrics. Showing intermediate button.`);
+                    userExperimentSetupData.set(userId, setupData); 
                     const openModalButton = new ButtonBuilder()
                         .setCustomId('show_standard_log_modal_btn')
                         .setLabel('✍️ Open Log Form')
