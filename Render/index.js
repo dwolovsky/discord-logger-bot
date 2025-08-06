@@ -4160,7 +4160,6 @@ client.on(Events.InteractionCreate, async interaction => {
             break; // Ensure break statement is present
           } // End case 'leaderboard'
 
-          // ****** START of REPLACEMENT for 'case exp:' block ******
           case 'go': { // <<< RENAMED from 'exp'
             const goCommandStartTime = performance.now();
             console.log(`[/go] Command received. User: ${interaction.user.tag}, InteractionID: ${interaction.id}. Time: ${goCommandStartTime.toFixed(2)}ms.`);
@@ -4170,109 +4169,72 @@ client.on(Events.InteractionCreate, async interaction => {
             const goDeferSuccessTime = performance.now();
             console.log(`[/go] Deferral took: ${(goDeferSuccessTime - goCommandStartTime).toFixed(2)}ms.`);
 
-            // ===== START MODIFIED PRE-FETCH for /go =====
-            (async () => {
-                const GO_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours for /go's own cache refresh
-                const userId = interaction.user.id;
-                const userTag = interaction.user.tag;
-                const interactionId = interaction.id;
+            // ===== START SYNCHRONOUS PRE-FETCH for /go =====
+            const GO_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+            const userId = interaction.user.id;
+            const userTag = interaction.user.tag;
+            const interactionId = interaction.id;
 
-                try {
-                    const existingSetupData = userExperimentSetupData.get(userId) || {};
-                    const currentCachedTime = existingSetupData?.preFetchedWeeklySettingsTimestamp;
+            const existingSetupData = userExperimentSetupData.get(userId) || {};
+            const currentCachedTime = existingSetupData?.preFetchedWeeklySettingsTimestamp;
 
-                    if (existingSetupData?.preFetchedWeeklySettings && currentCachedTime && (Date.now() - currentCachedTime < GO_CACHE_MAX_AGE_MS)) {
-                        console.log(`[/go ASYNC_PREFETCH_USE_CACHE ${interactionId}] Using existing recent pre-fetched settings for ${userTag}.`);
-                    } else {
-                        console.log(`[/go ASYNC_PREFETCH_REFRESH ${interactionId}] No recent pre-fetched settings for ${userTag} or cache is stale. Asynchronously pre-fetching.`);
-                        
-                        const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
-                        
-                        // Use the most current version of setupData before modifying
-                        const dataToStore = userExperimentSetupData.get(userId) || {}; 
+            if (existingSetupData?.preFetchedWeeklySettings &&
+                currentCachedTime && (Date.now() - currentCachedTime < GO_CACHE_MAX_AGE_MS)) {
+                console.log(`[/go SYNC_PREFETCH_USE_CACHE ${interactionId}] Using existing recent pre-fetched settings for ${userTag}.`);
+            } else {
+                console.log(`[/go SYNC_PREFETCH_REFRESH ${interactionId}] No recent pre-fetched settings for ${userTag} or cache is stale. Synchronously pre-fetching.`);
+                
+                const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
+                
+                const dataToStore = userExperimentSetupData.get(userId) || {}; 
 
-                        if (settingsResult && settingsResult.settings) {
-                            // NEW: Check for time metrics here
-                            const settings = settingsResult.settings;
-                            const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
-                            // The TIME_OF_DAY_KEYWORDS constant is defined globally in your file
-                            const isTimeMetric = (unit) => {
-                                if (!unit) return false;
-                                const lowerUnit = unit.toLowerCase().trim();
-                                return TIME_OF_DAY_KEYWORDS.includes(lowerUnit);
-                            };
-                            const hasTimeMetrics = metrics.some(metric => isTimeMetric(metric.unit));
-
-                            // Store both the settings AND the time metrics flag
-                            userExperimentSetupData.set(userId, {
-                                ...dataToStore,
-                                preFetchedWeeklySettings: settingsResult.settings,
-                                logFlowHasTimeMetrics: hasTimeMetrics, 
-                                preFetchedWeeklySettingsTimestamp: Date.now()
-                            });
-                            console.log(`[/go ASYNC_PREFETCH_SUCCESS ${interactionId}] Successfully pre-fetched settings for ${userTag}. Has Time Metrics: ${hasTimeMetrics}`);
-                        } else {
-                            // If no settings are returned, clear any old preFetched settings and the flag
-                            delete dataToStore.preFetchedWeeklySettings;
-                            delete dataToStore.preFetchedWeeklySettingsTimestamp;
-                            delete dataToStore.logFlowHasTimeMetrics;
-                            userExperimentSetupData.set(userId, dataToStore);
-                            console.log(`[/go ASYNC_PREFETCH_NO_DATA ${interactionId}] No weekly settings found for ${userTag}. Cleared cache.`);
-                        }
-                    }
-                } catch (fetchError) {
-                    console.error(`[/go ASYNC_PREFETCH_ERROR ${interactionId}] Error pre-fetching weekly settings for ${userTag}:`, fetchError.message);
-                    const dataToClearOnError = userExperimentSetupData.get(userId) || {};
-                    delete dataToClearOnError.preFetchedWeeklySettings;
-                    delete dataToClearOnError.preFetchedWeeklySettingsTimestamp;
-                    delete dataToClearOnError.logFlowHasTimeMetrics;
-                    userExperimentSetupData.set(userId, dataToClearOnError);
+                if (settingsResult && settingsResult.settings) {
+                    const settings = settingsResult.settings;
+                    const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
+                    const isTimeMetric = (unit) => {
+                        if (!unit) return false;
+                        return TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
+                    };
+                    const hasTimeMetrics = metrics.some(metric => isTimeMetric(metric.unit));
+                    
+                    userExperimentSetupData.set(userId, {
+                        ...dataToStore,
+                        preFetchedWeeklySettings: settingsResult.settings,
+                        logFlowHasTimeMetrics: hasTimeMetrics,
+                        preFetchedWeeklySettingsTimestamp: Date.now()
+                    });
+                    console.log(`[/go SYNC_PREFETCH_SUCCESS ${interactionId}] Successfully pre-fetched settings for ${userTag}. Has Time Metrics: ${hasTimeMetrics}`);
+                } else {
+                    delete dataToStore.preFetchedWeeklySettings;
+                    delete dataToStore.preFetchedWeeklySettingsTimestamp;
+                    delete dataToStore.logFlowHasTimeMetrics;
+                    userExperimentSetupData.set(userId, dataToStore);
+                    console.log(`[/go SYNC_PREFETCH_NO_DATA ${interactionId}] No weekly settings found for ${userTag}. Cleared cache.`);
                 }
-            })();
-            // ===== END MODIFIED PRE-FETCH for /go =====
+            }
+            // ===== END SYNCHRONOUS PRE-FETCH for /go =====
 
-            // --- Create an Embed for the Go Hub message ---
+            // --- Create an Embed for the Go Hub message (Now happens AFTER fetch is complete) ---
             const goHubEmbed = new EmbedBuilder()
-              .setColor('#7F00FF') // A nice vibrant purple, change as you like
+              .setColor('#7F00FF')
               .setTitle('⚡ Go Hub 🚀')
-              .setDescription('Your experiment control panel')
-              //.addFields(
-                  //{ name: '🔬 Set Experiment', value: 'Define your goals & metrics.', inline: true },
-                  //{ name: '✍️ Daily Log', value: 'Log your metrics & notes.', inline: true },
-                  //{ name: '🔥 Streak Stats', value: 'View your streak and the leaderboard.', inline: true },
-                  //{ name: '💡 AI Insights', value: 'Get AI-powered analysis of your data.', inline: true }
-              //)
+              .setDescription('Your experiment control panel');
 
             // --- Build the Go Hub buttons ---
             const setExperimentButton = new ButtonBuilder()
-              .setCustomId('set_update_experiment_btn')
+               .setCustomId('set_update_experiment_btn')
               .setLabel('🔬 Set Experiment')
               .setStyle(ButtonStyle.Primary);
-
             const logProgressButton = new ButtonBuilder()
               .setCustomId('log_daily_progress_btn')
               .setLabel('✍️ Log Data')
               .setStyle(ButtonStyle.Success);
 
-           /*
-              const streakCenterButton = new ButtonBuilder()
-              .setCustomId('streak_center_btn')
-              .setLabel('🔥 Streak Progress')
-              .setStyle(ButtonStyle.Secondary)
-              .setDisabled(true); // Disabled for now
-        
-            const insightsButton = new ButtonBuilder()
-              .setCustomId('ai_insights_btn')
-              .setLabel('💡 AI Insights')
-              .setStyle(ButtonStyle.Secondary);
-            */
-
             const row1 = new ActionRowBuilder().addComponents(setExperimentButton, logProgressButton);
-            // const row2 = new ActionRowBuilder().addComponents(streakCenterButton, insightsButton);
 
             await interaction.editReply({
-              embeds: [goHubEmbed], // Send the embed
-              components: [row1], //, row2 removed
+              embeds: [goHubEmbed],
+              components: [row1],
             });
             console.log(`[/go] Hub displayed successfully for ${interaction.user.tag}.`);
 
@@ -4282,7 +4244,7 @@ client.on(Events.InteractionCreate, async interaction => {
               try {
                 await interaction.editReply({
                   content: '❌ Oops! Something went wrong displaying the Go Hub. Please try the `/go` command again.',
-                  embeds: [], // Clear embeds on error
+                  embeds: [],
                   components: []
                 });
               } catch (editError) {
@@ -4291,7 +4253,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
           }
           break;
-          }
+        }
 
           case 'stats': {
             const statsCommandStartTime = performance.now();
@@ -6511,8 +6473,8 @@ client.on(Events.InteractionCreate, async interaction => {
         try {
             await interaction.deferUpdate();
 
-            const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || setupData.dmFlowState !== 'awaiting_historical_match_confirmation' || !setupData.historicalAnalysisData) {
+            const analysisData = userHistoricalAnalysisData.get(userId);
+            if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_match_confirmation' || !analysisData.historicalAnalysisData) {
                 await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
                 return;
             }
@@ -6533,10 +6495,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // Advance the index unless we are finishing now
             if (interaction.customId !== 'historical_match_finish_btn') {
-                setupData.historicalAnalysisData.matchIndex = matchIndex + 1;
+                analysisData.historicalAnalysisData.matchIndex = matchIndex + 1;
             }
-            
-            userExperimentSetupData.set(userId, setupData);
+
+            userHistoricalAnalysisData.set(userId, analysisData);
 
             // Present the next match or the completion message
             await presentHistoricalMatchConfirmation(interaction, userId);
@@ -6559,13 +6521,14 @@ client.on(Events.InteractionCreate, async interaction => {
             await interaction.deferReply({ ephemeral: true });
             await interaction.editReply({ content: '📈 Running analysis... This may take a moment.', components: [] });
 
-            const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || setupData.dmFlowState !== 'awaiting_date_range_selection' || !setupData.historicalAnalysisData) {
+            const analysisData = userHistoricalAnalysisData.get(userId);
+            if (!analysisData || analysisData.dmFlowState !== 'awaiting_date_range_selection' || !analysisData.historicalAnalysisData) {
                 await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`." });
                 return;
             }
 
-            const { includedMetrics, primaryMetric, startDateValue, endDateValue } = setupData.historicalAnalysisData;
+            const { includedMetrics, primaryMetric, startDateValue, endDateValue } = analysisData.historicalAnalysisData;
+
             if (!includedMetrics || !primaryMetric || !startDateValue || !endDateValue) {
                 await interaction.editReply({ content: "Error: Missing selections for metrics or dates. Please restart with `/stats`." });
                 return;
@@ -6585,14 +6548,14 @@ client.on(Events.InteractionCreate, async interaction => {
                 throw new Error(result?.message || 'The analysis function failed to return a successful result.');
             }
 
-        } catch (error) {
+          } catch (error) {
             console.error(`[${interaction.customId} ERROR ${interactionId}]`, error);
             if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ content: `An error occurred while running the analysis: ${error.message}` });
             }
         } finally {
             // Clean up the session data after the flow is complete
-            userExperimentSetupData.delete(userId);
+            userHistoricalAnalysisData.delete(userId);
         }
     }
 
@@ -8322,8 +8285,8 @@ client.on(Events.InteractionCreate, async interaction => {
         try {
             await interaction.deferUpdate();
 
-            const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || setupData.dmFlowState !== 'awaiting_historical_metric_selection' || !setupData.historicalAnalysisData?.currentSettings) {
+            const analysisData = userHistoricalAnalysisData.get(userId);
+            if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_metric_selection' || !analysisData.historicalAnalysisData?.currentSettings) {
                 await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
                 return;
             }
@@ -8343,7 +8306,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             // Call the new Firebase function
-            const result = await callFirebaseFunction('getHistoricalMetricMatches', { selectedMetric });
+            const result = await callFirebaseFunction('getHistoricalMetricMatches', { selectedMetric }, userId);
 
             if (!result || !result.success) {
                 throw new Error(result?.message || 'Failed to get historical matches from the server.');
@@ -8352,10 +8315,10 @@ client.on(Events.InteractionCreate, async interaction => {
             // Store the results and initialize the confirmation flow
             setupData.historicalAnalysisData.primaryMetric = selectedMetric;
             setupData.historicalAnalysisData.matches = result.matches || [];
-            setupData.historicalAnalysisData.matchIndex = 0;
-            setupData.historicalAnalysisData.includedMetrics = [selectedMetric]; // Always include the primary metric
-            setupData.dmFlowState = 'awaiting_historical_match_confirmation';
-            userExperimentSetupData.set(userId, setupData);
+            analysisData.historicalAnalysisData.matchIndex = 0;
+            analysisData.historicalAnalysisData.includedMetrics = [selectedMetric];
+            analysisData.dmFlowState = 'awaiting_historical_match_confirmation';
+            userHistoricalAnalysisData.set(userId, analysisData);
             
             if (result.matches.length === 0) {
                  await interaction.editReply({ content: "I didn't find any other similar metrics in your history. The next step is to select the date range.", components: [] });
@@ -8382,17 +8345,17 @@ client.on(Events.InteractionCreate, async interaction => {
         try {
             await interaction.deferUpdate();
 
-            const setupData = userExperimentSetupData.get(userId);
-            if (!setupData || setupData.dmFlowState !== 'awaiting_date_range_selection' || !setupData.historicalAnalysisData) {
+            const analysisData = userHistoricalAnalysisData.get(userId);
+            if (!analysisData || analysisData.dmFlowState !== 'awaiting_date_range_selection' || !analysisData.historicalAnalysisData) {
                 await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
                 return;
             }
 
             const selectedValue = interaction.values[0];
             if (interaction.customId === 'historical_start_date_select') {
-                setupData.historicalAnalysisData.startDateValue = selectedValue;
+                analysisData.historicalAnalysisData.startDateValue = selectedValue;
             } else if (interaction.customId === 'historical_end_date_select') {
-                setupData.historicalAnalysisData.endDateValue = selectedValue;
+                analysisData.historicalAnalysisData.endDateValue = selectedValue;
             }
 
             // Check if both dates have been selected
@@ -8425,7 +8388,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.editReply({ components: updatedComponents });
             }
             
-            userExperimentSetupData.set(userId, setupData);
+            userHistoricalAnalysisData.set(userId, analysisData);
 
         } catch (error) {
             console.error(`[HistoricalDateSelect ERROR ${interactionId}] for user ${userId}:`, error);
