@@ -3647,6 +3647,432 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
 */
 
 /**
+ * Scans a user's entire log history and uses AI to find historical metrics that
+ * are semantically similar to a newly selected metric.
+ *
+ * Expected request.data: { selectedMetric: { label: string, unit: string } }
+ * Returns: { success: true, matches: [{label: string, unit: string}, ...] }
+ */
+exports.getHistoricalMetricMatches = onCall(async (request) => {
+  logger.log("[getHistoricalMetricMatches] Function called. Data:", request.data);
+
+  // 1. Authentication & Validation
+  if (!request.auth) {
+    logger.warn("[getHistoricalMetricMatches] Unauthenticated access attempt.");
+    throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
+  }
+  const userId = request.auth.uid;
+  const { selectedMetric } = request.data;
+  if (!selectedMetric || !selectedMetric.label || !selectedMetric.unit) {
+    throw new HttpsError('invalid-argument', 'A valid "selectedMetric" object with label and unit must be provided.');
+  }
+  if (!genAI) {
+    logger.error("[getHistoricalMetricMatches] Gemini AI client (genAI) is not initialized.");
+    throw new HttpsError('internal', "The AI analysis service is currently unavailable.");
+  }
+
+  const db = admin.firestore();
+  try {
+    // 2. Fetch all logs and compile a unique list of historical metrics
+    const logsSnapshot = await db.collection('logs').where('userId', '==', userId).get();
+    const historicalMetrics = new Set();
+
+    logsSnapshot.forEach(doc => {
+      const log = doc.data();
+      // Add the output metric
+      if (log.output && log.output.label && log.output.unit) {
+        historicalMetrics.add(JSON.stringify({ label: log.output.label, unit: log.output.unit }));
+      }
+      // Add all input metrics
+      if (log.inputs && Array.isArray(log.inputs)) {
+        log.inputs.forEach(input => {
+          if (input && input.label && input.unit) {
+            historicalMetrics.add(JSON.stringify({ label: input.label, unit: input.unit }));
+          }
+        });
+      }
+    });
+
+    const uniqueHistoricalMetrics = Array.from(historicalMetrics).map(item => JSON.parse(item));
+    logger.log(`[getHistoricalMetricMatches] Found ${uniqueHistoricalMetrics.length} unique historical metrics for user ${userId}.`);
+
+    if (uniqueHistoricalMetrics.length === 0) {
+        return { success: true, matches: [] }; // No history to match against
+    }
+
+    // 3. Construct the AI Prompt
+    const prompt = `
+      You are a data analyst specializing in cleaning and matching time-series data labels.
+      CONTEXT:
+      The user has selected the metric "${selectedMetric.label}" (unit: ${selectedMetric.unit}) from their current experiment. They want to find similar metrics from their past logs to include in a historical analysis.
+
+      YOUR TASK:
+      From the following JSON array of all historical metrics the user has ever logged, identify up to the top 5 metrics that are the most likely semantic matches for the user's selected metric. A good match means it tracks the same underlying concept, even if the wording is slightly different (e.g., "Meditating" matches "Mins of Meditation", and "Jogging" matches "Running").
+      
+      - Prioritize matches with the same or very similar units (e.g., 'minutes' and 'mins').
+      - Also include high-confidence matches even if the units are different.
+      - Do NOT include the exact same metric the user selected unless there's no other choice.
+
+      HISTORICAL METRICS LIST:
+      ${JSON.stringify(uniqueHistoricalMetrics, null, 2)}
+
+      Return your response ONLY as a valid JSON array of objects. Each object in the array must be one of the exact objects from the historical list you were given. Do not invent new metrics or modify the existing ones. If you find no good matches, return an empty array [].
+    `;
+
+    // 4. Call Gemini
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const generationResult = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
+    });
+    const response = await generationResult.response;
+    const responseText = response.text()?.trim();
+
+    if (!responseText) {
+        throw new HttpsError('internal', 'AI generated an empty response.');
+    }
+
+    let matches = JSON.parse(responseText);
+
+    // 5. Return the result
+    logger.log(`[getHistoricalMetricMatches] AI found ${matches.length} potential matches for "${selectedMetric.label}".`);
+    return { success: true, matches: matches };
+
+  } catch (error) {
+    logger.error(`[getHistoricalMetricMatches] Critical error for user ${userId}:`, error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `An unexpected error occurred while finding historical matches: ${error.message}`);
+  }
+});
+
+/**
+ * Fetches user logs for a specific set of metrics within a date range and
+ * performs a detailed statistical analysis, including trends and correlations.
+ *
+ * Expected request.data: {
+ * includedMetrics: [{label: string, unit: string, type: 'input'|'output'}],
+ * primaryMetric: {label: string, unit: string, type: 'input'|'output'},
+ * startDateValue: string ('7', '30', 'all_time', etc.),
+ * endDateValue: string ('7', '30', 'all_time', etc.)
+ * }
+ */
+exports.runHistoricalAnalysis = onCall(async (request) => {
+    logger.log("[runHistoricalAnalysis] Function called. Data:", request.data);
+
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'You must be logged in to run an analysis.');
+    }
+    const userId = request.auth.uid;
+    const { includedMetrics, primaryMetric, startDateValue, endDateValue } = request.data;
+
+    if (!Array.isArray(includedMetrics) || includedMetrics.length === 0 || !primaryMetric || !startDateValue || !endDateValue) {
+        throw new HttpsError('invalid-argument', 'Missing required parameters for analysis.');
+    }
+
+    const db = admin.firestore();
+    try {
+        // 1. Calculate Date Range
+        const now = new Date();
+        const endDate = (endDateValue === 'all_time') ? now : new Date(now.getTime() - (parseInt(endDateValue, 10) * 24 * 60 * 60 * 1000));
+        const startDate = (startDateValue === 'all_time') ? new Date(0) : new Date(now.getTime() - (parseInt(startDateValue, 10) * 24 * 60 * 60 * 1000));
+        
+        if (startDate >= endDate && endDateValue !== 'all_time') {
+             throw new HttpsError('invalid-argument', 'Start date must be before the end date.');
+        }
+
+        // 2. Fetch Logs and User Settings
+        const logsSnapshotPromise = db.collection('logs')
+            .where('userId', '==', userId)
+            .where('timestamp', '>=', startDate)
+            .where('timestamp', '<=', endDate)
+            .orderBy('timestamp', 'asc')
+            .get();
+        
+        const userSettingsSnapPromise = db.collection('users').doc(userId).get();
+        const [logsSnapshot, userSettingsSnap] = await Promise.all([logsSnapshotPromise, userSettingsSnapPromise]);
+        
+        const rawLogs = [];
+        logsSnapshot.forEach(doc => rawLogs.push(doc.data()));
+
+        if (rawLogs.length === 0) {
+            return { success: true, report: null, message: "No logs found in the selected date range for the chosen metrics." };
+        }
+        
+        const settings = userSettingsSnap.data()?.weeklySettings || {};
+        const metricTypes = {}; // Build a map of label -> type ('input' or 'output')
+        if (settings.output?.label) metricTypes[settings.output.label] = 'output';
+        if (settings.input1?.label) metricTypes[settings.input1.label] = 'input';
+        if (settings.input2?.label) metricTypes[settings.input2.label] = 'input';
+        if (settings.input3?.label) metricTypes[settings.input3.label] = 'input';
+
+        // 3. Prepare data structures
+        const analysisData = {};
+        includedMetrics.forEach(m => {
+            analysisData[m.label] = { values: [], timestamps: [], unit: m.unit, type: m.type };
+        });
+        const allMetricsInPeriod = {};
+
+        // 4. Extract data from logs
+        rawLogs.forEach(log => {
+            const logTimestamp = log.timestamp.toDate();
+            const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
+
+            metricsInLog.forEach(metricInLog => {
+                if (!metricInLog.label || metricInLog.value === null) return;
+                const value = parseFloat(metricInLog.value);
+                if (isNaN(value)) return;
+
+                const matchedPrimaryMetric = includedMetrics.find(m => 
+                    normalizeLabel(m.label) === normalizeLabel(metricInLog.label) && 
+                    normalizeUnit(m.unit) === normalizeUnit(metricInLog.unit)
+                );
+
+                if (matchedPrimaryMetric) {
+                    analysisData[matchedPrimaryMetric.label].values.push(value);
+                    analysisData[matchedPrimaryMetric.label].timestamps.push(logTimestamp);
+                }
+                
+                if (!allMetricsInPeriod[metricInLog.label]) {
+                    allMetricsInPeriod[metricInLog.label] = { values: [], timestamps: [], type: metricTypes[metricInLog.label] || 'unknown' };
+                }
+                allMetricsInPeriod[metricInLog.label].values.push(value);
+                allMetricsInPeriod[metricInLog.label].timestamps.push(logTimestamp);
+            });
+        });
+
+        // 5. Perform Analysis on the Primary Metric
+        const primaryData = analysisData[primaryMetric.label];
+        if (primaryData.values.length < MINIMUM_DATAPOINTS_FOR_METRIC_STATS) {
+            return { success: true, report: null, message: `Not enough data points (${primaryData.values.length}) for "${primaryMetric.label}" in this period. Minimum of ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS} required.` };
+        }
+
+        const report = {};
+
+        // Key Stats & Trend
+        const mean = calculateMean(primaryData.values);
+        report.keyStats = {
+            label: primaryMetric.label,
+            average: parseFloat(mean.toFixed(2)),
+            median: parseFloat(calculateMedian(primaryData.values).toFixed(2)),
+            consistency: 100 - parseFloat(calculateVariationPercentage(calculateStdDev(primaryData.values, mean), mean).toFixed(1)),
+            dataPoints: primaryData.values.length
+        };
+        const halfIndex = Math.floor(primaryData.values.length / 2);
+        const firstHalfMean = calculateMean(primaryData.values.slice(0, halfIndex));
+        const secondHalfMean = calculateMean(primaryData.values.slice(halfIndex));
+        const trendChange = ((secondHalfMean - firstHalfMean) / (firstHalfMean || 1)) * 100;
+        if (trendChange > 5) report.trend = `📈 '${primaryMetric.label}' has been trending upwards over this period.`;
+        else if (trendChange < -5) report.trend = `📉 '${primaryMetric.label}' has been trending downwards over this period.`;
+        else report.trend = `➡️ '${primaryMetric.label}' has remained relatively steady over this period.`;
+
+        // Correlation Analysis
+        const correlationTargetType = primaryMetric.type === 'input' ? 'output' : 'input';
+        const potentialCorrelationMetrics = Object.keys(allMetricsInPeriod).filter(label => label !== primaryMetric.label && allMetricsInPeriod[label].type === correlationTargetType);
+        const calculatedCorrelations = [];
+        for (const otherLabel of potentialCorrelationMetrics) {
+            const pairedArrays = alignDataByTimestamp(primaryData, allMetricsInPeriod[otherLabel]);
+            if (pairedArrays.primary.length >= MINIMUM_PAIRS_FOR_CORRELATION) {
+                const coefficient = jStat.corrcoeff(pairedArrays.primary, pairedArrays.other);
+                if (!isNaN(coefficient)) {
+                    calculatedCorrelations.push({ label: otherLabel, coefficient: coefficient, absCoefficient: Math.abs(coefficient) });
+                }
+            }
+        }
+        report.correlations = calculatedCorrelations.sort((a, b) => b.absCoefficient - a.absCoefficient).slice(0, 5);
+
+        // Combined Effects Analysis
+        report.combinedEffects = [];
+        if (primaryMetric.type === 'input') {
+            const otherInputLabels = Object.keys(allMetricsInPeriod).filter(label => label !== primaryMetric.label && allMetricsInPeriod[label].type === 'input');
+            const outcomeMetricLabel = Object.keys(allMetricsInPeriod).find(label => allMetricsInPeriod[label].type === 'output');
+            
+            if (outcomeMetricLabel && allMetricsInPeriod[outcomeMetricLabel].values.length >= MINIMUM_DATAPOINTS_FOR_METRIC_STATS) {
+                const outcomeData = allMetricsInPeriod[outcomeMetricLabel];
+                const outcomeQuartiles = calculateQuartiles(outcomeData.values);
+                const outcomeMedian = calculateMedian(outcomeData.values);
+                const upperThreshold = outcomeMedian + (1.5 * outcomeQuartiles.iqr);
+                const lowerThreshold = outcomeMedian - (1.5 * outcomeQuartiles.iqr);
+
+                for (const otherInputLabel of otherInputLabels) {
+                    const otherInputData = allMetricsInPeriod[otherInputLabel];
+                    if (otherInputData.values.length < MINIMUM_DATAPOINTS_FOR_METRIC_STATS) continue;
+
+                    const primaryMedian = calculateMedian(primaryData.values);
+                    const otherMedian = calculateMedian(otherInputData.values);
+                    
+                    const groups = { high_high: [], high_low: [], low_high: [], low_low: [] };
+                    const alignedTimestamps = findCommonTimestamps([primaryData, otherInputData, outcomeData]);
+                    
+                    alignedTimestamps.forEach(ts => {
+                        const primaryValue = primaryData.values[primaryData.timestamps.findIndex(t => t.getTime() === ts)];
+                        const otherValue = otherInputData.values[otherInputData.timestamps.findIndex(t => t.getTime() === ts)];
+                        const outcomeValue = outcomeData.values[outcomeData.timestamps.findIndex(t => t.getTime() === ts)];
+
+                        let groupKey = '';
+                        groupKey += (primaryValue > primaryMedian) ? 'high' : 'low';
+                        groupKey += '_';
+                        groupKey += (otherValue > otherMedian) ? 'high' : 'low';
+                        groups[groupKey].push(outcomeValue);
+                    });
+
+                    for (const groupKey in groups) {
+                        const groupValues = groups[groupKey];
+                        if (groupValues.length >= MINIMUM_DATAPOINTS_FOR_GROUP_ANALYSIS) {
+                            const groupMean = calculateMean(groupValues);
+                            let significance = '';
+                            if (groupMean > upperThreshold) significance = 'significantly higher';
+                            else if (groupMean < lowerThreshold) significance = 'significantly lower';
+
+                            if (significance) {
+                                report.combinedEffects.push({
+                                    primaryHabit: primaryMetric.label,
+                                    withHabit: otherInputLabel,
+                                    outcomeLabel: outcomeMetricLabel,
+                                    group: groupKey,
+                                    outcomeAverage: parseFloat(groupMean.toFixed(2)),
+                                    significance: significance
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Lag Time Correlation Analysis
+        report.lagCorrelations = [];
+        const logsByDate = new Map();
+        rawLogs.forEach(log => {
+            const logDate = new Date(log.timestamp.toDate()).toISOString().split('T')[0];
+            logsByDate.set(logDate, log);
+        });
+        const sortedDates = Array.from(logsByDate.keys()).sort();
+        const lagDataPairs = [];
+        for (let i = 0; i < sortedDates.length - 1; i++) {
+            const dayT_date = new Date(sortedDates[i]);
+            const dayT_plus_1_date = new Date(sortedDates[i + 1]);
+            if ((dayT_plus_1_date - dayT_date) / (1000 * 60 * 60 * 24) === 1) {
+                lagDataPairs.push({ dayT: logsByDate.get(sortedDates[i]), dayT_plus_1: logsByDate.get(sortedDates[i+1]) });
+            }
+        }
+        
+        if (lagDataPairs.length >= MINIMUM_PAIRS_FOR_CORRELATION) {
+            const potentialLagMetrics = Object.keys(allMetricsInPeriod)
+                .filter(label => allMetricsInPeriod[label].type === correlationTargetType);
+
+            for (const otherLabel of potentialLagMetrics) {
+                const yesterdayValues = [];
+                const todayValues = [];
+
+                lagDataPairs.forEach(pair => {
+                    const yesterdayValue = getMetricValueFromLog(pair.dayT, primaryMetric.label, primaryMetric.unit);
+                    const todayValue = getMetricValueFromLog(pair.dayT_plus_1, otherLabel, settings.output?.unit); 
+
+                    if (yesterdayValue !== null && todayValue !== null) {
+                        yesterdayValues.push(yesterdayValue);
+                        todayValues.push(todayValue);
+                    }
+                });
+
+                if (yesterdayValues.length >= MINIMUM_PAIRS_FOR_CORRELATION) {
+                    const coefficient = jStat.corrcoeff(yesterdayValues, todayValues);
+                    if (!isNaN(coefficient) && Math.abs(coefficient) >= 0.15) {
+                        report.lagCorrelations.push({
+                            yesterdayMetricLabel: primaryMetric.label,
+                            todayMetricLabel: otherLabel,
+                            coefficient: coefficient,
+                            absCoefficient: Math.abs(coefficient)
+                        });
+                    }
+                }
+            }
+        }
+        report.lagCorrelations = report.lagCorrelations.sort((a, b) => b.absCoefficient - a.absCoefficient).slice(0, 5);
+
+        // --- NEW: AI STRIKING INSIGHT ---
+        let insightPrompt = `You are a data analyst who is brilliant at finding the 'story' in the data. Based ONLY on the following summary of a user's historical data for the metric "${primaryMetric.label}", what is the single most striking, interesting, or actionable insight? Frame it as a single, encouraging, and observational sentence. Do not give advice.
+
+        - Key Stat: The average was ${report.keyStats.average} with ${report.keyStats.consistency.toFixed(0)}% consistency.
+        - Trend: ${report.trend}`;
+
+        if (report.correlations.length > 0) {
+            const topCorr = report.correlations[0];
+            insightPrompt += `\n- Strongest Same-Day Correlation: It was correlated with '${topCorr.label}' (coeff: ${topCorr.coefficient.toFixed(2)}).`;
+        }
+        if (report.combinedEffects.length > 0) {
+            const topEffect = report.combinedEffects[0];
+            insightPrompt += `\n- Strongest Combined Effect: When combined with '${topEffect.withHabit}', it had a significant impact on '${topEffect.outcomeLabel}'.`;
+        }
+        if (report.lagCorrelations.length > 0) {
+            const topLag = report.lagCorrelations[0];
+            insightPrompt += `\n- Strongest Day-After Effect: It had a notable correlation with the next day's '${topLag.todayMetricLabel}' (coeff: ${topLag.coefficient.toFixed(2)}).`;
+        }
+
+        insightPrompt += `\n\nReturn ONLY the single insight sentence.`;
+        
+        try {
+            if (genAI) {
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                const generationResult = await model.generateContent(insightPrompt);
+                const response = await generationResult.response;
+                report.strikingInsight = response.text()?.trim() || "The AI could not generate a striking insight for this period.";
+            } else {
+                report.strikingInsight = "AI insight is currently unavailable.";
+            }
+        } catch(aiError) {
+            logger.error(`[runHistoricalAnalysis] AI insight generation failed for user ${userId}:`, aiError);
+            report.strikingInsight = "An error occurred while generating the AI insight.";
+        }
+        // --- END OF NEW CODE ---
+
+        // Helper functions
+        function alignDataByTimestamp(dataA, dataB) {
+            const pairedA = [], pairedB = [];
+            const timestampsA = dataA.timestamps.map(t => t.getTime());
+            const timestampsB = dataB.timestamps.map(t => t.getTime());
+            for (let i = 0; i < timestampsA.length; i++) {
+                const indexB = timestampsB.indexOf(timestampsA[i]);
+                if (indexB !== -1) {
+                    pairedA.push(dataA.values[i]);
+                    pairedB.push(dataB.values[indexB]);
+                }
+            }
+            return { primary: pairedA, other: pairedB };
+        }
+        function findCommonTimestamps(dataSources) {
+            if (dataSources.length === 0) return [];
+            let commonTimestamps = dataSources[0].timestamps.map(t => t.getTime());
+            for (let i = 1; i < dataSources.length; i++) {
+                const currentTimestamps = new Set(dataSources[i].timestamps.map(t => t.getTime()));
+                commonTimestamps = commonTimestamps.filter(ts => currentTimestamps.has(ts));
+            }
+            return commonTimestamps;
+        }
+         function getMetricValueFromLog(log, label, unit) {
+            if (!log) return null;
+            const normLabel = normalizeLabel(label);
+            const normUnit = normalizeUnit(unit);
+            const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
+            const foundMetric = metricsInLog.find(m => m && normalizeLabel(m.label) === normLabel && normalizeUnit(m.unit) === normUnit);
+            if (foundMetric) {
+                const val = parseFloat(foundMetric.value);
+                return isNaN(val) ? null : val;
+            }
+            return null;
+        }
+
+        return { success: true, report: report };
+
+    } catch (error) {
+        logger.error(`[runHistoricalAnalysis] Critical error for user ${userId}:`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', `An unexpected server error occurred during analysis: ${error.message}`);
+    }
+});
+
+/**
  * Generates five potential complete outcome metrics (label, unit, goal)
  * based on a user's context, supporting both a simple 'wish' and a more thorough context.
  *

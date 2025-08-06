@@ -396,6 +396,113 @@ function buildCorrelationsAndComboPage(embed, statsReportData) {
     buildCombinedEffectsPage(embed, statsReportData);
 }
 
+/**
+ * Formats all significant correlation data into a single string.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @returns {string | null} A formatted string or null if no significant correlations.
+ */
+function formatCorrelationsAsString(statsReportData) {
+    const parts = [];
+    if (statsReportData.correlations && typeof statsReportData.correlations === 'object') {
+        for (const key in statsReportData.correlations) {
+            const corr = statsReportData.correlations[key];
+            if (!corr || corr.status !== 'calculated' || corr.coefficient === undefined || isNaN(corr.coefficient)) continue;
+
+            const rSquared = corr.coefficient * corr.coefficient;
+            if (rSquared < 0.0225) continue;
+
+            const habitInfo = statsReportData.calculatedMetricStats?.[corr.label];
+            const outcomeInfo = statsReportData.calculatedMetricStats?.[corr.vsOutputLabel];
+            const isHabitTime = isTimeMetric(habitInfo?.unit);
+            const isOutcomeTime = isTimeMetric(outcomeInfo?.unit);
+            const habitDisplay = isHabitTime ? 'is later' : 'goes up ⤴️';
+            const outcomeDisplay = isOutcomeTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
+            const isConfident = corr.pValue !== null && corr.pValue < 0.05;
+            const confidenceText = isConfident ? "This is a statistically significant relationship." : "We need more data to confirm this.";
+            let strengthText = "No detectable";
+            let strengthEmoji = "🟦";
+            const absCoeff = Math.abs(corr.coefficient);
+            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+            else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+            else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+            else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
+            
+            parts.push(`**When ${corr.label} ${habitDisplay}**\n→ **${corr.vsOutputLabel}** ${outcomeDisplay}\n*Strength: ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)*`);
+        }
+    }
+    return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
+/**
+ * Formats all significant combined effects data into a single string.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @returns {string | null} A formatted string or null if no significant effects.
+ */
+function formatCombinedEffectsAsString(statsReportData) {
+    const parts = [];
+    const results = statsReportData.pairwiseInteractionResults;
+    if (results && typeof results === 'object') {
+        const formatCondition = (conditionString, input1Label, input2Label) => {
+            const partStrings = conditionString.split(' & ').map(part => {
+                const label = part.substring(0, part.lastIndexOf(' was '));
+                const metricInfo = statsReportData.calculatedMetricStats?.[label];
+                const isMetricTime = isTimeMetric(metricInfo?.unit);
+                const state = part.endsWith('High') ? (isMetricTime ? 'Later' : 'Higher ⤴️') : (isMetricTime ? 'Earlier' : 'Lower ⤵️');
+                return `**${label}** was ${state}`;
+            });
+            return partStrings.join(' + ');
+        };
+
+        for (const pairKey in results) {
+            const pairData = results[pairKey];
+            const summary = pairData.summary || "";
+            const isSignificant = !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("did not show any group");
+            if (isSignificant && pairData.input1Label && pairData.input2Label) {
+                const bestGroup = summary.includes("higher") ? /Avg.*higher \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
+                const worstGroup = summary.includes("lower") ? /Avg.*lower \(([\d.]+)\) when (.*) \(n=([\d]+)\)/.exec(summary) : null;
+                if (bestGroup) {
+                    parts.push(`${formatCondition(bestGroup[2], pairData.input1Label, pairData.input2Label)}\n→ **'${pairData.outputMetricLabel}'** was significantly **higher** (avg ${bestGroup[1]}).`);
+                }
+                if (worstGroup) {
+                    parts.push(`${formatCondition(worstGroup[2], pairData.input1Label, pairData.input2Label)}\n→ **'${pairData.outputMetricLabel}'** was significantly **lower** (avg ${worstGroup[1]}).`);
+                }
+            }
+        }
+    }
+    return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
+/**
+ * Formats all significant lag time effects into a single string.
+ * @param {object} statsReportData - The full stats report data from Firestore.
+ * @returns {string | null} A formatted string or null if no significant lag effects.
+ */
+function formatLagTimeAsString(statsReportData) {
+    const parts = [];
+    const results = statsReportData.lagTimeCorrelations;
+    const outcomeMetricLabel = statsReportData.activeExperimentSettings?.output?.label;
+    if (results && typeof results === 'object' && outcomeMetricLabel) {
+        for (const key in results) {
+            const lag = results[key];
+            if (lag && lag.todayMetricLabel === outcomeMetricLabel) {
+                if (lag.coefficient === undefined || isNaN(lag.coefficient)) continue;
+                const rSquared = lag.coefficient * lag.coefficient;
+                if (rSquared < 0.09) continue;
+
+                const yesterdayInfo = statsReportData.calculatedMetricStats?.[lag.yesterdayMetricLabel];
+                const todayInfo = statsReportData.calculatedMetricStats?.[lag.todayMetricLabel];
+                const isYesterdayTime = isTimeMetric(yesterdayInfo?.unit);
+                const isTodayTime = isTimeMetric(todayInfo?.unit);
+                const yesterdayDisplay = isYesterdayTime ? 'was later' : 'was higher ⤴️';
+                const todayDisplay = isTodayTime ? (lag.coefficient >= 0 ? 'was later' : 'was earlier') : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
+                
+                parts.push(`**When Yesterday's ${lag.yesterdayMetricLabel} ${yesterdayDisplay}**\n→ Today's **${lag.todayMetricLabel}** ${todayDisplay}`);
+            }
+        }
+    }
+    return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
 // ADD THESE FIVE NEW FUNCTIONS AFTER buildLagTimePage
 
 /**
@@ -514,7 +621,6 @@ function buildExperimentStoryPage(embed, aiInsights) {
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} aiInsights - The AI-generated insights object.
  */
-// AFTER (Correct and Safer)
 function buildNextStepsPage(embed, aiInsights) {
     embed.setTitle('🧪 Next Experiment Suggestions')
          .setDescription("A few ideas for your next experiment.");
@@ -579,76 +685,67 @@ function buildCoreStatsSummary(embed, statsReportData) {
 }
 
 /**
- * Builds the embed for the final summary page.
+ * Builds the embed for the final summary page, including all data in consolidated fields.
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} statsReportData - The full stats report data from Firestore.
+ * @param {object} aiInsights - The AI-generated insights object.
  * @param {Array<object>} pageConfig - The dynamically generated page configuration.
  */
-// The function now takes `aiInsights` as an argument
 function buildFinalSummaryPage(embed, statsReportData, aiInsights, pageConfig) {
 
     embed.setTitle('📊 Experiment Summary')
-         .setDescription(`This is a complete overview of your experiment.`);
 
     // --- 1. Core Statistics ---
+    embed.addFields({ name: '📈 Core Metrics', value: '\u200B' });
     buildCoreStatsSummary(embed, statsReportData);
 
-    // --- Check which optional sections have content ---
-    const hasCorrelations = buildCorrelationsPage(new EmbedBuilder(), statsReportData);
-    const hasCombinedEffects = buildCombinedEffectsPage(new EmbedBuilder(), statsReportData);
-    const hasLagTime = buildLagTimePage(new EmbedBuilder(), statsReportData);
-
-    let previousSectionHadContent = true; 
-
-    if (hasCorrelations) {
-        if (previousSectionHadContent) {
-            embed.addFields({ name: '\u200B', value: '\u200B' }); 
-        }
-        buildCorrelationsPage(embed, statsReportData);
-        previousSectionHadContent = true;
+    // --- 2. Consolidated Correlations ---
+    const correlationsString = formatCorrelationsAsString(statsReportData);
+    if (correlationsString) {
+        embed.addFields({ name: '\n\n🔗 Habit-Outcome Correlations', value: correlationsString.substring(0, 1024) });
     }
 
-    if (hasCombinedEffects) {
-        if (previousSectionHadContent) {
-            embed.addFields({ name: '\u200B', value: '\u200B' });
-        }
-        buildCombinedEffectsPage(embed, statsReportData);
-        previousSectionHadContent = true;
+    // --- 3. Consolidated Combined Effects ---
+    const combosString = formatCombinedEffectsAsString(statsReportData);
+    if (combosString) {
+        embed.addFields({ name: '\n\n🔀 Habit Combo Effects', value: combosString.substring(0, 1024) });
     }
 
-    if (hasLagTime) {
-        if (previousSectionHadContent) {
-            embed.addFields({ name: '\u200B', value: '\u200B' }); 
-        }
-        buildLagTimePage(embed, statsReportData);
-        previousSectionHadContent = true;
+    // --- 4. Consolidated Day-After Effects ---
+    const lagString = formatLagTimeAsString(statsReportData);
+    if (lagString) {
+        embed.addFields({ name: '\n\n🕑 Day-After Effects', value: lagString.substring(0, 1024) });
     }
-
-    // --- ADD AI INSIGHTS SECTION ---
+    
+    // --- 5. AI Insights (as two separate fields) ---
     if (aiInsights) {
-        // Add a spacer before the AI content
-        embed.addFields({ name: '\u200B', value: '\u200B' });
 
-        // --- Build the Story ---
         const storyEmbed = new EmbedBuilder();
-        buildExperimentStoryPage(storyEmbed, aiInsights); // This populates the storyEmbed
+        buildExperimentStoryPage(storyEmbed, aiInsights);
         const storyTitle = storyEmbed.data.title || "Your Experiment Story";
         const storyDescription = storyEmbed.data.description || "No story was generated.";
-        const storyText = `**📖 ${storyTitle}**\n${storyDescription}`;
+        if (storyDescription.trim()) {
+             embed.addFields({ 
+                name: `\n\n📖 ${storyTitle}`, 
+                value: storyDescription.substring(0, 1024) 
+            });
+        }
 
-        // --- Build the Suggestions ---
         const nextStepsEmbed = new EmbedBuilder();
-        buildNextStepsPage(nextStepsEmbed, aiInsights); // This populates the nextStepsEmbed
+        buildNextStepsPage(nextStepsEmbed, aiInsights);
         const nextStepsTitle = nextStepsEmbed.data.title || "Next Experiment Suggestions";
-        let suggestionsText = `\n\n**🧪 ${nextStepsTitle}**\n${nextStepsEmbed.data.description || ""}`;
+        let suggestionsText = nextStepsEmbed.data.description || "";
         if(nextStepsEmbed.data.fields) {
             nextStepsEmbed.data.fields.forEach(field => {
                 suggestionsText += `\n\n${field.name}\n${field.value}`;
             });
         }
-
-        // --- Combine them into a single field ---
-        embed.addFields({ name: '🤖 AI Insights', value: storyText + suggestionsText });
+        if (suggestionsText.trim()) {
+            embed.addFields({ 
+                name: `\n\n🧪 ${nextStepsTitle}`, 
+                value: suggestionsText.substring(0, 1024) 
+            });
+        }
     }
 }
 
@@ -1995,8 +2092,246 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
   }
 }
 
-// In render/index.js, add this entire new function.
-// A good place is after the sendAppreciationDM function.
+/**
+ * Displays the next historical metric match for the user to confirm.
+ * If no more matches, it proceeds to the date range selection.
+ * @param {import('discord.js').Interaction} interaction - The interaction to update.
+ * @param {string} userId - The user's ID.
+ */
+async function presentHistoricalMatchConfirmation(interaction, userId) {
+    const setupData = userExperimentSetupData.get(userId);
+    if (!setupData || !setupData.historicalAnalysisData) {
+        await interaction.editReply({ content: "Your session has expired. Please start over with `/stats`.", components: [], embeds: [] });
+        return;
+    }
+
+    const { matches, matchIndex = 0 } = setupData.historicalAnalysisData;
+
+    // If we have processed all matches, move to the next step.
+    if (matchIndex >= matches.length) {
+        await promptForDateRange(interaction, userId);
+                return;
+            }
+
+    const currentMatch = matches[matchIndex];
+
+    const embed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle(`Historical Match ${matchIndex + 1} of ${matches.length}`)
+        .setDescription(`I found a potential match from your history: **"${currentMatch.label}"** (unit: *${currentMatch.unit}*).\n\nDo you want to include this data in your analysis?`);
+
+    const includeButton = new ButtonBuilder()
+        .setCustomId('historical_match_include_btn')
+        .setLabel('✅ Include')
+        .setStyle(ButtonStyle.Success);
+
+    const skipButton = new ButtonBuilder()
+        .setCustomId('historical_match_skip_btn')
+        .setLabel('❌ Skip')
+        .setStyle(ButtonStyle.Secondary);
+    
+    const finishButton = new ButtonBuilder()
+        .setCustomId('historical_match_finish_btn')
+        .setLabel('Done Reviewing ➡️')
+        .setStyle(ButtonStyle.Primary);
+
+    const row = new ActionRowBuilder().addComponents(includeButton, skipButton, finishButton);
+
+    await interaction.editReply({ embeds: [embed], components: [row] });
+}
+
+/**
+ * Displays the date range selection dropdowns for the historical analysis.
+ * @param {import('discord.js').Interaction} interaction - The interaction to update.
+ * @param {string} userId - The user's ID.
+ */
+async function promptForDateRange(interaction, userId) {
+    const setupData = userExperimentSetupData.get(userId);
+    if (!setupData) {
+        await interaction.editReply({ content: "Your session has expired. Please start over with `/stats`.", components: [], embeds: [] });
+        return;
+    }
+
+    setupData.dmFlowState = 'awaiting_date_range_selection';
+    userExperimentSetupData.set(userId, setupData);
+
+    const includedCount = setupData.historicalAnalysisData.includedMetrics.length;
+    const includedLabels = setupData.historicalAnalysisData.includedMetrics.map(m => `\`${m.label}\``).join(', ');
+
+    const dateOptions = [
+        { label: 'Last 7 Days', value: '7' },
+        { label: 'Last 14 Days', value: '14' },
+        { label: 'Last 30 Days', value: '30' },
+        { label: 'Last 3 Months', value: '90' },
+        { label: 'Last 6 Months', value: '180' },
+        { label: 'All Time', value: 'all_time' }
+    ];
+
+    const startDateSelect = new StringSelectMenuBuilder()
+        .setCustomId('historical_start_date_select')
+        .setPlaceholder('Select a Start Date...')
+        .addOptions(dateOptions.map(opt => new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
+
+    const endDateSelect = new StringSelectMenuBuilder()
+        .setCustomId('historical_end_date_select')
+        .setPlaceholder('Select an End Date...')
+        .addOptions(dateOptions.map(opt => new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
+    
+    const runButton = new ButtonBuilder()
+        .setCustomId('historical_run_analysis_btn')
+        .setLabel('📈 Run Analysis')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(true); // Disabled until both dates are selected
+
+    await interaction.editReply({
+        content: `All potential matches reviewed. You are analyzing **${includedCount}** metric(s):\n${includedLabels}\n\nPlease select the time interval for your analysis.`,
+        embeds: [],
+        components: [
+            new ActionRowBuilder().addComponents(startDateSelect),
+            new ActionRowBuilder().addComponents(endDateSelect),
+            new ActionRowBuilder().addComponents(runButton)
+        ]
+    });
+}
+
+/**
+ * Sends the historical analysis report to the user as a series of separate messages.
+ * @param {import('discord.js').Interaction} interaction - The interaction that triggered the analysis.
+ * @param {object} report - The report data from the runHistoricalAnalysis Firebase function.
+ */
+async function sendHistoricalReport(interaction, report) {
+    if (!report) {
+        await interaction.editReply({ content: "No data was found for the selected metrics in that time period.", components: [] });
+        return;
+    }
+
+    // Acknowledge the ephemeral "working" message is done.
+    await interaction.editReply({
+        content: `✅ Analysis complete! I've sent the report to you in new messages below.`,
+        components: []
+    });
+
+    const user = interaction.user;
+    const primaryMetricLabel = report.keyStats?.label || "your selected metric";
+
+    try {
+        // --- NEW: Page 1: AI Striking Insight ---
+        if (report.strikingInsight) {
+            const insightEmbed = new EmbedBuilder()
+                .setColor('#FEE75C') // Yellow for insights
+                .setTitle("💡 Your Big Insight")
+                .setDescription(report.strikingInsight);
+            await user.send({ embeds: [insightEmbed] });
+        }
+
+        // Page 2: Key Statistics
+        if (report.keyStats) {
+            const { label, average, median, consistency, dataPoints } = report.keyStats;
+            const statsEmbed = new EmbedBuilder()
+                .setColor('#0099FF')
+                .setTitle(`Historical Analysis for '${label}'`)
+                .setDescription(`Date Range: *Analysis currently includes all available data in your selection.*`)
+                .addFields(
+                    { name: 'Average', value: String(average), inline: true },
+                    { name: 'Median', value: String(median), inline: true },
+                    { name: 'Consistency', value: `${consistency.toFixed(1)}%`, inline: true },
+                    { name: 'Data Points', value: String(dataPoints), inline: true }
+                );
+            await user.send({ embeds: [statsEmbed] });
+        }
+
+        // Page 3: Trend Analysis
+        if (report.trend) {
+            const trendEmbed = new EmbedBuilder()
+                .setColor('#57F287')
+                .setTitle('Trend Analysis')
+                .setDescription(report.trend);
+            await user.send({ embeds: [trendEmbed] });
+        }
+
+        // Page 4: Correlations
+        if (report.correlations && report.correlations.length > 0) {
+            let correlationDescription = `Here are the strongest same-day relationships found for **'${primaryMetricLabel}'**:\n\n`;
+            
+            report.correlations.forEach(corr => {
+                const rSquared = corr.coefficient * corr.coefficient;
+                const absCoeff = Math.abs(corr.coefficient);
+                let strengthText = "Weak";
+                let strengthEmoji = "🟩";
+
+                if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+                else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+                else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+
+                const direction = corr.coefficient > 0 ? "positively" : "negatively";
+
+                correlationDescription += `${strengthEmoji} **${corr.label}** was **${strengthText}** ${direction} correlated.\n*(${ (rSquared * 100).toFixed(1)}% variance explained)*\n\n`;
+            });
+
+            const correlationEmbed = new EmbedBuilder()
+                .setColor('#E67E22') // Orange
+                .setTitle(`Top ${report.correlations.length} Same-Day Correlations`)
+                .setDescription(correlationDescription);
+            await user.send({ embeds: [correlationEmbed] });
+        }
+
+        // Page 5: Combined Effects
+        if (report.combinedEffects && report.combinedEffects.length > 0) {
+            let comboDescription = `Here's how **'${primaryMetricLabel}'** interacts with other habits:\n\n`;
+
+            report.combinedEffects.forEach(effect => {
+                const primaryState = effect.group.startsWith('high_') ? 'High' : 'Low';
+                const otherState = effect.group.endsWith('_high') ? 'High' : 'Low';
+
+                comboDescription += `When **'${effect.primaryHabit}'** was **${primaryState}** and **'${effect.withHabit}'** was **${otherState}**...\n→ Your **'${effect.outcomeLabel}'** was **${effect.significance}** (avg: ${effect.outcomeAverage}).\n\n`;
+            });
+
+            const comboEmbed = new EmbedBuilder()
+                .setColor('#9B59B6') // Purple
+                .setTitle('🔀 Combined Habit Effects')
+                .setDescription(comboDescription);
+            await user.send({ embeds: [comboEmbed] });
+        }
+        
+        // Page 6: Lag Time Correlations
+        if (report.lagCorrelations && report.lagCorrelations.length > 0) {
+            let lagDescription = `Here are the strongest day-after relationships found for **'${primaryMetricLabel}'**:\n\n`;
+
+            report.lagCorrelations.forEach(lag => {
+                const rSquared = lag.coefficient * lag.coefficient;
+                const absCoeff = Math.abs(lag.coefficient);
+                let strengthText = "Weak";
+                let strengthEmoji = "🟩";
+
+                if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+                else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+                else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+                
+                lagDescription += `${strengthEmoji} When **yesterday's** '${lag.yesterdayMetricLabel}' was higher, **today's** '${lag.todayMetricLabel}' tended to be **${lag.coefficient > 0 ? 'higher' : 'lower'}**.\n*(${strengthText} relationship)*\n\n`;
+            });
+
+            const lagEmbed = new EmbedBuilder()
+                .setColor('#1ABC9C') // Teal
+                .setTitle('🕑 Day-After Effects')
+                .setDescription(lagDescription);
+            await user.send({ embeds: [lagEmbed] });
+        }
+
+        // Final completion message
+        await user.send({ content: "This concludes your historical analysis report." });
+
+    } catch (error) {
+        console.error(`[sendHistoricalReport] Failed to send report pages to user ${user.id}:`, error);
+        try {
+            await interaction.followUp({
+                content: "I couldn't send the report to your DMs. Please check your privacy settings to allow DMs from server members.",
+                ephemeral: true
+            });
+        } catch (followUpError) {
+             console.error(`[sendHistoricalReport] Failed to send fallback follow-up error.`, followUpError);
+        }
+    }
+}
 
 /**
  * Checks for and executes pending actions for a user from Firestore,
@@ -2128,6 +2463,10 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('go')
           .setDescription('Self Science Hub')
+          .toJSON(),
+          new SlashCommandBuilder()
+          .setName('stats')
+          .setDescription('Get historical stats for one of your current metrics.')
           .toJSON(),
         new SlashCommandBuilder()
           .setName('hi')
@@ -3952,6 +4291,76 @@ client.on(Events.InteractionCreate, async interaction => {
             }
           }
           break;
+          }
+
+          case 'stats': {
+            const statsCommandStartTime = performance.now();
+            const interactionId = interaction.id;
+            console.log(`[/stats START ${interactionId}] command invoked by ${interaction.user.tag}. Time: ${statsCommandStartTime.toFixed(2)}ms`);
+            
+            try {
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+                // 1. Fetch the user's current experiment settings
+                const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, interaction.user.id);
+                if (!settingsResult || !settingsResult.settings) {
+                    await interaction.editReply({ 
+                        content: "You need an active experiment to analyze its history. Please set one up using the `/go` command.",
+                        components: [] 
+                    });
+                    return;
+                }
+                const settings = settingsResult.settings;
+
+                // 2. Prepare the dropdown menu with the user's current metrics
+                const metricSelectMenu = new StringSelectMenuBuilder()
+                    .setCustomId('historical_metric_select')
+                    .setPlaceholder('Select a metric to analyze...');
+
+                const metrics = [settings.output, settings.input1, settings.input2, settings.input3]
+                    .filter(metric => metric && metric.label); // Filter out any undefined/empty metrics
+
+                if (metrics.length === 0) {
+                     await interaction.editReply({ 
+                        content: "Your current experiment doesn't seem to have any metrics defined. Please set one up using the `/go` command.",
+                        components: [] 
+                    });
+                    return;
+                }
+
+                metrics.forEach(metric => {
+                    metricSelectMenu.addOptions(
+                        new StringSelectMenuOptionBuilder()
+                            .setLabel(metric.label.substring(0, 100))
+                            .setValue(metric.label) // Using the label as the unique value
+                    );
+                });
+
+                const row = new ActionRowBuilder().addComponents(metricSelectMenu);
+
+                // 3. Store necessary data for the next step and set the state
+                const setupData = userExperimentSetupData.get(interaction.user.id) || {};
+                setupData.historicalAnalysisData = { currentSettings: settings };
+                setupData.dmFlowState = 'awaiting_historical_metric_selection';
+                userExperimentSetupData.set(interaction.user.id, setupData);
+
+                // 4. Send the prompt with the dropdown menu
+                await interaction.editReply({
+                    content: "Select a metric from your current experiment to analyze its history:",
+                    components: [row]
+                });
+
+                console.log(`[/stats SUCCESS ${interactionId}] Sent metric selection dropdown to ${interaction.user.tag}.`);
+
+            } catch (error) {
+                console.error(`[/stats ERROR ${interactionId}] Error processing /stats command for ${interaction.user.tag}:`, error);
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.editReply({
+                        content: `❌ An error occurred while fetching your experiment details: ${error.message || 'Please try again.'}`
+                    });
+                }
+            }
+            break;
           }
 
           case 'hi': { // Handler for the new /hi command
@@ -6014,7 +6423,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // 2. Build the dynamic page configuration based on available data
             const pageConfig = [];
-            pageConfig.push({ type: 'aha' });
             pageConfig.push({ type: 'story' });
             pageConfig.push({ type: 'overview' });
 
@@ -6092,6 +6500,100 @@ client.on(Events.InteractionCreate, async interaction => {
         
         // The sendStatsPage function now handles deferring/updating the interaction
         await sendStatsPage(interaction, interaction.user.id, experimentId, targetPage);
+    }
+
+    else if (interaction.isButton() && interaction.customId.startsWith('historical_match_')) {
+        const matchButtonStartTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        console.log(`[HistoricalMatchButton START ${interactionId}] User: ${userId} clicked ${interaction.customId}.`);
+
+        try {
+            await interaction.deferUpdate();
+
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || setupData.dmFlowState !== 'awaiting_historical_match_confirmation' || !setupData.historicalAnalysisData) {
+                await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
+                return;
+            }
+
+            const { matches, matchIndex = 0, includedMetrics } = setupData.historicalAnalysisData;
+            
+            if (interaction.customId === 'historical_match_include_btn') {
+                const currentMatch = matches[matchIndex];
+                if (currentMatch) {
+                    includedMetrics.push(currentMatch);
+                    console.log(`[HistoricalMatchButton INFO ${interactionId}] Included metric: "${currentMatch.label}" for user ${userId}.`);
+                }
+            } else if (interaction.customId === 'historical_match_finish_btn') {
+                // Force the loop to end by setting the index to the end
+                setupData.historicalAnalysisData.matchIndex = matches.length;
+            }
+            // For 'historical_match_skip_btn', we do nothing but advance the index.
+
+            // Advance the index unless we are finishing now
+            if (interaction.customId !== 'historical_match_finish_btn') {
+                setupData.historicalAnalysisData.matchIndex = matchIndex + 1;
+            }
+            
+            userExperimentSetupData.set(userId, setupData);
+
+            // Present the next match or the completion message
+            await presentHistoricalMatchConfirmation(interaction, userId);
+
+        } catch (error) {
+            console.error(`[HistoricalMatchButton ERROR ${interactionId}] for user ${userId}:`, error);
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ content: `An error occurred while processing your choice. Please try again.`, components: [] });
+            }
+        }
+    }
+    
+    else if (interaction.customId === 'historical_run_analysis_btn') {
+        const runAnalysisStartTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        console.log(`[${interaction.customId} START ${interactionId}] User: ${userId} clicked Run Analysis.`);
+
+        try {
+            await interaction.deferReply({ ephemeral: true });
+            await interaction.editReply({ content: '📈 Running analysis... This may take a moment.', components: [] });
+
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || setupData.dmFlowState !== 'awaiting_date_range_selection' || !setupData.historicalAnalysisData) {
+                await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`." });
+                return;
+            }
+
+            const { includedMetrics, primaryMetric, startDateValue, endDateValue } = setupData.historicalAnalysisData;
+            if (!includedMetrics || !primaryMetric || !startDateValue || !endDateValue) {
+                await interaction.editReply({ content: "Error: Missing selections for metrics or dates. Please restart with `/stats`." });
+                return;
+            }
+
+            // Call the backend analysis function
+            const result = await callFirebaseFunction('runHistoricalAnalysis', {
+                includedMetrics,
+                primaryMetric,
+                startDateValue,
+                endDateValue
+            });
+
+            if (result && result.success) {
+                await sendHistoricalReport(interaction, result.report);
+            } else {
+                throw new Error(result?.message || 'The analysis function failed to return a successful result.');
+            }
+
+        } catch (error) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}]`, error);
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ content: `An error occurred while running the analysis: ${error.message}` });
+            }
+        } finally {
+            // Clean up the session data after the flow is complete
+            userExperimentSetupData.delete(userId);
+        }
     }
 
     // --- Handler for "AI Insights" Button (from /go hub) ---
@@ -7810,6 +8312,129 @@ client.on(Events.InteractionCreate, async interaction => {
       const processEndTime = performance.now();
       console.log(`[ReminderSelect END ${interactionId}] Finished processing ${menuId}. Total time: ${(processEndTime - selectSubmitTime).toFixed(2)}ms`);
     }
+
+    else if (interaction.customId === 'historical_metric_select') {
+        const selectMenuSubmitTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        console.log(`[${interaction.customId} START ${interactionId}] User selected a metric for historical analysis.`);
+
+        try {
+            await interaction.deferUpdate();
+
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || setupData.dmFlowState !== 'awaiting_historical_metric_selection' || !setupData.historicalAnalysisData?.currentSettings) {
+                await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
+                return;
+            }
+
+            await interaction.editReply({ content: '🧠 Searching your history for similar metrics...', embeds: [], components: [] });
+
+            const selectedLabel = interaction.values[0];
+            const metrics = [
+                setupData.historicalAnalysisData.currentSettings.output,
+                ...Object.values(setupData.historicalAnalysisData.currentSettings).filter(v => v && v.label && v.unit) // A safer way to get inputs
+            ];
+            const selectedMetric = metrics.find(m => m.label === selectedLabel);
+
+            if (!selectedMetric) {
+                await interaction.editReply({ content: "Error: Could not find the details for your selected metric. Please try again.", components: [] });
+                return;
+            }
+
+            // Call the new Firebase function
+            const result = await callFirebaseFunction('getHistoricalMetricMatches', { selectedMetric });
+
+            if (!result || !result.success) {
+                throw new Error(result?.message || 'Failed to get historical matches from the server.');
+            }
+
+            // Store the results and initialize the confirmation flow
+            setupData.historicalAnalysisData.primaryMetric = selectedMetric;
+            setupData.historicalAnalysisData.matches = result.matches || [];
+            setupData.historicalAnalysisData.matchIndex = 0;
+            setupData.historicalAnalysisData.includedMetrics = [selectedMetric]; // Always include the primary metric
+            setupData.dmFlowState = 'awaiting_historical_match_confirmation';
+            userExperimentSetupData.set(userId, setupData);
+            
+            if (result.matches.length === 0) {
+                 await interaction.editReply({ content: "I didn't find any other similar metrics in your history. The next step is to select the date range.", components: [] });
+                 // In the future, this will call: await promptForDateRange(interaction, userId);
+            } else {
+                // Start the one-by-one confirmation process
+                await presentHistoricalMatchConfirmation(interaction, userId);
+            }
+
+        } catch (error) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}]`, error);
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ content: `An error occurred while searching your history: ${error.message}`, components: [] });
+            }
+        }
+    }
+
+    else if (interaction.customId.startsWith('historical_start_date_') || interaction.customId.startsWith('historical_end_date_')) {
+        const dateSelectSubmitTime = performance.now();
+        const interactionId = interaction.id;
+        const userId = interaction.user.id;
+        console.log(`[HistoricalDateSelect START ${interactionId}] User: ${userId} selected a date range option.`);
+
+        try {
+            await interaction.deferUpdate();
+
+            const setupData = userExperimentSetupData.get(userId);
+            if (!setupData || setupData.dmFlowState !== 'awaiting_date_range_selection' || !setupData.historicalAnalysisData) {
+                await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
+                return;
+            }
+
+            const selectedValue = interaction.values[0];
+            if (interaction.customId === 'historical_start_date_select') {
+                setupData.historicalAnalysisData.startDateValue = selectedValue;
+            } else if (interaction.customId === 'historical_end_date_select') {
+                setupData.historicalAnalysisData.endDateValue = selectedValue;
+            }
+
+            // Check if both dates have been selected
+            const { startDateValue, endDateValue } = setupData.historicalAnalysisData;
+            if (startDateValue && endDateValue) {
+                console.log(`[HistoricalDateSelect INFO ${interactionId}] Both dates selected for user ${userId}. Enabling run button.`);
+                
+                // Rebuild the components from the original message to enable the button
+                const updatedComponents = interaction.message.components.map(row => {
+                    const newRow = new ActionRowBuilder();
+                    row.components.forEach(component => {
+                        // Recreate the component from the existing one
+                        let newComponent;
+                        if (component.type === 2) { // 2 is Button
+                             newComponent = ButtonBuilder.from(component);
+                             if (component.customId === 'historical_run_analysis_btn') {
+                                 newComponent.setDisabled(false); // Enable the button
+                             }
+                        } else if (component.type === 3) { // 3 is StringSelectMenu
+                            newComponent = StringSelectMenuBuilder.from(component);
+                        }
+                        
+                        if (newComponent) {
+                            newRow.addComponents(newComponent);
+                        }
+                    });
+                    return newRow;
+                });
+
+                await interaction.editReply({ components: updatedComponents });
+            }
+            
+            userExperimentSetupData.set(userId, setupData);
+
+        } catch (error) {
+            console.error(`[HistoricalDateSelect ERROR ${interactionId}] for user ${userId}:`, error);
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ content: `An error occurred while processing your date selection. Please try again.`, components: [] });
+            }
+        }
+    }
+
    }
 
    // Handle modal submission
