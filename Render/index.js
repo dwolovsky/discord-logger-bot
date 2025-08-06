@@ -6480,7 +6480,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 return;
             }
 
-            const { matches, matchIndex = 0, includedMetrics } = setupData.historicalAnalysisData;
+            const { matches, matchIndex = 0, includedMetrics } = analysisData.historicalAnalysisData;
             
             if (interaction.customId === 'historical_match_include_btn') {
                 const currentMatch = matches[matchIndex];
@@ -8357,7 +8357,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             // Check if both dates have been selected
-            const { startDateValue, endDateValue } = setupData.historicalAnalysisData;
+            const { startDateValue, endDateValue } = analysisData.historicalAnalysisData;
             if (startDateValue && endDateValue) {
                 console.log(`[HistoricalDateSelect INFO ${interactionId}] Both dates selected for user ${userId}. Enabling run button.`);
                 
