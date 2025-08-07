@@ -3832,6 +3832,10 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         }));
 
         rawLogs.forEach(log => {
+            if (!log.timestamp || typeof log.timestamp.toDate !== 'function') {
+                logger.warn(`Skipping log document with invalid timestamp in historical analysis (Data Extraction).`);
+                return; // Skip this iteration
+            }
             const logTimestamp = log.timestamp.toDate();
             const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
 
@@ -3964,6 +3968,10 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         report.lagCorrelations = [];
         const logsByDate = new Map();
         rawLogs.forEach(log => {
+            if (!log.timestamp || typeof log.timestamp.toDate !== 'function') {
+                logger.warn(`Skipping log document with invalid timestamp in historical analysis (Lag Time Prep).`);
+                return; // Skip this iteration
+            }
             const logDate = new Date(log.timestamp.toDate()).toISOString().split('T')[0];
             logsByDate.set(logDate, log);
         });
