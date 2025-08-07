@@ -2249,8 +2249,7 @@ async function sendHistoricalReport(interaction, report) {
 
                 const direction = corr.coefficient > 0 ? "positively" : "negatively";
 
-                correlationDescription += `${strengthEmoji} **${corr.label}** was **${strengthText}** ${direction} correlated.\n*(${ (rSquared * 100).toFixed(1)}% variance explained)*\n\n`;
-                correlationDescription += `${strengthEmoji} **${corr.label}** was **${strengthText}** ${direction} correlated.\n*(${(rSquared * 100).toFixed(1)}% variance explained, from ${corr.n_pairs} days of data)*\n\n`;
+                correlationDescription += `${strengthEmoji} **${corr.label}** was **${strengthText}** ${direction} correlated.\n*(${(rSquared * 100).toFixed(1)}% related, from ${corr.n_pairs} days of data)*\n\n`;
             });
 
             const correlationEmbed = new EmbedBuilder()
