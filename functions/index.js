@@ -3882,14 +3882,19 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         };
 
         // Correlation Analysis
-        const correlationTargetType = primaryMetric.type === 'input' ? 'output' : 'input';
-        const potentialCorrelationMetrics = Object.keys(allMetricsInPeriod).filter(label => label !== primaryMetric.label && allMetricsInPeriod[label].type === correlationTargetType);
         const calculatedCorrelations = [];
-        for (const otherLabel of potentialCorrelationMetrics) {
-            const pairedArrays = alignDataByTimestamp(primaryData, allMetricsInPeriod[otherLabel]);
+        // Use the includedMetrics list provided by the user, not all metrics in the period.
+        const potentialCorrelationMetrics = includedMetrics.filter(metric => metric.label !== primaryMetric.label);
+
+        for (const otherMetric of potentialCorrelationMetrics) {
+            const otherLabel = otherMetric.label;
+            // Align the primary metric's data with the data of the other selected metric.
+            const pairedArrays = alignDataByTimestamp(primaryData, analysisData[otherLabel]);
+
             if (pairedArrays.primary.length >= MINIMUM_PAIRS_FOR_CORRELATION) {
                 const coefficient = jStat.corrcoeff(pairedArrays.primary, pairedArrays.other);
-                if (!isNaN(coefficient)) {
+                // Pre-filter for significance before sorting and slicing.
+                if (!isNaN(coefficient) && (coefficient * coefficient) >= 0.0225) {
                     calculatedCorrelations.push({ label: otherLabel, coefficient: coefficient, absCoefficient: Math.abs(coefficient) });
                 }
             }
