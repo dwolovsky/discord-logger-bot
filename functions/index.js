@@ -3759,6 +3759,14 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
  * }
  */
 exports.runHistoricalAnalysis = onCall(async (request) => {
+
+    if (!genAI) {
+        logger.error("[runHistoricalAnalysis] Gemini AI client (genAI) is not initialized, which is required for the striking insight feature.");
+        // We don't throw an error here, as the rest of the function can proceed.
+        // The strikingInsight part of the report will indicate that AI is unavailable.
+    }
+
+    
     logger.log("[runHistoricalAnalysis] Function called. Data:", request.data);
 
     if (!request.auth) {
@@ -4056,15 +4064,24 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             }
             return commonTimestamps;
         }
-         function getMetricValueFromLog(log, label, unit) {
+        
+        function getMetricValueFromLog(log, label, unit) {
             if (!log) return null;
             const normLabel = normalizeLabel(label);
             const normUnit = normalizeUnit(unit);
-            const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
-            const foundMetric = metricsInLog.find(m => m && normalizeLabel(m.label) === normLabel && normalizeUnit(m.unit) === normUnit);
-            if (foundMetric) {
-                const val = parseFloat(foundMetric.value);
+
+            // Check output metric
+            if (log.output && normalizeLabel(log.output.label) === normLabel && normalizeUnit(log.output.unit) === normUnit) {
+                const val = parseFloat(log.output.value);
                 return isNaN(val) ? null : val;
+            }
+            // Check input metrics
+            if (log.inputs && Array.isArray(log.inputs)) {
+                const foundInput = log.inputs.find(inp => inp && normalizeLabel(inp.label) === normLabel && normalizeUnit(inp.unit) === normUnit);
+                if (foundInput) {
+                    const val = parseFloat(foundInput.value);
+                    return isNaN(val) ? null : val;
+                }
             }
             return null;
         }
