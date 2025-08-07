@@ -3791,10 +3791,32 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
              throw new HttpsError('invalid-argument', 'Start date must be before the end date.');
         }
 
+        // --- NEW: Find overlapping experiments and adjust the start date ---
+        let adjustedStartDate = startDate;
+        const statsCollectionRef = db.collection('users').doc(userId).collection('experimentStats');
+        
+        // Find experiments that END after our desired start date, ensuring we catch any overlap.
+        const overlappingStatsQuery = await statsCollectionRef.where('experimentEndTimestamp', '>=', startDate).get();
+
+        if (!overlappingStatsQuery.empty) {
+            let earliestStartDate = startDate;
+            overlappingStatsQuery.forEach(doc => {
+                const statData = doc.data();
+                // Ensure the timestamp field exists and is valid before converting
+                const experimentStartDate = statData.experimentSettingsTimestamp && statData.experimentSettingsTimestamp.toDate ? statData.experimentSettingsTimestamp.toDate() : null;
+                if (experimentStartDate && experimentStartDate < earliestStartDate) {
+                    earliestStartDate = experimentStartDate;
+                }
+            });
+            adjustedStartDate = earliestStartDate;
+            logger.log(`[runHistoricalAnalysis] Adjusted start date for user ${userId} to ${adjustedStartDate.toISOString()} to include full experiment data.`);
+        }
+        // --- End of new logic ---
+
         // 2. Fetch Logs and User Settings
         const logsSnapshotPromise = db.collection('logs')
             .where('userId', '==', userId)
-            .where('timestamp', '>=', startDate)
+            .where('timestamp', '>=', adjustedStartDate)
             .where('timestamp', '<=', endDate)
             .orderBy('timestamp', 'asc')
             .get();
