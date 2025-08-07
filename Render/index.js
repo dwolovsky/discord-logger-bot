@@ -2233,15 +2233,6 @@ async function sendHistoricalReport(interaction, report) {
             await user.send({ embeds: [statsEmbed] });
         }
 
-        // Page 3: Trend Analysis
-        if (report.trend) {
-            const trendEmbed = new EmbedBuilder()
-                .setColor('#57F287')
-                .setTitle('Trend Analysis')
-                .setDescription(report.trend);
-            await user.send({ embeds: [trendEmbed] });
-        }
-
         // Page 4: Correlations
         if (report.correlations && report.correlations.length > 0) {
             let correlationDescription = `Here are the strongest same-day relationships found for **'${primaryMetricLabel}'**:\n\n`;
