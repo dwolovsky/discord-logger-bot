@@ -8338,15 +8338,25 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             const selectedValue = interaction.values[0];
-            // Since there's only one menu, we set both start and end values from it.
-            // The end date is always "now", so we'll use a value of '0' to represent that.
             analysisData.historicalAnalysisData.startDateValue = selectedValue;
-            analysisData.historicalAnalysisData.endDateValue = '0'; // Represents "up to today"
+            analysisData.historicalAnalysisData.endDateValue = '0'; 
             userHistoricalAnalysisData.set(userId, analysisData);
 
-            console.log(`[HistoricalDateSelect INFO ${interactionId}] Date range selected for user ${userId}. Enabling run button.`);
+            console.log(`[HistoricalDateSelect INFO ${interactionId}] Date range selected for user ${userId}. Enabling run button and updating placeholder.`);
 
-            // Rebuild the components to enable the button
+            // --- START OF FIX ---
+            const dateOptions = [
+                { label: 'Last 7 Days', value: '7' },
+                { label: 'Last 14 Days', value: '14' },
+                { label: 'Last 30 Days', value: '30' },
+                { label: 'Last 3 Months', value: '90' },
+                { label: 'Last 6 Months', value: '180' },
+                { label: 'All Time', value: 'all_time' }
+            ];
+            const selectedOption = dateOptions.find(opt => opt.value === selectedValue);
+            const newPlaceholder = selectedOption ? `✅ ${selectedOption.label}` : 'Select a time period...';
+            // --- END OF FIX ---
+
             const updatedComponents = interaction.message.components.map(row => {
                 const newRow = new ActionRowBuilder();
                 row.components.forEach(component => {
@@ -8354,7 +8364,8 @@ client.on(Events.InteractionCreate, async interaction => {
                     if (component.type === 2) { // Button
                         newComponent = ButtonBuilder.from(component).setDisabled(false);
                     } else if (component.type === 3) { // StringSelectMenu
-                        newComponent = StringSelectMenuBuilder.from(component);
+                        // --- APPLY THE FIX HERE ---
+                        newComponent = StringSelectMenuBuilder.from(component).setPlaceholder(newPlaceholder);
                     }
                     if (newComponent) newRow.addComponents(newComponent);
                 });

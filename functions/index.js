@@ -3816,6 +3816,13 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         const allMetricsInPeriod = {};
 
         // 4. Extract data from logs
+        // This is the NEW, CORRECTED version
+        const includedMetricsNormalized = includedMetrics.map(m => ({
+            originalLabel: m.label,
+            label: normalizeLabel(m.label),
+            unit: normalizeUnit(m.unit)
+        }));
+
         rawLogs.forEach(log => {
             const logTimestamp = log.timestamp.toDate();
             const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
@@ -3825,16 +3832,21 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 const value = parseFloat(metricInLog.value);
                 if (isNaN(value)) return;
 
-                const matchedPrimaryMetric = includedMetrics.find(m => 
-                    normalizeLabel(m.label) === normalizeLabel(metricInLog.label) && 
-                    normalizeUnit(m.unit) === normalizeUnit(metricInLog.unit)
+                const normalizedLogLabel = normalizeLabel(metricInLog.label);
+                const normalizedLogUnit = normalizeUnit(metricInLog.unit);
+
+                // Find if this log metric matches any of the metrics the user included in the analysis
+                const matchedIncludedMetric = includedMetricsNormalized.find(m => 
+                    m.label === normalizedLogLabel && m.unit === normalizedLogUnit
                 );
 
-                if (matchedPrimaryMetric) {
-                    analysisData[matchedPrimaryMetric.label].values.push(value);
-                    analysisData[matchedPrimaryMetric.label].timestamps.push(logTimestamp);
+                if (matchedIncludedMetric) {
+                    // Always store data against the original label for consistency
+                    analysisData[matchedIncludedMetric.originalLabel].values.push(value);
+                    analysisData[matchedIncludedMetric.originalLabel].timestamps.push(logTimestamp);
                 }
-                
+
+                // This part for finding all other metrics for correlation is okay to leave as is
                 if (!allMetricsInPeriod[metricInLog.label]) {
                     allMetricsInPeriod[metricInLog.label] = { values: [], timestamps: [], type: metricTypes[metricInLog.label] || 'unknown' };
                 }
@@ -3860,13 +3872,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             consistency: 100 - parseFloat(calculateVariationPercentage(calculateStdDev(primaryData.values, mean), mean).toFixed(1)),
             dataPoints: primaryData.values.length
         };
-        const halfIndex = Math.floor(primaryData.values.length / 2);
-        const firstHalfMean = calculateMean(primaryData.values.slice(0, halfIndex));
-        const secondHalfMean = calculateMean(primaryData.values.slice(halfIndex));
-        const trendChange = ((secondHalfMean - firstHalfMean) / (firstHalfMean || 1)) * 100;
-        if (trendChange > 5) report.trend = `📈 '${primaryMetric.label}' has been trending upwards over this period.`;
-        else if (trendChange < -5) report.trend = `📉 '${primaryMetric.label}' has been trending downwards over this period.`;
-        else report.trend = `➡️ '${primaryMetric.label}' has remained relatively steady over this period.`;
 
         // Correlation Analysis
         const correlationTargetType = primaryMetric.type === 'input' ? 'output' : 'input';
