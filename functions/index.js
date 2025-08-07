@@ -3887,13 +3887,22 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
         // Correlation Analysis
         const calculatedCorrelations = [];
-        // Use the includedMetrics list provided by the user, not all metrics in the period.
-        const potentialCorrelationMetrics = includedMetrics.filter(metric => metric.label !== primaryMetric.label);
+        
+        // --- FIX: Analyze against ALL other unique metrics from the logs ---
+        // Get a list of all unique metric labels found in the logs for this period.
+        const allOtherMetricLabels = Object.keys(allMetricsInPeriod);
+        
+        // Create a Set of the primary metric's original labels to easily exclude them.
+        const primaryAndAliasLabels = new Set(includedMetrics.map(m => m.originalLabel));
 
-        for (const otherMetric of potentialCorrelationMetrics) {
-            const otherLabel = otherMetric.label;
-            // Align the primary metric's data with the data of the other selected metric.
-            const pairedArrays = alignDataByTimestamp(primaryData, analysisData[otherLabel]);
+        for (const otherLabel of allOtherMetricLabels) {
+            // Skip if 'otherLabel' is just another name for our primary metric.
+            if (primaryAndAliasLabels.has(otherLabel)) {
+                continue;
+            }
+
+            // Align the primary metric's data with the data of the other unique metric.
+            const pairedArrays = alignDataByTimestamp(primaryData, allMetricsInPeriod[otherLabel]);
 
             if (pairedArrays.primary.length >= MINIMUM_PAIRS_FOR_CORRELATION) {
                 const coefficient = jStat.corrcoeff(pairedArrays.primary, pairedArrays.other);
