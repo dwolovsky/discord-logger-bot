@@ -3914,8 +3914,8 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         // Get a list of all unique metric labels found in the logs for this period.
         const allOtherMetricLabels = Object.keys(allMetricsInPeriod);
         
-        // Create a Set of the primary metric's original labels to easily exclude them.
-        const primaryAndAliasLabels = new Set(includedMetrics.map(m => m.originalLabel));
+        // Create a Set of the primary metric's NORMALIZED labels to easily exclude them.
+        const primaryAndAliasLabelsNormalized = new Set(includedMetrics.map(m => normalizeLabel(m.label)));
 
         for (const otherLabel of allOtherMetricLabels) {
             // Skip if 'otherLabel' is just another name for our primary metric.
