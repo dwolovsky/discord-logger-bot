@@ -3979,7 +3979,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         
         if (lagDataPairs.length >= MINIMUM_PAIRS_FOR_CORRELATION) {
             const potentialLagMetrics = Object.keys(allMetricsInPeriod)
-                .filter(label => allMetricsInPeriod[label].type === correlationTargetType);
+            .filter(label => label !== primaryMetric.label);
 
             for (const otherLabel of potentialLagMetrics) {
                 const yesterdayValues = [];
