@@ -2250,6 +2250,7 @@ async function sendHistoricalReport(interaction, report) {
                 const direction = corr.coefficient > 0 ? "positively" : "negatively";
 
                 correlationDescription += `${strengthEmoji} **${corr.label}** was **${strengthText}** ${direction} correlated.\n*(${ (rSquared * 100).toFixed(1)}% variance explained)*\n\n`;
+                correlationDescription += `${strengthEmoji} **${corr.label}** was **${strengthText}** ${direction} correlated.\n*(${(rSquared * 100).toFixed(1)}% variance explained, from ${corr.n_pairs} days of data)*\n\n`;
             });
 
             const correlationEmbed = new EmbedBuilder()
@@ -2267,7 +2268,7 @@ async function sendHistoricalReport(interaction, report) {
                 const primaryState = effect.group.startsWith('high_') ? 'High' : 'Low';
                 const otherState = effect.group.endsWith('_high') ? 'High' : 'Low';
 
-                comboDescription += `When **'${effect.primaryHabit}'** was **${primaryState}** and **'${effect.withHabit}'** was **${otherState}**...\n→ Your **'${effect.outcomeLabel}'** was **${effect.significance}** (avg: ${effect.outcomeAverage}).\n\n`;
+                comboDescription += `When **'${effect.primaryHabit}'** was **${primaryState}** and **'${effect.withHabit}'** was **${otherState}**...\n→ Your **'${effect.outcomeLabel}'** was **${effect.significance}** (avg: ${effect.outcomeAverage}, from ${effect.count} days of data).\n\n`;
             });
 
             const comboEmbed = new EmbedBuilder()
@@ -2291,7 +2292,7 @@ async function sendHistoricalReport(interaction, report) {
                 else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
                 else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
                 
-                lagDescription += `${strengthEmoji} When **yesterday's** '${lag.yesterdayMetricLabel}' was higher, **today's** '${lag.todayMetricLabel}' tended to be **${lag.coefficient > 0 ? 'higher' : 'lower'}**.\n*(${strengthText} relationship)*\n\n`;
+                lagDescription += `${strengthEmoji} When **yesterday's** '${lag.yesterdayMetricLabel}' was higher, **today's** '${lag.todayMetricLabel}' tended to be **${lag.coefficient > 0 ? 'higher' : 'lower'}**.\n*(${strengthText} relationship, from ${lag.n_pairs} days of data)*\n\n`;
             });
 
             const lagEmbed = new EmbedBuilder()

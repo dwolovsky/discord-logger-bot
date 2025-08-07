@@ -3919,7 +3919,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
         for (const otherLabel of allOtherMetricLabels) {
             // Skip if 'otherLabel' is just another name for our primary metric.
-            if (primaryAndAliasLabels.has(otherLabel)) {
+            if (primaryAndAliasLabelsNormalized.has(normalizeLabel(otherLabel))) {
                 continue;
             }
 
@@ -3930,7 +3930,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 const coefficient = jStat.corrcoeff(pairedArrays.primary, pairedArrays.other);
                 // Pre-filter for significance before sorting and slicing.
                 if (!isNaN(coefficient) && (coefficient * coefficient) >= 0.0225) {
-                    calculatedCorrelations.push({ label: otherLabel, coefficient: coefficient, absCoefficient: Math.abs(coefficient) });
+                    calculatedCorrelations.push({ label: otherLabel, coefficient: coefficient, absCoefficient: Math.abs(coefficient), n_pairs: pairedArrays.primary.length });
                 }
             }
         }
@@ -3986,7 +3986,8 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                                     outcomeLabel: outcomeMetricLabel,
                                     group: groupKey,
                                     outcomeAverage: parseFloat(groupMean.toFixed(2)),
-                                    significance: significance
+                                    significance: significance,
+                                    count: groupValues.length // Add this line
                                 });
                             }
                         }
@@ -4041,7 +4042,8 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                             yesterdayMetricLabel: primaryMetric.label,
                             todayMetricLabel: otherLabel,
                             coefficient: coefficient,
-                            absCoefficient: Math.abs(coefficient)
+                            absCoefficient: Math.abs(coefficient),
+                            n_pairs: yesterdayValues.length // Add this line
                         });
                     }
                 }
