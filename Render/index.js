@@ -2166,28 +2166,22 @@ async function promptForDateRange(interaction, userId) {
         { label: 'All Time', value: 'all_time' }
     ];
 
-    const startDateSelect = new StringSelectMenuBuilder()
-        .setCustomId('historical_start_date_select')
-        .setPlaceholder('Select a Start Date...')
-        .addOptions(dateOptions.map(opt => new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
-
-    const endDateSelect = new StringSelectMenuBuilder()
-        .setCustomId('historical_end_date_select')
-        .setPlaceholder('Select an End Date...')
+    const dateRangeSelect = new StringSelectMenuBuilder()
+        .setCustomId('historical_date_range_select') // A new, single ID
+        .setPlaceholder('Select a time period to analyze...')
         .addOptions(dateOptions.map(opt => new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
 
     const runButton = new ButtonBuilder()
         .setCustomId('historical_run_analysis_btn')
         .setLabel('📈 Run Analysis')
         .setStyle(ButtonStyle.Success)
-        .setDisabled(true); // Disabled until both dates are selected
+        .setDisabled(true); // Will be enabled by the new handler
 
     await interaction.editReply({
         content: `All potential matches reviewed. You are analyzing **${includedCount}** metric(s):\n${includedLabels}\n\nPlease select the time interval for your analysis.`,
         embeds: [],
         components: [
-            new ActionRowBuilder().addComponents(startDateSelect),
-            new ActionRowBuilder().addComponents(endDateSelect),
+            new ActionRowBuilder().addComponents(dateRangeSelect),
             new ActionRowBuilder().addComponents(runButton)
         ]
     });
@@ -6535,7 +6529,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 primaryMetric,
                 startDateValue,
                 endDateValue
-            });
+            }, userId);
 
             if (result && result.success) {
                 await sendHistoricalReport(interaction, result.report);
@@ -8328,12 +8322,12 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
-    else if (interaction.customId.startsWith('historical_start_date_') || interaction.customId.startsWith('historical_end_date_')) {
+   
+    else if (interaction.customId === 'historical_date_range_select') {
         const dateSelectSubmitTime = performance.now();
         const interactionId = interaction.id;
         const userId = interaction.user.id;
         console.log(`[HistoricalDateSelect START ${interactionId}] User: ${userId} selected a date range option.`);
-
         try {
             await interaction.deferUpdate();
 
@@ -8344,43 +8338,30 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             const selectedValue = interaction.values[0];
-            if (interaction.customId === 'historical_start_date_select') {
-                analysisData.historicalAnalysisData.startDateValue = selectedValue;
-            } else if (interaction.customId === 'historical_end_date_select') {
-                analysisData.historicalAnalysisData.endDateValue = selectedValue;
-            }
-
-            // Check if both dates have been selected
-            const { startDateValue, endDateValue } = analysisData.historicalAnalysisData;
-            if (startDateValue && endDateValue) {
-                console.log(`[HistoricalDateSelect INFO ${interactionId}] Both dates selected for user ${userId}. Enabling run button.`);
-                
-                // Rebuild the components from the original message to enable the button
-                const updatedComponents = interaction.message.components.map(row => {
-                    const newRow = new ActionRowBuilder();
-                    row.components.forEach(component => {
-                        // Recreate the component from the existing one
-                        let newComponent;
-                        if (component.type === 2) { // 2 is Button
-                             newComponent = ButtonBuilder.from(component);
-                             if (component.customId === 'historical_run_analysis_btn') {
-                                 newComponent.setDisabled(false); // Enable the button
-                             }
-                        } else if (component.type === 3) { // 3 is StringSelectMenu
-                            newComponent = StringSelectMenuBuilder.from(component);
-                        }
-                        
-                        if (newComponent) {
-                            newRow.addComponents(newComponent);
-                        }
-                    });
-                    return newRow;
-                });
-
-                await interaction.editReply({ components: updatedComponents });
-            }
-            
+            // Since there's only one menu, we set both start and end values from it.
+            // The end date is always "now", so we'll use a value of '0' to represent that.
+            analysisData.historicalAnalysisData.startDateValue = selectedValue;
+            analysisData.historicalAnalysisData.endDateValue = '0'; // Represents "up to today"
             userHistoricalAnalysisData.set(userId, analysisData);
+
+            console.log(`[HistoricalDateSelect INFO ${interactionId}] Date range selected for user ${userId}. Enabling run button.`);
+
+            // Rebuild the components to enable the button
+            const updatedComponents = interaction.message.components.map(row => {
+                const newRow = new ActionRowBuilder();
+                row.components.forEach(component => {
+                    let newComponent;
+                    if (component.type === 2) { // Button
+                        newComponent = ButtonBuilder.from(component).setDisabled(false);
+                    } else if (component.type === 3) { // StringSelectMenu
+                        newComponent = StringSelectMenuBuilder.from(component);
+                    }
+                    if (newComponent) newRow.addComponents(newComponent);
+                });
+                return newRow;
+            });
+
+            await interaction.editReply({ components: updatedComponents });
 
         } catch (error) {
             console.error(`[HistoricalDateSelect ERROR ${interactionId}] for user ${userId}:`, error);
