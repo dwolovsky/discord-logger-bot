@@ -3773,6 +3773,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
     const db = admin.firestore();
     try {
+        const MINIMUM_PAIRS_FOR_CORRELATION = 5;
         // 1. Calculate Date Range
         const now = new Date();
         const endDate = (endDateValue === 'all_time') ? now : new Date(now.getTime() - (parseInt(endDateValue, 10) * 24 * 60 * 60 * 1000));
