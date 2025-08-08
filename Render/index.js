@@ -2113,6 +2113,9 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
  * @param {number} targetPage - The page number to display.
  */
 async function sendHistoricalMetricsPage(interaction, targetPage) {
+    // FIX: Acknowledge the button click before proceeding.
+    await interaction.deferUpdate();
+
     const userId = interaction.user.id;
     const analysisData = userHistoricalAnalysisData.get(userId);
 
@@ -2144,12 +2147,10 @@ async function sendHistoricalMetricsPage(interaction, targetPage) {
         .setPlaceholder(`Select a metric to analyze (Page ${targetPage}/${totalPages})`);
 
     pageMetrics.forEach(metric => {
-        // Create a unique value by combining label and unit.
         const uniqueValue = `${metric.label}|${metric.unit}`;
         metricSelectMenu.addOptions(
             new StringSelectMenuOptionBuilder()
                 .setLabel(metric.label.substring(0, 100))
-                // The value is now a unique combination.
                 .setValue(uniqueValue.substring(0, 100)) 
                 .setDescription(`Unit: ${metric.unit}`.substring(0, 100))
         );
@@ -2157,7 +2158,6 @@ async function sendHistoricalMetricsPage(interaction, targetPage) {
 
     const rowWithSelect = new ActionRowBuilder().addComponents(metricSelectMenu);
 
-    // Navigation Buttons
     const backButton = new ButtonBuilder()
         .setCustomId(`${HISTORICAL_NAV_BACK_ID}_${targetPage - 1}`)
         .setLabel('⬅️ Back')
@@ -2166,12 +2166,12 @@ async function sendHistoricalMetricsPage(interaction, targetPage) {
 
     const nextButton = new ButtonBuilder()
         .setCustomId(`${HISTORICAL_NAV_NEXT_ID}_${targetPage + 1}`)
-        .setLabel('Next ➡️')
+        .setLabel('Next Page ➡️')
         .setStyle(ButtonStyle.Primary)
         .setDisabled(targetPage === totalPages);
 
     const rowWithNav = new ActionRowBuilder();
-    if (totalPages > 1) { // Only show nav buttons if there is more than one page
+    if (totalPages > 1) {
       if (targetPage > 1) rowWithNav.addComponents(backButton);
       if (targetPage < totalPages) rowWithNav.addComponents(nextButton);
     }
