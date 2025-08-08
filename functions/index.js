@@ -3808,24 +3808,23 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
 
 
 /**
- * Fetches user logs, groups them into chapters, selects the correct historical range,
- * and performs a detailed analysis to generate a narrative report.
+ * Fetches user logs, groups them into chapters based on time gaps OR changes
+ * in experiment settings, and performs a detailed statistical analysis.
  */
 exports.runHistoricalAnalysis = onCall(async (request) => {
-    logger.log("[runHistoricalAnalysis V4] Function called. Data:", request.data);
+    logger.log("[runHistoricalAnalysis V5] Function called. Data:", request.data);
 
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'You must be logged in to run an analysis.');
     }
     const userId = request.auth.uid;
-    // NEW: Get the number of experiments to analyze from the request
     const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = request.data;
 
     if (!Array.isArray(includedMetrics) || !primaryMetric || !numExperimentsToAnalyze) {
         throw new HttpsError('invalid-argument', 'Missing required parameters for analysis.');
     }
     if (!genAI) {
-        logger.error("[runHistoricalAnalysis V4] Gemini AI client is not initialized.");
+        logger.error("[runHistoricalAnalysis V5] Gemini AI client is not initialized.");
     }
 
     const db = admin.firestore();
@@ -3850,33 +3849,47 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             return { success: true, report: null, message: "No logs containing the selected metric were found." };
         }
         
+        // --- NEW, SMARTER CHAPTER LOGIC ---
         let chapters = [];
         if (metricSpecificLogs.length > 0) {
             let currentChapter = { logs: [metricSpecificLogs[0]], startDate: metricSpecificLogs[0].timestamp.toDate() };
+            
+            const getSettingsSignature = (log) => {
+                const outputLabel = log.output?.label || '';
+                const inputLabels = (log.inputs || []).map(i => i.label).sort().join(',');
+                return `${outputLabel}|${inputLabels}`;
+            };
+
             for (let i = 1; i < metricSpecificLogs.length; i++) {
-                const prevLogTime = metricSpecificLogs[i - 1].timestamp.toDate();
-                const currentLogTime = metricSpecificLogs[i].timestamp.toDate();
+                const prevLog = metricSpecificLogs[i - 1];
+                const currentLog = metricSpecificLogs[i];
+
+                const prevLogTime = prevLog.timestamp.toDate();
+                const currentLogTime = currentLog.timestamp.toDate();
                 const gapInDays = (currentLogTime - prevLogTime) / (1000 * 60 * 60 * 24);
 
-                if (gapInDays >= 5) {
+                const prevSignature = getSettingsSignature(prevLog);
+                const currentSignature = getSettingsSignature(currentLog);
+
+                // A chapter break is a long time gap OR a change in the experiment's structure.
+                if (gapInDays >= 5 || prevSignature !== currentSignature) {
                     currentChapter.endDate = prevLogTime;
                     chapters.push(currentChapter);
-                    currentChapter = { logs: [metricSpecificLogs[i]], startDate: currentLogTime };
+                    currentChapter = { logs: [currentLog], startDate: currentLogTime };
                 } else {
-                    currentChapter.logs.push(metricSpecificLogs[i]);
+                    currentChapter.logs.push(currentLog);
                 }
             }
             currentChapter.endDate = metricSpecificLogs[metricSpecificLogs.length - 1].timestamp.toDate();
             chapters.push(currentChapter);
         }
-        
-        // --- NEW LOGIC TO SELECT THE CORRECT EXPERIMENT RANGE ---
+        logger.log(`[runHistoricalAnalysis V5] Grouped ${metricSpecificLogs.length} metric-specific logs into ${chapters.length} chapters for user ${userId}.`);
+
+        // --- Logic to select the correct experiment range ---
         let historicalChapters = [];
         if (chapters.length > 1) {
-            // Exclude the last chapter, which is always the "current" experiment
             historicalChapters = chapters.slice(0, -1);
         } else {
-            // If there's only one chapter, it's the current one, so there's no historical data to analyze.
             return { success: true, report: null, message: "You don't have any completed experiments to analyze yet. Keep logging in your current experiment!" };
         }
 
@@ -3891,7 +3904,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         if (chaptersToAnalyze.length === 0) {
              return { success: true, report: null, message: "Could not find enough completed experiments to match your selection." };
         }
-        // --- END OF NEW LOGIC ---
 
         const analyzedChapters = chaptersToAnalyze.map(chapter =>
             _analyzeChapter(chapter, includedMetrics, primaryMetric)
@@ -3915,7 +3927,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                     const result = await model.generateContent(notesSummaryPrompt);
                     hiddenGrowthInsight = result.response.text()?.trim() || hiddenGrowthInsight;
                 } catch (aiError) {
-                    logger.error(`[runHistoricalAnalysis V4] AI notes summary failed for user ${userId}:`, aiError);
+                    logger.error(`[runHistoricalAnalysis V5] AI notes summary failed for user ${userId}:`, aiError);
                 }
             }
         }
@@ -3928,14 +3940,13 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             ahaMoment: ahaMoment,
             hiddenGrowth: hiddenGrowthInsight,
             analyzedChapters: analyzedChapters,
-            // Add trend data
-            trend: _calculateTrend(analyzedChapters, primaryMetric.label)
+            trend: _calculateTrend(analyzedChapters)
         };
 
         return { success: true, report: finalReport };
 
     } catch (error) {
-        logger.error(`[runHistoricalAnalysis V4] Critical error for user ${userId}:`, error);
+        logger.error(`[runHistoricalAnalysis V5] Critical error for user ${userId}:`, error);
         if (error instanceof HttpsError) throw error;
         throw new HttpsError('internal', `An unexpected server error occurred during analysis: ${error.message}`);
     }
