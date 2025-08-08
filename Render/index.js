@@ -6497,13 +6497,15 @@ client.on(Events.InteractionCreate, async interaction => {
         await sendStatsPage(interaction, interaction.user.id, experimentId, targetPage);
     }
 
-        // --- New Handlers for Historical Stats Pagination ---
+    // --- New Handlers for Historical Stats Pagination ---
     else if (interaction.isButton() && interaction.customId.startsWith(HISTORICAL_NAV_BACK_ID)) {
+        await interaction.deferUpdate(); // Acknowledge the button click
         const targetPage = parseInt(interaction.customId.split('_').pop(), 10);
         await sendHistoricalMetricsPage(interaction, targetPage);
     }
 
     else if (interaction.isButton() && interaction.customId.startsWith(HISTORICAL_NAV_NEXT_ID)) {
+        await interaction.deferUpdate(); // Acknowledge the button click
         const targetPage = parseInt(interaction.customId.split('_').pop(), 10);
         await sendHistoricalMetricsPage(interaction, targetPage);
     }
