@@ -3944,31 +3944,36 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 /**
  * INTERNAL HELPER to calculate the trend between the most recent chapter and prior ones.
  */
-function _calculateTrend(analyzedChapters, primaryMetricLabel) {
+function _calculateTrend(analyzedChapters) {
     if (analyzedChapters.length < 2) return null; // Need at least two chapters to compare
 
     const latestChapter = analyzedChapters[analyzedChapters.length - 1];
     const priorChapters = analyzedChapters.slice(0, -1);
 
     const latestAvg = latestChapter.primaryMetricStats.average;
+    const latestConsistency = latestChapter.primaryMetricStats.consistency;
     
     // Calculate weighted average of prior chapters
     let totalWeightedSum = 0;
+    let totalWeightedConsistency = 0;
     let totalDataPoints = 0;
     priorChapters.forEach(chapter => {
         if (chapter.primaryMetricStats) {
             totalWeightedSum += chapter.primaryMetricStats.average * chapter.primaryMetricStats.dataPoints;
+            totalWeightedConsistency += chapter.primaryMetricStats.consistency * chapter.primaryMetricStats.dataPoints;
             totalDataPoints += chapter.primaryMetricStats.dataPoints;
         }
     });
 
     if (totalDataPoints === 0) return null;
     const priorAvg = totalWeightedSum / totalDataPoints;
+    const priorConsistency = totalWeightedConsistency / totalDataPoints;
 
     return {
         recentAverage: parseFloat(latestAvg.toFixed(2)),
         priorAverage: parseFloat(priorAvg.toFixed(2)),
-        latestConsistency: latestChapter.primaryMetricStats.consistency
+        recentConsistency: latestConsistency,
+        priorConsistency: parseFloat(priorConsistency.toFixed(1))
     };
 }
 

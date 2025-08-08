@@ -2203,7 +2203,7 @@ async function presentHistoricalMatchConfirmation(interaction, userId) {
     const { matches, matchIndex = 0 } = analysisData.historicalAnalysisData;
 
     if (matchIndex >= matches.length) {
-        await promptForDateRange(interaction, userId);
+        await promptForExperimentRange(interaction, userId);
         return;
     }
 
@@ -2235,48 +2235,50 @@ async function presentHistoricalMatchConfirmation(interaction, userId) {
 }
 
 /**
- * Displays the date range selection dropdowns for the historical analysis.
+ * Displays the experiment range selection dropdowns for the historical analysis.
  * @param {import('discord.js').Interaction} interaction - The interaction to update.
  * @param {string} userId - The user's ID.
  */
-async function promptForDateRange(interaction, userId) {
+async function promptForExperimentRange(interaction, userId) {
     const analysisData = userHistoricalAnalysisData.get(userId);
     if (!analysisData) {
         await interaction.editReply({ content: "Your session has expired. Please start over with `/stats`.", components: [], embeds: [] });
         return;
     }
 
-    analysisData.dmFlowState = 'awaiting_date_range_selection';
+    analysisData.dmFlowState = 'awaiting_experiment_range_selection';
     userHistoricalAnalysisData.set(userId, analysisData);
 
     const includedCount = analysisData.historicalAnalysisData.includedMetrics.length;
     const includedLabels = analysisData.historicalAnalysisData.includedMetrics.map(m => `\`${m.label}\``).join(', ');
 
-    const dateOptions = [
-        { label: 'Last 7 Days', value: '7' },
-        { label: 'Last 14 Days', value: '14' },
-        { label: 'Last 30 Days', value: '30' },
-        { label: 'Last 3 Months', value: '90' },
-        { label: 'Last 6 Months', value: '180' },
+    // This is the final, corrected list of options.
+    const experimentRangeOptions = [
+        { label: 'Last 2 Experiments', value: '2' },
+        { label: 'Last 3 Experiments', value: '3' },
+        { label: 'Last 4 Experiments', value: '4' },
+        { label: 'Last 6 Experiments', value: '6' },
+        { label: 'Last 10 Experiments', value: '10' },
+        { label: 'Last 15 Experiments', value: '15' },
         { label: 'All Time', value: 'all_time' }
     ];
 
-    const dateRangeSelect = new StringSelectMenuBuilder()
-        .setCustomId('historical_date_range_select') // A new, single ID
-        .setPlaceholder('Select a time period to analyze...')
-        .addOptions(dateOptions.map(opt => new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
-
+    const rangeSelect = new StringSelectMenuBuilder()
+        .setCustomId('historical_experiment_range_select')
+        .setPlaceholder('Select how many recent experiments to analyze...')
+        .addOptions(experimentRangeOptions.map(opt => new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
+    
     const runButton = new ButtonBuilder()
         .setCustomId('historical_run_analysis_btn')
         .setLabel('📈 Run Analysis')
         .setStyle(ButtonStyle.Success)
-        .setDisabled(true); // Will be enabled by the new handler
+        .setDisabled(true); 
 
     await interaction.editReply({
-        content: `All potential matches reviewed. You are analyzing **${includedCount}** metric(s):\n${includedLabels}\n\nPlease select the time interval for your analysis.`,
+        content: `All potential matches reviewed. You are analyzing **${includedCount}** metric(s):\n${includedLabels}\n\nPlease select the number of recent experiments to include in your analysis.`,
         embeds: [],
         components: [
-            new ActionRowBuilder().addComponents(dateRangeSelect),
+            new ActionRowBuilder().addComponents(rangeSelect),
             new ActionRowBuilder().addComponents(runButton)
         ]
     });
@@ -2324,7 +2326,6 @@ async function sendHistoricalReport(interaction, part) {
             await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [] });
         
         } else if (part === 'full_report') {
-            // Acknowledge the button click by disabling it on the original message.
             await interaction.update({ components: [] });
 
             // --- DM #2: Your Metric's Journey ---
@@ -2335,7 +2336,10 @@ async function sendHistoricalReport(interaction, part) {
                     .addFields(
                         { name: 'Historical Average', value: String(report.trend.priorAverage), inline: true },
                         { name: 'Most Recent Avg', value: String(report.trend.recentAverage), inline: true },
-                        { name: 'Recent Consistency', value: `${report.trend.latestConsistency.toFixed(0)}%`, inline: true }
+                        { name: '\u200B', value: '\u200B', inline: true }, // Spacer
+                        { name: 'Historical Consistency', value: `${report.trend.priorConsistency}%`, inline: true },
+                        { name: 'Recent Consistency', value: `${report.trend.recentConsistency.toFixed(0)}%`, inline: true },
+                        { name: '\u200B', value: '\u200B', inline: true } // Spacer
                     );
                 await interaction.user.send({ embeds: [trendEmbed] });
             }
@@ -2346,16 +2350,18 @@ async function sendHistoricalReport(interaction, part) {
                 const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
                 
                 if (chapter.correlations.influencedBy.length > 0) {
-                    const embed = new EmbedBuilder().setColor('#E67E22').setTitle(`Habits that Influenced '${primaryLabel}'`).setDescription(`*Experiment Period: ${chapterStartDate} - ${chapterEndDate}*`);
+                    const embed = new EmbedBuilder().setColor('#E67E22').setTitle(`Remarkable Correlations: Habits Influencing '${primaryLabel}'`).setDescription(`*Experiment Period: ${chapterStartDate} - ${chapterEndDate}*`);
                     chapter.correlations.influencedBy.forEach(corr => {
-                        embed.addFields({ name: ` correlated with '${corr.withMetric}'`, value: `Coefficient: ${corr.coefficient}`, inline: false });
+                        const rSquared = corr.coefficient * corr.coefficient;
+                        embed.addFields({ name: `'${corr.withMetric}'`, value: `**Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
                     });
                     await interaction.user.send({ embeds: [embed] });
                 }
                  if (chapter.correlations.influenced.length > 0) {
-                    const embed = new EmbedBuilder().setColor('#1ABC9C').setTitle(`'${primaryLabel}' Correlated With Other Outcomes`);
+                    const embed = new EmbedBuilder().setColor('#1ABC9C').setTitle(`Remarkable Correlations: '${primaryLabel}' and Other Outcomes`);
                     chapter.correlations.influenced.forEach(corr => {
-                        embed.addFields({ name: ` correlated with '${corr.withMetric}'`, value: `Coefficient: ${corr.coefficient}`, inline: false });
+                        const rSquared = corr.coefficient * corr.coefficient;
+                        embed.addFields({ name: `'${corr.withMetric}'`, value: `**Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
                     });
                     await interaction.user.send({ embeds: [embed] });
                 }
@@ -6545,50 +6551,6 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     }
 
-    // --- New Handlers for Finalizing Historical Analysis ---
-    else if (interaction.customId === 'historical_experiment_range_select') {
-        const dateSelectSubmitTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        console.log(`[HistoricalExpRangeSelect START ${interactionId}] User: ${userId} selected an experiment range.`);
-        try {
-            await interaction.deferUpdate();
-
-            const analysisData = userHistoricalAnalysisData.get(userId);
-            if (!analysisData || analysisData.dmFlowState !== 'awaiting_experiment_range_selection' || !analysisData.historicalAnalysisData) {
-                await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
-                return;
-            }
-
-            const selectedValue = interaction.values[0];
-            analysisData.historicalAnalysisData.numExperimentsToAnalyze = selectedValue;
-            userHistoricalAnalysisData.set(userId, analysisData);
-
-            // Find the text label of the selected option to update the placeholder
-            const selectedOption = interaction.message.components[0].components[0].options.find(opt => opt.value === selectedValue);
-            const newPlaceholder = selectedOption ? `✅ ${selectedOption.label}` : 'Select a range...';
-
-            // Rebuild the components with the "Run Analysis" button enabled
-            const updatedComponents = interaction.message.components.map(row => {
-                const newRow = new ActionRowBuilder();
-                row.components.forEach(component => {
-                    let newComponent;
-                    if (component.type === 2) { // Button
-                        newComponent = ButtonBuilder.from(component).setDisabled(false);
-                    } else if (component.type === 3) { // StringSelectMenu
-                        newComponent = StringSelectMenuBuilder.from(component).setPlaceholder(newPlaceholder);
-                    }
-                    if (newComponent) newRow.addComponents(newComponent);
-                });
-                return newRow;
-            });
-
-            await interaction.editReply({ components: updatedComponents });
-        } catch (error) {
-            console.error(`[HistoricalExpRangeSelect ERROR ${interactionId}] for user ${userId}:`, error);
-        }
-    }
-
     else if (interaction.customId === 'historical_run_analysis_btn') {
         const runAnalysisStartTime = performance.now();
         const interactionId = interaction.id;
@@ -8477,41 +8439,29 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
-   
-    else if (interaction.customId === 'historical_date_range_select') {
-        const dateSelectSubmitTime = performance.now();
+    else if (interaction.customId === 'historical_experiment_range_select') {
+        const rangeSelectSubmitTime = performance.now();
         const interactionId = interaction.id;
         const userId = interaction.user.id;
-        console.log(`[HistoricalDateSelect START ${interactionId}] User: ${userId} selected a date range option.`);
+        console.log(`[HistoricalExpRangeSelect START ${interactionId}] User: ${userId} selected an experiment range.`);
         try {
             await interaction.deferUpdate();
 
             const analysisData = userHistoricalAnalysisData.get(userId);
-            if (!analysisData || analysisData.dmFlowState !== 'awaiting_date_range_selection' || !analysisData.historicalAnalysisData) {
+            if (!analysisData || analysisData.dmFlowState !== 'awaiting_experiment_range_selection' || !analysisData.historicalAnalysisData) {
                 await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
                 return;
             }
 
             const selectedValue = interaction.values[0];
-            analysisData.historicalAnalysisData.startDateValue = selectedValue;
-            analysisData.historicalAnalysisData.endDateValue = '0'; 
+            analysisData.historicalAnalysisData.numExperimentsToAnalyze = selectedValue;
             userHistoricalAnalysisData.set(userId, analysisData);
 
-            console.log(`[HistoricalDateSelect INFO ${interactionId}] Date range selected for user ${userId}. Enabling run button and updating placeholder.`);
+            // Find the text label of the selected option to update the placeholder
+            const selectedOption = interaction.message.components[0].components[0].options.find(opt => opt.value === selectedValue);
+            const newPlaceholder = selectedOption ? `✅ ${selectedOption.label}` : 'Select how many experiments...';
 
-            // --- START OF FIX ---
-            const dateOptions = [
-                { label: 'Last 7 Days', value: '7' },
-                { label: 'Last 14 Days', value: '14' },
-                { label: 'Last 30 Days', value: '30' },
-                { label: 'Last 3 Months', value: '90' },
-                { label: 'Last 6 Months', value: '180' },
-                { label: 'All Time', value: 'all_time' }
-            ];
-            const selectedOption = dateOptions.find(opt => opt.value === selectedValue);
-            const newPlaceholder = selectedOption ? `✅ ${selectedOption.label}` : 'Select a time period...';
-            // --- END OF FIX ---
-
+            // Rebuild the components with the "Run Analysis" button enabled
             const updatedComponents = interaction.message.components.map(row => {
                 const newRow = new ActionRowBuilder();
                 row.components.forEach(component => {
@@ -8519,7 +8469,6 @@ client.on(Events.InteractionCreate, async interaction => {
                     if (component.type === 2) { // Button
                         newComponent = ButtonBuilder.from(component).setDisabled(false);
                     } else if (component.type === 3) { // StringSelectMenu
-                        // --- APPLY THE FIX HERE ---
                         newComponent = StringSelectMenuBuilder.from(component).setPlaceholder(newPlaceholder);
                     }
                     if (newComponent) newRow.addComponents(newComponent);
@@ -8528,12 +8477,8 @@ client.on(Events.InteractionCreate, async interaction => {
             });
 
             await interaction.editReply({ components: updatedComponents });
-
         } catch (error) {
-            console.error(`[HistoricalDateSelect ERROR ${interactionId}] for user ${userId}:`, error);
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: `An error occurred while processing your date selection. Please try again.`, components: [] });
-            }
+            console.error(`[HistoricalExpRangeSelect ERROR ${interactionId}] for user ${userId}:`, error);
         }
     }
 
