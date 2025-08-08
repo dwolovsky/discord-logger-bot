@@ -3812,7 +3812,7 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
  * in experiment settings, and performs a detailed statistical analysis.
  */
 exports.runHistoricalAnalysis = onCall(async (request) => {
-    logger.log("[runHistoricalAnalysis V5] Function called. Data:", request.data);
+    logger.log("[runHistoricalAnalysis V6] Function called. Data:", request.data);
 
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'You must be logged in to run an analysis.');
@@ -3824,243 +3824,225 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         throw new HttpsError('invalid-argument', 'Missing required parameters for analysis.');
     }
     if (!genAI) {
-        logger.error("[runHistoricalAnalysis V5] Gemini AI client is not initialized.");
+        logger.error("[runHistoricalAnalysis V6] Gemini AI client is not initialized.");
     }
 
     const db = admin.firestore();
     try {
-        const logsSnapshot = await db.collection('logs').where('userId', '==', userId).orderBy('timestamp', 'asc').get();
-        if (logsSnapshot.empty) {
-            return { success: true, report: null, message: "No logs found in your history." };
+        // Phase 1: Data Gathering & Filtering
+        const statsSnapshot = await db.collection('users').doc(userId).collection('experimentStats')
+            .orderBy('calculationTimestamp', 'desc').get();
+
+        if (statsSnapshot.empty) {
+            return { success: true, report: null, message: "No past experiment stats found to analyze." };
         }
-        const allLogs = logsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 
-        const metricSpecificLogs = allLogs.filter(log => {
-            const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
-            return metricsInLog.some(metricInLog =>
-                includedMetrics.some(m =>
-                    normalizeLabel(m.label) === normalizeLabel(metricInLog.label) &&
-                    normalizeUnit(m.unit) === normalizeUnit(metricInLog.unit)
-                )
-            );
-        });
+        const includedLabels = new Set(includedMetrics.map(m => normalizeLabel(m.label)));
+        const relevantStatsDocs = [];
+        const seenContinuousExperiments = new Set();
 
-        if (metricSpecificLogs.length === 0) {
-            return { success: true, report: null, message: "No logs containing the selected metric were found." };
-        }
-        
-        // --- NEW, SMARTER CHAPTER LOGIC ---
-        let chapters = [];
-        if (metricSpecificLogs.length > 0) {
-            let currentChapter = { logs: [metricSpecificLogs[0]], startDate: metricSpecificLogs[0].timestamp.toDate() };
-            
-            const getSettingsSignature = (log) => {
-                const outputLabel = log.output?.label || '';
-                const inputLabels = (log.inputs || []).map(i => i.label).sort().join(',');
-                return `${outputLabel}|${inputLabels}`;
-            };
+        for (const doc of statsSnapshot.docs) {
+            const statsData = doc.data();
+            const settings = statsData.activeExperimentSettings;
+            if (!settings) continue;
 
-            for (let i = 1; i < metricSpecificLogs.length; i++) {
-                const prevLog = metricSpecificLogs[i - 1];
-                const currentLog = metricSpecificLogs[i];
-
-                const prevLogTime = prevLog.timestamp.toDate();
-                const currentLogTime = currentLog.timestamp.toDate();
-                const gapInDays = (currentLogTime - prevLogTime) / (1000 * 60 * 60 * 24);
-
-                const prevSignature = getSettingsSignature(prevLog);
-                const currentSignature = getSettingsSignature(currentLog);
-
-                // A chapter break is a long time gap OR a change in the experiment's structure.
-                if (gapInDays >= 5 || prevSignature !== currentSignature) {
-                    currentChapter.endDate = prevLogTime;
-                    chapters.push(currentChapter);
-                    currentChapter = { logs: [currentLog], startDate: currentLogTime };
-                } else {
-                    currentChapter.logs.push(currentLog);
+            // Handle continuous mode: only process the most recent doc for a given experiment
+            if (settings.statsMode === 'continuous' && settings.experimentId) {
+                if (seenContinuousExperiments.has(settings.experimentId)) {
+                    continue; // Already processed the newer version of this continuous experiment
                 }
+                seenContinuousExperiments.add(settings.experimentId);
             }
-            currentChapter.endDate = metricSpecificLogs[metricSpecificLogs.length - 1].timestamp.toDate();
-            chapters.push(currentChapter);
-        }
-        logger.log(`[runHistoricalAnalysis V5] Grouped ${metricSpecificLogs.length} metric-specific logs into ${chapters.length} chapters for user ${userId}.`);
+            
+            const metricsInExperiment = [settings.output, settings.input1, settings.input2, settings.input3]
+                .filter(m => m && m.label)
+                .map(m => normalizeLabel(m.label));
 
-        // --- Logic to select the correct experiment range ---
-        let historicalChapters = [];
-        if (chapters.length > 1) {
-            historicalChapters = chapters.slice(0, -1);
-        } else {
-            return { success: true, report: null, message: "You don't have any completed experiments to analyze yet. Keep logging in your current experiment!" };
+            if (metricsInExperiment.some(label => includedLabels.has(label))) {
+                relevantStatsDocs.push(statsData);
+            }
         }
 
         let chaptersToAnalyze = [];
         if (numExperimentsToAnalyze === 'all_time') {
-            chaptersToAnalyze = historicalChapters;
+            chaptersToAnalyze = relevantStatsDocs.reverse(); // Reverse to be chronological
         } else {
             const num = parseInt(numExperimentsToAnalyze, 10);
-            chaptersToAnalyze = historicalChapters.slice(-num);
+            chaptersToAnalyze = relevantStatsDocs.reverse().slice(-num);
         }
-
+        
         if (chaptersToAnalyze.length === 0) {
-             return { success: true, report: null, message: "Could not find enough completed experiments to match your selection." };
+            return { success: true, report: null, message: "Could not find enough completed experiments containing the selected metric(s)." };
         }
 
-        const analyzedChapters = chaptersToAnalyze.map(chapter =>
-            _analyzeChapter(chapter, includedMetrics, primaryMetric)
-        ).filter(Boolean);
+        // Phase 2: Correlation Processing (Identify singles vs. candidates for combination)
+        const correlationMap = new Map(); // Key: 'primary|other', Value: { experiments: [expData] }
+        
+        chaptersToAnalyze.forEach(chapter => {
+            if (!chapter.correlations) return;
+            const primaryInChapter = [chapter.activeExperimentSettings.output, ...chapter.activeExperimentSettings.inputs]
+                .find(m => m && includedLabels.has(normalizeLabel(m.label)));
 
-        if (analyzedChapters.length === 0) {
+            if (!primaryInChapter) return;
+            const primaryLabelNorm = normalizeLabel(primaryInChapter.label);
+
+            for (const otherMetricLabel in chapter.correlations) {
+                const corrData = chapter.correlations[otherMetricLabel];
+                if (corrData.vsOutputLabel === primaryInChapter.label) {
+                    const otherLabelNorm = normalizeLabel(otherMetricLabel);
+                    const key = `${primaryLabelNorm}|${otherLabelNorm}`;
+                    
+                    if (!correlationMap.has(key)) {
+                        correlationMap.set(key, { experiments: [] });
+                    }
+                    correlationMap.get(key).experiments.push({
+                        startDate: chapter.experimentSettingsTimestamp,
+                        endDate: chapter.experimentEndDateISO,
+                        correlation: corrData
+                    });
+                }
+            }
+        });
+
+        const finalCorrelations = [];
+        const combinedCorrelationPromises = [];
+
+        correlationMap.forEach((data, key) => {
+            const [primaryLabelNorm, otherLabelNorm] = key.split('|');
+
+            if (data.experiments.length > 1) {
+                // Candidate for combination
+                const promise = (async () => {
+                    const timeRanges = data.experiments.map(exp => ({
+                        start: new Date(exp.startDate),
+                        end: new Date(exp.endDate)
+                    }));
+
+                    const allLogsForPair = [];
+                    for (const range of timeRanges) {
+                        const logsSnapshot = await db.collection('logs')
+                            .where('userId', '==', userId)
+                            .where('timestamp', '>=', range.start)
+                            .where('timestamp', '<=', range.end)
+                            .get();
+                        logsSnapshot.forEach(doc => allLogsForPair.push(doc.data()));
+                    }
+
+                    const primaryMetricInfo = includedMetrics.find(m => normalizeLabel(m.label) === primaryLabelNorm);
+                    const otherMetricInfo = data.experiments[0].correlation; // Get a representative unit/label
+
+                    const { arrA, arrB } = alignDataForCombination(allLogsForPair, primaryMetricInfo.label, otherMetricInfo.label);
+                    
+                    if (arrA.length >= 5) {
+                        const coeff = jStat.corrcoeff(arrA, arrB);
+                        if (Math.abs(coeff) >= 0.15) {
+                             finalCorrelations.push({
+                                withMetric: otherMetricInfo.label,
+                                coefficient: parseFloat(coeff.toFixed(2)),
+                                isCombined: true,
+                                dataPoints: arrA.length
+                            });
+                        }
+                    }
+                })();
+                combinedCorrelationPromises.push(promise);
+            } else {
+                // Single experiment correlation
+                const singleCorr = data.experiments[0].correlation;
+                 if (Math.abs(singleCorr.coefficient) >= 0.15) {
+                    finalCorrelations.push({
+                        withMetric: singleCorr.label,
+                        coefficient: singleCorr.coefficient,
+                        isCombined: false,
+                        dataPoints: singleCorr.n_pairs
+                    });
+                }
+            }
+        });
+
+        await Promise.all(combinedCorrelationPromises);
+
+        // Phase 3 & 4: Assemble Final Report
+        const extractedChapters = chaptersToAnalyze.map(chapter => {
+            const primaryInChapter = [chapter.activeExperimentSettings.output, ...chapter.activeExperimentSettings.inputs]
+                .find(m => m && includedLabels.has(normalizeLabel(m.label)));
+            
+            if (!primaryInChapter || !chapter.calculatedMetricStats[primaryInChapter.label]) return null;
+
+            return {
+                startDate: chapter.experimentSettingsTimestamp,
+                endDate: chapter.experimentEndDateISO,
+                primaryMetricStats: chapter.calculatedMetricStats[primaryInChapter.label],
+                correlations: { influencedBy: finalCorrelations } // Simplified structure
+            };
+        }).filter(Boolean);
+
+        if (extractedChapters.length === 0) {
             return { success: true, report: null, message: "Not enough data within the selected experiments to generate a report." };
         }
 
         let hiddenGrowthInsight = "Could not generate a summary from your notes for this period.";
         if (genAI) {
-            const relevantNotes = chaptersToAnalyze.flatMap(c => c.logs).map(l => l.notes?.trim()).filter(Boolean);
-            if (relevantNotes.length > 0) {
-                let notesForPrompt = relevantNotes;
-                if (relevantNotes.join(" ").split(" ").length > 1500) {
-                    notesForPrompt = [...relevantNotes.slice(0, 4), ...relevantNotes.slice(-4)];
-                }
-                const notesSummaryPrompt = `You are summarizing a user's journal entries back to them. Analyze these notes and write a single, compassionate paragraph (2 short sentences, max 40 words) in the second person ("You..."). Focus on a theme of "hidden growth" you identified (e.g., their effort, awareness, or resilience). Notes:\n\n${notesForPrompt.join("\n---\n")}`;
+            const allNotes = [];
+            const noteRanges = extractedChapters.map(c => ({start: new Date(c.startDate), end: new Date(c.endDate)}));
+            for(const range of noteRanges){
+                 const logsSnapshot = await db.collection('logs').where('userId', '==', userId).where('timestamp', '>=', range.start).where('timestamp', '<=', range.end).get();
+                 logsSnapshot.forEach(doc => {
+                     const log = doc.data();
+                     if(log.notes && log.notes.trim()) allNotes.push(log.notes.trim());
+                 });
+            }
+            if (allNotes.length > 0) {
+                const notesSummaryPrompt = `You are summarizing a user's journal entries. Analyze these notes and write a single, compassionate paragraph (2 short sentences, max 40 words) in the second person ("You..."). Focus on a theme of "hidden growth" (e.g., effort, awareness, resilience). Notes:\n\n${allNotes.slice(-10).join("\n---\n")}`;
                 try {
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                     const result = await model.generateContent(notesSummaryPrompt);
                     hiddenGrowthInsight = result.response.text()?.trim() || hiddenGrowthInsight;
                 } catch (aiError) {
-                    logger.error(`[runHistoricalAnalysis V5] AI notes summary failed for user ${userId}:`, aiError);
+                    logger.error(`[runHistoricalAnalysis V6] AI notes summary failed for user ${userId}:`, aiError);
                 }
             }
         }
 
-        const latestChapterToAnalyze = analyzedChapters[analyzedChapters.length - 1];
+        const latestChapterToAnalyze = extractedChapters[extractedChapters.length - 1];
         const ahaMoment = _determineAhaMoment(latestChapterToAnalyze, primaryMetric.label);
         
         const finalReport = {
             primaryMetricLabel: primaryMetric.label,
             ahaMoment: ahaMoment,
             hiddenGrowth: hiddenGrowthInsight,
-            analyzedChapters: analyzedChapters,
-            trend: _calculateTrend(analyzedChapters)
+            analyzedChapters: extractedChapters, // Now contains extracted data
+            trend: _calculateTrend(extractedChapters)
         };
 
         return { success: true, report: finalReport };
 
     } catch (error) {
-        logger.error(`[runHistoricalAnalysis V5] Critical error for user ${userId}:`, error);
+        logger.error(`[runHistoricalAnalysis V6] Critical error for user ${userId}:`, error);
         if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', `An unexpected server error occurred during analysis: ${error.message}`);
+        throw new HttpsError('internal', `An unexpected error occurred during analysis: ${error.message}`);
     }
 });
 
-/**
- * INTERNAL HELPER to analyze a single "chapter" of logs.
- */
-function _analyzeChapter(chapter, includedMetrics, primaryMetric) {
-    const MINIMUM_DATAPOINTS = 5;
-    if (chapter.logs.length < MINIMUM_DATAPOINTS) return null;
-
-    const chapterReport = {
-        startDate: chapter.startDate.toISOString(),
-        endDate: chapter.endDate.toISOString(),
-        logCount: chapter.logs.length,
-        primaryMetricStats: null,
-        correlations: { influencedBy: [], influenced: [] }
-        // Note: combinedEffects and lagCorrelations are not implemented in this flow yet
-    };
-
-    const data = {}; // Key: original label, Value: { values: [], timestamps: [], type: string, unit: string }
-    
-    // Create a set of all unique metrics in this chapter to analyze for correlations
-    const allMetricsInChapter = new Map();
-    chapter.logs.forEach(log => {
+// Helper for combined correlation data alignment
+function alignDataForCombination(logs, primaryLabel, otherLabel) {
+    const arrA = [], arrB = [];
+    logs.forEach(log => {
+        let valA = null, valB = null;
         const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
-        metricsInLog.forEach(metric => {
-            if (metric && metric.label && metric.unit) {
-                const key = `${metric.label}|${metric.unit}`;
-                if (!allMetricsInChapter.has(key)) {
-                    allMetricsInChapter.set(key, {
-                        label: metric.label,
-                        unit: metric.unit,
-                        // Determine type from the log data itself for accuracy
-                        type: log.output?.label === metric.label ? 'output' : 'input'
-                    });
-                }
-            }
-        });
-    });
 
-    // Initialize data structure for all metrics found in the chapter
-    allMetricsInChapter.forEach(metric => {
-        data[metric.label] = { values: [], timestamps: [], type: metric.type, unit: metric.unit };
-    });
+        const primaryMetricInLog = metricsInLog.find(m => normalizeLabel(m.label) === normalizeLabel(primaryLabel));
+        const otherMetricInLog = metricsInLog.find(m => normalizeLabel(m.label) === normalizeLabel(otherLabel));
 
-    // Extract data for all metrics from this chapter's logs
-    chapter.logs.forEach(log => {
-        const logTimestamp = log.timestamp.toDate();
-        const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
-        metricsInLog.forEach(metricInLog => {
-            const value = parseFloat(metricInLog.value);
-            if (isNaN(value)) return;
-            // Find the metric in our comprehensive chapter list
-            if (data[metricInLog.label] && data[metricInLog.label].unit === metricInLog.unit) {
-                data[metricInLog.label].values.push(value);
-                data[metricInLog.label].timestamps.push(logTimestamp);
-            }
-        });
-    });
+        if (primaryMetricInLog) valA = parseFloat(primaryMetricInLog.value);
+        if (otherMetricInLog) valB = parseFloat(otherMetricInLog.value);
 
-    // 1. Primary Metric Stats
-    const primaryData = data[primaryMetric.label];
-    if (!primaryData || primaryData.values.length < MINIMUM_DATAPOINTS) {
-        return null; // Not a valid chapter if the primary metric lacks data
-    }
-    
-    const mean = calculateMean(primaryData.values);
-    chapterReport.primaryMetricStats = {
-        average: parseFloat(mean.toFixed(2)),
-        median: parseFloat(calculateMedian(primaryData.values).toFixed(2)),
-        consistency: 100 - parseFloat(calculateVariationPercentage(calculateStdDev(primaryData.values, mean), mean).toFixed(1)),
-        dataPoints: primaryData.values.length
-    };
-
-    // Helper to align data by timestamp for correlation
-    const alignData = (dataA, dataB) => {
-        const pairedA = [], pairedB = [];
-        const mapB = new Map(dataB.timestamps.map((t, i) => [t.getTime(), dataB.values[i]]));
-        dataA.timestamps.forEach((t, i) => {
-            const valB = mapB.get(t.getTime());
-            if (valB !== undefined) {
-                pairedA.push(dataA.values[i]);
-                pairedB.push(valB);
-            }
-        });
-        return { arrA: pairedA, arrB: pairedB };
-    };
-
-    // 2. Correlations
-    const otherMetrics = Array.from(allMetricsInChapter.values()).filter(m => m.label !== primaryMetric.label);
-    otherMetrics.forEach(otherMetric => {
-        const otherData = data[otherMetric.label];
-        if(!otherData || otherData.values.length < MINIMUM_DATAPOINTS) return;
-        
-        const aligned = alignData(primaryData, otherData);
-        if (aligned.arrA.length >= MINIMUM_DATAPOINTS) {
-            const coeff = jStat.corrcoeff(aligned.arrA, aligned.arrB);
-            if (!isNaN(coeff) && Math.abs(coeff) >= 0.3) { // Moderate or stronger
-                const correlationItem = {
-                    withMetric: otherMetric.label,
-                    coefficient: parseFloat(coeff.toFixed(2))
-                };
-                if (primaryMetric.type === 'output' && otherMetric.type === 'input') {
-                    chapterReport.correlations.influencedBy.push(correlationItem);
-                } else {
-                    chapterReport.correlations.influenced.push(correlationItem);
-                }
-            }
+        if (valA !== null && !isNaN(valA) && valB !== null && !isNaN(valB)) {
+            arrA.push(valA);
+            arrB.push(valB);
         }
     });
-
-    return chapterReport;
+    return { arrA, arrB };
 }
 
 /**
@@ -4105,7 +4087,7 @@ function _determineAhaMoment(chapterReport, primaryMetricLabel) {
     // Hierarchy: 1. Strongest Correlation "Influenced By" a habit
     if (chapterReport.correlations.influencedBy.length > 0) {
         const strongestCorr = chapterReport.correlations.influencedBy.reduce((max, corr) => Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max);
-        if (Math.abs(strongestCorr.coefficient) >= 0.3) {
+        if (Math.abs(strongestCorr.coefficient) >= 0.15) {
             const strength = Math.abs(strongestCorr.coefficient) >= 0.45 ? "strong" : "moderate";
             const direction = strongestCorr.coefficient > 0 ? "positive" : "negative";
             return {
