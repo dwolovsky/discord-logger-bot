@@ -2113,9 +2113,7 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
  * @param {number} targetPage - The page number to display.
  */
 async function sendHistoricalMetricsPage(interaction, targetPage) {
-    // FIX: Acknowledge the button click before proceeding.
-    await interaction.deferUpdate();
-
+    
     const userId = interaction.user.id;
     const analysisData = userHistoricalAnalysisData.get(userId);
 
