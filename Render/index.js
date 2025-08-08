@@ -6568,21 +6568,24 @@ client.on(Events.InteractionCreate, async interaction => {
 
             const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = analysisData.historicalAnalysisData;
 
-            // Call the final backend analysis function
             const result = await callFirebaseFunction('runHistoricalAnalysis', {
                 includedMetrics,
                 primaryMetric,
                 numExperimentsToAnalyze
             }, userId);
 
-            if (result && result.success && result.report) {
-                // Store the full report for the narrative DM flow
-                userHistoricalReportData.set(userId, { report: result.report });
-                
-                // Kick off the narrative report by sending the first DM
-                await sendHistoricalReport(interaction, 'aha_moment');
-
+            // NEW, more robust handling
+            if (result && result.success) {
+                if (result.report) {
+                    // Happy path: a report was generated
+                    userHistoricalReportData.set(userId, { report: result.report });
+                    await sendHistoricalReport(interaction, 'aha_moment');
+                } else {
+                    // Success, but no report (e.g., not enough completed experiments)
+                    await interaction.editReply({ content: `💡 ${result.message}`, components: [] });
+                }
             } else {
+                // The function call itself failed
                 throw new Error(result?.message || 'The analysis returned no data or failed.');
             }
 
