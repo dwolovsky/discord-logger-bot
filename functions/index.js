@@ -3921,7 +3921,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 if (relevantNotes.join(" ").split(" ").length > 1500) {
                     notesForPrompt = [...relevantNotes.slice(0, 4), ...relevantNotes.slice(-4)];
                 }
-                const notesSummaryPrompt = `Summarize the key themes, struggles, and mindset shifts from these user notes into a single, compassionate paragraph (2-3 sentences) focusing on "hidden growth" (e.g., effort, awareness, trying new things). Notes:\n\n${notesForPrompt.join("\n---\n")}`;
+                const notesSummaryPrompt = `You are summarizing a user's journal entries back to them. Analyze these notes and write a single, compassionate paragraph (2 short sentences, max 40 words) in the second person ("You..."). Focus on a theme of "hidden growth" you identified (e.g., their effort, awareness, or resilience). Notes:\n\n${notesForPrompt.join("\n---\n")}`;
                 try {
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                     const result = await model.generateContent(notesSummaryPrompt);
@@ -3952,8 +3952,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
     }
 });
 
-// ADD THIS ENTIRE HELPER FUNCTION
-
 /**
  * INTERNAL HELPER to analyze a single "chapter" of logs.
  */
@@ -3966,43 +3964,64 @@ function _analyzeChapter(chapter, includedMetrics, primaryMetric) {
         endDate: chapter.endDate.toISOString(),
         logCount: chapter.logs.length,
         primaryMetricStats: null,
-        correlations: { influencedBy: [], influenced: [] },
-        combinedEffects: [],
-        lagCorrelations: []
+        correlations: { influencedBy: [], influenced: [] }
+        // Note: combinedEffects and lagCorrelations are not implemented in this flow yet
     };
 
-    const data = {}; // Key: original label, Value: { values: [], timestamps: [] }
-    includedMetrics.forEach(m => {
-        data[m.label] = { values: [], timestamps: [] };
+    const data = {}; // Key: original label, Value: { values: [], timestamps: [], type: string, unit: string }
+    
+    // Create a set of all unique metrics in this chapter to analyze for correlations
+    const allMetricsInChapter = new Map();
+    chapter.logs.forEach(log => {
+        const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
+        metricsInLog.forEach(metric => {
+            if (metric && metric.label && metric.unit) {
+                const key = `${metric.label}|${metric.unit}`;
+                if (!allMetricsInChapter.has(key)) {
+                    allMetricsInChapter.set(key, {
+                        label: metric.label,
+                        unit: metric.unit,
+                        // Determine type from the log data itself for accuracy
+                        type: log.output?.label === metric.label ? 'output' : 'input'
+                    });
+                }
+            }
+        });
     });
 
-    // Extract data for included metrics from this chapter's logs
+    // Initialize data structure for all metrics found in the chapter
+    allMetricsInChapter.forEach(metric => {
+        data[metric.label] = { values: [], timestamps: [], type: metric.type, unit: metric.unit };
+    });
+
+    // Extract data for all metrics from this chapter's logs
     chapter.logs.forEach(log => {
+        const logTimestamp = log.timestamp.toDate();
         const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
         metricsInLog.forEach(metricInLog => {
             const value = parseFloat(metricInLog.value);
             if (isNaN(value)) return;
-            const matchedMetric = includedMetrics.find(m => normalizeLabel(m.label) === normalizeLabel(metricInLog.label) && normalizeUnit(m.unit) === normalizeUnit(metricInLog.unit));
-            if (matchedMetric) {
-                data[matchedMetric.label].values.push(value);
-                data[matchedMetric.label].timestamps.push(log.timestamp.toDate());
+            // Find the metric in our comprehensive chapter list
+            if (data[metricInLog.label] && data[metricInLog.label].unit === metricInLog.unit) {
+                data[metricInLog.label].values.push(value);
+                data[metricInLog.label].timestamps.push(logTimestamp);
             }
         });
     });
 
     // 1. Primary Metric Stats
     const primaryData = data[primaryMetric.label];
-    if (primaryData.values.length >= MINIMUM_DATAPOINTS) {
-        const mean = calculateMean(primaryData.values);
-        chapterReport.primaryMetricStats = {
-            average: parseFloat(mean.toFixed(2)),
-            median: parseFloat(calculateMedian(primaryData.values).toFixed(2)),
-            consistency: 100 - parseFloat(calculateVariationPercentage(calculateStdDev(primaryData.values, mean), mean).toFixed(1)),
-            dataPoints: primaryData.values.length
-        };
-    } else {
-        return null; // This chapter is not valid if the primary metric doesn't have enough data.
+    if (!primaryData || primaryData.values.length < MINIMUM_DATAPOINTS) {
+        return null; // Not a valid chapter if the primary metric lacks data
     }
+    
+    const mean = calculateMean(primaryData.values);
+    chapterReport.primaryMetricStats = {
+        average: parseFloat(mean.toFixed(2)),
+        median: parseFloat(calculateMedian(primaryData.values).toFixed(2)),
+        consistency: 100 - parseFloat(calculateVariationPercentage(calculateStdDev(primaryData.values, mean), mean).toFixed(1)),
+        dataPoints: primaryData.values.length
+    };
 
     // Helper to align data by timestamp for correlation
     const alignData = (dataA, dataB) => {
@@ -4019,23 +4038,20 @@ function _analyzeChapter(chapter, includedMetrics, primaryMetric) {
     };
 
     // 2. Correlations
-    const otherMetrics = includedMetrics.filter(m => m.label !== primaryMetric.label);
+    const otherMetrics = Array.from(allMetricsInChapter.values()).filter(m => m.label !== primaryMetric.label);
     otherMetrics.forEach(otherMetric => {
         const otherData = data[otherMetric.label];
-        if(!otherData) return; // Skip if this metric wasn't found in this chapter
+        if(!otherData || otherData.values.length < MINIMUM_DATAPOINTS) return;
         
         const aligned = alignData(primaryData, otherData);
         if (aligned.arrA.length >= MINIMUM_DATAPOINTS) {
             const coeff = jStat.corrcoeff(aligned.arrA, aligned.arrB);
-            if (!isNaN(coeff) && Math.abs(coeff) >= 0.3) { // Threshold for "moderate" correlation
+            if (!isNaN(coeff) && Math.abs(coeff) >= 0.3) { // Moderate or stronger
                 const correlationItem = {
                     withMetric: otherMetric.label,
                     coefficient: parseFloat(coeff.toFixed(2))
                 };
-                
-                const metricType = otherMetrics.find(m => m.label === otherMetric.label)?.type || 'input';
-
-                if (primaryMetric.type === 'output' && metricType === 'input') {
+                if (primaryMetric.type === 'output' && otherMetric.type === 'input') {
                     chapterReport.correlations.influencedBy.push(correlationItem);
                 } else {
                     chapterReport.correlations.influenced.push(correlationItem);
@@ -4043,8 +4059,6 @@ function _analyzeChapter(chapter, includedMetrics, primaryMetric) {
             }
         }
     });
-
-    // Combined Effects and Lag Correlations logic can be added here in the future if needed
 
     return chapterReport;
 }
