@@ -2105,8 +2105,6 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
   }
 }
 
-// Add this new function after sendAppreciationDM
-
 /**
  * Manages and sends the multi-part narrative historical report to the user's DMs.
  * @param {import('discord.js').Interaction} interaction - The interaction that triggered the report.
@@ -2209,6 +2207,77 @@ async function sendHistoricalReport(interaction, part) {
     }
 }
 
+/**
+ * Builds and sends a specific page of the historical metric selection dropdown.
+ * @param {import('discord.js').Interaction} interaction - The interaction to update.
+ * @param {number} targetPage - The page number to display.
+ */
+async function sendHistoricalMetricsPage(interaction, targetPage) {
+    
+    const userId = interaction.user.id;
+    const analysisData = userHistoricalAnalysisData.get(userId);
+    if (!analysisData || !analysisData.allMetrics) {
+        await interaction.editReply({ content: "Your session has expired or the metric list is missing. Please start over with `/stats`.", components: [], embeds: [] });
+        return;
+    }
+
+    const { allMetrics } = analysisData;
+    const itemsPerPage = 25;
+    const totalPages = Math.ceil(allMetrics.length / itemsPerPage);
+
+    // Validate page number
+    if (targetPage < 1 || targetPage > totalPages) {
+        console.warn(`[sendHistoricalMetricsPage] Invalid targetPage ${targetPage} requested for user ${userId}. Total pages: ${totalPages}`);
+        await interaction.editReply({ content: "An error occurred: Invalid page number.", components: [], embeds: [] });
+        return;
+    }
+
+    analysisData.currentPage = targetPage;
+    userHistoricalAnalysisData.set(userId, analysisData);
+
+    const startIndex = (targetPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const pageMetrics = allMetrics.slice(startIndex, endIndex);
+    const metricSelectMenu = new StringSelectMenuBuilder()
+        .setCustomId('historical_metric_select')
+        .setPlaceholder(`Select a metric to analyze (Page ${targetPage}/${totalPages})`);
+    pageMetrics.forEach(metric => {
+        const uniqueValue = `${metric.label}|${metric.unit}`;
+        metricSelectMenu.addOptions(
+            new StringSelectMenuOptionBuilder()
+                .setLabel(metric.label.substring(0, 100))
+                .setValue(uniqueValue.substring(0, 100)) 
+                .setDescription(`Unit: ${metric.unit}`.substring(0, 100))
+        );
+    });
+    const rowWithSelect = new ActionRowBuilder().addComponents(metricSelectMenu);
+
+    const backButton = new ButtonBuilder()
+        .setCustomId(`${HISTORICAL_NAV_BACK_ID}_${targetPage - 1}`)
+        .setLabel('⬅️ Back')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(targetPage === 1);
+    const nextButton = new ButtonBuilder()
+        .setCustomId(`${HISTORICAL_NAV_NEXT_ID}_${targetPage + 1}`)
+        .setLabel('Next Page ➡️')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(targetPage === totalPages);
+    const rowWithNav = new ActionRowBuilder();
+    if (totalPages > 1) {
+      if (targetPage > 1) rowWithNav.addComponents(backButton);
+      if (targetPage < totalPages) rowWithNav.addComponents(nextButton);
+    }
+    
+    const components = [rowWithSelect];
+    if (rowWithNav.components.length > 0) {
+        components.push(rowWithNav);
+    }
+
+    await interaction.editReply({
+        content: `You have tracked **${allMetrics.length}** unique metrics. Select one from the list below to begin your historical analysis:`,
+        components: components
+    });
+}
 /**
  * Displays the next historical metric match for the user to confirm.
  * If no more matches, it proceeds to the date range selection.
