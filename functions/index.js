@@ -1293,6 +1293,65 @@ exports.getStreakData = onCall(async (request) => {
     }
   });
 
+// Add this new function in functions/index.js
+
+/**
+ * Scans all of a user's logs to find every unique metric they have ever tracked.
+ * Returns an array of metric objects.
+ */
+exports.getAllUserMetrics = onCall(async (request) => {
+    // 1. Authentication Check
+    if (!request.auth) {
+        logger.warn("getAllUserMetrics called without authentication.");
+        throw new HttpsError('unauthenticated', 'You must be logged in to view your metrics.');
+    }
+    const userId = request.auth.uid;
+    logger.log(`getAllUserMetrics called by authenticated user: ${userId}`);
+
+    const db = admin.firestore();
+    try {
+        const logsSnapshot = await db.collection('logs').where('userId', '==', userId).get();
+        
+        // Use a Set to store unique metrics, preventing duplicates.
+        // We store the stringified object to ensure uniqueness of the label/unit pair.
+        const uniqueMetricsSet = new Set();
+
+        logsSnapshot.forEach(doc => {
+            const log = doc.data();
+            // Process the output metric
+            if (log.output && log.output.label && log.output.unit) {
+                uniqueMetricsSet.add(JSON.stringify({
+                    label: log.output.label,
+                    unit: log.output.unit
+                }));
+            }
+            // Process all input metrics
+            if (log.inputs && Array.isArray(log.inputs)) {
+                log.inputs.forEach(input => {
+                    if (input && input.label && input.unit) {
+                        uniqueMetricsSet.add(JSON.stringify({
+                            label: input.label,
+                            unit: input.unit
+                        }));
+                    }
+                });
+            }
+        });
+
+        // Convert the Set of strings back into an array of objects
+        const uniqueMetricsArray = Array.from(uniqueMetricsSet).map(item => JSON.parse(item));
+
+        // Sort the array alphabetically by label for a consistent order
+        uniqueMetricsArray.sort((a, b) => a.label.localeCompare(b.label));
+
+        logger.log(`[getAllUserMetrics] Found ${uniqueMetricsArray.length} unique historical metrics for user ${userId}.`);
+        return { success: true, metrics: uniqueMetricsArray };
+
+    } catch (error) {
+        logger.error(`[getAllUserMetrics] Error fetching metrics for user ${userId}:`, error);
+        throw new HttpsError('internal', 'Could not retrieve your historical metrics due to a server error.', error.message);
+    }
+});  
 
     /**
      * Saves the experiment duration, reminder schedule, generates an experimentId,
@@ -3747,397 +3806,249 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
   }
 });
 
+
 /**
- * Fetches user logs for a specific set of metrics within a date range and
- * performs a detailed statistical analysis, including trends and correlations.
- *
- * Expected request.data: {
- * includedMetrics: [{label: string, unit: string, type: 'input'|'output'}],
- * primaryMetric: {label: string, unit: string, type: 'input'|'output'},
- * startDateValue: string ('7', '30', 'all_time', etc.),
- * endDateValue: string ('7', '30', 'all_time', etc.)
- * }
+ * Fetches user logs, groups them into chapters, selects the correct historical range,
+ * and performs a detailed analysis to generate a narrative report.
  */
 exports.runHistoricalAnalysis = onCall(async (request) => {
-
-    if (!genAI) {
-        logger.error("[runHistoricalAnalysis] Gemini AI client (genAI) is not initialized, which is required for the striking insight feature.");
-        // We don't throw an error here, as the rest of the function can proceed.
-        // The strikingInsight part of the report will indicate that AI is unavailable.
-    }
-
-    
-    logger.log("[runHistoricalAnalysis] Function called. Data:", request.data);
+    logger.log("[runHistoricalAnalysis V4] Function called. Data:", request.data);
 
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'You must be logged in to run an analysis.');
     }
     const userId = request.auth.uid;
-    const { includedMetrics, primaryMetric, startDateValue, endDateValue } = request.data;
+    // NEW: Get the number of experiments to analyze from the request
+    const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = request.data;
 
-    if (!Array.isArray(includedMetrics) || includedMetrics.length === 0 || !primaryMetric || !startDateValue || !endDateValue) {
+    if (!Array.isArray(includedMetrics) || !primaryMetric || !numExperimentsToAnalyze) {
         throw new HttpsError('invalid-argument', 'Missing required parameters for analysis.');
+    }
+    if (!genAI) {
+        logger.error("[runHistoricalAnalysis V4] Gemini AI client is not initialized.");
     }
 
     const db = admin.firestore();
     try {
-        const MINIMUM_PAIRS_FOR_CORRELATION = 5;
-        // 1. Calculate Date Range
-        const now = new Date();
-        const endDate = (endDateValue === 'all_time') ? now : new Date(now.getTime() - (parseInt(endDateValue, 10) * 24 * 60 * 60 * 1000));
-        const startDate = (startDateValue === 'all_time') ? new Date(0) : new Date(now.getTime() - (parseInt(startDateValue, 10) * 24 * 60 * 60 * 1000));
-        
-        if (startDate >= endDate && endDateValue !== 'all_time') {
-             throw new HttpsError('invalid-argument', 'Start date must be before the end date.');
+        const logsSnapshot = await db.collection('logs').where('userId', '==', userId).orderBy('timestamp', 'asc').get();
+        if (logsSnapshot.empty) {
+            return { success: true, report: null, message: "No logs found in your history." };
         }
+        const allLogs = logsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 
-        // --- NEW: Find overlapping experiments and adjust the start date ---
-        let adjustedStartDate = startDate;
-        const statsCollectionRef = db.collection('users').doc(userId).collection('experimentStats');
-        
-        // Find experiments that END after our desired start date, ensuring we catch any overlap.
-        const overlappingStatsQuery = await statsCollectionRef.where('experimentEndTimestamp', '>=', startDate).get();
-
-        if (!overlappingStatsQuery.empty) {
-            let earliestStartDate = startDate;
-            overlappingStatsQuery.forEach(doc => {
-                const statData = doc.data();
-                // Ensure the timestamp field exists and is valid before converting
-                const experimentStartDate = statData.experimentSettingsTimestamp && statData.experimentSettingsTimestamp.toDate ? statData.experimentSettingsTimestamp.toDate() : null;
-                if (experimentStartDate && experimentStartDate < earliestStartDate) {
-                    earliestStartDate = experimentStartDate;
-                }
-            });
-            adjustedStartDate = earliestStartDate;
-            logger.log(`[runHistoricalAnalysis] Adjusted start date for user ${userId} to ${adjustedStartDate.toISOString()} to include full experiment data.`);
-        }
-        // --- End of new logic ---
-
-        // 2. Fetch Logs and User Settings
-        const logsSnapshotPromise = db.collection('logs')
-            .where('userId', '==', userId)
-            .where('timestamp', '>=', adjustedStartDate)
-            .where('timestamp', '<=', endDate)
-            .orderBy('timestamp', 'asc')
-            .get();
-        
-        const userSettingsSnapPromise = db.collection('users').doc(userId).get();
-        const [logsSnapshot, userSettingsSnap] = await Promise.all([logsSnapshotPromise, userSettingsSnapPromise]);
-        
-        const rawLogs = [];
-        logsSnapshot.forEach(doc => rawLogs.push(doc.data()));
-
-        if (rawLogs.length === 0) {
-            return { success: true, report: null, message: "No logs found in the selected date range for the chosen metrics." };
-        }
-        
-        const settings = userSettingsSnap.data()?.weeklySettings || {};
-        const metricTypes = {}; // Build a map of label -> type ('input' or 'output')
-        if (settings.output?.label) metricTypes[settings.output.label] = 'output';
-        if (settings.input1?.label) metricTypes[settings.input1.label] = 'input';
-        if (settings.input2?.label) metricTypes[settings.input2.label] = 'input';
-        if (settings.input3?.label) metricTypes[settings.input3.label] = 'input';
-
-        // 3. Prepare data structures
-        const analysisData = {};
-        includedMetrics.forEach(m => {
-            analysisData[m.label] = { values: [], timestamps: [], unit: m.unit, type: m.type };
-        });
-        const allMetricsInPeriod = {};
-
-        // 4. Extract data from logs
-        // This is the NEW, CORRECTED version
-        const includedMetricsNormalized = includedMetrics.map(m => ({
-            originalLabel: m.label,
-            label: normalizeLabel(m.label),
-            unit: normalizeUnit(m.unit)
-        }));
-
-        rawLogs.forEach(log => {
-            if (!log.timestamp || typeof log.timestamp.toDate !== 'function') {
-                logger.warn(`Skipping log document with invalid timestamp in historical analysis (Data Extraction).`);
-                return; // Skip this iteration
-            }
-            const logTimestamp = log.timestamp.toDate();
+        const metricSpecificLogs = allLogs.filter(log => {
             const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
-
-            metricsInLog.forEach(metricInLog => {
-                if (!metricInLog.label || metricInLog.value === null) return;
-                const value = parseFloat(metricInLog.value);
-                if (isNaN(value)) return;
-
-                const normalizedLogLabel = normalizeLabel(metricInLog.label);
-                const normalizedLogUnit = normalizeUnit(metricInLog.unit);
-
-                // Find if this log metric matches any of the metrics the user included in the analysis
-                const matchedIncludedMetric = includedMetricsNormalized.find(m => 
-                    m.label === normalizedLogLabel && m.unit === normalizedLogUnit
-                );
-
-                if (matchedIncludedMetric) {
-                    // Always store data against the original label for consistency
-                    analysisData[matchedIncludedMetric.originalLabel].values.push(value);
-                    analysisData[matchedIncludedMetric.originalLabel].timestamps.push(logTimestamp);
-                }
-
-                // This part for finding all other metrics for correlation is okay to leave as is
-                if (!allMetricsInPeriod[metricInLog.label]) {
-                    allMetricsInPeriod[metricInLog.label] = { values: [], timestamps: [], type: metricTypes[metricInLog.label] || 'unknown' };
-                }
-                allMetricsInPeriod[metricInLog.label].values.push(value);
-                allMetricsInPeriod[metricInLog.label].timestamps.push(logTimestamp);
-            });
+            return metricsInLog.some(metricInLog =>
+                includedMetrics.some(m =>
+                    normalizeLabel(m.label) === normalizeLabel(metricInLog.label) &&
+                    normalizeUnit(m.unit) === normalizeUnit(metricInLog.unit)
+                )
+            );
         });
 
-        // 5. Perform Analysis on the Primary Metric
-        const primaryData = analysisData[primaryMetric.label];
-        if (primaryData.values.length < MINIMUM_DATAPOINTS_FOR_METRIC_STATS) {
-            return { success: true, report: null, message: `Not enough data points (${primaryData.values.length}) for "${primaryMetric.label}" in this period. Minimum of ${MINIMUM_DATAPOINTS_FOR_METRIC_STATS} required.` };
+        if (metricSpecificLogs.length === 0) {
+            return { success: true, report: null, message: "No logs containing the selected metric were found." };
+        }
+        
+        let chapters = [];
+        if (metricSpecificLogs.length > 0) {
+            let currentChapter = { logs: [metricSpecificLogs[0]], startDate: metricSpecificLogs[0].timestamp.toDate() };
+            for (let i = 1; i < metricSpecificLogs.length; i++) {
+                const prevLogTime = metricSpecificLogs[i - 1].timestamp.toDate();
+                const currentLogTime = metricSpecificLogs[i].timestamp.toDate();
+                const gapInDays = (currentLogTime - prevLogTime) / (1000 * 60 * 60 * 24);
+
+                if (gapInDays >= 5) {
+                    currentChapter.endDate = prevLogTime;
+                    chapters.push(currentChapter);
+                    currentChapter = { logs: [metricSpecificLogs[i]], startDate: currentLogTime };
+                } else {
+                    currentChapter.logs.push(metricSpecificLogs[i]);
+                }
+            }
+            currentChapter.endDate = metricSpecificLogs[metricSpecificLogs.length - 1].timestamp.toDate();
+            chapters.push(currentChapter);
+        }
+        
+        // --- NEW LOGIC TO SELECT THE CORRECT EXPERIMENT RANGE ---
+        let historicalChapters = [];
+        if (chapters.length > 1) {
+            // Exclude the last chapter, which is always the "current" experiment
+            historicalChapters = chapters.slice(0, -1);
+        } else {
+            // If there's only one chapter, it's the current one, so there's no historical data to analyze.
+            return { success: true, report: null, message: "You don't have any completed experiments to analyze yet. Keep logging in your current experiment!" };
         }
 
-        const report = {};
+        let chaptersToAnalyze = [];
+        if (numExperimentsToAnalyze === 'all_time') {
+            chaptersToAnalyze = historicalChapters;
+        } else {
+            const num = parseInt(numExperimentsToAnalyze, 10);
+            chaptersToAnalyze = historicalChapters.slice(-num);
+        }
 
-        // Key Stats & Trend
-        const mean = calculateMean(primaryData.values);
-        report.keyStats = {
-            label: primaryMetric.label,
-            average: parseFloat(mean.toFixed(2)),
-            median: parseFloat(calculateMedian(primaryData.values).toFixed(2)),
-            consistency: 100 - parseFloat(calculateVariationPercentage(calculateStdDev(primaryData.values, mean), mean).toFixed(1)),
-            dataPoints: primaryData.values.length
+        if (chaptersToAnalyze.length === 0) {
+             return { success: true, report: null, message: "Could not find enough completed experiments to match your selection." };
+        }
+        // --- END OF NEW LOGIC ---
+
+        const analyzedChapters = chaptersToAnalyze.map(chapter =>
+            _analyzeChapter(chapter, includedMetrics, primaryMetric)
+        ).filter(Boolean);
+
+        if (analyzedChapters.length === 0) {
+            return { success: true, report: null, message: "Not enough data within the selected experiments to generate a report." };
+        }
+
+        let hiddenGrowthInsight = "Could not generate a summary from your notes for this period.";
+        if (genAI) {
+            const relevantNotes = chaptersToAnalyze.flatMap(c => c.logs).map(l => l.notes?.trim()).filter(Boolean);
+            if (relevantNotes.length > 0) {
+                let notesForPrompt = relevantNotes;
+                if (relevantNotes.join(" ").split(" ").length > 1500) {
+                    notesForPrompt = [...relevantNotes.slice(0, 4), ...relevantNotes.slice(-4)];
+                }
+                const notesSummaryPrompt = `Summarize the key themes, struggles, and mindset shifts from these user notes into a single, compassionate paragraph (2-3 sentences) focusing on "hidden growth" (e.g., effort, awareness, trying new things). Notes:\n\n${notesForPrompt.join("\n---\n")}`;
+                try {
+                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                    const result = await model.generateContent(notesSummaryPrompt);
+                    hiddenGrowthInsight = result.response.text()?.trim() || hiddenGrowthInsight;
+                } catch (aiError) {
+                    logger.error(`[runHistoricalAnalysis V4] AI notes summary failed for user ${userId}:`, aiError);
+                }
+            }
+        }
+
+        const latestChapterToAnalyze = analyzedChapters[analyzedChapters.length - 1];
+        const ahaMoment = _determineAhaMoment(latestChapterToAnalyze, primaryMetric.label);
+        
+        const finalReport = {
+            primaryMetricLabel: primaryMetric.label,
+            ahaMoment: ahaMoment,
+            hiddenGrowth: hiddenGrowthInsight,
+            analyzedChapters: analyzedChapters,
+            // Add trend data
+            trend: _calculateTrend(analyzedChapters, primaryMetric.label)
         };
 
-        // Correlation Analysis
-        const calculatedCorrelations = [];
-        
-        // --- FIX: Analyze against ALL other unique metrics from the logs ---
-        // Get a list of all unique metric labels found in the logs for this period.
-        const allOtherMetricLabels = Object.keys(allMetricsInPeriod);
-        
-        // Create a Set of the primary metric's NORMALIZED labels to easily exclude them.
-        const primaryAndAliasLabelsNormalized = new Set(includedMetrics.map(m => normalizeLabel(m.label)));
-
-        for (const otherLabel of allOtherMetricLabels) {
-            // Skip if 'otherLabel' is just another name for our primary metric.
-            if (primaryAndAliasLabelsNormalized.has(normalizeLabel(otherLabel))) {
-                continue;
-            }
-
-            // Align the primary metric's data with the data of the other unique metric.
-            const pairedArrays = alignDataByTimestamp(primaryData, allMetricsInPeriod[otherLabel]);
-
-            if (pairedArrays.primary.length >= MINIMUM_PAIRS_FOR_CORRELATION) {
-                const coefficient = jStat.corrcoeff(pairedArrays.primary, pairedArrays.other);
-                // Pre-filter for significance before sorting and slicing.
-                if (!isNaN(coefficient) && (coefficient * coefficient) >= 0.0225) {
-                    calculatedCorrelations.push({ label: otherLabel, coefficient: coefficient, absCoefficient: Math.abs(coefficient), n_pairs: pairedArrays.primary.length });
-                }
-            }
-        }
-        report.correlations = calculatedCorrelations.sort((a, b) => b.absCoefficient - a.absCoefficient).slice(0, 5);
-
-        // Combined Effects Analysis
-        report.combinedEffects = [];
-        if (primaryMetric.type === 'input') {
-            const otherInputLabels = Object.keys(allMetricsInPeriod).filter(label => label !== primaryMetric.label && allMetricsInPeriod[label].type === 'input');
-            const outcomeMetricLabel = Object.keys(allMetricsInPeriod).find(label => allMetricsInPeriod[label].type === 'output');
-            
-            if (outcomeMetricLabel && allMetricsInPeriod[outcomeMetricLabel].values.length >= MINIMUM_DATAPOINTS_FOR_METRIC_STATS) {
-                const outcomeData = allMetricsInPeriod[outcomeMetricLabel];
-                const outcomeQuartiles = calculateQuartiles(outcomeData.values);
-                const outcomeMedian = calculateMedian(outcomeData.values);
-                const upperThreshold = outcomeMedian + (1.5 * outcomeQuartiles.iqr);
-                const lowerThreshold = outcomeMedian - (1.5 * outcomeQuartiles.iqr);
-
-                for (const otherInputLabel of otherInputLabels) {
-                    const otherInputData = allMetricsInPeriod[otherInputLabel];
-                    if (otherInputData.values.length < MINIMUM_DATAPOINTS_FOR_METRIC_STATS) continue;
-
-                    const primaryMedian = calculateMedian(primaryData.values);
-                    const otherMedian = calculateMedian(otherInputData.values);
-                    
-                    const groups = { high_high: [], high_low: [], low_high: [], low_low: [] };
-                    const alignedTimestamps = findCommonTimestamps([primaryData, otherInputData, outcomeData]);
-                    
-                    alignedTimestamps.forEach(ts => {
-                        const primaryValue = primaryData.values[primaryData.timestamps.findIndex(t => t.getTime() === ts)];
-                        const otherValue = otherInputData.values[otherInputData.timestamps.findIndex(t => t.getTime() === ts)];
-                        const outcomeValue = outcomeData.values[outcomeData.timestamps.findIndex(t => t.getTime() === ts)];
-
-                        let groupKey = '';
-                        groupKey += (primaryValue > primaryMedian) ? 'high' : 'low';
-                        groupKey += '_';
-                        groupKey += (otherValue > otherMedian) ? 'high' : 'low';
-                        groups[groupKey].push(outcomeValue);
-                    });
-
-                    for (const groupKey in groups) {
-                        const groupValues = groups[groupKey];
-                        if (groupValues.length >= MINIMUM_DATAPOINTS_FOR_GROUP_ANALYSIS) {
-                            const groupMean = calculateMean(groupValues);
-                            let significance = '';
-                            if (groupMean > upperThreshold) significance = 'significantly higher';
-                            else if (groupMean < lowerThreshold) significance = 'significantly lower';
-
-                            if (significance) {
-                                report.combinedEffects.push({
-                                    primaryHabit: primaryMetric.label,
-                                    withHabit: otherInputLabel,
-                                    outcomeLabel: outcomeMetricLabel,
-                                    group: groupKey,
-                                    outcomeAverage: parseFloat(groupMean.toFixed(2)),
-                                    significance: significance,
-                                    count: groupValues.length // Add this line
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Lag Time Correlation Analysis
-        report.lagCorrelations = [];
-        const logsByDate = new Map();
-        rawLogs.forEach(log => {
-            if (!log.timestamp || typeof log.timestamp.toDate !== 'function') {
-                logger.warn(`Skipping log document with invalid timestamp in historical analysis (Lag Time Prep).`);
-                return; // Skip this iteration
-            }
-            const logDate = new Date(log.timestamp.toDate()).toISOString().split('T')[0];
-            logsByDate.set(logDate, log);
-        });
-        const sortedDates = Array.from(logsByDate.keys()).sort();
-        const lagDataPairs = [];
-        for (let i = 0; i < sortedDates.length - 1; i++) {
-            const dayT_date = new Date(sortedDates[i]);
-            const dayT_plus_1_date = new Date(sortedDates[i + 1]);
-            if ((dayT_plus_1_date - dayT_date) / (1000 * 60 * 60 * 24) === 1) {
-                lagDataPairs.push({ dayT: logsByDate.get(sortedDates[i]), dayT_plus_1: logsByDate.get(sortedDates[i+1]) });
-            }
-        }
-        
-        if (lagDataPairs.length >= MINIMUM_PAIRS_FOR_CORRELATION) {
-            const potentialLagMetrics = Object.keys(allMetricsInPeriod)
-            .filter(label => label !== primaryMetric.label);
-
-            for (const otherLabel of potentialLagMetrics) {
-                const yesterdayValues = [];
-                const todayValues = [];
-
-                lagDataPairs.forEach(pair => {
-                    const yesterdayValue = getMetricValueFromLog(pair.dayT, primaryMetric.label, primaryMetric.unit);
-                    const todayValue = getMetricValueFromLog(pair.dayT_plus_1, otherLabel, settings.output?.unit); 
-
-                    if (yesterdayValue !== null && todayValue !== null) {
-                        yesterdayValues.push(yesterdayValue);
-                        todayValues.push(todayValue);
-                    }
-                });
-
-                if (yesterdayValues.length >= MINIMUM_PAIRS_FOR_CORRELATION) {
-                    const coefficient = jStat.corrcoeff(yesterdayValues, todayValues);
-                    if (!isNaN(coefficient) && Math.abs(coefficient) >= 0.15) {
-                        report.lagCorrelations.push({
-                            yesterdayMetricLabel: primaryMetric.label,
-                            todayMetricLabel: otherLabel,
-                            coefficient: coefficient,
-                            absCoefficient: Math.abs(coefficient),
-                            n_pairs: yesterdayValues.length // Add this line
-                        });
-                    }
-                }
-            }
-        }
-        report.lagCorrelations = report.lagCorrelations.sort((a, b) => b.absCoefficient - a.absCoefficient).slice(0, 5);
-
-        // --- NEW: AI STRIKING INSIGHT ---
-        let insightPrompt = `You are a data analyst who is brilliant at finding the 'story' in the data. Based ONLY on the following summary of a user's historical data for the metric "${primaryMetric.label}", what is the single most striking, interesting, or actionable insight? Frame it as a single, encouraging, and observational sentence. Do not give advice.
-
-        - Key Stat: The average was ${report.keyStats.average} with ${report.keyStats.consistency.toFixed(0)}% consistency.
-        - Trend: ${report.trend}`;
-
-        if (report.correlations.length > 0) {
-            const topCorr = report.correlations[0];
-            insightPrompt += `\n- Strongest Same-Day Correlation: It was correlated with '${topCorr.label}' (coeff: ${topCorr.coefficient.toFixed(2)}).`;
-        }
-        if (report.combinedEffects.length > 0) {
-            const topEffect = report.combinedEffects[0];
-            insightPrompt += `\n- Strongest Combined Effect: When combined with '${topEffect.withHabit}', it had a significant impact on '${topEffect.outcomeLabel}'.`;
-        }
-        if (report.lagCorrelations.length > 0) {
-            const topLag = report.lagCorrelations[0];
-            insightPrompt += `\n- Strongest Day-After Effect: It had a notable correlation with the next day's '${topLag.todayMetricLabel}' (coeff: ${topLag.coefficient.toFixed(2)}).`;
-        }
-
-        insightPrompt += `\n\nReturn ONLY the single insight sentence.`;
-        
-        try {
-            if (genAI) {
-                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-                const generationResult = await model.generateContent(insightPrompt);
-                const response = await generationResult.response;
-                report.strikingInsight = response.text()?.trim() || "The AI could not generate a striking insight for this period.";
-            } else {
-                report.strikingInsight = "AI insight is currently unavailable.";
-            }
-        } catch(aiError) {
-            logger.error(`[runHistoricalAnalysis] AI insight generation failed for user ${userId}:`, aiError);
-            report.strikingInsight = "An error occurred while generating the AI insight.";
-        }
-        // --- END OF NEW CODE ---
-
-        // Helper functions
-        function alignDataByTimestamp(dataA, dataB) {
-            const pairedA = [], pairedB = [];
-            const timestampsA = dataA.timestamps.map(t => t.getTime());
-            const timestampsB = dataB.timestamps.map(t => t.getTime());
-            for (let i = 0; i < timestampsA.length; i++) {
-                const indexB = timestampsB.indexOf(timestampsA[i]);
-                if (indexB !== -1) {
-                    pairedA.push(dataA.values[i]);
-                    pairedB.push(dataB.values[indexB]);
-                }
-            }
-            return { primary: pairedA, other: pairedB };
-        }
-        function findCommonTimestamps(dataSources) {
-            if (dataSources.length === 0) return [];
-            let commonTimestamps = dataSources[0].timestamps.map(t => t.getTime());
-            for (let i = 1; i < dataSources.length; i++) {
-                const currentTimestamps = new Set(dataSources[i].timestamps.map(t => t.getTime()));
-                commonTimestamps = commonTimestamps.filter(ts => currentTimestamps.has(ts));
-            }
-            return commonTimestamps;
-        }
-        
-        function getMetricValueFromLog(log, label, unit) {
-            if (!log) return null;
-            const normLabel = normalizeLabel(label);
-            const normUnit = normalizeUnit(unit);
-
-            // Check output metric
-            if (log.output && normalizeLabel(log.output.label) === normLabel && normalizeUnit(log.output.unit) === normUnit) {
-                const val = parseFloat(log.output.value);
-                return isNaN(val) ? null : val;
-            }
-            // Check input metrics
-            if (log.inputs && Array.isArray(log.inputs)) {
-                const foundInput = log.inputs.find(inp => inp && normalizeLabel(inp.label) === normLabel && normalizeUnit(inp.unit) === normUnit);
-                if (foundInput) {
-                    const val = parseFloat(foundInput.value);
-                    return isNaN(val) ? null : val;
-                }
-            }
-            return null;
-        }
-
-        return { success: true, report: report };
+        return { success: true, report: finalReport };
 
     } catch (error) {
-        logger.error(`[runHistoricalAnalysis] Critical error for user ${userId}:`, error);
+        logger.error(`[runHistoricalAnalysis V4] Critical error for user ${userId}:`, error);
         if (error instanceof HttpsError) throw error;
         throw new HttpsError('internal', `An unexpected server error occurred during analysis: ${error.message}`);
+    }
+});
+
+/**
+ * INTERNAL HELPER to calculate the trend between the most recent chapter and prior ones.
+ */
+function _calculateTrend(analyzedChapters, primaryMetricLabel) {
+    if (analyzedChapters.length < 2) return null; // Need at least two chapters to compare
+
+    const latestChapter = analyzedChapters[analyzedChapters.length - 1];
+    const priorChapters = analyzedChapters.slice(0, -1);
+
+    const latestAvg = latestChapter.primaryMetricStats.average;
+    
+    // Calculate weighted average of prior chapters
+    let totalWeightedSum = 0;
+    let totalDataPoints = 0;
+    priorChapters.forEach(chapter => {
+        if (chapter.primaryMetricStats) {
+            totalWeightedSum += chapter.primaryMetricStats.average * chapter.primaryMetricStats.dataPoints;
+            totalDataPoints += chapter.primaryMetricStats.dataPoints;
+        }
+    });
+
+    if (totalDataPoints === 0) return null;
+    const priorAvg = totalWeightedSum / totalDataPoints;
+
+    return {
+        recentAverage: parseFloat(latestAvg.toFixed(2)),
+        priorAverage: parseFloat(priorAvg.toFixed(2)),
+        latestConsistency: latestChapter.primaryMetricStats.consistency
+    };
+}
+
+function _determineAhaMoment(chapterReport, primaryMetricLabel) {
+    if (!chapterReport) return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
+
+    // Hierarchy: 1. Strongest Correlation "Influenced By" a habit
+    if (chapterReport.correlations.influencedBy.length > 0) {
+        const strongestCorr = chapterReport.correlations.influencedBy.reduce((max, corr) => Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max);
+        if (Math.abs(strongestCorr.coefficient) >= 0.3) {
+            const strength = Math.abs(strongestCorr.coefficient) >= 0.45 ? "strong" : "moderate";
+            const direction = strongestCorr.coefficient > 0 ? "positive" : "negative";
+            return {
+                type: 'Most Striking Correlation',
+                text: `It appears there may be a 🟨 ${strength} ${direction} correlation between '${strongestCorr.withMetric}' and '${primaryMetricLabel}'.`
+            };
+        }
+    }
+    
+    // Fallback: Primary metric stats
+    if (chapterReport.primaryMetricStats) {
+        return {
+            type: `Key Stat from ${new Date(chapterReport.startDate).toLocaleDateString()}`,
+            text: `During this period, your average for '${primaryMetricLabel}' was ${chapterReport.primaryMetricStats.average} with ${chapterReport.primaryMetricStats.consistency}% consistency.`
+        };
+    }
+    
+    return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
+}
+
+// Add this new function in functions/index.js
+
+/**
+ * Generates a celebratory, public-facing summary of a user's historical analysis.
+ *
+ * Expected request.data: { report: object, userTag: string }
+ */
+exports.generateHistoricalSharePost = onCall(async (request) => {
+    if (!genAI) {
+        throw new HttpsError('internal', "The AI service is currently unavailable.");
+    }
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'You must be logged in.');
+    }
+
+    const { report, userTag } = request.data;
+    if (!report || !userTag) {
+        throw new HttpsError('invalid-argument', 'Missing required report data or user tag.');
+    }
+
+    const prompt = `
+        You are a supportive and enthusiastic community manager. Your task is to write a short, celebratory post (2-3 sentences) about a user's self-science findings.
+        
+        CONTEXT:
+        - User's Name: "${userTag}"
+        - They just analyzed their historical data for the metric: "${report.primaryMetricLabel}"
+        - The most striking insight found was: "${report.ahaMoment.text}"
+        - A summary of their notes revealed this theme of hidden growth: "${report.hiddenGrowth}"
+
+        YOUR TASK:
+        - Write a celebratory post congratulating the user.
+        - Weave in their primary metric and the most striking insight.
+        - The tone should be inspiring to other community members, highlighting the value of turning hunches into hard data.
+        - Do not use exclamation points.
+        - End with the "🙌" emoji.
+
+        Return ONLY the raw text for the post.
+    `;
+
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent(prompt);
+        const postText = result.response.text()?.trim();
+        if (!postText) {
+            throw new Error("AI generated an empty response.");
+        }
+        return { success: true, post: postText };
+    } catch (error) {
+        logger.error(`[generateHistoricalSharePost] AI generation failed:`, error);
+        throw new HttpsError('internal', 'Failed to generate the shareable post.');
     }
 });
 
