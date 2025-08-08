@@ -2144,10 +2144,13 @@ async function sendHistoricalMetricsPage(interaction, targetPage) {
         .setPlaceholder(`Select a metric to analyze (Page ${targetPage}/${totalPages})`);
 
     pageMetrics.forEach(metric => {
+        // Create a unique value by combining label and unit.
+        const uniqueValue = `${metric.label}|${metric.unit}`;
         metricSelectMenu.addOptions(
             new StringSelectMenuOptionBuilder()
                 .setLabel(metric.label.substring(0, 100))
-                .setValue(metric.label) // The value is the unique label
+                // The value is now a unique combination.
+                .setValue(uniqueValue.substring(0, 100)) 
                 .setDescription(`Unit: ${metric.unit}`.substring(0, 100))
         );
     });
@@ -8424,8 +8427,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
             await interaction.editReply({ content: '🧠 Searching your history for similar metrics to include in the analysis...', embeds: [], components: [] });
 
-            const selectedLabel = interaction.values[0];
-            const selectedMetric = analysisData.allMetrics.find(m => m.label === selectedLabel);
+            const selectedValue = interaction.values[0];
+            const [selectedLabel, selectedUnit] = selectedValue.split('|');
+
+            const selectedMetric = analysisData.allMetrics.find(m => m.label === selectedLabel && m.unit === selectedUnit);
 
             if (!selectedMetric) {
                 await interaction.editReply({ content: "Error: Could not find the details for your selected metric. Please try again.", components: [] });
