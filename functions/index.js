@@ -3952,6 +3952,103 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
     }
 });
 
+// ADD THIS ENTIRE HELPER FUNCTION
+
+/**
+ * INTERNAL HELPER to analyze a single "chapter" of logs.
+ */
+function _analyzeChapter(chapter, includedMetrics, primaryMetric) {
+    const MINIMUM_DATAPOINTS = 5;
+    if (chapter.logs.length < MINIMUM_DATAPOINTS) return null;
+
+    const chapterReport = {
+        startDate: chapter.startDate.toISOString(),
+        endDate: chapter.endDate.toISOString(),
+        logCount: chapter.logs.length,
+        primaryMetricStats: null,
+        correlations: { influencedBy: [], influenced: [] },
+        combinedEffects: [],
+        lagCorrelations: []
+    };
+
+    const data = {}; // Key: original label, Value: { values: [], timestamps: [] }
+    includedMetrics.forEach(m => {
+        data[m.label] = { values: [], timestamps: [] };
+    });
+
+    // Extract data for included metrics from this chapter's logs
+    chapter.logs.forEach(log => {
+        const metricsInLog = [log.output, ...(log.inputs || [])].filter(Boolean);
+        metricsInLog.forEach(metricInLog => {
+            const value = parseFloat(metricInLog.value);
+            if (isNaN(value)) return;
+            const matchedMetric = includedMetrics.find(m => normalizeLabel(m.label) === normalizeLabel(metricInLog.label) && normalizeUnit(m.unit) === normalizeUnit(metricInLog.unit));
+            if (matchedMetric) {
+                data[matchedMetric.label].values.push(value);
+                data[matchedMetric.label].timestamps.push(log.timestamp.toDate());
+            }
+        });
+    });
+
+    // 1. Primary Metric Stats
+    const primaryData = data[primaryMetric.label];
+    if (primaryData.values.length >= MINIMUM_DATAPOINTS) {
+        const mean = calculateMean(primaryData.values);
+        chapterReport.primaryMetricStats = {
+            average: parseFloat(mean.toFixed(2)),
+            median: parseFloat(calculateMedian(primaryData.values).toFixed(2)),
+            consistency: 100 - parseFloat(calculateVariationPercentage(calculateStdDev(primaryData.values, mean), mean).toFixed(1)),
+            dataPoints: primaryData.values.length
+        };
+    } else {
+        return null; // This chapter is not valid if the primary metric doesn't have enough data.
+    }
+
+    // Helper to align data by timestamp for correlation
+    const alignData = (dataA, dataB) => {
+        const pairedA = [], pairedB = [];
+        const mapB = new Map(dataB.timestamps.map((t, i) => [t.getTime(), dataB.values[i]]));
+        dataA.timestamps.forEach((t, i) => {
+            const valB = mapB.get(t.getTime());
+            if (valB !== undefined) {
+                pairedA.push(dataA.values[i]);
+                pairedB.push(valB);
+            }
+        });
+        return { arrA: pairedA, arrB: pairedB };
+    };
+
+    // 2. Correlations
+    const otherMetrics = includedMetrics.filter(m => m.label !== primaryMetric.label);
+    otherMetrics.forEach(otherMetric => {
+        const otherData = data[otherMetric.label];
+        if(!otherData) return; // Skip if this metric wasn't found in this chapter
+        
+        const aligned = alignData(primaryData, otherData);
+        if (aligned.arrA.length >= MINIMUM_DATAPOINTS) {
+            const coeff = jStat.corrcoeff(aligned.arrA, aligned.arrB);
+            if (!isNaN(coeff) && Math.abs(coeff) >= 0.3) { // Threshold for "moderate" correlation
+                const correlationItem = {
+                    withMetric: otherMetric.label,
+                    coefficient: parseFloat(coeff.toFixed(2))
+                };
+                
+                const metricType = otherMetrics.find(m => m.label === otherMetric.label)?.type || 'input';
+
+                if (primaryMetric.type === 'output' && metricType === 'input') {
+                    chapterReport.correlations.influencedBy.push(correlationItem);
+                } else {
+                    chapterReport.correlations.influenced.push(correlationItem);
+                }
+            }
+        }
+    });
+
+    // Combined Effects and Lag Correlations logic can be added here in the future if needed
+
+    return chapterReport;
+}
+
 /**
  * INTERNAL HELPER to calculate the trend between the most recent chapter and prior ones.
  */
