@@ -4058,8 +4058,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             }
         }
 
-        const latestChapterToAnalyze = extractedChapters[extractedChapters.length - 1];
-        const ahaMoment = _determineAhaMoment(latestChapterToAnalyze, primaryMetric.label);
+        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label);
         
         const finalReport = {
             primaryMetricLabel: primaryMetric.label,
