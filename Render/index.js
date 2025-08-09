@@ -2448,14 +2448,6 @@ async function sendHistoricalReport(interaction, part) {
                     });
                     await interaction.user.send({ embeds: [embed] });
                 }
-                 if (chapter.correlations.influenced.length > 0) {
-                    const embed = new EmbedBuilder().setColor('#1ABC9C').setTitle(`What Correlates with '${primaryLabel}' and Other Outcomes?`);
-                    chapter.correlations.influenced.forEach(corr => {
-                        const rSquared = corr.coefficient * corr.coefficient;
-                        embed.addFields({ name: `'${corr.withMetric}'`, value: `**Correlation Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
-                    });
-                    await interaction.user.send({ embeds: [embed] });
-                }
             }
             
             // --- DM #7: The Wrap-Up ---

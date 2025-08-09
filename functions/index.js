@@ -3976,7 +3976,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
         await Promise.all(combinedCorrelationPromises);
 
-        // Phase 3 & 4: Assemble Final Report
+       // Phase 3 & 4: Assemble Final Report
         const extractedChapters = chaptersToAnalyze.map(chapter => {
             const primaryInChapter = [
                 chapter.activeExperimentSettings.output, 
@@ -3988,11 +3988,46 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             
             if (!primaryInChapter || !chapter.calculatedMetricStats[primaryInChapter.label]) return null;
 
+            // NEW: Chapter-specific correlation logic
+            const finalCorrelationsForThisChapter = [];
+            const chapterOutputLabel = chapter.activeExperimentSettings?.output?.label;
+            if (chapter.correlations && chapterOutputLabel) {
+                for (const inputLabel in chapter.correlations) {
+                    const corrData = chapter.correlations[inputLabel];
+                    const normalizedInput = normalizeLabel(inputLabel);
+                    const normalizedOutput = normalizeLabel(chapterOutputLabel);
+                    
+                    let withMetric = null;
+
+                    // Case 1: The chapter's OUTPUT is one of the user's selected metrics.
+                    if (includedLabels.has(normalizedOutput)) {
+                        // The "other" metric is the input. We add it if it's NOT just another alias for the metrics being analyzed.
+                        if (!includedLabels.has(normalizedInput)) {
+                            withMetric = inputLabel;
+                        }
+                    }
+                    // Case 2: The chapter's INPUT is one of the user's selected metrics.
+                    else if (includedLabels.has(normalizedInput)) {
+                        // The "other" metric is the output. We don't need to check if it's an alias here, because the first `if` already handled that.
+                        withMetric = chapterOutputLabel;
+                    }
+
+                    if (withMetric && Math.abs(corrData.coefficient) >= 0.15) {
+                        finalCorrelationsForThisChapter.push({
+                            withMetric: withMetric,
+                            coefficient: corrData.coefficient,
+                            isCombined: false,
+                            dataPoints: corrData.n_pairs
+                        });
+                    }
+                }
+            }
+
             return {
                 startDate: chapter.experimentSettingsTimestamp,
                 endDate: chapter.experimentEndDateISO,
                 primaryMetricStats: chapter.calculatedMetricStats[primaryInChapter.label],
-                correlations: { influencedBy: finalCorrelations } // Simplified structure
+                correlations: { influencedBy: finalCorrelationsForThisChapter } // Use the new chapter-specific array
             };
         }).filter(Boolean);
 
@@ -4100,34 +4135,46 @@ function _calculateTrend(analyzedChapters) {
     };
 }
 
-function _determineAhaMoment(chapterReport, primaryMetricLabel) {
-    if (!chapterReport) return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
+function _determineAhaMoment(analyzedChapters, primaryMetricLabel) {
+    if (!analyzedChapters || analyzedChapters.length === 0) return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
 
-    // Hierarchy: 1. Strongest Correlation "Influenced By" a habit
-    if (chapterReport.correlations.influencedBy.length > 0) {
-        const strongestCorr = chapterReport.correlations.influencedBy.reduce((max, corr) => Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max);
-        if (Math.abs(strongestCorr.coefficient) >= 0.15) {
-            const strength = Math.abs(strongestCorr.coefficient) >= 0.45 ? "strong" : "moderate";
-            const direction = strongestCorr.coefficient > 0 ? "positive" : "negative";
-            return {
-                type: 'Most Striking Correlation',
-                text: `It appears there may be a 🟨 ${strength} ${direction} correlation between '${strongestCorr.withMetric}' and '${primaryMetricLabel}'.`
-            };
+    let strongestCorrOverall = { coefficient: 0 };
+
+    // Iterate through all chapters to find the single strongest correlation
+    analyzedChapters.forEach(chapter => {
+        if (chapter.correlations && chapter.correlations.influencedBy && chapter.correlations.influencedBy.length > 0) {
+            const strongestCorrInChapter = chapter.correlations.influencedBy.reduce(
+                (max, corr) => (Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max),
+                { coefficient: 0 }
+            );
+
+            if (Math.abs(strongestCorrInChapter.coefficient) > Math.abs(strongestCorrOverall.coefficient)) {
+                strongestCorrOverall = strongestCorrInChapter;
+            }
         }
+    });
+
+    // If a meaningful correlation was found anywhere in the history, report it
+    if (Math.abs(strongestCorrOverall.coefficient) >= 0.15) {
+        const strength = Math.abs(strongestCorrOverall.coefficient) >= 0.45 ? "strong" : "moderate";
+        const direction = strongestCorrOverall.coefficient > 0 ? "positive" : "negative";
+        return {
+            type: 'Most Striking Correlation',
+            text: `It appears there may be a 🟨 ${strength} ${direction} correlation between '${strongestCorrOverall.withMetric}' and '${primaryMetricLabel}'.`
+        };
     }
     
-    // Fallback: Primary metric stats
-    if (chapterReport.primaryMetricStats) {
+    // Fallback: If no strong correlations exist, use the primary metric stats from the latest chapter
+    const latestChapter = analyzedChapters[analyzedChapters.length - 1];
+    if (latestChapter.primaryMetricStats) {
         return {
-            type: `Key Stat from ${new Date(chapterReport.startDate).toLocaleDateString()}`,
-            text: `During this period, your average for '${primaryMetricLabel}' was ${chapterReport.primaryMetricStats.average} with ${chapterReport.primaryMetricStats.consistency}% consistency.`
+            type: `Key Stat from ${new Date(latestChapter.startDate).toLocaleDateString()}`,
+            text: `During this period, your average for '${primaryMetricLabel}' was ${latestChapter.primaryMetricStats.average} with ${latestChapter.primaryMetricStats.variationPercentage}% consistency.`
         };
     }
     
     return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
 }
-
-// Add this new function in functions/index.js
 
 /**
  * Generates a celebratory, public-facing summary of a user's historical analysis.
