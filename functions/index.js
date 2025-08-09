@@ -3973,25 +3973,21 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             return { success: true, report: null, message: "Not enough data within the selected experiments to generate a report." };
         }
 
+       // *** NEW AI-Powered Narrative Generation ***
         const trend = _calculateTrend(extractedChapters);
         const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label);
+        
+        let finalReport = {
+            primaryMetricLabel: primaryMetric.label,
+            ahaMoment: ahaMoment,
+            hiddenGrowth: "Could not generate a summary from your notes for this period.",
+            holisticInsight: "AI analysis of combined correlations could not be generated.",
+            shareablePost: "A shareable post could not be generated at this time.",
+            analyzedChapters: extractedChapters,
+            trend: trend,
+            metricUnitMap: metricUnitMap
+        };
 
-        // FIX #1: Add AI-powered interpretation to the Aha! Moment
-        if (genAI && ahaMoment.type !== 'Fallback') {
-            try {
-                const interpretationPrompt = `A data analysis found this correlation: "${ahaMoment.text}". Based on this, write a single, insightful sentence that offers a tentative interpretation for the user. Frame it as a question to spark curiosity.`;
-                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-                const result = await model.generateContent(interpretationPrompt);
-                const interpretation = result.response.text()?.trim();
-                if (interpretation) {
-                    ahaMoment.text += `\n\n*${interpretation}*`;
-                }
-            } catch (aiError) {
-                logger.error(`[runHistoricalAnalysis V6] AI interpretation for ahaMoment failed:`, aiError);
-            }
-        }
-
-        let hiddenGrowthInsight = "Could not generate a summary from your notes for this period.";
         if (genAI) {
             const allNotes = [];
             const noteRanges = extractedChapters.map(c => ({start: new Date(c.startDate), end: new Date(c.endDate)}));
@@ -3999,51 +3995,64 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                  const logsSnapshot = await db.collection('logs').where('userId', '==', userId).where('timestamp', '>=', range.start).where('timestamp', '<=', range.end).get();
                  logsSnapshot.forEach(doc => {
                      const log = doc.data();
-                     if(log.notes && log.notes.trim()) allNotes.push(log.notes.trim());
+                     if(log.notes && log.notes.trim()) allNotes.push(`- ${log.notes.trim()}`);
                  });
             }
+
             if (allNotes.length > 0) {
-                // FIX #4: Enhance the Hidden Growth prompt
-                const notesSummaryPrompt = `You are summarizing a user's journal entries from a self-science experiment. Your goal is to find a theme of "hidden growth" (like resilience, awareness, or effort).
+                const allCorrelations = [];
+                extractedChapters.forEach(chapter => {
+                    allCorrelations.push(...chapter.correlations.influencedBy);
+                });
+
+                const narrativePrompt = `
+You are an expert habit-science coach. Your task is to analyze a user's habit experiment data and generate a supportive, insightful narrative.
+
 CONTEXT:
-- The user's primary metric is: "${primaryMetric.label}"
-- The main data insight was: "${ahaMoment.text}"
-- User's Notes:
-${allNotes.slice(-10).join("\n---\n")}
+- User's Primary Metric: "${primaryMetric.label}"
+- All Included Metric Aliases: ${JSON.stringify(includedMetrics.map(m => m.label))}
+- The Strongest Single Correlation Found: "${ahaMoment.text}"
+- The Overall Trend: The user's recent average for '${primaryMetric.label}' has ${trend ? (trend.recentAverage > trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
+- All Significant Correlations Found During Analysis: ${JSON.stringify(allCorrelations)}
+- User's Raw Notes From The Period:
+${allNotes.slice(-15).join("\n")}
 
 YOUR TASK:
-1.  **Infer Meaning:** Read the notes to infer the real-world meaning of "${primaryMetric.label}". (e.g., Is it a person, an activity, a feeling?).
-2.  **Summarize Growth:** Write a single, compassionate paragraph (2 short sentences, max 40 words) in the second person ("You..."). Your summary MUST use your inferred meaning of the metric to interpret the user's growth.`;
+Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGrowth", and "shareablePost".
+
+1.  "holisticInsight":
+    - First, infer the real-world meaning of the Primary Metric and its aliases by using the notes as clues. (e.g., "Baw" might be a person, "Rosie" might be a workout).
+    - Then, write a 2-3 sentence paragraph that synthesizes ALL the correlation data.
+    - Explain how the different habits and outcomes seem to influence each other based on your inferred meaning.
+
+2.  "hiddenGrowth":
+    - Write a compassionate, 1-2 sentence paragraph in the second person ("You...").
+    - Focus on a theme of "hidden growth" (e.g., resilience, awareness, effort) that you see in the notes, using your inferred meaning of the metric.
+
+3.  "shareablePost":
+    - Write a short, celebratory post (2-3 sentences) from the user's perspective that they could share with their community.
+    - It must be inspiring and highlight the value of their experiment. Do not use exclamation points. End with the "🙌" emoji.
+
+CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
+`;
                 try {
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-                    const result = await model.generateContent(notesSummaryPrompt);
-                    hiddenGrowthInsight = result.response.text()?.trim() || hiddenGrowthInsight;
+                    const result = await model.generateContent({
+                        contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
+                        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
+                    });
+                    const aiNarrative = JSON.parse(result.response.text());
+                    
+                    finalReport.holisticInsight = aiNarrative.holisticInsight || finalReport.holisticInsight;
+                    finalReport.hiddenGrowth = aiNarrative.hiddenGrowth || finalReport.hiddenGrowth;
+                    finalReport.shareablePost = aiNarrative.shareablePost || finalReport.shareablePost;
+
                 } catch (aiError) {
-                    logger.error(`[runHistoricalAnalysis V6] AI notes summary failed for user ${userId}:`, aiError);
+                    logger.error(`[runHistoricalAnalysis V6] AI narrative generation failed for user ${userId}:`, aiError);
                 }
             }
         }
         
-        // Build a map of all unique metric labels to their units for the frontend
-        const metricUnitMap = {};
-        chaptersToAnalyze.forEach(chapter => {
-            if (chapter.calculatedMetricStats) {
-                Object.values(chapter.calculatedMetricStats).forEach(metric => {
-                    if (metric.label && metric.unit) {
-                        metricUnitMap[metric.label] = metric.unit;
-                    }
-                });
-            }
-        });
-
-        const finalReport = {
-            primaryMetricLabel: primaryMetric.label,
-            ahaMoment: ahaMoment,
-            hiddenGrowth: hiddenGrowthInsight,
-            analyzedChapters: extractedChapters,
-            trend: trend,
-            metricUnitMap: metricUnitMap // Add this line
-        };
         return { success: true, report: finalReport };
 
     } catch (error) {
@@ -4154,57 +4163,6 @@ function _determineAhaMoment(analyzedChapters, primaryMetricLabel) {
     return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
 }
 
-/**
- * Generates a celebratory, public-facing summary of a user's historical analysis.
- *
- * Expected request.data: { report: object, userTag: string }
- */
-exports.generateHistoricalSharePost = onCall(async (request) => {
-    if (!genAI) {
-        throw new HttpsError('internal', "The AI service is currently unavailable.");
-    }
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'You must be logged in.');
-    }
-
-    const { report, userTag } = request.data;
-    if (!report || !userTag) {
-        throw new HttpsError('invalid-argument', 'Missing required report data or user tag.');
-    }
-
-    const prompt = `
-        You are a supportive and enthusiastic community manager. Your task is to write a short, celebratory post (2-3 sentences) for a user to share with their community.
-
-        CONTEXT:
-        - User's Name: "${userTag}"
-        - They analyzed their history for the metric: "${report.primaryMetricLabel}"
-        - The most striking insight found was: "${report.ahaMoment.text}"
-        - A theme from their notes was: "${report.hiddenGrowth}"
-        - Their data showed a trend: The recent average for '${report.primaryMetricLabel}' has ${report.trend ? (report.trend.recentAverage > report.trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
-
-        YOUR TASK:
-        - Write a celebratory post congratulating the user.
-        - Weave in their primary metric and the most striking insight.
-        - The tone should be inspiring to other community members, highlighting the value of turning hunches into hard data.
-        - Do not use exclamation points.
-        - Do not use cliche language.
-
-        Return ONLY the raw text for the post.
-    `;
-
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const result = await model.generateContent(prompt);
-        const postText = result.response.text()?.trim();
-        if (!postText) {
-            throw new Error("AI generated an empty response.");
-        }
-        return { success: true, post: postText };
-    } catch (error) {
-        logger.error(`[generateHistoricalSharePost] AI generation failed:`, error);
-        throw new HttpsError('internal', 'Failed to generate the shareable post.');
-    }
-});
 
 /**
  * Generates five potential complete outcome metrics (label, unit, goal)
