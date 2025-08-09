@@ -4074,17 +4074,17 @@ function _calculateTrend(analyzedChapters) {
     const priorChapters = analyzedChapters.slice(0, -1);
 
     const latestAvg = latestChapter.primaryMetricStats.average;
-    const latestConsistency = latestChapter.primaryMetricStats.consistency;
+    const latestConsistency = latestChapter.primaryMetricStats.variationPercentage;
     
     // Calculate weighted average of prior chapters
     let totalWeightedSum = 0;
     let totalWeightedConsistency = 0;
     let totalDataPoints = 0;
     priorChapters.forEach(chapter => {
-        if (chapter.primaryMetricStats) {
-            totalWeightedSum += chapter.primaryMetricStats.average * chapter.primaryMetricStats.dataPoints;
-            totalWeightedConsistency += chapter.primaryMetricStats.consistency * chapter.primaryMetricStats.dataPoints;
-            totalDataPoints += chapter.primaryMetricStats.dataPoints;
+    if (chapter.primaryMetricStats) {
+        totalWeightedSum += chapter.primaryMetricStats.average * chapter.primaryMetricStats.dataPoints;
+        totalWeightedConsistency += chapter.primaryMetricStats.variationPercentage * chapter.primaryMetricStats.dataPoints; // Corrected property
+        totalDataPoints += chapter.primaryMetricStats.dataPoints;
         }
     });
 
