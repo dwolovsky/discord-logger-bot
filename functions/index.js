@@ -3900,9 +3900,9 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                     });
                 }
             } else {
-                // If not, check if any of the user's selected metrics was an INPUT in this experiment
+            // If not, check if any of the user's selected metrics was an INPUT in this experiment
                 for (const inputLabel in chapter.correlations) {
-                    if (includedLabels.has(normalizeLabel(inputLabel))) {
+                    if (includedLabels.has(normalizeLabel(inputLabel)) && normalizeLabel(inputLabel) !== normalizeLabel(outputLabel)) { // <<< ADD THIS CHECK
                         const corrData = chapter.correlations[inputLabel];
                         const key = `${normalizeLabel(inputLabel)}|${normalizeLabel(outputLabel)}`;
                          if (!correlationMap.has(key)) {
