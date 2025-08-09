@@ -4094,7 +4094,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 const notesSummaryPrompt = `You are summarizing a user's journal entries from a self-science experiment. Your goal is to find a theme of "hidden growth" (like resilience, awareness, or consistent effort).
             CONTEXT:
             - The user's main insight from this period was: "${ahaMoment.text}"
-            - The user's key trend was: Your recent average for '${primaryMetric.label}' has ${report.trend ? (report.trend.recentAverage > report.trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
+            - The user's key trend was: Your recent average for '${primaryMetric.label}' has ${trend ? (trend.recentAverage > trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
             - User's Notes:
             ${allNotes.slice(-10).join("\n---\n")}
 
