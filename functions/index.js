@@ -3978,7 +3978,12 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
         // Phase 3 & 4: Assemble Final Report
         const extractedChapters = chaptersToAnalyze.map(chapter => {
-            const primaryInChapter = [chapter.activeExperimentSettings.output, ...(Array.isArray(chapter.activeExperimentSettings.inputs) ? chapter.activeExperimentSettings.inputs : [])]
+            const primaryInChapter = [
+                chapter.activeExperimentSettings.output, 
+                chapter.activeExperimentSettings.input1, 
+                chapter.activeExperimentSettings.input2, 
+                chapter.activeExperimentSettings.input3
+            ]
                 .find(m => m && includedLabels.has(normalizeLabel(m.label)));
             
             if (!primaryInChapter || !chapter.calculatedMetricStats[primaryInChapter.label]) return null;
