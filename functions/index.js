@@ -4030,7 +4030,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             
             if (!primaryInChapter || !chapter.calculatedMetricStats[primaryInChapter.label]) return null;
 
-            // NEW: Chapter-specific correlation logic
             const finalCorrelationsForThisChapter = [];
             const chapterOutputLabel = chapter.activeExperimentSettings?.output?.label;
             if (chapter.correlations && chapterOutputLabel) {
@@ -4038,20 +4037,19 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                     const corrData = chapter.correlations[inputLabel];
                     const normalizedInput = normalizeLabel(inputLabel);
                     const normalizedOutput = normalizeLabel(chapterOutputLabel);
+                    const normalizedPrimary = normalizeLabel(primaryMetric.label);
                     
                     let withMetric = null;
 
-                    // Case 1: The chapter's OUTPUT is one of the user's selected metrics.
                     if (includedLabels.has(normalizedOutput)) {
-                        // The "other" metric is the input. We add it if it's NOT just another alias for the metrics being analyzed.
                         if (!includedLabels.has(normalizedInput)) {
                             withMetric = inputLabel;
                         }
                     }
-                    // Case 2: The chapter's INPUT is one of the user's selected metrics.
                     else if (includedLabels.has(normalizedInput)) {
-                        // The "other" metric is the output. We don't need to check if it's an alias here, because the first `if` already handled that.
-                        withMetric = chapterOutputLabel;
+                        if (!includedLabels.has(normalizedOutput)) {
+                            withMetric = chapterOutputLabel;
+                        }
                     }
 
                     if (withMetric && Math.abs(corrData.coefficient) >= 0.15) {
@@ -4069,13 +4067,17 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 startDate: chapter.experimentSettingsTimestamp,
                 endDate: chapter.experimentEndDateISO,
                 primaryMetricStats: chapter.calculatedMetricStats[primaryInChapter.label],
-                correlations: { influencedBy: finalCorrelationsForThisChapter } // Use the new chapter-specific array
+                correlations: { influencedBy: finalCorrelationsForThisChapter }
             };
         }).filter(Boolean);
 
         if (extractedChapters.length === 0) {
             return { success: true, report: null, message: "Not enough data within the selected experiments to generate a report." };
         }
+
+        // *** FIX STARTS HERE: Calculate trend and ahaMoment BEFORE they are used ***
+        const trend = _calculateTrend(extractedChapters);
+        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label);
 
         let hiddenGrowthInsight = "Could not generate a summary from your notes for this period.";
         if (genAI) {
@@ -4089,7 +4091,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                  });
             }
             if (allNotes.length > 0) {
-                const notesSummaryPrompt = `You are summarizing a user's journal entries from a self-science experiment. Your goal is to find a theme of "hidden growth" (like resilience, awareness, consistent effort, or even 'struggling well' or 'surviving well').
+                const notesSummaryPrompt = `You are summarizing a user's journal entries from a self-science experiment. Your goal is to find a theme of "hidden growth" (like resilience, awareness, or consistent effort).
             CONTEXT:
             - The user's main insight from this period was: "${ahaMoment.text}"
             - The user's key trend was: Your recent average for '${primaryMetric.label}' has ${report.trend ? (report.trend.recentAverage > report.trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
@@ -4107,17 +4109,14 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 }
             }
         }
-
-        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label);
         
         const finalReport = {
             primaryMetricLabel: primaryMetric.label,
             ahaMoment: ahaMoment,
             hiddenGrowth: hiddenGrowthInsight,
-            analyzedChapters: extractedChapters, // Now contains extracted data
-            trend: _calculateTrend(extractedChapters)
+            analyzedChapters: extractedChapters,
+            trend: trend
         };
-
         return { success: true, report: finalReport };
 
     } catch (error) {
