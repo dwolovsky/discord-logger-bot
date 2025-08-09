@@ -463,69 +463,6 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     return null;
 });
 
-// In functions/index.js
-
-/**
- * Firestore trigger that listens for new log documents being created or updated
- * with `_triggerAnalysis: true` and calls the internal analysis logic.
- *
-exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (event) => {
-    const snap = event.data;
-    if (!snap) {
-        logger.error("No data associated with the event for onLogUpdateTriggerAnalysis.");
-        return null;
-    }
-
-
-    const logId = event.params.logId;
-    const oldData = snap.before.data();
-    const newData = snap.after.data();
-
-    // Check if _triggerAnalysis was just set to true
-    if (newData._triggerAnalysis === true && oldData._triggerAnalysis !== true) {
-        
-        logger.log(`[onLogUpdateTriggerAnalysis] Triggered for log ${logId}. _triggerAnalysis flag detected.`);
-
-        const userId = newData.userId;
-        const userTag = newData.userTag;
-
-        if (!userId || !userTag) {
-            logger.error(`[onLogUpdateTriggerAnalysis] Missing userId or userTag in log ${logId}. Cannot trigger analysis.`);
-            await snap.after.ref.update({
-                analysisStatus: 'failed_missing_user_info',
-                _triggerAnalysis: FieldValue.delete() // Clear flag to prevent re-trigger
-            });
-            return null;
-        }
-
-        try {
-            // CORRECTED: Call the internal logic function directly.
-            await _analyzeAndSummarizeNotesLogic(logId, userId, userTag);
-
-            logger.log(`[onLogUpdateTriggerAnalysis] Successfully processed AI analysis for log ${logId}.`);
-            // Update log to mark as analysis requested (the callable function will update user doc)
-            await snap.after.ref.update({
-                analysisStatus: 'requested',
-                _triggerAnalysis: FieldValue.delete() // Clear flag
-            });
-        } catch (error) {
-            logger.error(`[onLogUpdateTriggerAnalysis] Error calling internal logic for log ${logId}:`, error);
-            // Update log to mark as failed analysis
-            await snap.after.ref.update({
-                analysisStatus: `failed: ${error.message || 'unknown error'}`,
-                _triggerAnalysis: FieldValue.delete() // Clear flag
-            });
-        }
-    } else {
-        // If _triggerAnalysis flag is not being set to true, do nothing
-        logger.debug(`[onLogUpdateTriggerAnalysis] Log ${logId} updated, but _triggerAnalysis flag not detected or already processed. No action.`);
-    }
-
-    return null;
-});
-
-*/
-
 // Place this revised helper function above updateWeeklySettings in functions/index.js
 /**
  * Parses a single priority string "Goal,Unit,Label" into an object.
@@ -3987,7 +3924,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 });
             }
         });
-        
+
         let finalReport = {
             primaryMetricLabel: primaryMetric.label,
             ahaMoment: ahaMoment,
@@ -4032,13 +3969,15 @@ YOUR TASK:
 Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGrowth", and "shareablePost".
 
 1.  "holisticInsight":
-    - First, infer the real-world meaning of the Primary Metric and its aliases by using the notes as clues. (e.g., "Baw" might be a person, "Rosie" might be a workout).
-    - Then, write a 2-3 sentence paragraph that synthesizes ALL the correlation data.
+    - First, infer the real-world meaning of the Primary Metric and its aliases by using the notes as clues. (e.g., "Baw" might be a person, "Slow morning" might be a positive morning routine).
+    - Then, write 2 short paragraphs (2 sentences each) that synthesize ALL the correlation data. Use bold headers to label the point of each paragraph.
     - Explain how the different habits and outcomes seem to influence each other based on your inferred meaning.
+    - Use tentative language. "Might," "could," "seems to."
 
 2.  "hiddenGrowth":
-    - Write a compassionate, 1-2 sentence paragraph in the second person ("You...").
-    - Focus on a theme of "hidden growth" (e.g., resilience, awareness, effort) that you see in the notes, using your inferred meaning of the metric.
+    - Find a single, specific quote or event in the user's notes that demonstrates resilience, effort, or a moment of increased self-awareness.
+    - Write a compassionate, 2-3 sentence paragraph in the second person ("You...").
+    - Your message MUST be built around that specific quote or event, explaining why it represents hidden growth. For example, instead of: a generic "You are gaining self-awareness," Say: "When you wrote, 'I guess I always feel tired after meetings with that person,' that was a key moment. Making that connection is the first step to protecting your energy."
 
 3.  "shareablePost":
     - Write a short, celebratory post (2-3 sentences) from the user's perspective that they could share with their community.

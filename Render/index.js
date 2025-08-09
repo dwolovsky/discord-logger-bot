@@ -6637,21 +6637,21 @@ client.on(Events.InteractionCreate, async interaction => {
         try {
             await interaction.deferUpdate();
             const reportData = userHistoricalReportData.get(interaction.user.id);
-            if (!reportData) {
-                await interaction.editReply({ content: "This session has expired.", components: [] });
+            if (!reportData || !reportData.report?.shareablePost) {
+                await interaction.editReply({ content: "This session has expired or the shareable post is missing.", components: [] });
                 return;
             }
 
-            const result = await callFirebaseFunction('generateHistoricalSharePost', { report: reportData.report, userTag: interaction.user.tag }, interaction.user.id);
-            if (result && result.success) {
-                reportData.sharePost = result.post;
-                userHistoricalReportData.set(interaction.user.id, reportData);
+            const postButton = new ButtonBuilder()
+                .setCustomId(HISTORICAL_REPORT_POST_PUBLIC)
+                .setLabel('🚀 Post to #hub')
+                .setStyle(ButtonStyle.Primary);
+            
+            await interaction.editReply({ 
+                content: `Here's a draft I prepared. How does this look?\n\n> ${reportData.report.shareablePost}`, 
+                components: [new ActionRowBuilder().addComponents(postButton)] 
+            });
 
-                const postButton = new ButtonBuilder().setCustomId(HISTORICAL_REPORT_POST_PUBLIC).setLabel('🚀 Post to #hub').setStyle(ButtonStyle.Primary);
-                await interaction.editReply({ content: `Here's a draft I prepared. How does this look?\n\n> ${result.post}`, components: [new ActionRowBuilder().addComponents(postButton)] });
-            } else {
-                throw new Error(result?.message || "Failed to generate share post.");
-            }
         } catch (error) {
             console.error(`Error showing share prompt:`, error);
             await interaction.editReply({ content: `An error occurred: ${error.message}`, components: [] });
