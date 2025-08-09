@@ -3806,6 +3806,48 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
   }
 });
 
+/**
+ * Retrieves a list of all of a user's completed experiment statistics documents.
+ */
+exports.listUserExperiments = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'You must be logged in to list your experiments.');
+    }
+    const userId = request.auth.uid;
+    logger.log(`[listUserExperiments] Function called by user: ${userId}`);
+
+    const db = admin.firestore();
+    try {
+        const statsSnapshot = await db.collection('users').doc(userId).collection('experimentStats')
+            .orderBy('calculationTimestamp', 'desc')
+            .get();
+
+        if (statsSnapshot.empty) {
+            return { success: true, experiments: [] };
+        }
+
+        const experiments = statsSnapshot.docs.map(doc => {
+            const data = doc.data();
+            const settings = data.activeExperimentSettings;
+            const startDate = new Date(data.experimentSettingsTimestamp).toLocaleDateString();
+            // Provide a descriptive label for each experiment
+            const label = settings?.deeperProblem 
+                ? `${startDate}: "${settings.deeperProblem.substring(0, 50)}..."` 
+                : `${startDate}: Experiment`;
+
+            return {
+                id: doc.id, // The document ID is the experimentId
+                label: label
+            };
+        });
+
+        return { success: true, experiments: experiments };
+
+    } catch (error) {
+        logger.error(`[listUserExperiments] Error fetching experiments for user ${userId}:`, error);
+        throw new HttpsError('internal', 'Could not retrieve your list of experiments.', error.message);
+    }
+});
 
 /**
  * Fetches user logs, groups them into chapters based on time gaps OR changes
@@ -4047,7 +4089,15 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                  });
             }
             if (allNotes.length > 0) {
-                const notesSummaryPrompt = `You are summarizing a user's journal entries. Analyze these notes and write a single, compassionate paragraph (2 short sentences, max 40 words) in the second person ("You..."). Focus on a theme of "hidden growth" (e.g., effort, awareness, resilience). Notes:\n\n${allNotes.slice(-10).join("\n---\n")}`;
+                const notesSummaryPrompt = `You are summarizing a user's journal entries from a self-science experiment. Your goal is to find a theme of "hidden growth" (like resilience, awareness, consistent effort, or even 'struggling well' or 'surviving well').
+            CONTEXT:
+            - The user's main insight from this period was: "${ahaMoment.text}"
+            - The user's key trend was: Your recent average for '${primaryMetric.label}' has ${report.trend ? (report.trend.recentAverage > report.trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
+            - User's Notes:
+            ${allNotes.slice(-10).join("\n---\n")}
+
+            YOUR TASK:
+            Write a single, compassionate paragraph (3-4 sentences) in the second person ("You..."). Your summary MUST connect the theme from their notes to either the main insight or the key trend. Do not use any cliche language.`;
                 try {
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                     const result = await model.generateContent(notesSummaryPrompt);
@@ -4109,7 +4159,8 @@ function _calculateTrend(analyzedChapters) {
 
     const latestAvg = latestChapter.primaryMetricStats.average;
     const latestConsistency = latestChapter.primaryMetricStats.variationPercentage;
-    
+    const recentDataPoints = latestChapter.primaryMetricStats.dataPoints;
+
     // Calculate weighted average of prior chapters
     let totalWeightedSum = 0;
     let totalWeightedConsistency = 0;
@@ -4130,7 +4181,9 @@ function _calculateTrend(analyzedChapters) {
         recentAverage: parseFloat(latestAvg.toFixed(2)),
         priorAverage: parseFloat(priorAvg.toFixed(2)),
         recentConsistency: latestConsistency,
-        priorConsistency: parseFloat(priorConsistency.toFixed(1))
+        priorConsistency: parseFloat(priorConsistency.toFixed(1)),
+        recentDataPoints: recentDataPoints,
+        priorDataPoints: totalDataPoints
     };
 }
 
@@ -4194,20 +4247,21 @@ exports.generateHistoricalSharePost = onCall(async (request) => {
     }
 
     const prompt = `
-        You are a supportive and enthusiastic community manager. Your task is to write a short, celebratory post (2-3 sentences) about a user's self-science findings.
-        
+        You are a supportive and enthusiastic community manager. Your task is to write a short, celebratory post (2-3 sentences) for a user to share with their community.
+
         CONTEXT:
         - User's Name: "${userTag}"
-        - They just analyzed their historical data for the metric: "${report.primaryMetricLabel}"
+        - They analyzed their history for the metric: "${report.primaryMetricLabel}"
         - The most striking insight found was: "${report.ahaMoment.text}"
-        - A summary of their notes revealed this theme of hidden growth: "${report.hiddenGrowth}"
+        - A theme from their notes was: "${report.hiddenGrowth}"
+        - Their data showed a trend: The recent average for '${report.primaryMetricLabel}' has ${report.trend ? (report.trend.recentAverage > report.trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
 
         YOUR TASK:
         - Write a celebratory post congratulating the user.
         - Weave in their primary metric and the most striking insight.
         - The tone should be inspiring to other community members, highlighting the value of turning hunches into hard data.
         - Do not use exclamation points.
-        - End with the "🙌" emoji.
+        - Do not use cliche language.
 
         Return ONLY the raw text for the post.
     `;

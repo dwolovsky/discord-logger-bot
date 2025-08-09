@@ -2113,13 +2113,13 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
 async function sendHistoricalReport(interaction, part) {
     const userId = interaction.user.id;
     const reportData = userHistoricalReportData.get(userId);
+
     if (!reportData || !reportData.report) {
         const errorMessage = "I couldn't find your report data. It might have expired. Please try running the analysis again with `/stats`.";
-        // Use deferUpdate for buttons, but editReply for the initial interaction from the slash command.
-        if (interaction.isButton()) {
-            await interaction.update({ content: errorMessage, components: [], embeds: [] });
-        } else {
+        if (part === 'aha_moment') {
             await interaction.editReply({ content: errorMessage, components: [] });
+        } else {
+            await interaction.reply({ content: errorMessage, ephemeral: true });
         }
         return;
     }
@@ -2137,54 +2137,47 @@ async function sendHistoricalReport(interaction, part) {
                     { name: report.ahaMoment.type, value: report.ahaMoment.text },
                     { name: "Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) }
                 );
+
             const moreStatsButton = new ButtonBuilder()
                 .setCustomId(HISTORICAL_REPORT_MORE_STATS)
                 .setLabel('More Stats ➡️')
                 .setStyle(ButtonStyle.Primary);
+
             await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
-            await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
-
+            await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [] });
+        
         } else if (part === 'full_report') {
-            await interaction.update({ components: [] }); // Acknowledge the "More Stats" button click by removing it.
+            await interaction.update({ components: [] });
 
-            // --- DM #2: The Trend ---
+            // --- DM #2: Your Metric's Journey ---
             if(report.trend) {
                 const trendEmbed = new EmbedBuilder()
                     .setColor('#0099FF')
                     .setTitle(`📈 The Journey of '${primaryLabel}'`)
                     .addFields(
-                        { name: 'Historical Average', value: String(report.trend.priorAverage), inline: true },
-                        { name: 'Most Recent Avg', value: String(report.trend.recentAverage), inline: true },
+                        { name: `Historical Average (${report.trend.priorDataPoints} days)`, value: String(report.trend.priorAverage), inline: true },
+                        { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: String(report.trend.recentAverage), inline: true },
                         { name: '\u200B', value: '\u200B', inline: true }, // Spacer
-                        { name: 'Historical Consistency', value: `${report.trend.priorConsistency}%`, inline: true },
-                        { name: 'Recent Consistency', value: `${report.trend.recentConsistency.toFixed(0)}%`, inline: true },
+                        { name: 'Historical Consistency', value: `${(100 - report.trend.priorConsistency).toFixed(0)}%`, inline: true },
+                        { name: 'Recent Consistency', value: `${(100 - report.trend.recentConsistency).toFixed(0)}%`, inline: true },
                         { name: '\u200B', value: '\u200B', inline: true } // Spacer
                     );
                 await interaction.user.send({ embeds: [trendEmbed] });
             }
 
-            // --- DM #3: The Ripple Effect (Correlations) ---
-            const allCorrelations = new Map();
-            // Consolidate and de-duplicate correlations, keeping the strongest instance.
-            report.analyzedChapters.forEach(chapter => {
-                const correlations = chapter.correlations?.influencedBy || [];
-                correlations.forEach(corr => {
-                    if (!allCorrelations.has(corr.withMetric) || Math.abs(corr.coefficient) > Math.abs(allCorrelations.get(corr.withMetric).coefficient)) {
-                        allCorrelations.set(corr.withMetric, corr);
-                    }
-                });
-            });
-
-            if (allCorrelations.size > 0) {
-                const correlationEmbed = new EmbedBuilder()
-                    .setColor('#E67E22')
-                    .setTitle(`Remarkable Correlations: '${primaryLabel}' and Other Outcomes`);
+            // --- DMs #3 & #4: The Ripple Effect ---
+            for (const chapter of report.analyzedChapters) {
+                const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
+                const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
                 
-                allCorrelations.forEach(corr => {
-                    const rSquared = corr.coefficient * corr.coefficient;
-                    correlationEmbed.addFields({ name: `'${corr.withMetric}'`, value: `**Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
-                });
-                await interaction.user.send({ embeds: [correlationEmbed] });
+                if (chapter.correlations.influencedBy.length > 0) {
+                    const embed = new EmbedBuilder().setColor('#E67E22').setTitle(`What Correlates with '${primaryLabel}'?`).setDescription(`*Experiment Period: ${chapterStartDate} - ${chapterEndDate}*`);
+                    chapter.correlations.influencedBy.forEach(corr => {
+                        const rSquared = corr.coefficient * corr.coefficient;
+                        embed.addFields({ name: `'${corr.withMetric}'`, value: `**Correlation Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
+                    });
+                    await interaction.user.send({ embeds: [embed] });
+                }
             }
             
             // --- Final DM: The Wrap-Up ---
@@ -2192,6 +2185,7 @@ async function sendHistoricalReport(interaction, part) {
                 .setColor('#9B59B6')
                 .setTitle('✨ Share Your Discovery')
                 .setDescription("Sharing your findings can inspire others. Would you like me to draft a celebratory post for the group?");
+
             const shareButtons = new ButtonBuilder()
                 .setCustomId(HISTORICAL_REPORT_SHOW_SHARE)
                 .setLabel('Yes, show me!')
@@ -2200,10 +2194,11 @@ async function sendHistoricalReport(interaction, part) {
                 .setCustomId(HISTORICAL_REPORT_NO_SHARE)
                 .setLabel('No, Thanks')
                 .setStyle(ButtonStyle.Secondary);
+            
             await interaction.user.send({ embeds: [wrapUpEmbed], components: [new ActionRowBuilder().addComponents(shareButtons, noShareButton)] });
         }
     } catch (error) {
-        logger.error(`[sendHistoricalReport] Error sending report part '${part}' to user ${userId}:`, error);
+        console.error(`[sendHistoricalReport] Error sending report part '${part}' to user ${userId}:`, error);
     }
 }
 
@@ -2375,102 +2370,6 @@ async function promptForExperimentRange(interaction, userId) {
     });
 }
 
-/**
- * Manages and sends the multi-part narrative historical report to the user's DMs.
- * @param {import('discord.js').Interaction} interaction - The interaction that triggered the report.
- * @param {string} part - The specific part of the report to send ('aha_moment' or 'full_report').
- */
-async function sendHistoricalReport(interaction, part) {
-    const userId = interaction.user.id;
-    const reportData = userHistoricalReportData.get(userId);
-
-    if (!reportData || !reportData.report) {
-        const errorMessage = "I couldn't find your report data. It might have expired. Please try running the analysis again with `/stats`.";
-        if (part === 'aha_moment') {
-            await interaction.editReply({ content: errorMessage, components: [] });
-        } else {
-            await interaction.reply({ content: errorMessage, ephemeral: true });
-        }
-        return;
-    }
-    
-    const { report } = reportData;
-    const primaryLabel = report.primaryMetricLabel;
-
-    try {
-        if (part === 'aha_moment') {
-            // --- DM #1: The "Aha!" Moment ---
-            const ahaEmbed = new EmbedBuilder()
-                .setColor('#FEE75C') // Yellow
-                .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
-                .addFields(
-                    { name: report.ahaMoment.type, value: report.ahaMoment.text },
-                    { name: "Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) }
-                );
-
-            const moreStatsButton = new ButtonBuilder()
-                .setCustomId(HISTORICAL_REPORT_MORE_STATS)
-                .setLabel('More Stats ➡️')
-                .setStyle(ButtonStyle.Primary);
-
-            await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
-            await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [] });
-        
-        } else if (part === 'full_report') {
-            await interaction.update({ components: [] });
-
-            // --- DM #2: Your Metric's Journey ---
-            if(report.trend) {
-                const trendEmbed = new EmbedBuilder()
-                    .setColor('#0099FF')
-                    .setTitle(`📈 The Journey of '${primaryLabel}'`)
-                    .addFields(
-                        { name: 'Historical Average', value: String(report.trend.priorAverage), inline: true },
-                        { name: 'Most Recent Avg', value: String(report.trend.recentAverage), inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true }, // Spacer
-                        { name: 'Historical Consistency', value: `${report.trend.priorConsistency}%`, inline: true },
-                        { name: 'Recent Consistency', value: `${report.trend.recentConsistency.toFixed(0)}%`, inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true } // Spacer
-                    );
-                await interaction.user.send({ embeds: [trendEmbed] });
-            }
-
-            // --- DMs #3 & #4: The Ripple Effect ---
-            for (const chapter of report.analyzedChapters) {
-                const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
-                const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
-                
-                if (chapter.correlations.influencedBy.length > 0) {
-                    const embed = new EmbedBuilder().setColor('#E67E22').setTitle(`What Correlates with '${primaryLabel}'?`).setDescription(`*Experiment Period: ${chapterStartDate} - ${chapterEndDate}*`);
-                    chapter.correlations.influencedBy.forEach(corr => {
-                        const rSquared = corr.coefficient * corr.coefficient;
-                        embed.addFields({ name: `'${corr.withMetric}'`, value: `**Correlation Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
-                    });
-                    await interaction.user.send({ embeds: [embed] });
-                }
-            }
-            
-            // --- DM #7: The Wrap-Up ---
-            const wrapUpEmbed = new EmbedBuilder()
-                .setColor('#9B59B6')
-                .setTitle('✨ Share Your Discovery')
-                .setDescription("Sharing your findings can inspire others. Would you like me to draft a celebratory post for the group?");
-
-            const shareButtons = new ButtonBuilder()
-                .setCustomId(HISTORICAL_REPORT_SHOW_SHARE)
-                .setLabel('Yes, show me!')
-                .setStyle(ButtonStyle.Success);
-            const noShareButton = new ButtonBuilder()
-                .setCustomId(HISTORICAL_REPORT_NO_SHARE)
-                .setLabel('No, Thanks')
-                .setStyle(ButtonStyle.Secondary);
-            
-            await interaction.user.send({ embeds: [wrapUpEmbed], components: [new ActionRowBuilder().addComponents(shareButtons, noShareButton)] });
-        }
-    } catch (error) {
-        console.error(`[sendHistoricalReport] Error sending report part '${part}' to user ${userId}:`, error);
-    }
-}
 
 /**
  * Checks for and executes pending actions for a user from Firestore,
