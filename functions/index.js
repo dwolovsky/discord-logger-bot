@@ -3876,30 +3876,44 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         }
 
         // Phase 2: Correlation Processing (Identify singles vs. candidates for combination)
-        const correlationMap = new Map(); // Key: 'primary|other', Value: { experiments: [expData] }
+        const correlationMap = new Map(); // Key: 'metricA|metricB', Value: { experiments: [expData] }
         
         chaptersToAnalyze.forEach(chapter => {
-            if (!chapter.correlations) return;
-            const primaryInChapter = [chapter.activeExperimentSettings.output, ...(Array.isArray(chapter.activeExperimentSettings.inputs) ? chapter.activeExperimentSettings.inputs : [])]
-                .find(m => m && includedLabels.has(normalizeLabel(m.label)));
-
-            if (!primaryInChapter) return;
-            const primaryLabelNorm = normalizeLabel(primaryInChapter.label);
-
-            for (const otherMetricLabel in chapter.correlations) {
-                const corrData = chapter.correlations[otherMetricLabel];
-                if (corrData.vsOutputLabel === primaryInChapter.label) {
-                    const otherLabelNorm = normalizeLabel(otherMetricLabel);
-                    const key = `${primaryLabelNorm}|${otherLabelNorm}`;
-                    
+            if (!chapter.correlations || !chapter.activeExperimentSettings) return;
+        
+            const outputLabel = chapter.activeExperimentSettings.output?.label;
+            if (!outputLabel) return;
+        
+            // Check if any of the user's selected metrics (primary or alias) was the OUTPUT in this experiment
+            if (includedLabels.has(normalizeLabel(outputLabel))) {
+                // If yes, iterate through correlations, where keys are INPUTS
+                for (const inputLabel in chapter.correlations) {
+                    const corrData = chapter.correlations[inputLabel];
+                    const key = `${normalizeLabel(outputLabel)}|${normalizeLabel(inputLabel)}`;
                     if (!correlationMap.has(key)) {
-                        correlationMap.set(key, { experiments: [] });
+                        correlationMap.set(key, { experiments: [], metricA_label: outputLabel, metricB_label: inputLabel });
                     }
                     correlationMap.get(key).experiments.push({
                         startDate: chapter.experimentSettingsTimestamp,
                         endDate: chapter.experimentEndDateISO,
                         correlation: corrData
                     });
+                }
+            } else {
+                // If not, check if any of the user's selected metrics was an INPUT in this experiment
+                for (const inputLabel in chapter.correlations) {
+                    if (includedLabels.has(normalizeLabel(inputLabel))) {
+                        const corrData = chapter.correlations[inputLabel];
+                        const key = `${normalizeLabel(inputLabel)}|${normalizeLabel(outputLabel)}`;
+                         if (!correlationMap.has(key)) {
+                            correlationMap.set(key, { experiments: [], metricA_label: inputLabel, metricB_label: outputLabel });
+                        }
+                        correlationMap.get(key).experiments.push({
+                            startDate: chapter.experimentSettingsTimestamp,
+                            endDate: chapter.experimentEndDateISO,
+                            correlation: corrData
+                        });
+                    }
                 }
             }
         });
