@@ -2107,7 +2107,7 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
 
 /**
  * Manages and sends the multi-part narrative historical report to the user's DMs.
- * This final version includes descriptive correlations and lag-time effects.
+ * This final version includes a holistic AI insight and descriptive correlations.
  */
 async function sendHistoricalReport(interaction, part) {
     const userId = interaction.user.id;
@@ -2131,10 +2131,9 @@ async function sendHistoricalReport(interaction, part) {
             const ahaEmbed = new EmbedBuilder()
                 .setColor('#FEE75C')
                 .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
-                .addFields(
-                    { name: report.ahaMoment.type, value: report.ahaMoment.text.substring(0, 1024) },
-                    { name: "Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) }
-                );
+                .setDescription(report.ahaMoment.text.substring(0, 4096)) // Use description for the main text
+                .addFields({ name: "🌱 Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) });
+                
             const moreStatsButton = new ButtonBuilder()
                 .setCustomId(HISTORICAL_REPORT_MORE_STATS)
                 .setLabel('More Stats ➡️')
@@ -2143,28 +2142,19 @@ async function sendHistoricalReport(interaction, part) {
             await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
         
         } else if (part === 'full_report') {
-            await interaction.update({ components: [] });
+            await interaction.update({ components: [] }); // Acknowledge the "More Stats" button click
 
-            // --- DM #2: The Trend ---
-            if(report.trend) {
-                const trendEmbed = new EmbedBuilder()
-                    .setColor('#0099FF')
-                    .setTitle(`📈 The Journey of '${primaryLabel}'`)
-                    .addFields(
-                        { name: `Historical Average (${report.trend.priorDataPoints} days)`, value: String(report.trend.priorAverage), inline: true },
-                        { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: String(report.trend.recentAverage), inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true },
-                        { name: 'Historical Consistency', value: `${(100 - report.trend.priorConsistency).toFixed(0)}%`, inline: true },
-                        { name: 'Recent Consistency', value: `${(100 - report.trend.recentConsistency).toFixed(0)}%`, inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true }
-                    );
-                await interaction.user.send({ embeds: [trendEmbed] });
-            }
+            // --- DM #2: Holistic AI Insight ---
+            const holisticEmbed = new EmbedBuilder()
+                .setColor('#5865F2') // Discord Blurple
+                .setTitle(`🔎 AI Analysis: The Full Story`)
+                .setDescription(report.holisticInsight.substring(0, 4096));
+            await interaction.user.send({ embeds: [holisticEmbed] });
 
             // --- DM #3: Direct Correlations (Consolidated & Descriptive) ---
             const correlationEmbed = new EmbedBuilder()
                 .setColor('#E67E22')
-                .setTitle(`What Correlates with '${primaryLabel}'?`);
+                .setTitle(`🔗 What Correlates with '${primaryLabel}'?`);
 
             let hasCorrelations = false;
             const primaryUnit = unitMap[primaryLabel];
@@ -2211,7 +2201,7 @@ async function sendHistoricalReport(interaction, part) {
                     const lagTimeText = relevantLagCorrs.map(lag => {
                         const yesterdayUnit = unitMap[lag.yesterdayMetricLabel];
                         const isYesterdayTime = isTimeMetric(yesterdayUnit);
-                        const isTodayTime = isPrimaryTime; // We already know this
+                        const isTodayTime = isPrimaryTime;
                         
                         const yesterdayDisplay = isYesterdayTime ? 'was later' : 'was higher ⤴️';
                         const todayDisplay = isTodayTime ? (lag.coefficient >= 0 ? 'was later' : 'was earlier') : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');

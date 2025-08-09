@@ -3977,6 +3977,17 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         const trend = _calculateTrend(extractedChapters);
         const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label);
         
+        const metricUnitMap = {};
+        chaptersToAnalyze.forEach(chapter => {
+            if (chapter.calculatedMetricStats) {
+                Object.values(chapter.calculatedMetricStats).forEach(metric => {
+                    if (metric.label && metric.unit) {
+                        metricUnitMap[metric.label] = metric.unit;
+                    }
+                });
+            }
+        });
+        
         let finalReport = {
             primaryMetricLabel: primaryMetric.label,
             ahaMoment: ahaMoment,
