@@ -2107,49 +2107,45 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
 
 /**
  * Manages and sends the multi-part narrative historical report to the user's DMs.
- * @param {import('discord.js').Interaction} interaction - The interaction that triggered the report.
- * @param {string} part - The specific part of the report to send ('aha_moment' or 'full_report').
+ * This final version includes descriptive correlations and lag-time effects.
  */
 async function sendHistoricalReport(interaction, part) {
     const userId = interaction.user.id;
     const reportData = userHistoricalReportData.get(userId);
-
     if (!reportData || !reportData.report) {
         const errorMessage = "I couldn't find your report data. It might have expired. Please try running the analysis again with `/stats`.";
-        if (part === 'aha_moment') {
-            await interaction.editReply({ content: errorMessage, components: [] });
+        if (interaction.isButton()) {
+            await interaction.update({ content: errorMessage, components: [], embeds: [] });
         } else {
-            await interaction.reply({ content: errorMessage, ephemeral: true });
+            await interaction.editReply({ content: errorMessage, components: [] });
         }
         return;
     }
     
     const { report } = reportData;
     const primaryLabel = report.primaryMetricLabel;
+    const unitMap = report.metricUnitMap || {};
 
     try {
         if (part === 'aha_moment') {
-            // --- DM #1: The "Aha!" Moment ---
             const ahaEmbed = new EmbedBuilder()
-                .setColor('#FEE75C') // Yellow
+                .setColor('#FEE75C')
                 .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
                 .addFields(
-                    { name: report.ahaMoment.type, value: report.ahaMoment.text },
+                    { name: report.ahaMoment.type, value: report.ahaMoment.text.substring(0, 1024) },
                     { name: "Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) }
                 );
-
             const moreStatsButton = new ButtonBuilder()
                 .setCustomId(HISTORICAL_REPORT_MORE_STATS)
                 .setLabel('More Stats ➡️')
                 .setStyle(ButtonStyle.Primary);
-
             await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
-            await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [] });
+            await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
         
         } else if (part === 'full_report') {
             await interaction.update({ components: [] });
 
-            // --- DM #2: Your Metric's Journey ---
+            // --- DM #2: The Trend ---
             if(report.trend) {
                 const trendEmbed = new EmbedBuilder()
                     .setColor('#0099FF')
@@ -2157,29 +2153,83 @@ async function sendHistoricalReport(interaction, part) {
                     .addFields(
                         { name: `Historical Average (${report.trend.priorDataPoints} days)`, value: String(report.trend.priorAverage), inline: true },
                         { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: String(report.trend.recentAverage), inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true }, // Spacer
+                        { name: '\u200B', value: '\u200B', inline: true },
                         { name: 'Historical Consistency', value: `${(100 - report.trend.priorConsistency).toFixed(0)}%`, inline: true },
                         { name: 'Recent Consistency', value: `${(100 - report.trend.recentConsistency).toFixed(0)}%`, inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true } // Spacer
+                        { name: '\u200B', value: '\u200B', inline: true }
                     );
                 await interaction.user.send({ embeds: [trendEmbed] });
             }
 
-            // --- DMs #3 & #4: The Ripple Effect ---
-            for (const chapter of report.analyzedChapters) {
-                const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
-                const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
-                
+            // --- DM #3: Direct Correlations (Consolidated & Descriptive) ---
+            const correlationEmbed = new EmbedBuilder()
+                .setColor('#E67E22')
+                .setTitle(`What Correlates with '${primaryLabel}'?`);
+
+            let hasCorrelations = false;
+            const primaryUnit = unitMap[primaryLabel];
+            const isPrimaryTime = isTimeMetric(primaryUnit);
+
+            report.analyzedChapters.forEach(chapter => {
                 if (chapter.correlations.influencedBy.length > 0) {
-                    const embed = new EmbedBuilder().setColor('#E67E22').setTitle(`What Correlates with '${primaryLabel}'?`).setDescription(`*Experiment Period: ${chapterStartDate} - ${chapterEndDate}*`);
-                    chapter.correlations.influencedBy.forEach(corr => {
-                        const rSquared = corr.coefficient * corr.coefficient;
-                        embed.addFields({ name: `'${corr.withMetric}'`, value: `**Correlation Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
+                    hasCorrelations = true;
+                    const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
+                    const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
+                    const correlationsText = chapter.correlations.influencedBy.map(corr => {
+                        const otherUnit = unitMap[corr.withMetric];
+                        const isOtherTime = isTimeMetric(otherUnit);
+                        const primaryDisplay = isPrimaryTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
+                        const otherDisplay = isOtherTime ? 'is later' : 'is higher ⤴️';
+                        return `*When **'${corr.withMetric}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay}.*`;
+                    }).join('\n');
+                    
+                    correlationEmbed.addFields({
+                        name: `Experiment Period: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: correlationsText
                     });
-                    await interaction.user.send({ embeds: [embed] });
                 }
+            });
+
+            if (hasCorrelations) {
+                await interaction.user.send({ embeds: [correlationEmbed] });
             }
             
+            // --- DM #4: Lag Time Correlations (NEW SECTION) ---
+            const lagTimeEmbed = new EmbedBuilder()
+                .setColor('#1ABC9C') // Teal
+                .setTitle(`🕑 Day-After Effects on '${primaryLabel}'`);
+
+            let hasLagTimeCorrelations = false;
+            report.analyzedChapters.forEach(chapter => {
+                const lagCorrs = Object.values(chapter.lagTimeCorrelations || {});
+                const relevantLagCorrs = lagCorrs.filter(lag => lag.todayMetricLabel === primaryLabel && Math.abs(lag.coefficient) >= 0.3);
+
+                if (relevantLagCorrs.length > 0) {
+                    hasLagTimeCorrelations = true;
+                    const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
+                    const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
+                    const lagTimeText = relevantLagCorrs.map(lag => {
+                        const yesterdayUnit = unitMap[lag.yesterdayMetricLabel];
+                        const isYesterdayTime = isTimeMetric(yesterdayUnit);
+                        const isTodayTime = isPrimaryTime; // We already know this
+                        
+                        const yesterdayDisplay = isYesterdayTime ? 'was later' : 'was higher ⤴️';
+                        const todayDisplay = isTodayTime ? (lag.coefficient >= 0 ? 'was later' : 'was earlier') : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
+                        
+                        return `*When **yesterday's '${lag.yesterdayMetricLabel}'** ${yesterdayDisplay}, **today's '${lag.todayMetricLabel}'** ${todayDisplay}.*`;
+                    }).join('\n');
+
+                    lagTimeEmbed.addFields({
+                        name: `Experiment Period: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: lagTimeText
+                    });
+                }
+            });
+
+            if (hasLagTimeCorrelations) {
+                await interaction.user.send({ embeds: [lagTimeEmbed] });
+            }
+
             // --- Final DM: The Wrap-Up ---
             const wrapUpEmbed = new EmbedBuilder()
                 .setColor('#9B59B6')

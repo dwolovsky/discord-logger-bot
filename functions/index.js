@@ -3888,10 +3888,9 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             const settings = statsData.activeExperimentSettings;
             if (!settings) continue;
 
-            // Handle continuous mode: only process the most recent doc for a given experiment
             if (settings.statsMode === 'continuous' && settings.experimentId) {
                 if (seenContinuousExperiments.has(settings.experimentId)) {
-                    continue; // Already processed the newer version of this continuous experiment
+                    continue; 
                 }
                 seenContinuousExperiments.add(settings.experimentId);
             }
@@ -3907,7 +3906,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
         let chaptersToAnalyze = [];
         if (numExperimentsToAnalyze === 'all_time') {
-            chaptersToAnalyze = relevantStatsDocs.reverse(); // Reverse to be chronological
+            chaptersToAnalyze = relevantStatsDocs.reverse();
         } else {
             const num = parseInt(numExperimentsToAnalyze, 10);
             chaptersToAnalyze = relevantStatsDocs.reverse().slice(-num);
@@ -3917,108 +3916,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             return { success: true, report: null, message: "Could not find enough completed experiments containing the selected metric(s)." };
         }
 
-        // Phase 2: Correlation Processing (Identify singles vs. candidates for combination)
-        const correlationMap = new Map(); // Key: 'metricA|metricB', Value: { experiments: [expData] }
-        
-        chaptersToAnalyze.forEach(chapter => {
-            if (!chapter.correlations || !chapter.activeExperimentSettings) return;
-        
-            const outputLabel = chapter.activeExperimentSettings.output?.label;
-            if (!outputLabel) return;
-        
-            // Check if any of the user's selected metrics (primary or alias) was the OUTPUT in this experiment
-            if (includedLabels.has(normalizeLabel(outputLabel))) {
-                // If yes, iterate through correlations, where keys are INPUTS
-                for (const inputLabel in chapter.correlations) {
-                    const corrData = chapter.correlations[inputLabel];
-                    const key = `${normalizeLabel(outputLabel)}|${normalizeLabel(inputLabel)}`;
-                    if (!correlationMap.has(key)) {
-                        correlationMap.set(key, { experiments: [], metricA_label: outputLabel, metricB_label: inputLabel });
-                    }
-                    correlationMap.get(key).experiments.push({
-                        startDate: chapter.experimentSettingsTimestamp,
-                        endDate: chapter.experimentEndDateISO,
-                        correlation: corrData
-                    });
-                }
-            } else {
-            // If not, check if any of the user's selected metrics was an INPUT in this experiment
-                for (const inputLabel in chapter.correlations) {
-                    if (includedLabels.has(normalizeLabel(inputLabel)) && normalizeLabel(inputLabel) !== normalizeLabel(outputLabel)) { // <<< ADD THIS CHECK
-                        const corrData = chapter.correlations[inputLabel];
-                        const key = `${normalizeLabel(inputLabel)}|${normalizeLabel(outputLabel)}`;
-                         if (!correlationMap.has(key)) {
-                            correlationMap.set(key, { experiments: [], metricA_label: inputLabel, metricB_label: outputLabel });
-                        }
-                        correlationMap.get(key).experiments.push({
-                            startDate: chapter.experimentSettingsTimestamp,
-                            endDate: chapter.experimentEndDateISO,
-                            correlation: corrData
-                        });
-                    }
-                }
-            }
-        });
-
-        const finalCorrelations = [];
-        const combinedCorrelationPromises = [];
-
-        correlationMap.forEach((data, key) => {
-            const [primaryLabelNorm, otherLabelNorm] = key.split('|');
-
-            if (data.experiments.length > 1) {
-                // Candidate for combination
-                const promise = (async () => {
-                    const timeRanges = data.experiments.map(exp => ({
-                        start: new Date(exp.startDate),
-                        end: new Date(exp.endDate)
-                    }));
-
-                    const allLogsForPair = [];
-                    for (const range of timeRanges) {
-                        const logsSnapshot = await db.collection('logs')
-                            .where('userId', '==', userId)
-                            .where('timestamp', '>=', range.start)
-                            .where('timestamp', '<=', range.end)
-                            .get();
-                        logsSnapshot.forEach(doc => allLogsForPair.push(doc.data()));
-                    }
-
-                    const primaryMetricInfo = includedMetrics.find(m => normalizeLabel(m.label) === primaryLabelNorm);
-                    const otherMetricInfo = data.experiments[0].correlation; // Get a representative unit/label
-
-                    const { arrA, arrB } = alignDataForCombination(allLogsForPair, primaryMetricInfo.label, otherMetricInfo.label);
-                    
-                    if (arrA.length >= 5) {
-                        const coeff = jStat.corrcoeff(arrA, arrB);
-                        if (Math.abs(coeff) >= 0.15) {
-                             finalCorrelations.push({
-                                withMetric: otherMetricInfo.label,
-                                coefficient: parseFloat(coeff.toFixed(2)),
-                                isCombined: true,
-                                dataPoints: arrA.length
-                            });
-                        }
-                    }
-                })();
-                combinedCorrelationPromises.push(promise);
-            } else {
-                // Single experiment correlation
-                const singleCorr = data.experiments[0].correlation;
-                 if (Math.abs(singleCorr.coefficient) >= 0.15) {
-                    finalCorrelations.push({
-                        withMetric: singleCorr.label,
-                        coefficient: singleCorr.coefficient,
-                        isCombined: false,
-                        dataPoints: singleCorr.n_pairs
-                    });
-                }
-            }
-        });
-
-        await Promise.all(combinedCorrelationPromises);
-
-       // Phase 3 & 4: Assemble Final Report
+        // Phase 3 & 4: Assemble Final Report
         const extractedChapters = chaptersToAnalyze.map(chapter => {
             const primaryInChapter = [
                 chapter.activeExperimentSettings.output, 
@@ -4037,7 +3935,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                     const corrData = chapter.correlations[inputLabel];
                     const normalizedInput = normalizeLabel(inputLabel);
                     const normalizedOutput = normalizeLabel(chapterOutputLabel);
-                    const normalizedPrimary = normalizeLabel(primaryMetric.label);
                     
                     let withMetric = null;
 
@@ -4067,7 +3964,8 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 startDate: chapter.experimentSettingsTimestamp,
                 endDate: chapter.experimentEndDateISO,
                 primaryMetricStats: chapter.calculatedMetricStats[primaryInChapter.label],
-                correlations: { influencedBy: finalCorrelationsForThisChapter }
+                correlations: { influencedBy: finalCorrelationsForThisChapter },
+                lagTimeCorrelations: chapter.lagTimeCorrelations || {} // FIX #3: Include lag time data
             };
         }).filter(Boolean);
 
@@ -4075,9 +3973,23 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             return { success: true, report: null, message: "Not enough data within the selected experiments to generate a report." };
         }
 
-        // *** FIX STARTS HERE: Calculate trend and ahaMoment BEFORE they are used ***
         const trend = _calculateTrend(extractedChapters);
         const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label);
+
+        // FIX #1: Add AI-powered interpretation to the Aha! Moment
+        if (genAI && ahaMoment.type !== 'Fallback') {
+            try {
+                const interpretationPrompt = `A data analysis found this correlation: "${ahaMoment.text}". Based on this, write a single, insightful sentence that offers a tentative interpretation for the user. Frame it as a question to spark curiosity.`;
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                const result = await model.generateContent(interpretationPrompt);
+                const interpretation = result.response.text()?.trim();
+                if (interpretation) {
+                    ahaMoment.text += `\n\n*${interpretation}*`;
+                }
+            } catch (aiError) {
+                logger.error(`[runHistoricalAnalysis V6] AI interpretation for ahaMoment failed:`, aiError);
+            }
+        }
 
         let hiddenGrowthInsight = "Could not generate a summary from your notes for this period.";
         if (genAI) {
@@ -4091,15 +4003,17 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                  });
             }
             if (allNotes.length > 0) {
-                const notesSummaryPrompt = `You are summarizing a user's journal entries from a self-science experiment. Your goal is to find a theme of "hidden growth" (like resilience, awareness, or consistent effort).
-            CONTEXT:
-            - The user's main insight from this period was: "${ahaMoment.text}"
-            - The user's key trend was: Your recent average for '${primaryMetric.label}' has ${trend ? (trend.recentAverage > trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
-            - User's Notes:
-            ${allNotes.slice(-10).join("\n---\n")}
+                // FIX #4: Enhance the Hidden Growth prompt
+                const notesSummaryPrompt = `You are summarizing a user's journal entries from a self-science experiment. Your goal is to find a theme of "hidden growth" (like resilience, awareness, or effort).
+CONTEXT:
+- The user's primary metric is: "${primaryMetric.label}"
+- The main data insight was: "${ahaMoment.text}"
+- User's Notes:
+${allNotes.slice(-10).join("\n---\n")}
 
-            YOUR TASK:
-            Write a single, compassionate paragraph (3-4 sentences) in the second person ("You..."). Your summary MUST connect the theme from their notes to either the main insight or the key trend. Do not use any cliche language.`;
+YOUR TASK:
+1.  **Infer Meaning:** Read the notes to infer the real-world meaning of "${primaryMetric.label}". (e.g., Is it a person, an activity, a feeling?).
+2.  **Summarize Growth:** Write a single, compassionate paragraph (2 short sentences, max 40 words) in the second person ("You..."). Your summary MUST use your inferred meaning of the metric to interpret the user's growth.`;
                 try {
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                     const result = await model.generateContent(notesSummaryPrompt);
@@ -4110,12 +4024,25 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             }
         }
         
+        // Build a map of all unique metric labels to their units for the frontend
+        const metricUnitMap = {};
+        chaptersToAnalyze.forEach(chapter => {
+            if (chapter.calculatedMetricStats) {
+                Object.values(chapter.calculatedMetricStats).forEach(metric => {
+                    if (metric.label && metric.unit) {
+                        metricUnitMap[metric.label] = metric.unit;
+                    }
+                });
+            }
+        });
+
         const finalReport = {
             primaryMetricLabel: primaryMetric.label,
             ahaMoment: ahaMoment,
             hiddenGrowth: hiddenGrowthInsight,
             analyzedChapters: extractedChapters,
-            trend: trend
+            trend: trend,
+            metricUnitMap: metricUnitMap // Add this line
         };
         return { success: true, report: finalReport };
 
