@@ -3869,8 +3869,15 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             const metricsInExperiment = [settings.output, settings.input1, settings.input2, settings.input3]
                 .filter(m => m && m.label)
                 .map(m => normalizeLabel(m.label));
-            if (metricsInExperiment.some(label => includedLabels.has(label))) {
-                relevantStatsDocs.push(statsData);
+
+            // Create a set of normalized labels from the includedMetrics for efficient lookup.
+            const normalizedIncludedLabels = new Set(includedMetrics.map(m => normalizeLabel(m.label)));
+
+            for (const metricLabel of metricsInExperiment) {
+                if (normalizedIncludedLabels.has(metricLabel)) {
+                    relevantStatsDocs.push(statsData);
+                    break; // Add the document once and move to the next one
+                }
             }
         }
 
