@@ -2117,23 +2117,32 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
  */
 async function sendHistoricalReport(interaction, part, directReport = null) {
     const userId = interaction.user.id;
-    const reportData = userHistoricalReportData.get(userId);
-    if (!reportData || !reportData.report) {
-        const errorMessage = "I couldn't find your report data. It might have expired. Please try running the analysis again with `/stats`.";
-        if (interaction.isButton()) {
-            await interaction.update({ content: errorMessage, components: [], embeds: [] });
-        } else {
-            await interaction.editReply({ content: errorMessage, components: [] });
-        }
-        return;
-    }
     
-    const { report } = reportData;
+    // Use the directly passed report if it exists. This is the key fix.
+    let report = directReport; 
+    
+    // If no direct report was passed, THEN fall back to the map.
+    if (!report) {
+        const reportData = userHistoricalReportData.get(userId);
+        if (!reportData || !reportData.report) {
+            const errorMessage = "I couldn't find your report data. It might have expired. Please try running the analysis again with `/stats`.";
+            // Use update for button clicks and editReply for other interactions
+            if (interaction.isButton() || interaction.isStringSelectMenu()) {
+                await interaction.update({ content: errorMessage, components: [], embeds: [] });
+            } else {
+                await interaction.editReply({ content: errorMessage, components: [] });
+            }
+            return;
+        }
+        // If we found data in the map, use it.
+        report = reportData.report;
+    }
+
+    // --- The rest of your function logic continues from here ---
     const primaryLabel = report.primaryMetricLabel;
     const unitMap = report.metricUnitMap || {};
-
     try {
-        if (part === 'aha_moment') {
+                if (part === 'aha_moment') {
              // --- FIX START: Add robust handling for hiddenGrowth ---
             let hiddenGrowthText = "Could not generate a summary from your notes for this period."; // Default fallback
             if (typeof report.hiddenGrowth === 'string') {
