@@ -2115,7 +2115,7 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
  * Manages and sends the multi-part narrative historical report to the user's DMs.
  * This final version includes a holistic AI insight and all data sections.
  */
-async function sendHistoricalReport(interaction, part) {
+async function sendHistoricalReport(interaction, part, directReport = null) {
     const userId = interaction.user.id;
     const reportData = userHistoricalReportData.get(userId);
     if (!reportData || !reportData.report) {
@@ -6693,10 +6693,11 @@ client.on(Events.InteractionCreate, async interaction => {
             // NEW, more robust handling
             if (result && result.success) {
                 if (result.report) {
-                    // Happy path: a report was generated
-                    userHistoricalReportData.set(userId, { report: result.report });
-                    await sendHistoricalReport(interaction, 'aha_moment');
-                } else {
+                // Happy path: a report was generated
+                userHistoricalReportData.set(userId, { report: result.report });
+                // Pass the report directly to the function
+                await sendHistoricalReport(interaction, 'aha_moment', result.report); 
+            } else {
                     // Success, but no report (e.g., not enough completed experiments)
                     await interaction.editReply({ content: `💡 ${result.message}`, components: [] });
                 }
