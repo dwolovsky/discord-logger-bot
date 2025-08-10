@@ -2216,8 +2216,11 @@ async function sendHistoricalReport(interaction, part) {
             report.analyzedChapters.forEach(chapter => {
                 const comboResults = Object.values(chapter.pairwiseInteractionResults || {});
                 const significantCombos = comboResults.filter(combo => {
-                    const summary = combo.summary || "";
-                    return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion") && !summary.toLowerCase().includes("did not show any group");
+                const summary = combo.summary || "";
+                return !summary.toLowerCase().includes("skipped") && 
+                    !summary.toLowerCase().includes("no meaningful conclusion") && 
+                    !summary.toLowerCase().includes("did not show any group") &&
+                    !summary.toLowerCase().includes("could not be determined");
                 });
 
                 if (significantCombos.length > 0) {

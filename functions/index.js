@@ -125,6 +125,30 @@ const defaultReminderMessages = [
     // or if it has its own internal default logic when customReminderMessage is null.
     // ==================================
 
+    const TIME_OF_DAY_KEYWORDS = [
+    'time of day',      // The primary, explicit unit
+    'clock time',       // A common alternative
+    'specific time',
+    'exact time',
+    "o'clock",          // e.g., for a goal of "8 o'clock"
+    'oclock',           // Common misspelling
+    'o clock',          // Common variant
+    'am/pm',            // Indicates a 12-hour clock time
+    'a.m./p.m.',
+    'am',
+    'pm',
+    'a.m.',
+    'p.m.',
+    'am.',
+    'pm.'
+];
+
+function isTimeMetric(unit) {
+    if (!unit) return false;
+    // This reuses the TIME_OF_DAY_KEYWORDS constant already defined in your code
+    return TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
+}
+
 // Gen 2 Imports
 const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
@@ -3925,7 +3949,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
        // *** NEW AI-Powered Narrative Generation ***
         const trend = _calculateTrend(extractedChapters);
-        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label);
+        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label, metricUnitMap);
         
         const metricUnitMap = {};
         chaptersToAnalyze.forEach(chapter => {
@@ -4087,7 +4111,7 @@ function _calculateTrend(analyzedChapters) {
     };
 }
 
-function _determineAhaMoment(analyzedChapters, primaryMetricLabel) {
+function _determineAhaMoment(analyzedChapters, primaryMetricLabel, metricUnitMap) {
     if (!analyzedChapters || analyzedChapters.length === 0) return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
 
     let strongestCorrOverall = { coefficient: 0 };
@@ -4108,12 +4132,23 @@ function _determineAhaMoment(analyzedChapters, primaryMetricLabel) {
 
     // If a meaningful correlation was found anywhere in the history, report it
     if (Math.abs(strongestCorrOverall.coefficient) >= 0.15) {
+        // --- START: Essential Changes for Time Metric Formatting ---
+        const primaryUnit = metricUnitMap[primaryMetricLabel];
+        const otherUnit = metricUnitMap[strongestCorrOverall.withMetric];
+        const isPrimaryTime = isTimeMetric(primaryUnit);
+        const isOtherTime = isTimeMetric(otherUnit);
+
+        const primaryDisplay = isPrimaryTime ? (strongestCorrOverall.coefficient >= 0 ? 'is later' : 'is earlier') : (strongestCorrOverall.coefficient >= 0 ? 'is higher' : 'is lower');
+        const otherDisplay = isOtherTime ? 'is later' : 'is higher';
+        
         const strength = Math.abs(strongestCorrOverall.coefficient) >= 0.45 ? "strong" : "moderate";
         const direction = strongestCorrOverall.coefficient > 0 ? "positive" : "negative";
+
         return {
             type: 'Most Striking Correlation',
-            text: `It appears there may be a 🟨 ${strength} ${direction} correlation between '${strongestCorrOverall.withMetric}' and '${primaryMetricLabel}'.`
+            text: `It appears there may be a 🟨 ${strength} ${direction} correlation: when '${strongestCorrOverall.withMetric}' ${otherDisplay}, your '${primaryMetricLabel}' tends to be ${primaryDisplay}.`
         };
+        // --- END: Essential Changes ---
     }
     
     // Fallback: If no strong correlations exist, use the primary metric stats from the latest chapter
