@@ -2154,7 +2154,7 @@ async function sendHistoricalReport(interaction, part) {
                         { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: String(report.trend.recentAverage), inline: true },
                         { name: '\u200B', value: '\u200B', inline: true },
                         { name: 'Historical Consistency', value: `${(100 - report.trend.priorConsistency).toFixed(0)}%`, inline: true },
-                        { name: 'Recent Consistency', value: `${(100 - report.trend.recentConsistency).toFixed(0)}%`, inline: true },
+                        { name: 'Most Recent Consistency', value: `${(100 - report.trend.recentConsistency).toFixed(0)}%`, inline: true },
                         { name: '\u200B', value: '\u200B', inline: true }
                     );
                 await interaction.user.send({ embeds: [trendEmbed] });
@@ -2180,7 +2180,7 @@ async function sendHistoricalReport(interaction, part) {
                         const isOtherTime = isTimeMetric(otherUnit);
                         const primaryDisplay = isPrimaryTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
                         const otherDisplay = isOtherTime ? 'is later' : 'is higher ⤴️';
-                        return `*When **'${corr.withMetric}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay}.*`;
+                        return `*When **'${corr.withMetric}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay} (Correlation Strength = ${rSquared}%)*`;
                     }).join('\n');
                     
                     correlationEmbed.addFields({
@@ -2240,7 +2240,7 @@ async function sendHistoricalReport(interaction, part) {
                     const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
                     const lagTimeText = relevantLagCorrs.map(lag => {
                         const rSquared = (lag.coefficient * lag.coefficient * 100).toFixed(0);
-                        return `*Yesterday's '${lag.yesterdayMetricLabel}' (Strength: ${rSquared}%)*`;
+                        return `*Yesterday's '${lag.yesterdayMetricLabel}' (Correlation Strength = ${rSquared}%)*`;
                     }).join('\n');
 
                     lagTimeEmbed.addFields({
