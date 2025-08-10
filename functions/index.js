@@ -3902,7 +3902,8 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 endDate: chapter.experimentEndDateISO,
                 primaryMetricStats: chapter.calculatedMetricStats[primaryInChapter.label],
                 correlations: { influencedBy: finalCorrelationsForThisChapter },
-                lagTimeCorrelations: chapter.lagTimeCorrelations || {} // FIX #3: Include lag time data
+                lagTimeCorrelations: chapter.lagTimeCorrelations || {},
+                pairwiseInteractionResults: chapter.pairwiseInteractionResults || {}
             };
         }).filter(Boolean);
 
@@ -3970,7 +3971,7 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 
 1.  "holisticInsight":
     - First, infer the real-world meaning of the Primary Metric and its aliases by using the notes as clues. (e.g., "Baw" might be a person, "Slow morning" might be a positive morning routine).
-    - Then, write 2 short paragraphs (2 sentences each) that synthesize ALL the correlation data. Use bold headers to label the point of each paragraph.
+    - Then, write 1-2 SHORT paragraphs (2 sentences each, maximum 60 words total) that synthesize ALL the correlation data. Use bold headers to label the point of each paragraph.
     - Explain how the different habits and outcomes seem to influence each other based on your inferred meaning.
     - Use tentative language. "Might," "could," "seems to."
 
@@ -3980,8 +3981,8 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
     - Your message MUST be built around that specific quote or event, explaining why it represents hidden growth. For example, instead of: a generic "You are gaining self-awareness," Say: "When you wrote, 'I guess I always feel tired after meetings with that person,' that was a key moment. Making that connection is the first step to protecting your energy."
 
 3.  "shareablePost":
-    - Write a short, celebratory post (2-3 sentences) from the user's perspective that they could share with their community.
-    - It must be inspiring and highlight the value of their experiment. Do not use exclamation points. End with the "🙌" emoji.
+    - Write a short, celebratory post (2-3 sentences) about the user (in the 3rd person) that they could share with their community.
+    - It must be inspiring and highlight their strongest correlation. Do not use exclamation points. Do not use any cliche language. End with the "🙌" emoji.
 
 CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
 `;

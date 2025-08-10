@@ -2107,7 +2107,7 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
 
 /**
  * Manages and sends the multi-part narrative historical report to the user's DMs.
- * This final version includes a holistic AI insight and descriptive correlations.
+ * This final version includes a holistic AI insight and all data sections.
  */
 async function sendHistoricalReport(interaction, part) {
     const userId = interaction.user.id;
@@ -2124,14 +2124,13 @@ async function sendHistoricalReport(interaction, part) {
     
     const { report } = reportData;
     const primaryLabel = report.primaryMetricLabel;
-    const unitMap = report.metricUnitMap || {};
 
     try {
         if (part === 'aha_moment') {
             const ahaEmbed = new EmbedBuilder()
                 .setColor('#FEE75C')
                 .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
-                .setDescription(report.ahaMoment.text.substring(0, 4096)) // Use description for the main text
+                .setDescription(report.ahaMoment.text.substring(0, 4096))
                 .addFields({ name: "🌱 Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) });
                 
             const moreStatsButton = new ButtonBuilder()
@@ -2142,39 +2141,42 @@ async function sendHistoricalReport(interaction, part) {
             await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
         
         } else if (part === 'full_report') {
-            await interaction.update({ components: [] }); // Acknowledge the "More Stats" button click
+            await interaction.update({ components: [] });
 
-            // --- DM #2: Holistic AI Insight ---
-            const holisticEmbed = new EmbedBuilder()
-                .setColor('#5865F2') // Discord Blurple
-                .setTitle(`🔎 AI Analysis: The Full Story`)
-                .setDescription(report.holisticInsight.substring(0, 4096));
-            await interaction.user.send({ embeds: [holisticEmbed] });
+            // --- DM #2: The Trend ---
+            if(report.trend) {
+                const trendEmbed = new EmbedBuilder()
+                    .setColor('#0099FF')
+                    .setTitle(`📈 The Journey of '${primaryLabel}'`)
+                    .addFields(
+                        { name: `Historical Average (${report.trend.priorDataPoints} days)`, value: String(report.trend.priorAverage), inline: true },
+                        { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: String(report.trend.recentAverage), inline: true },
+                        { name: '\u200B', value: '\u200B', inline: true },
+                        { name: 'Historical Consistency', value: `${(100 - report.trend.priorConsistency).toFixed(0)}%`, inline: true },
+                        { name: 'Recent Consistency', value: `${(100 - report.trend.recentConsistency).toFixed(0)}%`, inline: true },
+                        { name: '\u200B', value: '\u200B', inline: true }
+                    );
+                await interaction.user.send({ embeds: [trendEmbed] });
+            }
 
-            // --- DM #3: Direct Correlations (Consolidated & Descriptive) ---
+            // --- DM #3: Direct Correlations (Data Only) ---
             const correlationEmbed = new EmbedBuilder()
                 .setColor('#E67E22')
-                .setTitle(`🔗 What Correlates with '${primaryLabel}'?`);
+                .setTitle(`🔗 Correlation Data for '${primaryLabel}'`);
 
             let hasCorrelations = false;
-            const primaryUnit = unitMap[primaryLabel];
-            const isPrimaryTime = isTimeMetric(primaryUnit);
-
             report.analyzedChapters.forEach(chapter => {
                 if (chapter.correlations.influencedBy.length > 0) {
                     hasCorrelations = true;
                     const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
                     const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
                     const correlationsText = chapter.correlations.influencedBy.map(corr => {
-                        const otherUnit = unitMap[corr.withMetric];
-                        const isOtherTime = isTimeMetric(otherUnit);
-                        const primaryDisplay = isPrimaryTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
-                        const otherDisplay = isOtherTime ? 'is later' : 'is higher ⤴️';
-                        return `*When **'${corr.withMetric}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay}.*`;
+                        const rSquared = (corr.coefficient * corr.coefficient * 100).toFixed(0);
+                        return `*vs. '${corr.withMetric}' (Strength: ${rSquared}%)*`;
                     }).join('\n');
                     
                     correlationEmbed.addFields({
-                        name: `Experiment Period: ${chapterStartDate} - ${chapterEndDate}`,
+                        name: `Experiment: ${chapterStartDate} - ${chapterEndDate}`,
                         value: correlationsText
                     });
                 }
@@ -2184,10 +2186,40 @@ async function sendHistoricalReport(interaction, part) {
                 await interaction.user.send({ embeds: [correlationEmbed] });
             }
             
-            // --- DM #4: Lag Time Correlations (NEW SECTION) ---
+            // --- DM #4: Combined Habit Effects ---
+            const comboEmbed = new EmbedBuilder()
+                .setColor('#F1C40F') // Yellow
+                .setTitle(`🔀 Combined Habit Effects on '${primaryLabel}'`);
+            
+            let hasCombinedEffects = false;
+            report.analyzedChapters.forEach(chapter => {
+                const comboResults = Object.values(chapter.pairwiseInteractionResults || {});
+                const significantCombos = comboResults.filter(combo => {
+                    const summary = combo.summary || "";
+                    return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion") && !summary.toLowerCase().includes("did not show any group");
+                });
+
+                if (significantCombos.length > 0) {
+                    hasCombinedEffects = true;
+                    const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
+                    const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
+                    const comboText = significantCombos.map(combo => `*${combo.summary}*`).join('\n\n');
+
+                    comboEmbed.addFields({
+                        name: `Experiment: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: comboText.substring(0, 1024)
+                    });
+                }
+            });
+
+            if (hasCombinedEffects) {
+                await interaction.user.send({ embeds: [comboEmbed] });
+            }
+
+            // --- DM #5: Lag Time Correlations (Data Only) ---
             const lagTimeEmbed = new EmbedBuilder()
                 .setColor('#1ABC9C') // Teal
-                .setTitle(`🕑 Day-After Effects on '${primaryLabel}'`);
+                .setTitle(`🕑 Day-After Effects Data on '${primaryLabel}'`);
 
             let hasLagTimeCorrelations = false;
             report.analyzedChapters.forEach(chapter => {
@@ -2199,18 +2231,12 @@ async function sendHistoricalReport(interaction, part) {
                     const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
                     const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
                     const lagTimeText = relevantLagCorrs.map(lag => {
-                        const yesterdayUnit = unitMap[lag.yesterdayMetricLabel];
-                        const isYesterdayTime = isTimeMetric(yesterdayUnit);
-                        const isTodayTime = isPrimaryTime;
-                        
-                        const yesterdayDisplay = isYesterdayTime ? 'was later' : 'was higher ⤴️';
-                        const todayDisplay = isTodayTime ? (lag.coefficient >= 0 ? 'was later' : 'was earlier') : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
-                        
-                        return `*When **yesterday's '${lag.yesterdayMetricLabel}'** ${yesterdayDisplay}, **today's '${lag.todayMetricLabel}'** ${todayDisplay}.*`;
+                        const rSquared = (lag.coefficient * lag.coefficient * 100).toFixed(0);
+                        return `*Yesterday's '${lag.yesterdayMetricLabel}' (Strength: ${rSquared}%)*`;
                     }).join('\n');
 
                     lagTimeEmbed.addFields({
-                        name: `Experiment Period: ${chapterStartDate} - ${chapterEndDate}`,
+                        name: `Experiment: ${chapterStartDate} - ${chapterEndDate}`,
                         value: lagTimeText
                     });
                 }
@@ -2219,6 +2245,13 @@ async function sendHistoricalReport(interaction, part) {
             if (hasLagTimeCorrelations) {
                 await interaction.user.send({ embeds: [lagTimeEmbed] });
             }
+
+            // --- DM #6: Holistic AI Insight ---
+            const holisticEmbed = new EmbedBuilder()
+                .setColor('#5865F2') // Discord Blurple
+                .setTitle(`🔎 AI Analysis: The Full Story`)
+                .setDescription(report.holisticInsight.substring(0, 4096));
+            await interaction.user.send({ embeds: [holisticEmbed] });
 
             // --- Final DM: The Wrap-Up ---
             const wrapUpEmbed = new EmbedBuilder()
