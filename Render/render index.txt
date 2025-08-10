@@ -2107,15 +2107,13 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
 
 /**
  * Manages and sends the multi-part narrative historical report to the user's DMs.
- * @param {import('discord.js').Interaction} interaction - The interaction that triggered the report.
- * @param {string} part - The specific part of the report to send ('aha_moment' or 'full_report').
+ * This final version includes a holistic AI insight and all data sections.
  */
 async function sendHistoricalReport(interaction, part) {
     const userId = interaction.user.id;
     const reportData = userHistoricalReportData.get(userId);
     if (!reportData || !reportData.report) {
         const errorMessage = "I couldn't find your report data. It might have expired. Please try running the analysis again with `/stats`.";
-        // Use deferUpdate for buttons, but editReply for the initial interaction from the slash command.
         if (interaction.isButton()) {
             await interaction.update({ content: errorMessage, components: [], embeds: [] });
         } else {
@@ -2126,26 +2124,25 @@ async function sendHistoricalReport(interaction, part) {
     
     const { report } = reportData;
     const primaryLabel = report.primaryMetricLabel;
+    const unitMap = report.metricUnitMap || {};
 
     try {
         if (part === 'aha_moment') {
-            // --- DM #1: The "Aha!" Moment ---
             const ahaEmbed = new EmbedBuilder()
-                .setColor('#FEE75C') // Yellow
+                .setColor('#FEE75C')
                 .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
-                .addFields(
-                    { name: report.ahaMoment.type, value: report.ahaMoment.text },
-                    { name: "Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) }
-                );
+                .setDescription(report.ahaMoment.text.substring(0, 4096))
+                .addFields({ name: "🌱 Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) });
+                
             const moreStatsButton = new ButtonBuilder()
                 .setCustomId(HISTORICAL_REPORT_MORE_STATS)
                 .setLabel('More Stats ➡️')
                 .setStyle(ButtonStyle.Primary);
             await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
             await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
-
+        
         } else if (part === 'full_report') {
-            await interaction.update({ components: [] }); // Acknowledge the "More Stats" button click by removing it.
+            await interaction.update({ components: [] });
 
             // --- DM #2: The Trend ---
             if(report.trend) {
@@ -2153,45 +2150,128 @@ async function sendHistoricalReport(interaction, part) {
                     .setColor('#0099FF')
                     .setTitle(`📈 The Journey of '${primaryLabel}'`)
                     .addFields(
-                        { name: 'Historical Average', value: String(report.trend.priorAverage), inline: true },
-                        { name: 'Most Recent Avg', value: String(report.trend.recentAverage), inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true }, // Spacer
-                        { name: 'Historical Consistency', value: `${report.trend.priorConsistency}%`, inline: true },
-                        { name: 'Recent Consistency', value: `${report.trend.recentConsistency.toFixed(0)}%`, inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true } // Spacer
+                        { name: `Historical Average (${report.trend.priorDataPoints} days)`, value: String(report.trend.priorAverage), inline: true },
+                        { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: String(report.trend.recentAverage), inline: true },
+                        { name: '\u200B', value: '\u200B', inline: true },
+                        { name: 'Historical Consistency', value: `${(100 - report.trend.priorConsistency).toFixed(0)}%`, inline: true },
+                        { name: 'Most Recent Consistency', value: `${(100 - report.trend.recentConsistency).toFixed(0)}%`, inline: true },
+                        { name: '\u200B', value: '\u200B', inline: true }
                     );
                 await interaction.user.send({ embeds: [trendEmbed] });
             }
 
-            // --- DM #3: The Ripple Effect (Correlations) ---
-            const allCorrelations = new Map();
-            // Consolidate and de-duplicate correlations, keeping the strongest instance.
+            // --- DM #3: Direct Correlations (Descriptive) ---
+            const correlationEmbed = new EmbedBuilder()
+                .setColor('#E67E22')
+                .setTitle(`🔗 What Correlates with '${primaryLabel}'?`);
+
+            let hasCorrelations = false;
+            const primaryUnit = unitMap[primaryLabel];
+            const isPrimaryTime = isTimeMetric(primaryUnit);
+
             report.analyzedChapters.forEach(chapter => {
-                const correlations = chapter.correlations?.influencedBy || [];
-                correlations.forEach(corr => {
-                    if (!allCorrelations.has(corr.withMetric) || Math.abs(corr.coefficient) > Math.abs(allCorrelations.get(corr.withMetric).coefficient)) {
-                        allCorrelations.set(corr.withMetric, corr);
-                    }
-                });
+                if (chapter.correlations.influencedBy.length > 0) {
+                    hasCorrelations = true;
+                    const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
+                    const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
+                    // FIX #1: This logic is restored to be descriptive
+                    const correlationsText = chapter.correlations.influencedBy.map(corr => {
+                        const otherUnit = unitMap[corr.withMetric];
+                        const isOtherTime = isTimeMetric(otherUnit);
+                        const primaryDisplay = isPrimaryTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
+                        const otherDisplay = isOtherTime ? 'is later' : 'is higher ⤴️';
+                        return `*When **'${corr.withMetric}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay} (Correlation Strength = ${rSquared}%)*`;
+                    }).join('\n');
+                    
+                    correlationEmbed.addFields({
+                        name: `Experiment: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: correlationsText
+                    });
+                }
             });
 
-            if (allCorrelations.size > 0) {
-                const correlationEmbed = new EmbedBuilder()
-                    .setColor('#E67E22')
-                    .setTitle(`Remarkable Correlations: '${primaryLabel}' and Other Outcomes`);
-                
-                allCorrelations.forEach(corr => {
-                    const rSquared = corr.coefficient * corr.coefficient;
-                    correlationEmbed.addFields({ name: `'${corr.withMetric}'`, value: `**Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
-                });
+            if (hasCorrelations) {
                 await interaction.user.send({ embeds: [correlationEmbed] });
             }
             
+            // --- DM #4: Combined Habit Effects ---
+            const comboEmbed = new EmbedBuilder()
+                .setColor('#F1C40F')
+                .setTitle(`🔀 Combined Habit Effects on '${primaryLabel}'`);
+            
+            let hasCombinedEffects = false;
+            report.analyzedChapters.forEach(chapter => {
+                const comboResults = Object.values(chapter.pairwiseInteractionResults || {});
+                const significantCombos = comboResults.filter(combo => {
+                    const summary = combo.summary || "";
+                    return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion") && !summary.toLowerCase().includes("did not show any group");
+                });
+
+                if (significantCombos.length > 0) {
+                    hasCombinedEffects = true;
+                    const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
+                    const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
+                    const comboText = significantCombos.map(combo => `*${combo.summary}*`).join('\n\n');
+
+                    comboEmbed.addFields({
+                        name: `Experiment: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: comboText.substring(0, 1024)
+                    });
+                }
+            });
+
+            if (hasCombinedEffects) {
+                await interaction.user.send({ embeds: [comboEmbed] });
+            }
+
+            // --- DM #5: Lag Time Correlations (Data Only) ---
+            const lagTimeEmbed = new EmbedBuilder()
+                .setColor('#1ABC9C')
+                .setTitle(`🕑 Day-After Effects Data on '${primaryLabel}'`);
+
+            let hasLagTimeCorrelations = false;
+            report.analyzedChapters.forEach(chapter => {
+                const lagCorrs = Object.values(chapter.lagTimeCorrelations || {});
+                const relevantLagCorrs = lagCorrs.filter(lag => lag.todayMetricLabel === primaryLabel && Math.abs(lag.coefficient) >= 0.3);
+
+                if (relevantLagCorrs.length > 0) {
+                    hasLagTimeCorrelations = true;
+                    const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
+                    const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
+                    const lagTimeText = relevantLagCorrs.map(lag => {
+                        const rSquared = (lag.coefficient * lag.coefficient * 100).toFixed(0);
+                        return `*Yesterday's '${lag.yesterdayMetricLabel}' (Correlation Strength = ${rSquared}%)*`;
+                    }).join('\n');
+
+                    lagTimeEmbed.addFields({
+                        name: `Experiment: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: lagTimeText
+                    });
+                }
+            });
+
+            if (hasLagTimeCorrelations) {
+                await interaction.user.send({ embeds: [lagTimeEmbed] });
+            }
+
+            // --- DM #6: Holistic AI Insight ---
+            // FIX #2: Check if holisticInsight is a string before using .substring
+            const holisticDescription = (typeof report.holisticInsight === 'string') 
+                ? report.holisticInsight.substring(0, 4096) 
+                : "AI analysis of combined correlations could not be generated.";
+
+            const holisticEmbed = new EmbedBuilder()
+                .setColor('#5865F2')
+                .setTitle(`🔎 AI Analysis: The Full Story`)
+                .setDescription(holisticDescription);
+            await interaction.user.send({ embeds: [holisticEmbed] });
+
             // --- Final DM: The Wrap-Up ---
             const wrapUpEmbed = new EmbedBuilder()
                 .setColor('#9B59B6')
                 .setTitle('✨ Share Your Discovery')
                 .setDescription("Sharing your findings can inspire others. Would you like me to draft a celebratory post for the group?");
+
             const shareButtons = new ButtonBuilder()
                 .setCustomId(HISTORICAL_REPORT_SHOW_SHARE)
                 .setLabel('Yes, show me!')
@@ -2200,10 +2280,11 @@ async function sendHistoricalReport(interaction, part) {
                 .setCustomId(HISTORICAL_REPORT_NO_SHARE)
                 .setLabel('No, Thanks')
                 .setStyle(ButtonStyle.Secondary);
+            
             await interaction.user.send({ embeds: [wrapUpEmbed], components: [new ActionRowBuilder().addComponents(shareButtons, noShareButton)] });
         }
     } catch (error) {
-        logger.error(`[sendHistoricalReport] Error sending report part '${part}' to user ${userId}:`, error);
+        console.error(`[sendHistoricalReport] Error sending report part '${part}' to user ${userId}:`, error);
     }
 }
 
@@ -2375,110 +2456,6 @@ async function promptForExperimentRange(interaction, userId) {
     });
 }
 
-/**
- * Manages and sends the multi-part narrative historical report to the user's DMs.
- * @param {import('discord.js').Interaction} interaction - The interaction that triggered the report.
- * @param {string} part - The specific part of the report to send ('aha_moment' or 'full_report').
- */
-async function sendHistoricalReport(interaction, part) {
-    const userId = interaction.user.id;
-    const reportData = userHistoricalReportData.get(userId);
-
-    if (!reportData || !reportData.report) {
-        const errorMessage = "I couldn't find your report data. It might have expired. Please try running the analysis again with `/stats`.";
-        if (part === 'aha_moment') {
-            await interaction.editReply({ content: errorMessage, components: [] });
-        } else {
-            await interaction.reply({ content: errorMessage, ephemeral: true });
-        }
-        return;
-    }
-    
-    const { report } = reportData;
-    const primaryLabel = report.primaryMetricLabel;
-
-    try {
-        if (part === 'aha_moment') {
-            // --- DM #1: The "Aha!" Moment ---
-            const ahaEmbed = new EmbedBuilder()
-                .setColor('#FEE75C') // Yellow
-                .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
-                .addFields(
-                    { name: report.ahaMoment.type, value: report.ahaMoment.text },
-                    { name: "Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) }
-                );
-
-            const moreStatsButton = new ButtonBuilder()
-                .setCustomId(HISTORICAL_REPORT_MORE_STATS)
-                .setLabel('More Stats ➡️')
-                .setStyle(ButtonStyle.Primary);
-
-            await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
-            await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [] });
-        
-        } else if (part === 'full_report') {
-            await interaction.update({ components: [] });
-
-            // --- DM #2: Your Metric's Journey ---
-            if(report.trend) {
-                const trendEmbed = new EmbedBuilder()
-                    .setColor('#0099FF')
-                    .setTitle(`📈 The Journey of '${primaryLabel}'`)
-                    .addFields(
-                        { name: 'Historical Average', value: String(report.trend.priorAverage), inline: true },
-                        { name: 'Most Recent Avg', value: String(report.trend.recentAverage), inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true }, // Spacer
-                        { name: 'Historical Consistency', value: `${report.trend.priorConsistency}%`, inline: true },
-                        { name: 'Recent Consistency', value: `${report.trend.recentConsistency.toFixed(0)}%`, inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true } // Spacer
-                    );
-                await interaction.user.send({ embeds: [trendEmbed] });
-            }
-
-            // --- DMs #3 & #4: The Ripple Effect ---
-            for (const chapter of report.analyzedChapters) {
-                const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
-                const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
-                
-                if (chapter.correlations.influencedBy.length > 0) {
-                    const embed = new EmbedBuilder().setColor('#E67E22').setTitle(`What Correlates with '${primaryLabel}'?`).setDescription(`*Experiment Period: ${chapterStartDate} - ${chapterEndDate}*`);
-                    chapter.correlations.influencedBy.forEach(corr => {
-                        const rSquared = corr.coefficient * corr.coefficient;
-                        embed.addFields({ name: `'${corr.withMetric}'`, value: `**Correlation Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
-                    });
-                    await interaction.user.send({ embeds: [embed] });
-                }
-                 if (chapter.correlations.influenced.length > 0) {
-                    const embed = new EmbedBuilder().setColor('#1ABC9C').setTitle(`What Correlates with '${primaryLabel}' and Other Outcomes?`);
-                    chapter.correlations.influenced.forEach(corr => {
-                        const rSquared = corr.coefficient * corr.coefficient;
-                        embed.addFields({ name: `'${corr.withMetric}'`, value: `**Correlation Strength:** ${(rSquared * 100).toFixed(0)}%`, inline: false });
-                    });
-                    await interaction.user.send({ embeds: [embed] });
-                }
-            }
-            
-            // --- DM #7: The Wrap-Up ---
-            const wrapUpEmbed = new EmbedBuilder()
-                .setColor('#9B59B6')
-                .setTitle('✨ Share Your Discovery')
-                .setDescription("Sharing your findings can inspire others. Would you like me to draft a celebratory post for the group?");
-
-            const shareButtons = new ButtonBuilder()
-                .setCustomId(HISTORICAL_REPORT_SHOW_SHARE)
-                .setLabel('Yes, show me!')
-                .setStyle(ButtonStyle.Success);
-            const noShareButton = new ButtonBuilder()
-                .setCustomId(HISTORICAL_REPORT_NO_SHARE)
-                .setLabel('No, Thanks')
-                .setStyle(ButtonStyle.Secondary);
-            
-            await interaction.user.send({ embeds: [wrapUpEmbed], components: [new ActionRowBuilder().addComponents(shareButtons, noShareButton)] });
-        }
-    } catch (error) {
-        console.error(`[sendHistoricalReport] Error sending report part '${part}' to user ${userId}:`, error);
-    }
-}
 
 /**
  * Checks for and executes pending actions for a user from Firestore,
@@ -6706,21 +6683,21 @@ client.on(Events.InteractionCreate, async interaction => {
         try {
             await interaction.deferUpdate();
             const reportData = userHistoricalReportData.get(interaction.user.id);
-            if (!reportData) {
-                await interaction.editReply({ content: "This session has expired.", components: [] });
+            if (!reportData || !reportData.report?.shareablePost) {
+                await interaction.editReply({ content: "This session has expired or the shareable post is missing.", components: [] });
                 return;
             }
 
-            const result = await callFirebaseFunction('generateHistoricalSharePost', { report: reportData.report, userTag: interaction.user.tag }, interaction.user.id);
-            if (result && result.success) {
-                reportData.sharePost = result.post;
-                userHistoricalReportData.set(interaction.user.id, reportData);
+            const postButton = new ButtonBuilder()
+                .setCustomId(HISTORICAL_REPORT_POST_PUBLIC)
+                .setLabel('🚀 Post to #hub')
+                .setStyle(ButtonStyle.Primary);
+            
+            await interaction.editReply({ 
+                content: `Here's a draft I prepared. How does this look?\n\n> ${reportData.report.shareablePost}`, 
+                components: [new ActionRowBuilder().addComponents(postButton)] 
+            });
 
-                const postButton = new ButtonBuilder().setCustomId(HISTORICAL_REPORT_POST_PUBLIC).setLabel('🚀 Post to #hub').setStyle(ButtonStyle.Primary);
-                await interaction.editReply({ content: `Here's a draft I prepared. How does this look?\n\n> ${result.post}`, components: [new ActionRowBuilder().addComponents(postButton)] });
-            } else {
-                throw new Error(result?.message || "Failed to generate share post.");
-            }
         } catch (error) {
             console.error(`Error showing share prompt:`, error);
             await interaction.editReply({ content: `An error occurred: ${error.message}`, components: [] });

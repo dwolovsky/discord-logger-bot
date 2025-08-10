@@ -2180,6 +2180,7 @@ async function sendHistoricalReport(interaction, part) {
                         const isOtherTime = isTimeMetric(otherUnit);
                         const primaryDisplay = isPrimaryTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
                         const otherDisplay = isOtherTime ? 'is later' : 'is higher ⤴️';
+                        const rSquared = (corr.coefficient * corr.coefficient * 100).toFixed(0);
                         return `*When **'${corr.withMetric}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay} (Correlation Strength = ${rSquared}%)*`;
                     }).join('\n');
                     
@@ -6708,15 +6709,16 @@ client.on(Events.InteractionCreate, async interaction => {
         try {
             await interaction.deferUpdate();
             const reportData = userHistoricalReportData.get(interaction.user.id);
-            if (!reportData || !reportData.sharePost) {
-                await interaction.editReply({ content: "This session has expired or the post content is missing.", components: [] });
-                return;
+            
+            if (!reportData || !reportData.report?.shareablePost) { 
+            await interaction.editReply({ content: "This session has expired or the post content is missing.", components: [] });
+            return;
             }
             
             const hubChannelId = '1363161131723526437'; // Replace with your actual HUB channel ID
             const channel = await client.channels.fetch(hubChannelId);
             if (channel && channel.isTextBased()) {
-                await channel.send(reportData.sharePost);
+                await channel.send(reportData.report.shareablePost);
                 await interaction.editReply({ content: `✅ Shared to the <#${hubChannelId}> channel!`, components: [] });
             } else {
                 await interaction.editReply({ content: "Error: Could not find the #hub channel to post in.", components: [] });
@@ -7536,7 +7538,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const postToGroupButton = new ButtonBuilder()
             .setCustomId('post_ai_log_summary_btn')
-            .setLabel('🚀 Post to #main')
+            .setLabel('🚀 Post to #hub')
             .setStyle(ButtonStyle.Success);
         const newDmButtonRow = new ActionRowBuilder().addComponents(postToGroupButton);
 
@@ -7557,7 +7559,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     const disabledPostRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId('post_ai_log_summary_btn')
-                            .setLabel('🚀 Post to #main')
+                            .setLabel('🚀 Post to #hub')
                             .setStyle(ButtonStyle.Success)
                             .setDisabled(true)
                     );

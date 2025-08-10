@@ -463,69 +463,6 @@ exports.onLogCreatedUpdateStreak = onDocumentCreated("logs/{logId}", async (even
     return null;
 });
 
-// In functions/index.js
-
-/**
- * Firestore trigger that listens for new log documents being created or updated
- * with `_triggerAnalysis: true` and calls the internal analysis logic.
- *
-exports.onLogUpdateTriggerAnalysis = onDocumentUpdated("logs/{logId}", async (event) => {
-    const snap = event.data;
-    if (!snap) {
-        logger.error("No data associated with the event for onLogUpdateTriggerAnalysis.");
-        return null;
-    }
-
-
-    const logId = event.params.logId;
-    const oldData = snap.before.data();
-    const newData = snap.after.data();
-
-    // Check if _triggerAnalysis was just set to true
-    if (newData._triggerAnalysis === true && oldData._triggerAnalysis !== true) {
-        
-        logger.log(`[onLogUpdateTriggerAnalysis] Triggered for log ${logId}. _triggerAnalysis flag detected.`);
-
-        const userId = newData.userId;
-        const userTag = newData.userTag;
-
-        if (!userId || !userTag) {
-            logger.error(`[onLogUpdateTriggerAnalysis] Missing userId or userTag in log ${logId}. Cannot trigger analysis.`);
-            await snap.after.ref.update({
-                analysisStatus: 'failed_missing_user_info',
-                _triggerAnalysis: FieldValue.delete() // Clear flag to prevent re-trigger
-            });
-            return null;
-        }
-
-        try {
-            // CORRECTED: Call the internal logic function directly.
-            await _analyzeAndSummarizeNotesLogic(logId, userId, userTag);
-
-            logger.log(`[onLogUpdateTriggerAnalysis] Successfully processed AI analysis for log ${logId}.`);
-            // Update log to mark as analysis requested (the callable function will update user doc)
-            await snap.after.ref.update({
-                analysisStatus: 'requested',
-                _triggerAnalysis: FieldValue.delete() // Clear flag
-            });
-        } catch (error) {
-            logger.error(`[onLogUpdateTriggerAnalysis] Error calling internal logic for log ${logId}:`, error);
-            // Update log to mark as failed analysis
-            await snap.after.ref.update({
-                analysisStatus: `failed: ${error.message || 'unknown error'}`,
-                _triggerAnalysis: FieldValue.delete() // Clear flag
-            });
-        }
-    } else {
-        // If _triggerAnalysis flag is not being set to true, do nothing
-        logger.debug(`[onLogUpdateTriggerAnalysis] Log ${logId} updated, but _triggerAnalysis flag not detected or already processed. No action.`);
-    }
-
-    return null;
-});
-
-*/
-
 // Place this revised helper function above updateWeeklySettings in functions/index.js
 /**
  * Parses a single priority string "Goal,Unit,Label" into an object.
@@ -3806,6 +3743,48 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
   }
 });
 
+/**
+ * Retrieves a list of all of a user's completed experiment statistics documents.
+ */
+exports.listUserExperiments = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'You must be logged in to list your experiments.');
+    }
+    const userId = request.auth.uid;
+    logger.log(`[listUserExperiments] Function called by user: ${userId}`);
+
+    const db = admin.firestore();
+    try {
+        const statsSnapshot = await db.collection('users').doc(userId).collection('experimentStats')
+            .orderBy('calculationTimestamp', 'desc')
+            .get();
+
+        if (statsSnapshot.empty) {
+            return { success: true, experiments: [] };
+        }
+
+        const experiments = statsSnapshot.docs.map(doc => {
+            const data = doc.data();
+            const settings = data.activeExperimentSettings;
+            const startDate = new Date(data.experimentSettingsTimestamp).toLocaleDateString();
+            // Provide a descriptive label for each experiment
+            const label = settings?.deeperProblem 
+                ? `${startDate}: "${settings.deeperProblem.substring(0, 50)}..."` 
+                : `${startDate}: Experiment`;
+
+            return {
+                id: doc.id, // The document ID is the experimentId
+                label: label
+            };
+        });
+
+        return { success: true, experiments: experiments };
+
+    } catch (error) {
+        logger.error(`[listUserExperiments] Error fetching experiments for user ${userId}:`, error);
+        throw new HttpsError('internal', 'Could not retrieve your list of experiments.', error.message);
+    }
+});
 
 /**
  * Fetches user logs, groups them into chapters based on time gaps OR changes
@@ -3846,10 +3825,9 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             const settings = statsData.activeExperimentSettings;
             if (!settings) continue;
 
-            // Handle continuous mode: only process the most recent doc for a given experiment
             if (settings.statsMode === 'continuous' && settings.experimentId) {
                 if (seenContinuousExperiments.has(settings.experimentId)) {
-                    continue; // Already processed the newer version of this continuous experiment
+                    continue; 
                 }
                 seenContinuousExperiments.add(settings.experimentId);
             }
@@ -3865,7 +3843,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
         let chaptersToAnalyze = [];
         if (numExperimentsToAnalyze === 'all_time') {
-            chaptersToAnalyze = relevantStatsDocs.reverse(); // Reverse to be chronological
+            chaptersToAnalyze = relevantStatsDocs.reverse();
         } else {
             const num = parseInt(numExperimentsToAnalyze, 10);
             chaptersToAnalyze = relevantStatsDocs.reverse().slice(-num);
@@ -3874,107 +3852,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         if (chaptersToAnalyze.length === 0) {
             return { success: true, report: null, message: "Could not find enough completed experiments containing the selected metric(s)." };
         }
-
-        // Phase 2: Correlation Processing (Identify singles vs. candidates for combination)
-        const correlationMap = new Map(); // Key: 'metricA|metricB', Value: { experiments: [expData] }
-        
-        chaptersToAnalyze.forEach(chapter => {
-            if (!chapter.correlations || !chapter.activeExperimentSettings) return;
-        
-            const outputLabel = chapter.activeExperimentSettings.output?.label;
-            if (!outputLabel) return;
-        
-            // Check if any of the user's selected metrics (primary or alias) was the OUTPUT in this experiment
-            if (includedLabels.has(normalizeLabel(outputLabel))) {
-                // If yes, iterate through correlations, where keys are INPUTS
-                for (const inputLabel in chapter.correlations) {
-                    const corrData = chapter.correlations[inputLabel];
-                    const key = `${normalizeLabel(outputLabel)}|${normalizeLabel(inputLabel)}`;
-                    if (!correlationMap.has(key)) {
-                        correlationMap.set(key, { experiments: [], metricA_label: outputLabel, metricB_label: inputLabel });
-                    }
-                    correlationMap.get(key).experiments.push({
-                        startDate: chapter.experimentSettingsTimestamp,
-                        endDate: chapter.experimentEndDateISO,
-                        correlation: corrData
-                    });
-                }
-            } else {
-            // If not, check if any of the user's selected metrics was an INPUT in this experiment
-                for (const inputLabel in chapter.correlations) {
-                    if (includedLabels.has(normalizeLabel(inputLabel)) && normalizeLabel(inputLabel) !== normalizeLabel(outputLabel)) { // <<< ADD THIS CHECK
-                        const corrData = chapter.correlations[inputLabel];
-                        const key = `${normalizeLabel(inputLabel)}|${normalizeLabel(outputLabel)}`;
-                         if (!correlationMap.has(key)) {
-                            correlationMap.set(key, { experiments: [], metricA_label: inputLabel, metricB_label: outputLabel });
-                        }
-                        correlationMap.get(key).experiments.push({
-                            startDate: chapter.experimentSettingsTimestamp,
-                            endDate: chapter.experimentEndDateISO,
-                            correlation: corrData
-                        });
-                    }
-                }
-            }
-        });
-
-        const finalCorrelations = [];
-        const combinedCorrelationPromises = [];
-
-        correlationMap.forEach((data, key) => {
-            const [primaryLabelNorm, otherLabelNorm] = key.split('|');
-
-            if (data.experiments.length > 1) {
-                // Candidate for combination
-                const promise = (async () => {
-                    const timeRanges = data.experiments.map(exp => ({
-                        start: new Date(exp.startDate),
-                        end: new Date(exp.endDate)
-                    }));
-
-                    const allLogsForPair = [];
-                    for (const range of timeRanges) {
-                        const logsSnapshot = await db.collection('logs')
-                            .where('userId', '==', userId)
-                            .where('timestamp', '>=', range.start)
-                            .where('timestamp', '<=', range.end)
-                            .get();
-                        logsSnapshot.forEach(doc => allLogsForPair.push(doc.data()));
-                    }
-
-                    const primaryMetricInfo = includedMetrics.find(m => normalizeLabel(m.label) === primaryLabelNorm);
-                    const otherMetricInfo = data.experiments[0].correlation; // Get a representative unit/label
-
-                    const { arrA, arrB } = alignDataForCombination(allLogsForPair, primaryMetricInfo.label, otherMetricInfo.label);
-                    
-                    if (arrA.length >= 5) {
-                        const coeff = jStat.corrcoeff(arrA, arrB);
-                        if (Math.abs(coeff) >= 0.15) {
-                             finalCorrelations.push({
-                                withMetric: otherMetricInfo.label,
-                                coefficient: parseFloat(coeff.toFixed(2)),
-                                isCombined: true,
-                                dataPoints: arrA.length
-                            });
-                        }
-                    }
-                })();
-                combinedCorrelationPromises.push(promise);
-            } else {
-                // Single experiment correlation
-                const singleCorr = data.experiments[0].correlation;
-                 if (Math.abs(singleCorr.coefficient) >= 0.15) {
-                    finalCorrelations.push({
-                        withMetric: singleCorr.label,
-                        coefficient: singleCorr.coefficient,
-                        isCombined: false,
-                        dataPoints: singleCorr.n_pairs
-                    });
-                }
-            }
-        });
-
-        await Promise.all(combinedCorrelationPromises);
 
         // Phase 3 & 4: Assemble Final Report
         const extractedChapters = chaptersToAnalyze.map(chapter => {
@@ -3988,11 +3865,45 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             
             if (!primaryInChapter || !chapter.calculatedMetricStats[primaryInChapter.label]) return null;
 
+            const finalCorrelationsForThisChapter = [];
+            const chapterOutputLabel = chapter.activeExperimentSettings?.output?.label;
+            if (chapter.correlations && chapterOutputLabel) {
+                for (const inputLabel in chapter.correlations) {
+                    const corrData = chapter.correlations[inputLabel];
+                    const normalizedInput = normalizeLabel(inputLabel);
+                    const normalizedOutput = normalizeLabel(chapterOutputLabel);
+                    
+                    let withMetric = null;
+
+                    if (includedLabels.has(normalizedOutput)) {
+                        if (!includedLabels.has(normalizedInput)) {
+                            withMetric = inputLabel;
+                        }
+                    }
+                    else if (includedLabels.has(normalizedInput)) {
+                        if (!includedLabels.has(normalizedOutput)) {
+                            withMetric = chapterOutputLabel;
+                        }
+                    }
+
+                    if (withMetric && Math.abs(corrData.coefficient) >= 0.15) {
+                        finalCorrelationsForThisChapter.push({
+                            withMetric: withMetric,
+                            coefficient: corrData.coefficient,
+                            isCombined: false,
+                            dataPoints: corrData.n_pairs
+                        });
+                    }
+                }
+            }
+
             return {
                 startDate: chapter.experimentSettingsTimestamp,
                 endDate: chapter.experimentEndDateISO,
                 primaryMetricStats: chapter.calculatedMetricStats[primaryInChapter.label],
-                correlations: { influencedBy: finalCorrelations } // Simplified structure
+                correlations: { influencedBy: finalCorrelationsForThisChapter },
+                lagTimeCorrelations: chapter.lagTimeCorrelations || {},
+                pairwiseInteractionResults: chapter.pairwiseInteractionResults || {}
             };
         }).filter(Boolean);
 
@@ -4000,7 +3911,32 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             return { success: true, report: null, message: "Not enough data within the selected experiments to generate a report." };
         }
 
-        let hiddenGrowthInsight = "Could not generate a summary from your notes for this period.";
+       // *** NEW AI-Powered Narrative Generation ***
+        const trend = _calculateTrend(extractedChapters);
+        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label);
+        
+        const metricUnitMap = {};
+        chaptersToAnalyze.forEach(chapter => {
+            if (chapter.calculatedMetricStats) {
+                Object.values(chapter.calculatedMetricStats).forEach(metric => {
+                    if (metric.label && metric.unit) {
+                        metricUnitMap[metric.label] = metric.unit;
+                    }
+                });
+            }
+        });
+
+        let finalReport = {
+            primaryMetricLabel: primaryMetric.label,
+            ahaMoment: ahaMoment,
+            hiddenGrowth: "Could not generate a summary from your notes for this period.",
+            holisticInsight: "AI analysis of combined correlations could not be generated.",
+            shareablePost: "A shareable post could not be generated at this time.",
+            analyzedChapters: extractedChapters,
+            trend: trend,
+            metricUnitMap: metricUnitMap
+        };
+
         if (genAI) {
             const allNotes = [];
             const noteRanges = extractedChapters.map(c => ({start: new Date(c.startDate), end: new Date(c.endDate)}));
@@ -4008,32 +3944,66 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                  const logsSnapshot = await db.collection('logs').where('userId', '==', userId).where('timestamp', '>=', range.start).where('timestamp', '<=', range.end).get();
                  logsSnapshot.forEach(doc => {
                      const log = doc.data();
-                     if(log.notes && log.notes.trim()) allNotes.push(log.notes.trim());
+                     if(log.notes && log.notes.trim()) allNotes.push(`- ${log.notes.trim()}`);
                  });
             }
+
             if (allNotes.length > 0) {
-                const notesSummaryPrompt = `You are summarizing a user's journal entries. Analyze these notes and write a single, compassionate paragraph (2 short sentences, max 40 words) in the second person ("You..."). Focus on a theme of "hidden growth" (e.g., effort, awareness, resilience). Notes:\n\n${allNotes.slice(-10).join("\n---\n")}`;
+                const allCorrelations = [];
+                extractedChapters.forEach(chapter => {
+                    allCorrelations.push(...chapter.correlations.influencedBy);
+                });
+
+                const narrativePrompt = `
+You are an expert habit-science coach. Your task is to analyze a user's habit experiment data and generate a supportive, insightful narrative.
+
+CONTEXT:
+- User's Primary Metric: "${primaryMetric.label}"
+- All Included Metric Aliases: ${JSON.stringify(includedMetrics.map(m => m.label))}
+- The Strongest Single Correlation Found: "${ahaMoment.text}"
+- The Overall Trend: The user's recent average for '${primaryMetric.label}' has ${trend ? (trend.recentAverage > trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
+- All Significant Correlations Found During Analysis: ${JSON.stringify(allCorrelations)}
+- User's Raw Notes From The Period:
+${allNotes.slice(-15).join("\n")}
+
+YOUR TASK:
+Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGrowth", and "shareablePost".
+
+1.  "holisticInsight":
+    - First, infer the real-world meaning of the Primary Metric and its aliases by using the notes as clues. (e.g., "Baw" might be a person, "Slow morning" might be a positive morning routine).
+    - Then, write 1-2 SHORT paragraphs (2 sentences each, maximum 60 words total) that synthesize ALL the correlation data. Use bold headers to label the point of each paragraph.
+    - Explain how the different habits and outcomes seem to influence each other based on your inferred meaning.
+    - Use tentative language. "Might," "could," "seems to."
+
+2.  "hiddenGrowth":
+    - Find a single, specific quote or event in the user's notes that demonstrates resilience, effort, or a moment of increased self-awareness.
+    - Write a compassionate, 2-3 sentence paragraph in the second person ("You...").
+    - Your message MUST be built around that specific quote or event, explaining why it represents hidden growth. For example, instead of: a generic "You are gaining self-awareness," Say: "When you wrote, 'I guess I always feel tired after meetings with that person,' that was a key moment. Making that connection is the first step to protecting your energy."
+
+3.  "shareablePost":
+    - Write a short, celebratory post (2-3 sentences) about the user (in the 3rd person) that they could share with their community.
+    - It must be inspiring and highlight their strongest correlation. Do not use exclamation points. Do not use any cliche language. End with the "🙌" emoji.
+
+CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
+`;
                 try {
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-                    const result = await model.generateContent(notesSummaryPrompt);
-                    hiddenGrowthInsight = result.response.text()?.trim() || hiddenGrowthInsight;
+                    const result = await model.generateContent({
+                        contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
+                        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
+                    });
+                    const aiNarrative = JSON.parse(result.response.text());
+                    
+                    finalReport.holisticInsight = aiNarrative.holisticInsight || finalReport.holisticInsight;
+                    finalReport.hiddenGrowth = aiNarrative.hiddenGrowth || finalReport.hiddenGrowth;
+                    finalReport.shareablePost = aiNarrative.shareablePost || finalReport.shareablePost;
+
                 } catch (aiError) {
-                    logger.error(`[runHistoricalAnalysis V6] AI notes summary failed for user ${userId}:`, aiError);
+                    logger.error(`[runHistoricalAnalysis V6] AI narrative generation failed for user ${userId}:`, aiError);
                 }
             }
         }
-
-        const latestChapterToAnalyze = extractedChapters[extractedChapters.length - 1];
-        const ahaMoment = _determineAhaMoment(latestChapterToAnalyze, primaryMetric.label);
         
-        const finalReport = {
-            primaryMetricLabel: primaryMetric.label,
-            ahaMoment: ahaMoment,
-            hiddenGrowth: hiddenGrowthInsight,
-            analyzedChapters: extractedChapters, // Now contains extracted data
-            trend: _calculateTrend(extractedChapters)
-        };
-
         return { success: true, report: finalReport };
 
     } catch (error) {
@@ -4075,7 +4045,8 @@ function _calculateTrend(analyzedChapters) {
 
     const latestAvg = latestChapter.primaryMetricStats.average;
     const latestConsistency = latestChapter.primaryMetricStats.variationPercentage;
-    
+    const recentDataPoints = latestChapter.primaryMetricStats.dataPoints;
+
     // Calculate weighted average of prior chapters
     let totalWeightedSum = 0;
     let totalWeightedConsistency = 0;
@@ -4096,89 +4067,53 @@ function _calculateTrend(analyzedChapters) {
         recentAverage: parseFloat(latestAvg.toFixed(2)),
         priorAverage: parseFloat(priorAvg.toFixed(2)),
         recentConsistency: latestConsistency,
-        priorConsistency: parseFloat(priorConsistency.toFixed(1))
+        priorConsistency: parseFloat(priorConsistency.toFixed(1)),
+        recentDataPoints: recentDataPoints,
+        priorDataPoints: totalDataPoints
     };
 }
 
-function _determineAhaMoment(chapterReport, primaryMetricLabel) {
-    if (!chapterReport) return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
+function _determineAhaMoment(analyzedChapters, primaryMetricLabel) {
+    if (!analyzedChapters || analyzedChapters.length === 0) return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
 
-    // Hierarchy: 1. Strongest Correlation "Influenced By" a habit
-    if (chapterReport.correlations.influencedBy.length > 0) {
-        const strongestCorr = chapterReport.correlations.influencedBy.reduce((max, corr) => Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max);
-        if (Math.abs(strongestCorr.coefficient) >= 0.15) {
-            const strength = Math.abs(strongestCorr.coefficient) >= 0.45 ? "strong" : "moderate";
-            const direction = strongestCorr.coefficient > 0 ? "positive" : "negative";
-            return {
-                type: 'Most Striking Correlation',
-                text: `It appears there may be a 🟨 ${strength} ${direction} correlation between '${strongestCorr.withMetric}' and '${primaryMetricLabel}'.`
-            };
+    let strongestCorrOverall = { coefficient: 0 };
+
+    // Iterate through all chapters to find the single strongest correlation
+    analyzedChapters.forEach(chapter => {
+        if (chapter.correlations && chapter.correlations.influencedBy && chapter.correlations.influencedBy.length > 0) {
+            const strongestCorrInChapter = chapter.correlations.influencedBy.reduce(
+                (max, corr) => (Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max),
+                { coefficient: 0 }
+            );
+
+            if (Math.abs(strongestCorrInChapter.coefficient) > Math.abs(strongestCorrOverall.coefficient)) {
+                strongestCorrOverall = strongestCorrInChapter;
+            }
         }
+    });
+
+    // If a meaningful correlation was found anywhere in the history, report it
+    if (Math.abs(strongestCorrOverall.coefficient) >= 0.15) {
+        const strength = Math.abs(strongestCorrOverall.coefficient) >= 0.45 ? "strong" : "moderate";
+        const direction = strongestCorrOverall.coefficient > 0 ? "positive" : "negative";
+        return {
+            type: 'Most Striking Correlation',
+            text: `It appears there may be a 🟨 ${strength} ${direction} correlation between '${strongestCorrOverall.withMetric}' and '${primaryMetricLabel}'.`
+        };
     }
     
-    // Fallback: Primary metric stats
-    if (chapterReport.primaryMetricStats) {
+    // Fallback: If no strong correlations exist, use the primary metric stats from the latest chapter
+    const latestChapter = analyzedChapters[analyzedChapters.length - 1];
+    if (latestChapter.primaryMetricStats) {
         return {
-            type: `Key Stat from ${new Date(chapterReport.startDate).toLocaleDateString()}`,
-            text: `During this period, your average for '${primaryMetricLabel}' was ${chapterReport.primaryMetricStats.average} with ${chapterReport.primaryMetricStats.consistency}% consistency.`
+            type: `Key Stat from ${new Date(latestChapter.startDate).toLocaleDateString()}`,
+            text: `During this period, your average for '${primaryMetricLabel}' was ${latestChapter.primaryMetricStats.average} with ${latestChapter.primaryMetricStats.variationPercentage}% consistency.`
         };
     }
     
     return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
 }
 
-// Add this new function in functions/index.js
-
-/**
- * Generates a celebratory, public-facing summary of a user's historical analysis.
- *
- * Expected request.data: { report: object, userTag: string }
- */
-exports.generateHistoricalSharePost = onCall(async (request) => {
-    if (!genAI) {
-        throw new HttpsError('internal', "The AI service is currently unavailable.");
-    }
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'You must be logged in.');
-    }
-
-    const { report, userTag } = request.data;
-    if (!report || !userTag) {
-        throw new HttpsError('invalid-argument', 'Missing required report data or user tag.');
-    }
-
-    const prompt = `
-        You are a supportive and enthusiastic community manager. Your task is to write a short, celebratory post (2-3 sentences) about a user's self-science findings.
-        
-        CONTEXT:
-        - User's Name: "${userTag}"
-        - They just analyzed their historical data for the metric: "${report.primaryMetricLabel}"
-        - The most striking insight found was: "${report.ahaMoment.text}"
-        - A summary of their notes revealed this theme of hidden growth: "${report.hiddenGrowth}"
-
-        YOUR TASK:
-        - Write a celebratory post congratulating the user.
-        - Weave in their primary metric and the most striking insight.
-        - The tone should be inspiring to other community members, highlighting the value of turning hunches into hard data.
-        - Do not use exclamation points.
-        - End with the "🙌" emoji.
-
-        Return ONLY the raw text for the post.
-    `;
-
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const result = await model.generateContent(prompt);
-        const postText = result.response.text()?.trim();
-        if (!postText) {
-            throw new Error("AI generated an empty response.");
-        }
-        return { success: true, post: postText };
-    } catch (error) {
-        logger.error(`[generateHistoricalSharePost] AI generation failed:`, error);
-        throw new HttpsError('internal', 'Failed to generate the shareable post.');
-    }
-});
 
 /**
  * Generates five potential complete outcome metrics (label, unit, goal)

@@ -3544,13 +3544,14 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
             It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
             Examples:
-                * "Today was a tough one for me with [Habit or Outcome]. Any tips for staying consistent on low-energy days [or more specific problem from notes]?"
+                * "Today was a tough one for me with [Habit or Outcome]. Anyone have tips for staying consistent on low-energy days [or more specific problem from notes]?"
                 * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
                 * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins!"
                 * "I've been wanting [Deeper Wish], and today felt a step in that direction because [reason from notes]. It's cool to see new connections."
                 * "My main takeaway from today: [brief, insightful summary of a learning]. Curious if that resonates with anyone."
             
             DO NOT say "Anyone else..." at the end of the message.
+            DO NOT use cliches like "small wins add up." The language of the message should be in the style of the notes.
 
             Return your response ONLY as a JSON object with the following structure:
             {
