@@ -4004,10 +4004,10 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
     - Use tentative language. "Might," "could," "seems to."
 
 2.  "hiddenGrowth":
-    - Find a single, specific quote or event in the user's notes that demonstrates resilience, effort, or a moment of increased self-awareness.
-    - Write a compassionate, 2-3 sentence paragraph in the second person ("You...").
-    - Your message MUST be built around that specific quote or event, explaining why it represents hidden growth.
-    - For example, instead of: a generic "You are gaining self-awareness," Say: "When you wrote, 'I guess I always feel tired after meetings with that person,' that was a key moment. Making that connection is the first step to protecting your energy."
+    - This key's value MUST be a JSON object with two keys: "quote" and "paragraph".
+    - "quote": Find and return the single, most relevant quote from the user's notes that shows resilience or self-awareness. Return only the text.
+    - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that explains why the quote represents hidden growth. For example, "When you wrote, 'I guess I always feel tired after meetings,' that was a key moment. Making that connection is the first step to protecting your energy."
+
 3.  "shareablePost":
     - Write a short, celebratory post (2-3 sentences) about the user (in the 3rd person) that they could share with their community.
     - It must be inspiring and highlight their strongest correlation. Do not use exclamation points.

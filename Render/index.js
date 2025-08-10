@@ -2153,19 +2153,17 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
                     .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
                     .setDescription(ahaDescription.substring(0, 4096));
 
-                // --- Robust handling for hiddenGrowth ---
-                let hiddenGrowthText = ""; // Default to an empty string
-                // Check for a meaningful, non-fallback string
-                if (typeof report.hiddenGrowth === 'string' && report.hiddenGrowth.trim() !== "" && !report.hiddenGrowth.includes("Could not generate a summary")) {
-                    hiddenGrowthText = report.hiddenGrowth;
-                } else if (report.hiddenGrowth && typeof report.hiddenGrowth === 'object') {
-                    // Handle cases where AI might return an object
-                    hiddenGrowthText = report.hiddenGrowth.growth || report.hiddenGrowth.text || JSON.stringify(report.hiddenGrowth);
-                }
+                // --- Robust handling for hiddenGrowth with quote formatting ---
+                // Check if hiddenGrowth is an object with the properties we now expect.
+                if (report.hiddenGrowth && typeof report.hiddenGrowth.quote === 'string' && typeof report.hiddenGrowth.paragraph === 'string') {
+                    const quote = report.hiddenGrowth.quote.trim();
+                    const paragraph = report.hiddenGrowth.paragraph.trim();
 
-                // Conditionally add the Hidden Growth field ONLY if there is content for it
-                if (hiddenGrowthText) {
-                    ahaEmbed.addFields({ name: "🌱 Hidden Growth", value: hiddenGrowthText.substring(0, 1024) });
+                    if (quote && paragraph) {
+                        // Use Discord's blockquote markdown `>` for the quote.
+                        const formattedGrowthText = `> ${quote}\n\n${paragraph}`;
+                        ahaEmbed.addFields({ name: "🌱 Hidden Growth", value: formattedGrowthText.substring(0, 1024) });
+                    }
                 }
 
                 const moreStatsButton = new ButtonBuilder()
