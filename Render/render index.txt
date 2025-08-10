@@ -2140,21 +2140,21 @@ async function sendHistoricalReport(interaction, part) {
                 .setStyle(ButtonStyle.Primary);
             await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
             await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
-        
+
         } else if (part === 'full_report') {
-            await interaction.update({ components: [] });
+            await interaction.update({ components: [] }); // Acknowledge the button click
 
             // --- DM #2: The Trend ---
             if(report.trend) {
                 const trendEmbed = new EmbedBuilder()
                     .setColor('#0099FF')
                     .setTitle(`📈 The Journey of '${primaryLabel}'`)
-                    .addFields(
+                     .addFields(
                         { name: `Historical Average (${report.trend.priorDataPoints} days)`, value: String(report.trend.priorAverage), inline: true },
                         { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: String(report.trend.recentAverage), inline: true },
                         { name: '\u200B', value: '\u200B', inline: true },
-                        { name: 'Historical Consistency', value: `${(100 - report.trend.priorConsistency).toFixed(0)}%`, inline: true },
-                        { name: 'Most Recent Consistency', value: `${(100 - report.trend.recentConsistency).toFixed(0)}%`, inline: true },
+                        { name: 'Historical Consistency', value: `${report.trend.priorConsistency}%`, inline: true },
+                        { name: 'Most Recent Consistency', value: `${report.trend.recentConsistency}%`, inline: true },
                         { name: '\u200B', value: '\u200B', inline: true }
                     );
                 await interaction.user.send({ embeds: [trendEmbed] });
@@ -2164,32 +2164,46 @@ async function sendHistoricalReport(interaction, part) {
             const correlationEmbed = new EmbedBuilder()
                 .setColor('#E67E22')
                 .setTitle(`🔗 What Correlates with '${primaryLabel}'?`);
-
             let hasCorrelations = false;
             const primaryUnit = unitMap[primaryLabel];
             const isPrimaryTime = isTimeMetric(primaryUnit);
 
             report.analyzedChapters.forEach(chapter => {
-                if (chapter.correlations.influencedBy.length > 0) {
-                    hasCorrelations = true;
+                const significantCorrelationsInChapter = chapter.correlations.influencedBy.map(corr => {
+                    const absCoeff = Math.abs(corr.coefficient);
+                    if (absCoeff < 0.2) return null; // Apply the new minimum threshold
+
+                    hasCorrelations = true; // Mark that we found at least one to show
+                    const otherUnit = unitMap[corr.withMetric];
+                    const isOtherTime = isTimeMetric(otherUnit);
+
+                    const primaryDisplay = isPrimaryTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
+                    const otherDisplay = isOtherTime ? 'is later' : 'is higher ⤴️';
+
+                    const isConfident = corr.pValue !== null && corr.pValue < 0.05;
+                    const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data is needed to confirm this relationship.";
+                    
+                    let strengthText = "No detectable";
+                    let strengthEmoji = "🟦";
+                    if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+                    else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+                    else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+                    else if (absCoeff >= 0.2) { strengthText = "Weak"; strengthEmoji = "🟩"; } // Adjusted lower bound
+
+                    const rSquared = (corr.coefficient * corr.coefficient * 100).toFixed(0);
+
+                    return `**When '${corr.withMetric}' ${otherDisplay}**\n→ **'${primaryLabel}'** ${primaryDisplay}\n*Strength: ${strengthEmoji} ${strengthText} (${rSquared}%)*\n*${confidenceText}*`;
+                }).filter(Boolean); // Filter out the null (weak) correlations
+
+                if (significantCorrelationsInChapter.length > 0) {
                     const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
                     const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
-                    // FIX #1: This logic is restored to be descriptive
-                    const correlationsText = chapter.correlations.influencedBy.map(corr => {
-                        const otherUnit = unitMap[corr.withMetric];
-                        const isOtherTime = isTimeMetric(otherUnit);
-                        const primaryDisplay = isPrimaryTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
-                        const otherDisplay = isOtherTime ? 'is later' : 'is higher ⤴️';
-                        return `*When **'${corr.withMetric}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay} (Correlation Strength = ${rSquared}%)*`;
-                    }).join('\n');
-                    
                     correlationEmbed.addFields({
-                        name: `Experiment: ${chapterStartDate} - ${chapterEndDate}`,
-                        value: correlationsText
+                        name: `From Experiment: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: significantCorrelationsInChapter.join('\n\n')
                     });
                 }
             });
-
             if (hasCorrelations) {
                 await interaction.user.send({ embeds: [correlationEmbed] });
             }
@@ -2198,13 +2212,15 @@ async function sendHistoricalReport(interaction, part) {
             const comboEmbed = new EmbedBuilder()
                 .setColor('#F1C40F')
                 .setTitle(`🔀 Combined Habit Effects on '${primaryLabel}'`);
-            
             let hasCombinedEffects = false;
             report.analyzedChapters.forEach(chapter => {
                 const comboResults = Object.values(chapter.pairwiseInteractionResults || {});
                 const significantCombos = comboResults.filter(combo => {
-                    const summary = combo.summary || "";
-                    return !summary.toLowerCase().includes("skipped") && !summary.toLowerCase().includes("no meaningful conclusion") && !summary.toLowerCase().includes("did not show any group");
+                const summary = combo.summary || "";
+                return !summary.toLowerCase().includes("skipped") && 
+                    !summary.toLowerCase().includes("no meaningful conclusion") && 
+                    !summary.toLowerCase().includes("did not show any group") &&
+                    !summary.toLowerCase().includes("could not be determined");
                 });
 
                 if (significantCombos.length > 0) {
@@ -2219,47 +2235,64 @@ async function sendHistoricalReport(interaction, part) {
                     });
                 }
             });
-
             if (hasCombinedEffects) {
                 await interaction.user.send({ embeds: [comboEmbed] });
             }
 
-            // --- DM #5: Lag Time Correlations (Data Only) ---
+            // --- DM #5: Lag Time Correlations (Descriptive) ---
             const lagTimeEmbed = new EmbedBuilder()
                 .setColor('#1ABC9C')
-                .setTitle(`🕑 Day-After Effects Data on '${primaryLabel}'`);
-
+                .setTitle(`🕑 Day-After Effects on '${primaryLabel}'`);
             let hasLagTimeCorrelations = false;
+
             report.analyzedChapters.forEach(chapter => {
                 const lagCorrs = Object.values(chapter.lagTimeCorrelations || {});
-                const relevantLagCorrs = lagCorrs.filter(lag => lag.todayMetricLabel === primaryLabel && Math.abs(lag.coefficient) >= 0.3);
+                const relevantLagCorrsText = lagCorrs.filter(lag => lag.todayMetricLabel === primaryLabel)
+                    .map(lag => {
+                        const absCoeff = Math.abs(lag.coefficient);
+                        if (absCoeff < 0.2) return null; // Apply the new minimum threshold
 
-                if (relevantLagCorrs.length > 0) {
-                    hasLagTimeCorrelations = true;
+                        hasLagTimeCorrelations = true;
+                        const yesterdayUnit = unitMap[lag.yesterdayMetricLabel];
+                        const todayUnit = unitMap[lag.todayMetricLabel];
+                        const isYesterdayTime = isTimeMetric(yesterdayUnit);
+                        const isTodayTime = isTimeMetric(todayUnit);
+
+                        const yesterdayDisplay = isYesterdayTime ? 'was later' : 'was higher ⤴️';
+                        const todayDisplay = isTodayTime ? (lag.coefficient >= 0 ? 'was later' : 'was earlier') : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
+                        
+                        const isConfident = lag.pValue !== null && lag.pValue < 0.05;
+                        const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data is needed to confirm this relationship.";
+                        
+                        let strengthText = "No detectable";
+                        let strengthEmoji = "🟦";
+                        if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+                        else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+                        else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+                        else if (absCoeff >= 0.2) { strengthText = "Weak"; strengthEmoji = "🟩"; }
+
+                        const rSquared = (lag.coefficient * lag.coefficient * 100).toFixed(0);
+
+                        return `**When Yesterday's '${lag.yesterdayMetricLabel}' ${yesterdayDisplay}**\n→ **Today's '${lag.todayMetricLabel}' ${todayDisplay}**\n*Strength: ${strengthEmoji} ${strengthText} (${rSquared}%)*\n*${confidenceText}*`;
+                }).filter(Boolean);
+
+                if (relevantLagCorrsText.length > 0) {
                     const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
                     const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
-                    const lagTimeText = relevantLagCorrs.map(lag => {
-                        const rSquared = (lag.coefficient * lag.coefficient * 100).toFixed(0);
-                        return `*Yesterday's '${lag.yesterdayMetricLabel}' (Correlation Strength = ${rSquared}%)*`;
-                    }).join('\n');
-
                     lagTimeEmbed.addFields({
-                        name: `Experiment: ${chapterStartDate} - ${chapterEndDate}`,
-                        value: lagTimeText
+                        name: `From Experiment: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: relevantLagCorrsText.join('\n\n')
                     });
                 }
             });
-
             if (hasLagTimeCorrelations) {
                 await interaction.user.send({ embeds: [lagTimeEmbed] });
             }
 
             // --- DM #6: Holistic AI Insight ---
-            // FIX #2: Check if holisticInsight is a string before using .substring
             const holisticDescription = (typeof report.holisticInsight === 'string') 
                 ? report.holisticInsight.substring(0, 4096) 
                 : "AI analysis of combined correlations could not be generated.";
-
             const holisticEmbed = new EmbedBuilder()
                 .setColor('#5865F2')
                 .setTitle(`🔎 AI Analysis: The Full Story`)
@@ -2271,7 +2304,6 @@ async function sendHistoricalReport(interaction, part) {
                 .setColor('#9B59B6')
                 .setTitle('✨ Share Your Discovery')
                 .setDescription("Sharing your findings can inspire others. Would you like me to draft a celebratory post for the group?");
-
             const shareButtons = new ButtonBuilder()
                 .setCustomId(HISTORICAL_REPORT_SHOW_SHARE)
                 .setLabel('Yes, show me!')
@@ -2280,7 +2312,6 @@ async function sendHistoricalReport(interaction, part) {
                 .setCustomId(HISTORICAL_REPORT_NO_SHARE)
                 .setLabel('No, Thanks')
                 .setStyle(ButtonStyle.Secondary);
-            
             await interaction.user.send({ embeds: [wrapUpEmbed], components: [new ActionRowBuilder().addComponents(shareButtons, noShareButton)] });
         }
     } catch (error) {
@@ -6708,15 +6739,16 @@ client.on(Events.InteractionCreate, async interaction => {
         try {
             await interaction.deferUpdate();
             const reportData = userHistoricalReportData.get(interaction.user.id);
-            if (!reportData || !reportData.sharePost) {
-                await interaction.editReply({ content: "This session has expired or the post content is missing.", components: [] });
-                return;
+            
+            if (!reportData || !reportData.report?.shareablePost) { 
+            await interaction.editReply({ content: "This session has expired or the post content is missing.", components: [] });
+            return;
             }
             
             const hubChannelId = '1363161131723526437'; // Replace with your actual HUB channel ID
             const channel = await client.channels.fetch(hubChannelId);
             if (channel && channel.isTextBased()) {
-                await channel.send(reportData.sharePost);
+                await channel.send(reportData.report.shareablePost);
                 await interaction.editReply({ content: `✅ Shared to the <#${hubChannelId}> channel!`, components: [] });
             } else {
                 await interaction.editReply({ content: "Error: Could not find the #hub channel to post in.", components: [] });
@@ -7536,7 +7568,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const postToGroupButton = new ButtonBuilder()
             .setCustomId('post_ai_log_summary_btn')
-            .setLabel('🚀 Post to #main')
+            .setLabel('🚀 Post to #hub')
             .setStyle(ButtonStyle.Success);
         const newDmButtonRow = new ActionRowBuilder().addComponents(postToGroupButton);
 
@@ -7557,7 +7589,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     const disabledPostRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId('post_ai_log_summary_btn')
-                            .setLabel('🚀 Post to #main')
+                            .setLabel('🚀 Post to #hub')
                             .setStyle(ButtonStyle.Success)
                             .setDisabled(true)
                     );

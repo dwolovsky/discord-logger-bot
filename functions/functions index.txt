@@ -125,6 +125,30 @@ const defaultReminderMessages = [
     // or if it has its own internal default logic when customReminderMessage is null.
     // ==================================
 
+    const TIME_OF_DAY_KEYWORDS = [
+    'time of day',      // The primary, explicit unit
+    'clock time',       // A common alternative
+    'specific time',
+    'exact time',
+    "o'clock",          // e.g., for a goal of "8 o'clock"
+    'oclock',           // Common misspelling
+    'o clock',          // Common variant
+    'am/pm',            // Indicates a 12-hour clock time
+    'a.m./p.m.',
+    'am',
+    'pm',
+    'a.m.',
+    'p.m.',
+    'am.',
+    'pm.'
+];
+
+function isTimeMetric(unit) {
+    if (!unit) return false;
+    // This reuses the TIME_OF_DAY_KEYWORDS constant already defined in your code
+    return TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
+}
+
 // Gen 2 Imports
 const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
@@ -1965,12 +1989,6 @@ async function _calculateAndStorePeriodStatsLogic(
                     const coefficient = jStat.corrcoeff(pairedInputValues, pairedOutputValues);
                     const rSquared = coefficient * coefficient; // Calculate R-squared
 
-                    // Only store if the relationship is at least "weak" (R-squared >= 2.25%, i.e., abs(coefficient) >= 0.15)
-                    if (rSquared < 0.0225) { // 0.15 * 0.15 = 0.0225
-                        logger.log(`[${callingFunction}] [Correlation] Skipping storage for "${inputLabel}" vs "${outputMetricLabel}" due to weak correlation (R²=${rSquared.toFixed(4)}). User: ${userId}, Exp: ${experimentId}`);
-                        continue; // Skip storing this correlation
-                    }
-
                     let pValue = null;
 
                     if (n_pairs > 2 && Math.abs(coefficient) < 1 && Math.abs(coefficient) > 1e-9) {
@@ -2074,7 +2092,7 @@ async function _calculateAndStorePeriodStatsLogic(
             logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Input medians for stratified prep: ${JSON.stringify(stratifiedAnalysisPrep.inputMedians)}. User: ${userId}, Exp: ${experimentId}`);
     // ============== START: Pairwise Interaction Analysis Logic ==============
             const MIN_DATAPOINTS_FOR_GROUP_ANALYSIS = 3;
-            const IQR_MULTIPLIER = 1.5;
+            const IQR_MULTIPLIER = 1.25;
             const pairwiseInteractionResults = {};
             const overallOutputLabel = stratifiedAnalysisPrep.outputMetricLabel;
             const overallOutputStats = stratifiedAnalysisPrep.outputStats;
@@ -2294,7 +2312,7 @@ async function _calculateAndStorePeriodStatsLogic(
                                 const rSquared = coefficient * coefficient;
 
                                 // Only store if the relationship is moderate or stronger (r-squared >= 9%)
-                                if (rSquared >= 0.09) {
+                                if (rSquared >= 0.04) {
                                     const tStat = coefficient * Math.sqrt((pairedValues.yesterday.length - 2) / (1 - rSquared));
                                     const pValue = isFinite(tStat) ? 2 * (1 - jStat.studentt.cdf(Math.abs(tStat), pairedValues.yesterday.length - 2)) : 1.0;
                                     const lagKey = `yesterday_${metricYesterday.label}_vs_today_${metricToday.label}`.replace(/\s+/g, '_');
@@ -3509,6 +3527,20 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         const outputMetric = logData.output || {};
         const inputs = logData.inputs || [];
 
+        // (NEW CODE) Fetch the PREVIOUS log for additional context
+        const previousLogsQuery = db.collection('logs')
+            .where('userId', '==', userId)
+            .orderBy('timestamp', 'desc')
+            .limit(2);
+        const previousLogsSnapshot = await previousLogsQuery.get();
+
+        let previousLogNote = "No previous notes found.";
+        if (previousLogsSnapshot.docs.length > 1) {
+            // The 2nd document is the one before the current log
+            const previousLogData = previousLogsSnapshot.docs[1].data();
+            previousLogNote = previousLogData.notes?.trim() || "No previous notes found.";
+        }
+        logger.log(`[_analyzeNotesLogic] Found previous log note for context: "${previousLogNote}"`);
         // If notes are empty, we don't need AI analysis
 
         if (!notes) {
@@ -3534,8 +3566,11 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
             **User's Daily Log Notes:**
             "${notes}"
+            **User's Previous Day's Note:**
+            "${previousLogNote}"
 
             **Your Task:**
+            Use the Daily Log Notes and "Previous Day's Note", as well as their metrics for context on their journey.
             1.  **Acknowledge Experience (25-50 characters):** Based on the notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme.
             It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
             2.  **Comfort/Support Message (50-100 characters):** Provide a short, uplifting, and mindfulness inspiring message that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
@@ -3544,13 +3579,14 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
             It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
             Examples:
-                * "Today was a tough one for me with [Habit or Outcome]. Any tips for staying consistent on low-energy days [or more specific problem from notes]?"
+                * "Today was a tough one for me with [Habit or Outcome]. Anyone have tips for staying consistent on low-energy days [or more specific problem from notes]?"
                 * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
                 * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins!"
                 * "I've been wanting [Deeper Wish], and today felt a step in that direction because [reason from notes]. It's cool to see new connections."
                 * "My main takeaway from today: [brief, insightful summary of a learning]. Curious if that resonates with anyone."
             
             DO NOT say "Anyone else..." at the end of the message.
+            DO NOT use cliches like "small wins add up." The language of the message should be in the style of the notes.
 
             Return your response ONLY as a JSON object with the following structure:
             {
@@ -3913,7 +3949,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
        // *** NEW AI-Powered Narrative Generation ***
         const trend = _calculateTrend(extractedChapters);
-        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label);
+        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label, metricUnitMap);
         
         const metricUnitMap = {};
         chaptersToAnalyze.forEach(chapter => {
@@ -4044,7 +4080,8 @@ function _calculateTrend(analyzedChapters) {
     const priorChapters = analyzedChapters.slice(0, -1);
 
     const latestAvg = latestChapter.primaryMetricStats.average;
-    const latestConsistency = latestChapter.primaryMetricStats.variationPercentage;
+    // FIX: Calculate consistency here and cap it at 0.
+    const latestConsistency = Math.max(0, 100 - latestChapter.primaryMetricStats.variationPercentage);
     const recentDataPoints = latestChapter.primaryMetricStats.dataPoints;
 
     // Calculate weighted average of prior chapters
@@ -4054,7 +4091,8 @@ function _calculateTrend(analyzedChapters) {
     priorChapters.forEach(chapter => {
     if (chapter.primaryMetricStats) {
         totalWeightedSum += chapter.primaryMetricStats.average * chapter.primaryMetricStats.dataPoints;
-        totalWeightedConsistency += chapter.primaryMetricStats.variationPercentage * chapter.primaryMetricStats.dataPoints; // Corrected property
+        // FIX: Calculate consistency here for each prior chapter.
+        totalWeightedConsistency += Math.max(0, 100 - chapter.primaryMetricStats.variationPercentage) * chapter.primaryMetricStats.dataPoints;
         totalDataPoints += chapter.primaryMetricStats.dataPoints;
         }
     });
@@ -4066,14 +4104,14 @@ function _calculateTrend(analyzedChapters) {
     return {
         recentAverage: parseFloat(latestAvg.toFixed(2)),
         priorAverage: parseFloat(priorAvg.toFixed(2)),
-        recentConsistency: latestConsistency,
+        recentConsistency: parseFloat(latestConsistency.toFixed(1)),
         priorConsistency: parseFloat(priorConsistency.toFixed(1)),
         recentDataPoints: recentDataPoints,
         priorDataPoints: totalDataPoints
     };
 }
 
-function _determineAhaMoment(analyzedChapters, primaryMetricLabel) {
+function _determineAhaMoment(analyzedChapters, primaryMetricLabel, metricUnitMap) {
     if (!analyzedChapters || analyzedChapters.length === 0) return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
 
     let strongestCorrOverall = { coefficient: 0 };
@@ -4094,12 +4132,23 @@ function _determineAhaMoment(analyzedChapters, primaryMetricLabel) {
 
     // If a meaningful correlation was found anywhere in the history, report it
     if (Math.abs(strongestCorrOverall.coefficient) >= 0.15) {
+        // --- START: Essential Changes for Time Metric Formatting ---
+        const primaryUnit = metricUnitMap[primaryMetricLabel];
+        const otherUnit = metricUnitMap[strongestCorrOverall.withMetric];
+        const isPrimaryTime = isTimeMetric(primaryUnit);
+        const isOtherTime = isTimeMetric(otherUnit);
+
+        const primaryDisplay = isPrimaryTime ? (strongestCorrOverall.coefficient >= 0 ? 'is later' : 'is earlier') : (strongestCorrOverall.coefficient >= 0 ? 'is higher' : 'is lower');
+        const otherDisplay = isOtherTime ? 'is later' : 'is higher';
+        
         const strength = Math.abs(strongestCorrOverall.coefficient) >= 0.45 ? "strong" : "moderate";
         const direction = strongestCorrOverall.coefficient > 0 ? "positive" : "negative";
+
         return {
             type: 'Most Striking Correlation',
-            text: `It appears there may be a 🟨 ${strength} ${direction} correlation between '${strongestCorrOverall.withMetric}' and '${primaryMetricLabel}'.`
+            text: `It appears there may be a 🟨 ${strength} ${direction} correlation: when '${strongestCorrOverall.withMetric}' ${otherDisplay}, your '${primaryMetricLabel}' tends to be ${primaryDisplay}.`
         };
+        // --- END: Essential Changes ---
     }
     
     // Fallback: If no strong correlations exist, use the primary metric stats from the latest chapter
