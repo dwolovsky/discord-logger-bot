@@ -2124,6 +2124,7 @@ async function sendHistoricalReport(interaction, part) {
     
     const { report } = reportData;
     const primaryLabel = report.primaryMetricLabel;
+    const unitMap = report.metricUnitMap || {};
 
     try {
         if (part === 'aha_moment') {
@@ -2159,20 +2160,27 @@ async function sendHistoricalReport(interaction, part) {
                 await interaction.user.send({ embeds: [trendEmbed] });
             }
 
-            // --- DM #3: Direct Correlations (Data Only) ---
+            // --- DM #3: Direct Correlations (Descriptive) ---
             const correlationEmbed = new EmbedBuilder()
                 .setColor('#E67E22')
-                .setTitle(`🔗 Correlation Data for '${primaryLabel}'`);
+                .setTitle(`🔗 What Correlates with '${primaryLabel}'?`);
 
             let hasCorrelations = false;
+            const primaryUnit = unitMap[primaryLabel];
+            const isPrimaryTime = isTimeMetric(primaryUnit);
+
             report.analyzedChapters.forEach(chapter => {
                 if (chapter.correlations.influencedBy.length > 0) {
                     hasCorrelations = true;
                     const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
                     const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
+                    // FIX #1: This logic is restored to be descriptive
                     const correlationsText = chapter.correlations.influencedBy.map(corr => {
-                        const rSquared = (corr.coefficient * corr.coefficient * 100).toFixed(0);
-                        return `*vs. '${corr.withMetric}' (Strength: ${rSquared}%)*`;
+                        const otherUnit = unitMap[corr.withMetric];
+                        const isOtherTime = isTimeMetric(otherUnit);
+                        const primaryDisplay = isPrimaryTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
+                        const otherDisplay = isOtherTime ? 'is later' : 'is higher ⤴️';
+                        return `*When **'${corr.withMetric}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay}.*`;
                     }).join('\n');
                     
                     correlationEmbed.addFields({
@@ -2188,7 +2196,7 @@ async function sendHistoricalReport(interaction, part) {
             
             // --- DM #4: Combined Habit Effects ---
             const comboEmbed = new EmbedBuilder()
-                .setColor('#F1C40F') // Yellow
+                .setColor('#F1C40F')
                 .setTitle(`🔀 Combined Habit Effects on '${primaryLabel}'`);
             
             let hasCombinedEffects = false;
@@ -2218,7 +2226,7 @@ async function sendHistoricalReport(interaction, part) {
 
             // --- DM #5: Lag Time Correlations (Data Only) ---
             const lagTimeEmbed = new EmbedBuilder()
-                .setColor('#1ABC9C') // Teal
+                .setColor('#1ABC9C')
                 .setTitle(`🕑 Day-After Effects Data on '${primaryLabel}'`);
 
             let hasLagTimeCorrelations = false;
@@ -2247,10 +2255,15 @@ async function sendHistoricalReport(interaction, part) {
             }
 
             // --- DM #6: Holistic AI Insight ---
+            // FIX #2: Check if holisticInsight is a string before using .substring
+            const holisticDescription = (typeof report.holisticInsight === 'string') 
+                ? report.holisticInsight.substring(0, 4096) 
+                : "AI analysis of combined correlations could not be generated.";
+
             const holisticEmbed = new EmbedBuilder()
-                .setColor('#5865F2') // Discord Blurple
+                .setColor('#5865F2')
                 .setTitle(`🔎 AI Analysis: The Full Story`)
-                .setDescription(report.holisticInsight.substring(0, 4096));
+                .setDescription(holisticDescription);
             await interaction.user.send({ embeds: [holisticEmbed] });
 
             // --- Final DM: The Wrap-Up ---
