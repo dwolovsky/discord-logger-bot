@@ -1285,6 +1285,12 @@ const dmFlowConfig = {
         
         if (setupData.aiGeneratedInputSuggestions && Array.isArray(setupData.aiGeneratedInputSuggestions)) {
             setupData.aiGeneratedInputSuggestions.forEach((suggestion, index) => {
+                // --- FIX START: Add this validation block ---
+        if (!suggestion || typeof suggestion.label !== 'string' || typeof suggestion.unit !== 'string' || suggestion.goal === undefined) {
+            console.warn(`[dmFlowConfig] Skipping invalid AI suggestion at index ${index}:`, suggestion);
+            return; // Skip this malformed suggestion
+        }
+        // --- FIX END ---
                 let displayLabel;
                 // Check if the goal is 'yes' or 'no' to adjust the display
                 if (typeof suggestion.goal === 'string' && (suggestion.goal.toLowerCase() === 'yes' || suggestion.goal.toLowerCase() === 'no')) {
@@ -2109,30 +2115,47 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
  * Manages and sends the multi-part narrative historical report to the user's DMs.
  * This final version includes a holistic AI insight and all data sections.
  */
-async function sendHistoricalReport(interaction, part) {
+async function sendHistoricalReport(interaction, part, directReport = null) {
     const userId = interaction.user.id;
-    const reportData = userHistoricalReportData.get(userId);
-    if (!reportData || !reportData.report) {
-        const errorMessage = "I couldn't find your report data. It might have expired. Please try running the analysis again with `/stats`.";
-        if (interaction.isButton()) {
-            await interaction.update({ content: errorMessage, components: [], embeds: [] });
-        } else {
-            await interaction.editReply({ content: errorMessage, components: [] });
-        }
-        return;
-    }
     
-    const { report } = reportData;
+    // Use the directly passed report if it exists. This is the key fix.
+    let report = directReport; 
+    
+    // If no direct report was passed, THEN fall back to the map (for subsequent button clicks).
+    if (!report) {
+        const reportData = userHistoricalReportData.get(userId);
+        if (!reportData || !reportData.report) {
+            const errorMessage = "I couldn't find your report data. It might have expired. Please try again.";
+            if (interaction.isButton() || interaction.isStringSelectMenu()) {
+                await interaction.update({ content: errorMessage, components: [], embeds: [] });
+            } else {
+                await interaction.editReply({ content: errorMessage, components: [] });
+            }
+            return;
+        }
+        // If we found data in the map, use it.
+        report = reportData.report;
+    }
+
+    // --- The rest of your function logic continues from here ---
     const primaryLabel = report.primaryMetricLabel;
     const unitMap = report.metricUnitMap || {};
-
     try {
-        if (part === 'aha_moment') {
+                if (part === 'aha_moment') {
+             // --- FIX START: Add robust handling for hiddenGrowth ---
+            let hiddenGrowthText = "Could not generate a summary from your notes for this period."; // Default fallback
+            if (typeof report.hiddenGrowth === 'string') {
+                hiddenGrowthText = report.hiddenGrowth;
+            } else if (report.hiddenGrowth && typeof report.hiddenGrowth === 'object') {
+                // If the AI returned an object, try to find a string value within it or stringify it.
+                hiddenGrowthText = report.hiddenGrowth.growth || report.hiddenGrowth.text || JSON.stringify(report.hiddenGrowth);
+            }
+            // --- FIX END ---
             const ahaEmbed = new EmbedBuilder()
                 .setColor('#FEE75C')
                 .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
                 .setDescription(report.ahaMoment.text.substring(0, 4096))
-                .addFields({ name: "🌱 Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) });
+                .addFielt.hiddenGrowth.sds({ name: "🌱 Hidden Growth", value: hiddenGrowthText.substring(0, 1024) });
                 
             const moreStatsButton = new ButtonBuilder()
                 .setCustomId(HISTORICAL_REPORT_MORE_STATS)
@@ -6678,10 +6701,10 @@ client.on(Events.InteractionCreate, async interaction => {
             // NEW, more robust handling
             if (result && result.success) {
                 if (result.report) {
-                    // Happy path: a report was generated
-                    userHistoricalReportData.set(userId, { report: result.report });
-                    await sendHistoricalReport(interaction, 'aha_moment');
-                } else {
+                userHistoricalReportData.set(userId, { report: result.report });
+                // Add result.report as the third argument here
+                await sendHistoricalReport(interaction, 'aha_moment', result.report); 
+            } else {
                     // Success, but no report (e.g., not enough completed experiments)
                     await interaction.editReply({ content: `💡 ${result.message}`, components: [] });
                 }

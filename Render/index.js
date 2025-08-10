@@ -2141,30 +2141,41 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
     const primaryLabel = report.primaryMetricLabel;
     const unitMap = report.metricUnitMap || {};
     try {
-                if (part === 'aha_moment') {
-             // --- FIX START: Add robust handling for hiddenGrowth ---
-            let hiddenGrowthText = "Could not generate a summary from your notes for this period."; // Default fallback
-            if (typeof report.hiddenGrowth === 'string') {
-                hiddenGrowthText = report.hiddenGrowth;
-            } else if (report.hiddenGrowth && typeof report.hiddenGrowth === 'object') {
-                // If the AI returned an object, try to find a string value within it or stringify it.
-                hiddenGrowthText = report.hiddenGrowth.growth || report.hiddenGrowth.text || JSON.stringify(report.hiddenGrowth);
-            }
-            // --- FIX END ---
-            const ahaEmbed = new EmbedBuilder()
-                .setColor('#FEE75C')
-                .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
-                .setDescription(report.ahaMoment.text.substring(0, 4096))
-                .addFielt.hiddenGrowth.sds({ name: "🌱 Hidden Growth", value: hiddenGrowthText.substring(0, 1024) });
-                
-            const moreStatsButton = new ButtonBuilder()
-                .setCustomId(HISTORICAL_REPORT_MORE_STATS)
-                .setLabel('More Stats ➡️')
-                .setStyle(ButtonStyle.Primary);
-            await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
-            await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
+               if (part === 'aha_moment') {
+                // --- Robust handling for ahaMoment ---
+                let ahaDescription = "An insight could not be generated for this period."; // Default fallback
+                if (report.ahaMoment && typeof report.ahaMoment.text === 'string' && report.ahaMoment.text.trim() !== "") {
+                    ahaDescription = report.ahaMoment.text;
+                }
 
-        } else if (part === 'full_report') {
+                const ahaEmbed = new EmbedBuilder()
+                    .setColor('#FEE75C')
+                    .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
+                    .setDescription(ahaDescription.substring(0, 4096));
+
+                // --- Robust handling for hiddenGrowth ---
+                let hiddenGrowthText = ""; // Default to an empty string
+                // Check for a meaningful, non-fallback string
+                if (typeof report.hiddenGrowth === 'string' && report.hiddenGrowth.trim() !== "" && !report.hiddenGrowth.includes("Could not generate a summary")) {
+                    hiddenGrowthText = report.hiddenGrowth;
+                } else if (report.hiddenGrowth && typeof report.hiddenGrowth === 'object') {
+                    // Handle cases where AI might return an object
+                    hiddenGrowthText = report.hiddenGrowth.growth || report.hiddenGrowth.text || JSON.stringify(report.hiddenGrowth);
+                }
+
+                // Conditionally add the Hidden Growth field ONLY if there is content for it
+                if (hiddenGrowthText) {
+                    ahaEmbed.addFields({ name: "🌱 Hidden Growth", value: hiddenGrowthText.substring(0, 1024) });
+                }
+
+                const moreStatsButton = new ButtonBuilder()
+                    .setCustomId(HISTORICAL_REPORT_MORE_STATS)
+                    .setLabel('More Stats ➡️')
+                    .setStyle(ButtonStyle.Primary);
+
+                await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
+                await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
+            } else if (part === 'full_report') {
             await interaction.update({ components: [] }); // Acknowledge the button click
 
             // --- DM #2: The Trend ---

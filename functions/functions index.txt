@@ -3949,7 +3949,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
        // *** NEW AI-Powered Narrative Generation ***
         const trend = _calculateTrend(extractedChapters);
-        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label, metricUnitMap);
         
         const metricUnitMap = {};
         chaptersToAnalyze.forEach(chapter => {
@@ -3962,6 +3961,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             }
         });
 
+        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label, metricUnitMap);
         let finalReport = {
             primaryMetricLabel: primaryMetric.label,
             ahaMoment: ahaMoment,
