@@ -2330,7 +2330,8 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
             const holisticEmbed = new EmbedBuilder()
                 .setColor('#5865F2')
                 .setTitle(`🔎 AI Analysis: The Full Story`)
-                .setDescription(holisticDescription);
+                .setDescription(holisticDescription)
+                .setFooter({ text: "Scroll up to see more stats" });
             await interaction.user.send({ embeds: [holisticEmbed] });
 
             // --- Final DM: The Wrap-Up ---

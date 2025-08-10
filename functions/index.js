@@ -3822,10 +3822,6 @@ exports.listUserExperiments = onCall(async (request) => {
     }
 });
 
-/**
- * Fetches user logs, groups them into chapters based on time gaps OR changes
- * in experiment settings, and performs a detailed statistical analysis.
- */
 exports.runHistoricalAnalysis = onCall(async (request) => {
     logger.log("[runHistoricalAnalysis V6] Function called. Data:", request.data);
 
@@ -3840,6 +3836,8 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
     }
     if (!genAI) {
         logger.error("[runHistoricalAnalysis V6] Gemini AI client is not initialized.");
+        // Throw an error here to prevent sending a report without AI insights
+        throw new HttpsError('internal', "The AI analysis service is currently unavailable.");
     }
 
     const db = admin.firestore();
@@ -3863,7 +3861,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
             if (settings.statsMode === 'continuous' && settings.experimentId) {
                 if (seenContinuousExperiments.has(settings.experimentId)) {
-                    continue; 
+                    continue;
                 }
                 seenContinuousExperiments.add(settings.experimentId);
             }
@@ -3871,7 +3869,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             const metricsInExperiment = [settings.output, settings.input1, settings.input2, settings.input3]
                 .filter(m => m && m.label)
                 .map(m => normalizeLabel(m.label));
-
             if (metricsInExperiment.some(label => includedLabels.has(label))) {
                 relevantStatsDocs.push(statsData);
             }
@@ -3942,14 +3939,12 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 pairwiseInteractionResults: chapter.pairwiseInteractionResults || {}
             };
         }).filter(Boolean);
-
         if (extractedChapters.length === 0) {
             return { success: true, report: null, message: "Not enough data within the selected experiments to generate a report." };
         }
 
        // *** NEW AI-Powered Narrative Generation ***
         const trend = _calculateTrend(extractedChapters);
-        
         const metricUnitMap = {};
         chaptersToAnalyze.forEach(chapter => {
             if (chapter.calculatedMetricStats) {
@@ -3960,7 +3955,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 });
             }
         });
-
         const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label, metricUnitMap);
         let finalReport = {
             primaryMetricLabel: primaryMetric.label,
@@ -3972,7 +3966,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             trend: trend,
             metricUnitMap: metricUnitMap
         };
-
+        // This 'if (genAI)' block is now critical. The whole function depends on its success.
         if (genAI) {
             const allNotes = [];
             const noteRanges = extractedChapters.map(c => ({start: new Date(c.startDate), end: new Date(c.endDate)}));
@@ -3989,10 +3983,8 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 extractedChapters.forEach(chapter => {
                     allCorrelations.push(...chapter.correlations.influencedBy);
                 });
-
                 const narrativePrompt = `
 You are an expert habit-science coach. Your task is to analyze a user's habit experiment data and generate a supportive, insightful narrative.
-
 CONTEXT:
 - User's Primary Metric: "${primaryMetric.label}"
 - All Included Metric Aliases: ${JSON.stringify(includedMetrics.map(m => m.label))}
@@ -4004,22 +3996,22 @@ ${allNotes.slice(-15).join("\n")}
 
 YOUR TASK:
 Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGrowth", and "shareablePost".
-
 1.  "holisticInsight":
     - First, infer the real-world meaning of the Primary Metric and its aliases by using the notes as clues. (e.g., "Baw" might be a person, "Slow morning" might be a positive morning routine).
-    - Then, write 1-2 SHORT paragraphs (2 sentences each, maximum 60 words total) that synthesize ALL the correlation data. Use bold headers to label the point of each paragraph.
+    - Then, write 1-2 SHORT paragraphs (2 sentences each, maximum 60 words total) that synthesize ALL the correlation data.
+    - Use bold headers to label the point of each paragraph.
     - Explain how the different habits and outcomes seem to influence each other based on your inferred meaning.
     - Use tentative language. "Might," "could," "seems to."
 
 2.  "hiddenGrowth":
     - Find a single, specific quote or event in the user's notes that demonstrates resilience, effort, or a moment of increased self-awareness.
     - Write a compassionate, 2-3 sentence paragraph in the second person ("You...").
-    - Your message MUST be built around that specific quote or event, explaining why it represents hidden growth. For example, instead of: a generic "You are gaining self-awareness," Say: "When you wrote, 'I guess I always feel tired after meetings with that person,' that was a key moment. Making that connection is the first step to protecting your energy."
-
+    - Your message MUST be built around that specific quote or event, explaining why it represents hidden growth.
+    - For example, instead of: a generic "You are gaining self-awareness," Say: "When you wrote, 'I guess I always feel tired after meetings with that person,' that was a key moment. Making that connection is the first step to protecting your energy."
 3.  "shareablePost":
     - Write a short, celebratory post (2-3 sentences) about the user (in the 3rd person) that they could share with their community.
-    - It must be inspiring and highlight their strongest correlation. Do not use exclamation points. Do not use any cliche language. End with the "🙌" emoji.
-
+    - It must be inspiring and highlight their strongest correlation. Do not use exclamation points.
+    - Do not use any cliche language. End with the "🙌" emoji.
 CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
 `;
                 try {
@@ -4028,20 +4020,33 @@ CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only retu
                         contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
                         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
                     });
-                    const aiNarrative = JSON.parse(result.response.text());
-                    
+                    const responseText = result.response.text()?.trim();
+
+                    if (!responseText) {
+                        throw new Error("AI returned an empty response.");
+                    }
+
+                    let aiNarrative;
+                    try {
+                        aiNarrative = JSON.parse(responseText);
+                    } catch (initialParseError) {
+                        logger.warn(`[runHistoricalAnalysis V6] Initial JSON parse failed for user ${userId}. Attempting to clean the response.`);
+                        const cleanText = responseText.replace(/```json\n/g, '').replace(/\n```/g, '').trim();
+                        aiNarrative = JSON.parse(cleanText); // Let it throw if it fails again
+                    }
+
                     finalReport.holisticInsight = aiNarrative.holisticInsight || finalReport.holisticInsight;
                     finalReport.hiddenGrowth = aiNarrative.hiddenGrowth || finalReport.hiddenGrowth;
                     finalReport.shareablePost = aiNarrative.shareablePost || finalReport.shareablePost;
-
                 } catch (aiError) {
                     logger.error(`[runHistoricalAnalysis V6] AI narrative generation failed for user ${userId}:`, aiError);
+                    // This is the new logic: throw an error to prevent sending an incomplete report
+                    throw new HttpsError('internal', `The AI failed to generate a narrative for your report. Details: ${aiError.message}`);
                 }
             }
         }
         
         return { success: true, report: finalReport };
-
     } catch (error) {
         logger.error(`[runHistoricalAnalysis V6] Critical error for user ${userId}:`, error);
         if (error instanceof HttpsError) throw error;
@@ -4146,7 +4151,7 @@ function _determineAhaMoment(analyzedChapters, primaryMetricLabel, metricUnitMap
 
         return {
             type: 'Most Striking Correlation',
-            text: `It appears there may be a 🟨 ${strength} ${direction} correlation: when '${strongestCorrOverall.withMetric}' ${otherDisplay}, your '${primaryMetricLabel}' tends to be ${primaryDisplay}.`
+            text: `It appears there may be a 🟨 ${strength} ${direction} correlation: when '${strongestCorrOverall.withMetric}' ${otherDisplay}, your '${primaryMetricLabel}' ${primaryDisplay}.`
         };
         // --- END: Essential Changes ---
     }
