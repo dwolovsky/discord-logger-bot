@@ -2121,12 +2121,11 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
     // Use the directly passed report if it exists. This is the key fix.
     let report = directReport; 
     
-    // If no direct report was passed, THEN fall back to the map.
+    // If no direct report was passed, THEN fall back to the map (for subsequent button clicks).
     if (!report) {
         const reportData = userHistoricalReportData.get(userId);
         if (!reportData || !reportData.report) {
-            const errorMessage = "I couldn't find your report data. It might have expired. Please try running the analysis again with `/stats`.";
-            // Use update for button clicks and editReply for other interactions
+            const errorMessage = "I couldn't find your report data. It might have expired. Please try again.";
             if (interaction.isButton() || interaction.isStringSelectMenu()) {
                 await interaction.update({ content: errorMessage, components: [], embeds: [] });
             } else {
@@ -6702,9 +6701,8 @@ client.on(Events.InteractionCreate, async interaction => {
             // NEW, more robust handling
             if (result && result.success) {
                 if (result.report) {
-                // Happy path: a report was generated
                 userHistoricalReportData.set(userId, { report: result.report });
-                // Pass the report directly to the function
+                // Add result.report as the third argument here
                 await sendHistoricalReport(interaction, 'aha_moment', result.report); 
             } else {
                     // Success, but no report (e.g., not enough completed experiments)
