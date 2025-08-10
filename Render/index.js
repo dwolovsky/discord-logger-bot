@@ -6701,20 +6701,26 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = analysisData.historicalAnalysisData;
-
             const result = await callFirebaseFunction('runHistoricalAnalysis', {
                 includedMetrics,
                 primaryMetric,
                 numExperimentsToAnalyze
             }, userId);
-
-            // NEW, more robust handling
+            
             if (result && result.success) {
                 if (result.report) {
-                userHistoricalReportData.set(userId, { report: result.report });
-                // Add result.report as the third argument here
-                await sendHistoricalReport(interaction, 'aha_moment', result.report); 
-            } else {
+                    userHistoricalReportData.set(userId, { report: result.report });
+                    
+                    // NEW: Check if an ahaMoment was generated.
+                    if (result.report.ahaMoment) {
+                        // If there's an ahaMoment, start with that part.
+                        await sendHistoricalReport(interaction, 'aha_moment', result.report);
+                    } else {
+                        // If ahaMoment is null, skip it and go directly to the full report.
+                        await interaction.editReply({ content: `✅ Analysis complete! No single striking insight was found in your most recent experiment, but here is your detailed report in your DMs.`, components: [], embeds: [] });
+                        await sendHistoricalReport(interaction, 'full_report', result.report);
+                    }
+                } else {
                     // Success, but no report (e.g., not enough completed experiments)
                     await interaction.editReply({ content: `💡 ${result.message}`, components: [] });
                 }

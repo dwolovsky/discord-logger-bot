@@ -4124,57 +4124,41 @@ function _calculateTrend(analyzedChapters) {
 }
 
 function _determineAhaMoment(analyzedChapters, primaryMetricLabel, metricUnitMap) {
-    if (!analyzedChapters || analyzedChapters.length === 0) return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
+    if (!analyzedChapters || analyzedChapters.length === 0) return null;
 
-    let strongestCorrOverall = { coefficient: 0 };
-
-    // Iterate through all chapters to find the single strongest correlation
-    analyzedChapters.forEach(chapter => {
-        if (chapter.correlations && chapter.correlations.influencedBy && chapter.correlations.influencedBy.length > 0) {
-            const strongestCorrInChapter = chapter.correlations.influencedBy.reduce(
-                (max, corr) => (Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max),
-                { coefficient: 0 }
-            );
-
-            if (Math.abs(strongestCorrInChapter.coefficient) > Math.abs(strongestCorrOverall.coefficient)) {
-                strongestCorrOverall = strongestCorrInChapter;
-            }
-        }
-    });
-
-    // If a meaningful correlation was found anywhere in the history, report it
-    if (Math.abs(strongestCorrOverall.coefficient) >= 0.15) {
-        // --- START: Essential Changes for Time Metric Formatting ---
-        const primaryUnit = metricUnitMap[primaryMetricLabel];
-        const otherUnit = metricUnitMap[strongestCorrOverall.withMetric];
-        const isPrimaryTime = isTimeMetric(primaryUnit);
-        const isOtherTime = isTimeMetric(otherUnit);
-
-        const primaryDisplay = isPrimaryTime ? (strongestCorrOverall.coefficient >= 0 ? 'is later' : 'is earlier') : (strongestCorrOverall.coefficient >= 0 ? 'is higher' : 'is lower');
-        const otherDisplay = isOtherTime ? 'is later' : 'is higher';
-        
-        const strength = Math.abs(strongestCorrOverall.coefficient) >= 0.45 ? "strong" : "moderate";
-        const direction = strongestCorrOverall.coefficient > 0 ? "positive" : "negative";
-
-        return {
-            type: 'Most Striking Correlation',
-            text: `It appears there may be a 🟨 ${strength} ${direction} correlation: when '${strongestCorrOverall.withMetric}' ${otherDisplay}, your '${primaryMetricLabel}' ${primaryDisplay}.`
-        };
-        // --- END: Essential Changes ---
-    }
-    
-    // Fallback: If no strong correlations exist, use the primary metric stats from the latest chapter
     const latestChapter = analyzedChapters[analyzedChapters.length - 1];
-    if (latestChapter.primaryMetricStats) {
-        return {
-            type: `Key Stat from ${new Date(latestChapter.startDate).toLocaleDateString()}`,
-            text: `During this period, your average for '${primaryMetricLabel}' was ${latestChapter.primaryMetricStats.average} with ${latestChapter.primaryMetricStats.variationPercentage}% consistency.`
-        };
-    }
-    
-    return { type: 'Fallback', text: "Keep tracking to uncover new insights!" };
-}
+    let strongestCorrInChapter = { coefficient: 0 };
 
+    if (latestChapter.correlations && latestChapter.correlations.influencedBy && latestChapter.correlations.influencedBy.length > 0) {
+        strongestCorrInChapter = latestChapter.correlations.influencedBy.reduce(
+            (max, corr) => (Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max),
+            { coefficient: 0 }
+        );
+    }
+
+    // If the strongest correlation in the latest chapter is not significant, return null.
+    // This threshold can be adjusted if needed.
+    if (Math.abs(strongestCorrInChapter.coefficient) < 0.20) {
+        return null;
+    }
+
+    // If significant, format and return the insight object.
+    const primaryUnit = metricUnitMap[primaryMetricLabel];
+    const otherUnit = metricUnitMap[strongestCorrInChapter.withMetric];
+    const isPrimaryTime = isTimeMetric(primaryUnit);
+    const isOtherTime = isTimeMetric(otherUnit);
+
+    const primaryDisplay = isPrimaryTime ? (strongestCorrInChapter.coefficient >= 0 ? 'later' : 'earlier') : (strongestCorrInChapter.coefficient >= 0 ? 'higher' : 'lower');
+    const otherDisplay = isOtherTime ? 'later' : 'higher';
+
+    const strength = Math.abs(strongestCorrInChapter.coefficient) >= 0.45 ? "strong" : "moderate";
+    const direction = strongestCorrInChapter.coefficient > 0 ? "positive" : "negative";
+
+    return {
+        type: 'Most Striking Correlation',
+        text: `From your most recent experiment, it appears there may be a 🟨 ${strength} ${direction} correlation: when '${strongestCorrInChapter.withMetric}' is ${otherDisplay}, your '${primaryMetricLabel}' tends to be ${primaryDisplay}.`
+    };
+}
 
 /**
  * Generates five potential complete outcome metrics (label, unit, goal)
