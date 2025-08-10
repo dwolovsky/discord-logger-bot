@@ -1285,6 +1285,12 @@ const dmFlowConfig = {
         
         if (setupData.aiGeneratedInputSuggestions && Array.isArray(setupData.aiGeneratedInputSuggestions)) {
             setupData.aiGeneratedInputSuggestions.forEach((suggestion, index) => {
+                // --- FIX START: Add this validation block ---
+        if (!suggestion || typeof suggestion.label !== 'string' || typeof suggestion.unit !== 'string' || suggestion.goal === undefined) {
+            console.warn(`[dmFlowConfig] Skipping invalid AI suggestion at index ${index}:`, suggestion);
+            return; // Skip this malformed suggestion
+        }
+        // --- FIX END ---
                 let displayLabel;
                 // Check if the goal is 'yes' or 'no' to adjust the display
                 if (typeof suggestion.goal === 'string' && (suggestion.goal.toLowerCase() === 'yes' || suggestion.goal.toLowerCase() === 'no')) {
@@ -2128,11 +2134,20 @@ async function sendHistoricalReport(interaction, part) {
 
     try {
         if (part === 'aha_moment') {
+             // --- FIX START: Add robust handling for hiddenGrowth ---
+            let hiddenGrowthText = "Could not generate a summary from your notes for this period."; // Default fallback
+            if (typeof report.hiddenGrowth === 'string') {
+                hiddenGrowthText = report.hiddenGrowth;
+            } else if (report.hiddenGrowth && typeof report.hiddenGrowth === 'object') {
+                // If the AI returned an object, try to find a string value within it or stringify it.
+                hiddenGrowthText = report.hiddenGrowth.growth || report.hiddenGrowth.text || JSON.stringify(report.hiddenGrowth);
+            }
+            // --- FIX END ---
             const ahaEmbed = new EmbedBuilder()
                 .setColor('#FEE75C')
                 .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
                 .setDescription(report.ahaMoment.text.substring(0, 4096))
-                .addFields({ name: "🌱 Hidden Growth", value: report.hiddenGrowth.substring(0, 1024) });
+                .addFielt.hiddenGrowth.sds({ name: "🌱 Hidden Growth", value: hiddenGrowthText.substring(0, 1024) });
                 
             const moreStatsButton = new ButtonBuilder()
                 .setCustomId(HISTORICAL_REPORT_MORE_STATS)
