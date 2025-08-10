@@ -1965,12 +1965,6 @@ async function _calculateAndStorePeriodStatsLogic(
                     const coefficient = jStat.corrcoeff(pairedInputValues, pairedOutputValues);
                     const rSquared = coefficient * coefficient; // Calculate R-squared
 
-                    // Only store if the relationship is at least "weak" (R-squared >= 2.25%, i.e., abs(coefficient) >= 0.15)
-                    if (rSquared < 0.0225) { // 0.15 * 0.15 = 0.0225
-                        logger.log(`[${callingFunction}] [Correlation] Skipping storage for "${inputLabel}" vs "${outputMetricLabel}" due to weak correlation (R²=${rSquared.toFixed(4)}). User: ${userId}, Exp: ${experimentId}`);
-                        continue; // Skip storing this correlation
-                    }
-
                     let pValue = null;
 
                     if (n_pairs > 2 && Math.abs(coefficient) < 1 && Math.abs(coefficient) > 1e-9) {
@@ -2074,7 +2068,7 @@ async function _calculateAndStorePeriodStatsLogic(
             logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Input medians for stratified prep: ${JSON.stringify(stratifiedAnalysisPrep.inputMedians)}. User: ${userId}, Exp: ${experimentId}`);
     // ============== START: Pairwise Interaction Analysis Logic ==============
             const MIN_DATAPOINTS_FOR_GROUP_ANALYSIS = 3;
-            const IQR_MULTIPLIER = 1.5;
+            const IQR_MULTIPLIER = 1.25;
             const pairwiseInteractionResults = {};
             const overallOutputLabel = stratifiedAnalysisPrep.outputMetricLabel;
             const overallOutputStats = stratifiedAnalysisPrep.outputStats;
@@ -2294,7 +2288,7 @@ async function _calculateAndStorePeriodStatsLogic(
                                 const rSquared = coefficient * coefficient;
 
                                 // Only store if the relationship is moderate or stronger (r-squared >= 9%)
-                                if (rSquared >= 0.09) {
+                                if (rSquared >= 0.04) {
                                     const tStat = coefficient * Math.sqrt((pairedValues.yesterday.length - 2) / (1 - rSquared));
                                     const pValue = isFinite(tStat) ? 2 * (1 - jStat.studentt.cdf(Math.abs(tStat), pairedValues.yesterday.length - 2)) : 1.0;
                                     const lagKey = `yesterday_${metricYesterday.label}_vs_today_${metricToday.label}`.replace(/\s+/g, '_');
@@ -3509,6 +3503,20 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         const outputMetric = logData.output || {};
         const inputs = logData.inputs || [];
 
+        // (NEW CODE) Fetch the PREVIOUS log for additional context
+        const previousLogsQuery = db.collection('logs')
+            .where('userId', '==', userId)
+            .orderBy('timestamp', 'desc')
+            .limit(2);
+        const previousLogsSnapshot = await previousLogsQuery.get();
+
+        let previousLogNote = "No previous notes found.";
+        if (previousLogsSnapshot.docs.length > 1) {
+            // The 2nd document is the one before the current log
+            const previousLogData = previousLogsSnapshot.docs[1].data();
+            previousLogNote = previousLogData.notes?.trim() || "No previous notes found.";
+        }
+        logger.log(`[_analyzeNotesLogic] Found previous log note for context: "${previousLogNote}"`);
         // If notes are empty, we don't need AI analysis
 
         if (!notes) {
@@ -3534,8 +3542,11 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
             **User's Daily Log Notes:**
             "${notes}"
+            **User's Previous Day's Note:**
+            "${previousLogNote}"
 
             **Your Task:**
+            Use the Daily Log Notes and "Previous Day's Note", as well as their metrics for context on their journey.
             1.  **Acknowledge Experience (25-50 characters):** Based on the notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme.
             It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
             2.  **Comfort/Support Message (50-100 characters):** Provide a short, uplifting, and mindfulness inspiring message that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
@@ -4045,7 +4056,8 @@ function _calculateTrend(analyzedChapters) {
     const priorChapters = analyzedChapters.slice(0, -1);
 
     const latestAvg = latestChapter.primaryMetricStats.average;
-    const latestConsistency = latestChapter.primaryMetricStats.variationPercentage;
+    // FIX: Calculate consistency here and cap it at 0.
+    const latestConsistency = Math.max(0, 100 - latestChapter.primaryMetricStats.variationPercentage);
     const recentDataPoints = latestChapter.primaryMetricStats.dataPoints;
 
     // Calculate weighted average of prior chapters
@@ -4055,7 +4067,8 @@ function _calculateTrend(analyzedChapters) {
     priorChapters.forEach(chapter => {
     if (chapter.primaryMetricStats) {
         totalWeightedSum += chapter.primaryMetricStats.average * chapter.primaryMetricStats.dataPoints;
-        totalWeightedConsistency += chapter.primaryMetricStats.variationPercentage * chapter.primaryMetricStats.dataPoints; // Corrected property
+        // FIX: Calculate consistency here for each prior chapter.
+        totalWeightedConsistency += Math.max(0, 100 - chapter.primaryMetricStats.variationPercentage) * chapter.primaryMetricStats.dataPoints;
         totalDataPoints += chapter.primaryMetricStats.dataPoints;
         }
     });
@@ -4067,7 +4080,7 @@ function _calculateTrend(analyzedChapters) {
     return {
         recentAverage: parseFloat(latestAvg.toFixed(2)),
         priorAverage: parseFloat(priorAvg.toFixed(2)),
-        recentConsistency: latestConsistency,
+        recentConsistency: parseFloat(latestConsistency.toFixed(1)),
         priorConsistency: parseFloat(priorConsistency.toFixed(1)),
         recentDataPoints: recentDataPoints,
         priorDataPoints: totalDataPoints
