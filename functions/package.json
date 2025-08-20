@@ -14,10 +14,10 @@
   },
   "main": "index.js",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "firebase-admin": "^12.7.0",
     "firebase-functions": "^6.0.1",
-    "jstat": "^1.9.6",
-    "@google/generative-ai": "^0.15.0"
+    "jstat": "^1.9.6"
   },
   "devDependencies": {
     "eslint": "^8.15.0",
