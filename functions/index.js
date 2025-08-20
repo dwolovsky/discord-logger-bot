@@ -3286,7 +3286,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                             4. Be direct, conversational, and avoid greetings. Generate ONLY the reminder message text.`;
 
                         // C. Call AI
-                        const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
+                        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
                         const generationResult = await model.generateContent({
                             contents: [{ role: "user", parts: [{ text: aiPromptText }] }],
                             generationConfig: { ...GEMINI_CONFIG, temperature: 0.95 },
@@ -3443,7 +3443,7 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     // 4b. Populate and Call Gemini
     const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
-    const model = genAI.getGenerativeModel({ model: "gemini-2-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{text: finalPrompt}] }],
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
@@ -3600,7 +3600,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
         // 4. Call Gemini
-        const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const generationResult = await model.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: {
@@ -3752,7 +3752,7 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     `;
 
     // 4. Call Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
@@ -4022,7 +4022,7 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
 `;
                 try {
-                    const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
+                    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
                     const result = await model.generateContent({
                         contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
                         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
@@ -4250,7 +4250,7 @@ const promptText = `
   logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{text: promptText}] }],
         generationConfig: {
@@ -4385,7 +4385,7 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   logger.info(`[generateInputLabelSuggestions] Sending advanced, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{text: promptText}] }],
         generationConfig: {
