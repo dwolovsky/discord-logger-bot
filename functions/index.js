@@ -3286,13 +3286,13 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                             4. Be direct, conversational, and avoid greetings. Generate ONLY the reminder message text.`;
 
                         // C. Call AI
-                        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                        const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
                         const generationResult = await model.generateContent({
                             contents: [{ role: "user", parts: [{ text: aiPromptText }] }],
                             generationConfig: { ...GEMINI_CONFIG, temperature: 0.95 },
                         });
                         const response = await generationResult.response;
-                        const candidateText = response.text()?.trim();
+                        const candidateText = response.text?.trim();
 
                         if (candidateText && candidateText.length > 0 && candidateText.length <= 200) {
                             finalReminderMessage = candidateText;
@@ -3443,13 +3443,13 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     // 4b. Populate and Call Gemini
     const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2-pro" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{text: finalPrompt}] }],
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
     });
     const response = await generationResult.response;
-    const responseText = response.text()?.trim();
+    const responseText = response.text?.trim();
 
     if (!responseText) {
         throw new HttpsError('internal', 'AI generated an empty response.');
@@ -3600,7 +3600,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
         // 4. Call Gemini
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
         const generationResult = await model.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: {
@@ -3610,7 +3610,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             },
         });
         const response = await generationResult.response;
-        const responseText = response.text()?.trim();
+        const responseText = response.text?.trim();
 
         if (!responseText) {
             logger.warn(`[_analyzeNotesLogic] Gemini returned an empty response for log ${logId}.`);
@@ -3752,13 +3752,13 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     `;
 
     // 4. Call Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
     });
     const response = await generationResult.response;
-    const responseText = response.text()?.trim();
+    const responseText = response.text?.trim();
 
     if (!responseText) {
         throw new HttpsError('internal', 'AI generated an empty response.');
@@ -4022,12 +4022,12 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
 `;
                 try {
-                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                    const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
                     const result = await model.generateContent({
                         contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
                         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
                     });
-                    const responseText = result.response.text()?.trim();
+                    const responseText = result.response.text?.trim();
 
                     if (!responseText) {
                         throw new Error("AI returned an empty response.");
@@ -4250,7 +4250,7 @@ const promptText = `
   logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{text: promptText}] }],
         generationConfig: {
@@ -4260,7 +4260,7 @@ const promptText = `
         },
     });
     const response = await generationResult.response;
-    const responseText = response.text()?.trim();
+    const responseText = response.text?.trim();
 
     if (!responseText) {
         logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
@@ -4385,7 +4385,7 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   logger.info(`[generateInputLabelSuggestions] Sending advanced, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2-flash" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{text: promptText}] }],
         generationConfig: {
@@ -4395,7 +4395,7 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
         },
     });
     const response = await generationResult.response;
-    const responseText = response.text()?.trim();
+    const responseText = response.text?.trim();
 
     if (!responseText) {
         logger.warn(`[generateInputLabelSuggestions] Gemini returned an empty response for user ${userId}.`);

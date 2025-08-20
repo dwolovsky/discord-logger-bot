@@ -2141,30 +2141,39 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
     const primaryLabel = report.primaryMetricLabel;
     const unitMap = report.metricUnitMap || {};
     try {
-                if (part === 'aha_moment') {
-             // --- FIX START: Add robust handling for hiddenGrowth ---
-            let hiddenGrowthText = "Could not generate a summary from your notes for this period."; // Default fallback
-            if (typeof report.hiddenGrowth === 'string') {
-                hiddenGrowthText = report.hiddenGrowth;
-            } else if (report.hiddenGrowth && typeof report.hiddenGrowth === 'object') {
-                // If the AI returned an object, try to find a string value within it or stringify it.
-                hiddenGrowthText = report.hiddenGrowth.growth || report.hiddenGrowth.text || JSON.stringify(report.hiddenGrowth);
-            }
-            // --- FIX END ---
-            const ahaEmbed = new EmbedBuilder()
-                .setColor('#FEE75C')
-                .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
-                .setDescription(report.ahaMoment.text.substring(0, 4096))
-                .addFielt.hiddenGrowth.sds({ name: "🌱 Hidden Growth", value: hiddenGrowthText.substring(0, 1024) });
-                
-            const moreStatsButton = new ButtonBuilder()
-                .setCustomId(HISTORICAL_REPORT_MORE_STATS)
-                .setLabel('More Stats ➡️')
-                .setStyle(ButtonStyle.Primary);
-            await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
-            await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
+               if (part === 'aha_moment') {
+                // --- Robust handling for ahaMoment ---
+                let ahaDescription = "An insight could not be generated for this period."; // Default fallback
+                if (report.ahaMoment && typeof report.ahaMoment.text === 'string' && report.ahaMoment.text.trim() !== "") {
+                    ahaDescription = report.ahaMoment.text;
+                }
 
-        } else if (part === 'full_report') {
+                const ahaEmbed = new EmbedBuilder()
+                    .setColor('#FEE75C')
+                    .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
+                    .setDescription(ahaDescription.substring(0, 4096));
+
+                // --- Robust handling for hiddenGrowth with quote formatting ---
+                // Check if hiddenGrowth is an object with the properties we now expect.
+                if (report.hiddenGrowth && typeof report.hiddenGrowth.quote === 'string' && typeof report.hiddenGrowth.paragraph === 'string') {
+                    const quote = report.hiddenGrowth.quote.trim();
+                    const paragraph = report.hiddenGrowth.paragraph.trim();
+
+                    if (quote && paragraph) {
+                        // Use Discord's blockquote markdown `>` for the quote.
+                        const formattedGrowthText = `> ${quote}\n\n${paragraph}`;
+                        ahaEmbed.addFields({ name: "🌱 Hidden Growth", value: formattedGrowthText.substring(0, 1024) });
+                    }
+                }
+
+                const moreStatsButton = new ButtonBuilder()
+                    .setCustomId(HISTORICAL_REPORT_MORE_STATS)
+                    .setLabel('More Stats ➡️')
+                    .setStyle(ButtonStyle.Primary);
+
+                await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
+                await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
+            } else if (part === 'full_report') {
             await interaction.update({ components: [] }); // Acknowledge the button click
 
             // --- DM #2: The Trend ---
@@ -2319,7 +2328,8 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
             const holisticEmbed = new EmbedBuilder()
                 .setColor('#5865F2')
                 .setTitle(`🔎 AI Analysis: The Full Story`)
-                .setDescription(holisticDescription);
+                .setDescription(holisticDescription)
+                .setFooter({ text: "Scroll up to see more stats" });
             await interaction.user.send({ embeds: [holisticEmbed] });
 
             // --- Final DM: The Wrap-Up ---
@@ -6691,20 +6701,26 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = analysisData.historicalAnalysisData;
-
             const result = await callFirebaseFunction('runHistoricalAnalysis', {
                 includedMetrics,
                 primaryMetric,
                 numExperimentsToAnalyze
             }, userId);
-
-            // NEW, more robust handling
+            
             if (result && result.success) {
                 if (result.report) {
-                userHistoricalReportData.set(userId, { report: result.report });
-                // Add result.report as the third argument here
-                await sendHistoricalReport(interaction, 'aha_moment', result.report); 
-            } else {
+                    userHistoricalReportData.set(userId, { report: result.report });
+                    
+                    // NEW: Check if an ahaMoment was generated.
+                    if (result.report.ahaMoment) {
+                        // If there's an ahaMoment, start with that part.
+                        await sendHistoricalReport(interaction, 'aha_moment', result.report);
+                    } else {
+                        // If ahaMoment is null, skip it and go directly to the full report.
+                        await interaction.editReply({ content: `✅ Analysis complete! No single striking insight was found in your most recent experiment, but here is your detailed report in your DMs.`, components: [], embeds: [] });
+                        await sendHistoricalReport(interaction, 'full_report', result.report);
+                    }
+                } else {
                     // Success, but no report (e.g., not enough completed experiments)
                     await interaction.editReply({ content: `💡 ${result.message}`, components: [] });
                 }
