@@ -6746,9 +6746,20 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = analysisData.historicalAnalysisData;
+
+            // Normalize all metrics to lowercase to ensure consistency
+            const normalizedIncluded = includedMetrics.map(m => ({
+                label: m.label.toLowerCase(),
+                unit: m.unit.toLowerCase()
+            }));
+            const normalizedPrimary = {
+                label: primaryMetric.label.toLowerCase(),
+                unit: primaryMetric.unit.toLowerCase()
+            };
+
             const result = await callFirebaseFunction('runHistoricalAnalysis', {
-                includedMetrics,
-                primaryMetric,
+                includedMetrics: normalizedIncluded,
+                primaryMetric: normalizedPrimary,
                 numExperimentsToAnalyze
             }, userId);
             
