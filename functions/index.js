@@ -1576,7 +1576,7 @@ function interpretFirebaseGroupKey(groupKeyString, input1Label, input2Label) {
 // ============== END OF STATS HELPER FUNCTIONS ==============
 
 // ============== INTERNAL HELPER FUNCTION for Stats Calculation ==============
-// ============== INTERNAL HELPER FUNCTION for Stats Calculation ==============
+
 /**
  * Core logic for calculating and storing period statistics.
  * This function is NOT directly callable via HTTPS, it's an internal helper.

@@ -962,6 +962,29 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     }
 }
 
+// Add this helper function in render/index.js, for example, after the setupPublicMessageListener function
+async function getAnalysisData(userId) {
+    // First, try to get data from the fast, in-memory map
+    let analysisData = userHistoricalAnalysisData.get(userId);
+    
+    // If it's not in memory (due to a new instance handling the request), fetch from Firestore
+    if (!analysisData && dbAdmin) {
+        console.log(`[getAnalysisData] In-memory miss for ${userId}. Fetching from Firestore.`);
+        try {
+            const analysisFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('historicalAnalysis');
+            const docSnap = await analysisFlowRef.get();
+            if (docSnap.exists) {
+                analysisData = docSnap.data();
+                userHistoricalAnalysisData.set(userId, analysisData); // Restore to memory for subsequent clicks on this instance
+            }
+        } catch (error) {
+            console.error(`[getAnalysisData] Error fetching session from Firestore for user ${userId}:`, error);
+            return null;
+        }
+    }
+    return analysisData;
+}
+
 /**
  * Sets up a Firestore listener for 'pendingStatsNotifications'.
  * This now sends an initial prompt to get AI insights, rather than the full report.
@@ -4464,49 +4487,43 @@ client.on(Events.InteractionCreate, async interaction => {
           }
 
           case 'stats': {
-            const statsCommandStartTime = performance.now();
-            const interactionId = interaction.id;
-            console.log(`[/stats START ${interactionId}] command invoked by ${interaction.user.tag}.`);
-            try {
-                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                const interactionId = interaction.id;
+                console.log(`[/stats START ${interactionId}] command invoked by ${interaction.user.tag}.`);
+                try {
+                    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                    const result = await callFirebaseFunction('getAllUserMetrics', {}, interaction.user.id);
 
-                // 1. Fetch ALL unique metrics the user has ever tracked.
-                const result = await callFirebaseFunction('getAllUserMetrics', {}, interaction.user.id);
-                if (!result || !result.success || !Array.isArray(result.metrics)) {
-                    throw new Error(result?.message || 'Failed to retrieve historical metrics.');
+                    if (!result || !result.success || !Array.isArray(result.metrics)) {
+                        throw new Error(result?.message || 'Failed to retrieve historical metrics.');
+                    }
+
+                    const allMetrics = result.metrics;
+                    if (allMetrics.length === 0) {
+                        await interaction.editReply({ content: "I couldn't find any metrics in your log history.", components: [] });
+                        return;
+                    }
+
+                    const analysisData = {
+                        allMetrics: allMetrics,
+                        currentPage: 1,
+                        dmFlowState: 'awaiting_historical_metric_selection'
+                    };
+
+                    // Save to both in-memory map and Firestore backup
+                    userHistoricalAnalysisData.set(interaction.user.id, analysisData);
+                    if (dbAdmin) {
+                        const analysisFlowRef = dbAdmin.collection('users').doc(interaction.user.id).collection('inProgressFlows').doc('historicalAnalysis');
+                        await analysisFlowRef.set({ ...analysisData, lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp() });
+                    }
+                    
+                    await sendHistoricalMetricsPage(interaction, 1);
+                } catch (error) {
+                    console.error(`[/stats ERROR ${interactionId}]`, error);
+                    if (interaction.deferred || interaction.replied) {
+                        await interaction.editReply({ content: `❌ An error occurred: ${error.message}`});
+                    }
                 }
-
-                const allMetrics = result.metrics;
-                if (allMetrics.length === 0) {
-                    await interaction.editReply({
-                        content: "I couldn't find any metrics in your log history. Please log some data with `/go` first!",
-                        components: []
-                    });
-                    return;
-                }
-
-                // 2. Store the full list of metrics and initialize the flow state.
-                userHistoricalAnalysisData.set(interaction.user.id, {
-                    allMetrics: allMetrics,
-                    currentPage: 1,
-                    dmFlowState: 'awaiting_historical_metric_selection'
-                });
-
-                // 3. Send the first page of the paginated selector.
-                await sendHistoricalMetricsPage(interaction, 1);
-                console.log(`[/stats SUCCESS ${interactionId}] Sent page 1 of metric selection to ${interaction.user.tag}.`);
-
-            } catch (error) {
-                console.error(`[/stats ERROR ${interactionId}] Error processing /stats command for ${interaction.user.tag}:`, error);
-                if (interaction.deferred || interaction.replied) {
-                    await interaction.editReply({
-                        content: `❌ An error occurred while fetching your history: ${error.message || 'Please try again.'}`,
-                        components: [],
-                        embeds: []
-                    });
-                }
-            }
-            break;
+                break;
           }
 
           case 'hi': { // Handler for the new /hi command
@@ -6671,7 +6688,7 @@ client.on(Events.InteractionCreate, async interaction => {
     try {
         await interaction.deferUpdate();
 
-        const analysisData = userHistoricalAnalysisData.get(userId);
+        const analysisData = await getAnalysisData(userId);
         if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_match_confirmation' || !analysisData.historicalAnalysisData) {
             await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
             return;
@@ -6714,7 +6731,7 @@ client.on(Events.InteractionCreate, async interaction => {
             await interaction.deferReply({ ephemeral: true });
             await interaction.editReply({ content: '📈 Running your historical analysis... This may take a moment.', components: [] });
 
-            const analysisData = userHistoricalAnalysisData.get(userId);
+            const analysisData = await getAnalysisData(userId);
             if (!analysisData || !analysisData.historicalAnalysisData || !analysisData.historicalAnalysisData.numExperimentsToAnalyze) {
                 await interaction.editReply({ content: "Your session has expired or you haven't selected an experiment range. Please restart with `/stats`." });
                 return;
@@ -6756,7 +6773,12 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         } finally {
             // Clean up the initial setup data after the analysis is run
+            
             userHistoricalAnalysisData.delete(userId);
+            if (dbAdmin) {
+            const analysisFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('historicalAnalysis');
+            await analysisFlowRef.delete().catch(err => console.error("Error cleaning up Firestore session:", err));
+}
         }
     }
 
@@ -8616,7 +8638,7 @@ else if (interaction.customId === 'historical_metric_select') {
         try {
             await interaction.deferUpdate();
 
-            const analysisData = userHistoricalAnalysisData.get(userId);
+            const analysisData = await getAnalysisData(userId);
             if (!analysisData || analysisData.dmFlowState !== 'awaiting_experiment_range_selection' || !analysisData.historicalAnalysisData) {
                 await interaction.editReply({ content: "Your session has expired or is invalid. Please restart with `/stats`.", components: [] });
                 return;
