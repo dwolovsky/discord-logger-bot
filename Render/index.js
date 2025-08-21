@@ -6142,7 +6142,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         else if (metric.label === settings.input3.label) customId = 'log_input3_value';
 
                         return new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} ${metric.unit}`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label}`.substring(0, 45)).setPlaceholder(`${metric.unit}`).setStyle(TextInputStyle.Short).setRequired(true)
                         );
                     });
                 const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
