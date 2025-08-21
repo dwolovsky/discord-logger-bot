@@ -2206,41 +2206,55 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
             const primaryUnit = unitMap[primaryLabel];
             const isPrimaryTime = isTimeMetric(primaryUnit);
 
+            // --- NEW: Group correlations before adding to the embed ---
+            const groupedCorrelations = new Map();
+
             report.analyzedChapters.forEach(chapter => {
-                const significantCorrelationsInChapter = chapter.correlations.influencedBy.map(corr => {
+                chapter.correlations.influencedBy.forEach(corr => {
                     const absCoeff = Math.abs(corr.coefficient);
-                    if (absCoeff < 0.2) return null; // Apply the new minimum threshold
+                    if (absCoeff < 0.2) return; // Skip weak correlations
 
-                    hasCorrelations = true; // Mark that we found at least one to show
-                    const otherUnit = unitMap[corr.withMetric];
-                    const isOtherTime = isTimeMetric(otherUnit);
+                    hasCorrelations = true;
+                    const groupKey = `${corr.withMetric} & ${primaryLabel}`;
 
-                    const primaryDisplay = isPrimaryTime ? (corr.coefficient >= 0 ? 'is later' : 'is earlier') : (corr.coefficient >= 0 ? 'is higher ⤴️' : 'is lower ⤵️');
-                    const otherDisplay = isOtherTime ? 'is later' : 'is higher ⤴️';
-
-                    const isConfident = corr.pValue !== null && corr.pValue < 0.05;
-                    const confidenceText = isConfident ? "This is a statistically significant relationship." : "More data is needed to confirm this relationship.";
-                    
+                    // Determine strength and confidence for this specific finding
                     let strengthText = "No detectable";
                     let strengthEmoji = "🟦";
                     if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
                     else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
                     else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
-                    else if (absCoeff >= 0.2) { strengthText = "Weak"; strengthEmoji = "🟩"; } // Adjusted lower bound
+                    else if (absCoeff >= 0.2) { strengthText = "Weak"; strengthEmoji = "🟩"; }
+                    
+                    const finding = {
+                        startDate: new Date(chapter.startDate).toLocaleDateString(),
+                        endDate: new Date(chapter.endDate).toLocaleDateString(),
+                        strengthEmoji: strengthEmoji,
+                        strengthText: strengthText,
+                        rSquared: (corr.coefficient * corr.coefficient * 100).toFixed(0),
+                        isSignificant: corr.pValue !== null && corr.pValue < 0.05,
+                    };
 
-                    const rSquared = (corr.coefficient * corr.coefficient * 100).toFixed(0);
+                    if (!groupedCorrelations.has(groupKey)) {
+                        groupedCorrelations.set(groupKey, []);
+                    }
+                    groupedCorrelations.get(groupKey).push(finding);
+                });
+            });
 
-                    return `**When '${corr.withMetric}' ${otherDisplay}**\n→ **'${primaryLabel}'** ${primaryDisplay}\n*Strength: ${strengthEmoji} ${strengthText} (${rSquared}%)*\n*${confidenceText}*`;
-                }).filter(Boolean); // Filter out the null (weak) correlations
+            // --- NEW: Render the grouped correlations into the embed ---
+            groupedCorrelations.forEach((findings, groupName) => {
+                let valueString = `This relationship was found in **${findings.length} experiment${findings.length > 1 ? 's' : ''}**:\n`;
+                
+                findings.forEach(finding => {
+                    let significanceText = finding.isSignificant ? " - Statistically Significant" : "";
+                    valueString += `• **From ${finding.startDate} - ${finding.endDate}:**\n`;
+                    valueString += `&nbsp;&nbsp;&nbsp;*Strength: ${finding.strengthEmoji} ${finding.strengthText} (${finding.rSquared}%)*${significanceText}\n`;
+                });
 
-                if (significantCorrelationsInChapter.length > 0) {
-                    const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
-                    const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
-                    correlationEmbed.addFields({
-                        name: `From Experiment: ${chapterStartDate} - ${chapterEndDate}`,
-                        value: significantCorrelationsInChapter.join('\n\n')
-                    });
-                }
+                correlationEmbed.addFields({
+                    name: groupName,
+                    value: valueString.trim()
+                });
             });
             if (hasCorrelations) {
                 await interaction.user.send({ embeds: [correlationEmbed] });
