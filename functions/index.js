@@ -3449,6 +3449,14 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
     });
     const response = await generationResult.response;
+
+    // First, check if the response was blocked by safety filters.
+    if (response.promptFeedback && response.promptFeedback.blockReason) {
+        const blockReason = response.promptFeedback.blockReason;
+        logger.error(`[fetchOrGenerateAiInsights] AI response was blocked for experiment ${targetExperimentId}. Reason: ${blockReason}`);
+        throw new HttpsError('resource-exhausted', `The AI couldn't generate insights due to content restrictions (${blockReason}).`);
+    }
+
     const responseText = response.text()?.trim();
 
     if (!responseText) {
@@ -3752,16 +3760,26 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     `;
 
     // 4. Call Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
     });
     const response = await generationResult.response;
+
+    // First, check if the response was blocked by safety filters.
+    if (response.promptFeedback && response.promptFeedback.blockReason) {
+        const blockReason = response.promptFeedback.blockReason;
+        logger.error(`[getHistoricalMetricMatches] AI response was blocked for user ${userId}. Reason: ${blockReason}`);
+        throw new HttpsError('resource-exhausted', `The AI couldn't analyze the metrics due to content restrictions (${blockReason}). Please try a different metric.`);
+    }
+
     const responseText = response.text()?.trim();
 
     if (!responseText) {
-        throw new HttpsError('internal', 'AI generated an empty response.');
+        // This will now catch cases where the response is empty for other, less common reasons.
+        logger.error(`[getHistoricalMetricMatches] AI returned an empty response for user ${userId} without a specified block reason.`);
+        throw new HttpsError('internal', 'AI generated an empty response for an unknown reason.');
     }
 
     let matches = JSON.parse(responseText);
