@@ -8569,7 +8569,7 @@ else if (interaction.customId === 'historical_metric_select') {
         // CHANGE 1: deferReply instead of deferUpdate
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        const analysisData = userExperimentSetupData.get(userId);
+        const analysisData = userHistoricalAnalysisData.get(userId);
         if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_metric_selection' || !analysisData.allMetrics) {
             await interaction.editReply({ content: "Your session has expired or the metric list is missing. Please restart with `/stats`.", components: [] });
             return;
