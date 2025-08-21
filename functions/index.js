@@ -4050,6 +4050,7 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
     - It must be inspiring and highlight their strongest correlation. Do not use exclamation points.
     - Do not use any cliche language. End with the "🙌" emoji.
 CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
+Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
                 try {
                     const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
