@@ -3860,6 +3860,12 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
     const db = admin.firestore();
     try {
+         // ADD THIS BLOCK TO GET THE USERNAME
+        const userDocRef = db.collection('users').doc(userId);
+        const userDocSnap = await userDocRef.get();
+        // Get the userTag (e.g., "davewolo#1234") and split off the number part.
+        const userTag = userDocSnap.exists ? userDocSnap.data().userTag : `User`;
+        const username = userTag.split('#')[0];
         // Phase 1: Data Gathering & Filtering
         const statsSnapshot = await db.collection('users').doc(userId).collection('experimentStats')
             .orderBy('calculationTimestamp', 'desc').get();
@@ -4030,11 +4036,11 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 
 2.  "hiddenGrowth":
     - This key's value MUST be a JSON object with two keys: "quote" and "paragraph".
-    - "quote": Find and return the single, most relevant quote from the user's notes that shows resilience or self-awareness. Return only the text.
-    - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that explains why the quote represents hidden growth. For example, "When you wrote, 'I guess I always feel tired after meetings,' that was a key moment. Making that connection is the first step to protecting your energy."
+    - "quote": Find and return the single, most relevant quote from the user's notes that shows resilience or self-awareness.  Return only the text.
+    - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that reflects on the significance of the quote. Frame it as a supportive observation, not a judgment of "growth". Avoid sounding condescending. For example, "When you wrote, 'I guess I always feel tired after meetings,' that was a key moment. Making that connection is the first step to protecting your energy."
 
 3.  "shareablePost":
-    - Write a short, celebratory post (2-3 sentences) about the user (in the 3rd person) that they could share with their community.
+    - Write a short, celebratory post (2-3 sentences) celebrating the user, whose name is "${username}". Refer to them by their name.
     - It must be inspiring and highlight their strongest correlation. Do not use exclamation points.
     - Do not use any cliche language. End with the "🙌" emoji.
 CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.

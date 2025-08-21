@@ -2162,7 +2162,7 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
                     if (quote && paragraph) {
                         // Use Discord's blockquote markdown `>` for the quote.
                         const formattedGrowthText = `> ${quote}\n\n${paragraph}`;
-                        ahaEmbed.addFields({ name: "🌱 Hidden Growth", value: formattedGrowthText.substring(0, 1024) });
+                        ahaEmbed.addFields({ name: "You said...", value: formattedGrowthText.substring(0, 1024) });
                     }
                 }
 
@@ -2178,16 +2178,22 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
 
             // --- DM #2: The Trend ---
             if(report.trend) {
+                // Get the unit for the primary metric from the map
+                const unit = report.metricUnitMap[primaryLabel] || "";
+
                 const trendEmbed = new EmbedBuilder()
                     .setColor('#0099FF')
                     .setTitle(`📈 The Journey of '${primaryLabel}'`)
+ 
                      .addFields(
-                        { name: `Historical Average (${report.trend.priorDataPoints} days)`, value: String(report.trend.priorAverage), inline: true },
-                        { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: String(report.trend.recentAverage), inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true },
+                        { name: `Historical Average (${report.trend.priorDataPoints} days)`, value: `${report.trend.priorAverage} ${unit}`, inline: true },
+                        { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: `${report.trend.recentAverage} ${unit}`, inline: true },
+           
+                         { name: '\u200B', value: '\u200B', inline: true },
                         { name: 'Historical Consistency', value: `${report.trend.priorConsistency}%`, inline: true },
                         { name: 'Most Recent Consistency', value: `${report.trend.recentConsistency}%`, inline: true },
-                        { name: '\u200B', value: '\u200B', inline: true }
+               
+                         { name: '\u200B', value: '\u200B', inline: true }
                     );
                 await interaction.user.send({ embeds: [trendEmbed] });
             }
