@@ -4042,8 +4042,8 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 
 2.  "hiddenGrowth":
     - This key's value MUST be a JSON object with two keys: "quote" and "paragraph".
-    - "quote": Find and return the single, most relevant quote from the user's notes that shows resilience or self-awareness.  Return only the text.
-    - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that reflects on the significance of the quote. Frame it as a supportive observation, not a judgment of "growth". Avoid sounding condescending. For example, "When you wrote, 'I guess I always feel tired after meetings,' that was a key moment. Making that connection is the first step to protecting your energy."
+    - "quote": Find the single, most relevant quote from the notes. If no single quote works, create a short (3-5 word) thematic title for your paragraph instead (e.g., "On the theme of consistency").
+    - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that reflects on the significance of the quote or theme. Frame it as a supportive observation.
 
 3.  "shareablePost":
     - Write a short, celebratory post (2-3 sentences) celebrating the user, whose name is "${username}". Refer to them by their name.
