@@ -665,7 +665,7 @@ function buildCoreStatsSummary(embed, statsReportData) {
         } else {
             const unit = metricData.unit ? ` ${metricData.unit}` : '';
             const formatValue = (val) => (isTimeMetric(metricData.unit) ? formatDecimalAsTime(val) : val);
-            return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}`;
+            return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit} | **Data Points:** ${metricData.dataPoints}`;
         }
     };
 

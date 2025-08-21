@@ -3292,7 +3292,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                             generationConfig: { ...GEMINI_CONFIG, temperature: 0.95 },
                         });
                         const response = await generationResult.response;
-                        const candidateText = response.text()?.trim();
+                        const candidateText = response.text().trim();
 
                         if (candidateText && candidateText.length > 0 && candidateText.length <= 200) {
                             finalReminderMessage = candidateText;
@@ -3449,7 +3449,15 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
     });
     const response = await generationResult.response;
-    const responseText = response.text()?.trim();
+
+    // First, check if the response was blocked by safety filters.
+    if (response.promptFeedback && response.promptFeedback.blockReason) {
+        const blockReason = response.promptFeedback.blockReason;
+        logger.error(`[fetchOrGenerateAiInsights] AI response was blocked for experiment ${targetExperimentId}. Reason: ${blockReason}`);
+        throw new HttpsError('resource-exhausted', `The AI couldn't generate insights due to content restrictions (${blockReason}).`);
+    }
+
+    const responseText = response.text().trim();
 
     if (!responseText) {
         throw new HttpsError('internal', 'AI generated an empty response.');
@@ -3610,7 +3618,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             },
         });
         const response = await generationResult.response;
-        const responseText = response.text()?.trim();
+        const responseText = response.text().trim();
 
         if (!responseText) {
             logger.warn(`[_analyzeNotesLogic] Gemini returned an empty response for log ${logId}.`);
@@ -3752,16 +3760,26 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     `;
 
     // 4. Call Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
     });
     const response = await generationResult.response;
-    const responseText = response.text()?.trim();
+
+    // First, check if the response was blocked by safety filters.
+    if (response.promptFeedback && response.promptFeedback.blockReason) {
+        const blockReason = response.promptFeedback.blockReason;
+        logger.error(`[getHistoricalMetricMatches] AI response was blocked for user ${userId}. Reason: ${blockReason}`);
+        throw new HttpsError('resource-exhausted', `The AI couldn't analyze the metrics due to content restrictions (${blockReason}). Please try a different metric.`);
+    }
+
+    const responseText = response.text().trim();
 
     if (!responseText) {
-        throw new HttpsError('internal', 'AI generated an empty response.');
+        // This will now catch cases where the response is empty for other, less common reasons.
+        logger.error(`[getHistoricalMetricMatches] AI returned an empty response for user ${userId} without a specified block reason.`);
+        throw new HttpsError('internal', 'AI generated an empty response for an unknown reason.');
     }
 
     let matches = JSON.parse(responseText);
@@ -3842,6 +3860,12 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
     const db = admin.firestore();
     try {
+         // ADD THIS BLOCK TO GET THE USERNAME
+        const userDocRef = db.collection('users').doc(userId);
+        const userDocSnap = await userDocRef.get();
+        // Get the userTag (e.g., "davewolo#1234") and split off the number part.
+        const userTag = userDocSnap.exists ? userDocSnap.data().userTag : `User`;
+        const username = userTag.split('#')[0];
         // Phase 1: Data Gathering & Filtering
         const statsSnapshot = await db.collection('users').doc(userId).collection('experimentStats')
             .orderBy('calculationTimestamp', 'desc').get();
@@ -4012,11 +4036,11 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 
 2.  "hiddenGrowth":
     - This key's value MUST be a JSON object with two keys: "quote" and "paragraph".
-    - "quote": Find and return the single, most relevant quote from the user's notes that shows resilience or self-awareness. Return only the text.
-    - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that explains why the quote represents hidden growth. For example, "When you wrote, 'I guess I always feel tired after meetings,' that was a key moment. Making that connection is the first step to protecting your energy."
+    - "quote": Find and return the single, most relevant quote from the user's notes that shows resilience or self-awareness.  Return only the text.
+    - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that reflects on the significance of the quote. Frame it as a supportive observation, not a judgment of "growth". Avoid sounding condescending. For example, "When you wrote, 'I guess I always feel tired after meetings,' that was a key moment. Making that connection is the first step to protecting your energy."
 
 3.  "shareablePost":
-    - Write a short, celebratory post (2-3 sentences) about the user (in the 3rd person) that they could share with their community.
+    - Write a short, celebratory post (2-3 sentences) celebrating the user, whose name is "${username}". Refer to them by their name.
     - It must be inspiring and highlight their strongest correlation. Do not use exclamation points.
     - Do not use any cliche language. End with the "🙌" emoji.
 CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
@@ -4027,7 +4051,7 @@ CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only retu
                         contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
                         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
                     });
-                    const responseText = result.response.text()?.trim();
+                    const responseText = result.response.text().trim();
 
                     if (!responseText) {
                         throw new Error("AI returned an empty response.");
@@ -4260,7 +4284,7 @@ const promptText = `
         },
     });
     const response = await generationResult.response;
-    const responseText = response.text()?.trim();
+    const responseText = response.text().trim();
 
     if (!responseText) {
         logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
@@ -4395,7 +4419,7 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
         },
     });
     const response = await generationResult.response;
-    const responseText = response.text()?.trim();
+    const responseText = response.text().trim();
 
     if (!responseText) {
         logger.warn(`[generateInputLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
