@@ -4157,37 +4157,45 @@ function _calculateTrend(analyzedChapters) {
 function _determineAhaMoment(analyzedChapters, primaryMetricLabel, metricUnitMap) {
     if (!analyzedChapters || analyzedChapters.length === 0) return null;
 
-    const latestChapter = analyzedChapters[analyzedChapters.length - 1];
-    let strongestCorrInChapter = { coefficient: 0 };
+    let strongestCorrelationOverall = { coefficient: 0, withMetric: null, chapterDate: '' };
 
-    if (latestChapter.correlations && latestChapter.correlations.influencedBy && latestChapter.correlations.influencedBy.length > 0) {
-        strongestCorrInChapter = latestChapter.correlations.influencedBy.reduce(
-            (max, corr) => (Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max),
-            { coefficient: 0 }
-        );
-    }
+    // Iterate over all chapters to find the strongest correlation
+    analyzedChapters.forEach(chapter => {
+        if (chapter.correlations && chapter.correlations.influencedBy && chapter.correlations.influencedBy.length > 0) {
+            const strongestInChapter = chapter.correlations.influencedBy.reduce(
+                (max, corr) => (Math.abs(corr.coefficient) > Math.abs(max.coefficient) ? corr : max),
+                { coefficient: 0 }
+            );
 
-    // If the strongest correlation in the latest chapter is not significant, return null.
+            if (Math.abs(strongestInChapter.coefficient) > Math.abs(strongestCorrelationOverall.coefficient)) {
+                strongestCorrelationOverall = {
+                    ...strongestInChapter,
+                    chapterDate: new Date(chapter.startDate).toLocaleDateString() // Store which experiment it came from
+                };
+            }
+        }
+    });
+
     // This threshold can be adjusted if needed.
-    if (Math.abs(strongestCorrInChapter.coefficient) < 0.20) {
+    if (Math.abs(strongestCorrelationOverall.coefficient) < 0.20) {
         return null;
     }
 
     // If significant, format and return the insight object.
     const primaryUnit = metricUnitMap[primaryMetricLabel];
-    const otherUnit = metricUnitMap[strongestCorrInChapter.withMetric];
+    const otherUnit = metricUnitMap[strongestCorrelationOverall.withMetric];
     const isPrimaryTime = isTimeMetric(primaryUnit);
     const isOtherTime = isTimeMetric(otherUnit);
 
-    const primaryDisplay = isPrimaryTime ? (strongestCorrInChapter.coefficient >= 0 ? 'later' : 'earlier') : (strongestCorrInChapter.coefficient >= 0 ? 'higher' : 'lower');
+    const primaryDisplay = isPrimaryTime ? (strongestCorrelationOverall.coefficient >= 0 ? 'later' : 'earlier') : (strongestCorrelationOverall.coefficient >= 0 ? 'higher' : 'lower');
     const otherDisplay = isOtherTime ? 'later' : 'higher';
 
-    const strength = Math.abs(strongestCorrInChapter.coefficient) >= 0.45 ? "strong" : "moderate";
-    const direction = strongestCorrInChapter.coefficient > 0 ? "positive" : "negative";
+    const strength = Math.abs(strongestCorrelationOverall.coefficient) >= 0.45 ? "strong" : "moderate";
+    const direction = strongestCorrelationOverall.coefficient > 0 ? "positive" : "negative";
 
     return {
         type: 'Most Striking Correlation',
-        text: `From your most recent experiment, it appears there may be a 🟨 ${strength} ${direction} correlation: when '${strongestCorrInChapter.withMetric}' is ${otherDisplay}, your '${primaryMetricLabel}' tends to be ${primaryDisplay}.`
+        text: `Looking back at your experiment from **${strongestCorrelationOverall.chapterDate}**, the most striking pattern was a 🟨 ${strength} ${direction} correlation: when '${strongestCorrelationOverall.withMetric}' was ${otherDisplay}, your '${primaryMetricLabel}' tended to be ${primaryDisplay}.`
     };
 }
 
