@@ -3292,7 +3292,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                             generationConfig: { ...GEMINI_CONFIG, temperature: 0.95 },
                         });
                         const response = await generationResult.response;
-                        const candidateText = response.text?.trim();
+                        const candidateText = response.text()?.trim();
 
                         if (candidateText && candidateText.length > 0 && candidateText.length <= 200) {
                             finalReminderMessage = candidateText;
@@ -3449,7 +3449,7 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
     });
     const response = await generationResult.response;
-    const responseText = response.text?.trim();
+    const responseText = response.text()?.trim();
 
     if (!responseText) {
         throw new HttpsError('internal', 'AI generated an empty response.');
@@ -3610,7 +3610,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             },
         });
         const response = await generationResult.response;
-        const responseText = response.text?.trim();
+        const responseText = response.text()?.trim();
 
         if (!responseText) {
             logger.warn(`[_analyzeNotesLogic] Gemini returned an empty response for log ${logId}.`);
@@ -3758,7 +3758,7 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
     });
     const response = await generationResult.response;
-    const responseText = response.text?.trim();
+    const responseText = response.text()?.trim();
 
     if (!responseText) {
         throw new HttpsError('internal', 'AI generated an empty response.');
@@ -4027,7 +4027,7 @@ CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only retu
                         contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
                         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
                     });
-                    const responseText = result.response.text?.trim();
+                    const responseText = result.response.text()?.trim();
 
                     if (!responseText) {
                         throw new Error("AI returned an empty response.");
@@ -4260,7 +4260,7 @@ const promptText = `
         },
     });
     const response = await generationResult.response;
-    const responseText = response.text?.trim();
+    const responseText = response.text()?.trim();
 
     if (!responseText) {
         logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
@@ -4395,7 +4395,7 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
         },
     });
     const response = await generationResult.response;
-    const responseText = response.text?.trim();
+    const responseText = response.text()?.trim();
 
     if (!responseText) {
         logger.warn(`[generateInputLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
