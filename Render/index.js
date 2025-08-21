@@ -8537,71 +8537,76 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[ReminderSelect END ${interactionId}] Finished processing ${menuId}. Total time: ${(processEndTime - selectSubmitTime).toFixed(2)}ms`);
     }
 
-    else if (interaction.customId === 'historical_metric_select') {
-        const selectMenuSubmitTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        console.log(`[${interaction.customId} START ${interactionId}] User selected a metric for historical analysis.`);
-        try {
-            await interaction.deferUpdate();
+else if (interaction.customId === 'historical_metric_select') {
+    const selectMenuSubmitTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    console.log(`[${interaction.customId} START ${interactionId}] User selected a metric for historical analysis.`);
 
-            const analysisData = userHistoricalAnalysisData.get(userId);
-            if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_metric_selection' || !analysisData.allMetrics) {
-                await interaction.editReply({ content: "Your session has expired or the metric list is missing. Please restart with `/stats`.", components: [] });
-                return;
-            }
+    try {
+        // CHANGE 1: deferReply instead of deferUpdate
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-            await interaction.editReply({ content: '🧠 Searching your history for similar metrics to include in the analysis...', embeds: [], components: [] });
+        const analysisData = userExperimentSetupData.get(userId);
+        if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_metric_selection' || !analysisData.allMetrics) {
+            await interaction.editReply({ content: "Your session has expired or the metric list is missing. Please restart with `/stats`.", components: [] });
+            return;
+        }
 
-            const selectedValue = interaction.values[0];
-            const [selectedLabel, selectedUnit] = selectedValue.split('|');
+        const selectedValue = interaction.values[0];
+        const [selectedLabel, selectedUnit] = selectedValue.split('|');
+        // CHANGE 2: Renamed variable for clarity
+        const primaryMetric = analysisData.allMetrics.find(m => m.label === selectedLabel && m.unit === selectedUnit);
 
-            const selectedMetric = analysisData.allMetrics.find(m => m.label === selectedLabel && m.unit === selectedUnit);
+        if (!primaryMetric) {
+            await interaction.editReply({ content: "Error: Could not find the details for your selected metric. Please try again.", components: [] });
+            return;
+        }
 
-            if (!selectedMetric) {
-                await interaction.editReply({ content: "Error: Could not find the details for your selected metric. Please try again.", components: [] });
-                return;
-            }
-            
-            // The user might have tracked a metric as both an input and output.
-            // For this flow, we'll default its type to 'output' if it could be both,
-            // as that provides a more intuitive analysis direction. A more advanced
-            // implementation could ask the user.
-            selectedMetric.type = selectedMetric.type || 'output';
+        // --- NEW LOGIC BLOCK ---
+        // Automatically finds and includes all exact duplicates (case-insensitive)
+        const includedMetrics = analysisData.allMetrics.filter(
+            m => m.label.toLowerCase() === selectedLabel.toLowerCase() && m.unit.toLowerCase() === selectedUnit.toLowerCase()
+        );
+        console.log(`[${interaction.customId} INFO ${interactionId}] Automatically found and included ${includedMetrics.length} exact match(es) for "${selectedLabel}".`);
 
+        // Provides immediate feedback to the user
+        await interaction.editReply({ content: `✅ Found **${includedMetrics.length}** exact match(es) for "${selectedLabel}" in your history. Now, I'm checking for other similar-but-different metrics...`, embeds: [], components: [] });
+        // --- END OF NEW LOGIC BLOCK ---
 
-            // Call the Firebase function to find semantic matches
-            const result = await callFirebaseFunction('getHistoricalMetricMatches', { selectedMetric }, userId);
-            if (!result || !result.success) {
-                throw new Error(result?.message || 'Failed to get historical matches from the server.');
-            }
+        // This function now only fetches FUZZY matches
+        const result = await callFirebaseFunction('getHistoricalMetricMatches', { selectedMetric: primaryMetric }, userId);
+        if (!result || !result.success) {
+            throw new Error(result?.message || 'Failed to get historical matches from the server.');
+        }
 
-            // Store the results and initialize the confirmation flow
-            analysisData.historicalAnalysisData = {
-                primaryMetric: selectedMetric,
-                matches: result.matches || [],
-                matchIndex: 0,
-                includedMetrics: [selectedMetric] // Start with the primary metric already included
-            };
-            analysisData.dmFlowState = 'awaiting_historical_match_confirmation';
-            userHistoricalAnalysisData.set(userId, analysisData);
-            
-            if (result.matches.length === 0) {
-                 // If no matches, we can skip the include/skip flow and go straight to the end.
-                 // For now, we will proceed to the confirmation flow which will then call the date prompt.
-                 await presentHistoricalMatchConfirmation(interaction, userId);
-            } else {
-                // Start the one-by-one confirmation process
-                await presentHistoricalMatchConfirmation(interaction, userId);
-            }
+        // The data is now stored differently
+        analysisData.historicalAnalysisData = {
+            primaryMetric: primaryMetric,
+            matches: result.matches || [], // Now ONLY fuzzy matches
+            matchIndex: 0,
+            includedMetrics: includedMetrics // Now pre-populated with ALL exact duplicates
+        };
+        analysisData.dmFlowState = 'awaiting_historical_match_confirmation';
+        userExperimentSetupData.set(userId, analysisData);
+        
+        if (result.matches.length === 0) {
+            // This now means "no FUZZY matches were found"
+            console.log(`[${interaction.customId} NO_FUZZY_MATCHES ${interactionId}] No fuzzy matches found. Proceeding to date range selection.`);
+            await promptForExperimentRange(interaction, userId); 
+        } else {
+            // This now means "FUZZY matches WERE found"
+            console.log(`[${interaction.customId} FUZZY_MATCHES_FOUND ${interactionId}] Found ${result.matches.length} fuzzy matches. Starting confirmation flow.`);
+            await presentHistoricalMatchConfirmation(interaction, userId);
+        }
 
-        } catch (error) {
-            console.error(`[${interaction.customId} ERROR ${interactionId}]`, error);
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: `An error occurred while searching your history: ${error.message}`, components: [] });
-            }
+    } catch (error) {
+        console.error(`[${interaction.customId} ERROR ${interactionId}]`, error);
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: `An error occurred while searching your history: ${error.message}`, components: [] });
         }
     }
+}
 
     else if (interaction.customId === 'historical_experiment_range_select') {
         const rangeSelectSubmitTime = performance.now();

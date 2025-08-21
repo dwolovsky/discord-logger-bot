@@ -3747,11 +3747,10 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
       The user has selected the metric "${selectedMetric.label}" (unit: ${selectedMetric.unit}) from their current experiment. They want to find similar metrics from their past logs to include in a historical analysis.
 
       YOUR TASK:
-      From the following JSON array of all historical metrics the user has ever logged, identify up to the top 5 metrics that are the most likely semantic matches for the user's selected metric. A good match means it tracks the same underlying concept, even if the wording is slightly different (e.g., "Meditating" matches "Mins of Meditation", and "Jogging" matches "Running").
-      
-      - Prioritize matches with the same or very similar units (e.g., 'minutes' and 'mins').
-      - Also include high-confidence matches even if the units are different.
-      - Do NOT include the exact same metric the user selected unless there's no other choice.
+      From the following JSON array of all historical metrics, identify up to 5 metrics that are **semantically similar but NOT identical** to the user's selected metric.
+      A good match tracks the same underlying concept, even if the wording is different (e.g., if the user selected "Meditation", you might find "Mindfulness Session" and "Jogging" matches "Running").
+
+      **CRITICAL RULE: Do NOT include metrics that have the exact same label AND unit as the user's selected metric.**
 
       HISTORICAL METRICS LIST:
       ${JSON.stringify(uniqueHistoricalMetrics, null, 2)}
@@ -3776,13 +3775,20 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
 
     const responseText = response.text().trim();
 
-    if (!responseText) {
-        // This will now catch cases where the response is empty for other, less common reasons.
-        logger.error(`[getHistoricalMetricMatches] AI returned an empty response for user ${userId} without a specified block reason.`);
-        throw new HttpsError('internal', 'AI generated an empty response for an unknown reason.');
-    }
+    let matches = []; // Default to an empty array for safety
 
-    let matches = JSON.parse(responseText);
+    if (responseText) { // Only attempt to parse if the response string is not empty
+        try {
+            matches = JSON.parse(responseText);
+        } catch (parseError) {
+            logger.error(`[getHistoricalMetricMatches] Failed to parse Gemini JSON response for user ${userId}. Raw: "${responseText}". Error:`, parseError);
+            throw new HttpsError('internal', `AI returned an invalid format that could not be parsed: ${parseError.message}`);
+        }
+    } else {
+        // This is the key change: Log a warning but do not throw an error for an empty response.
+        // Treat it as a valid "no matches found" case.
+        logger.warn(`[getHistoricalMetricMatches] Gemini returned a completely empty response string for user ${userId}. Treating this as "no matches found".`);
+    }
 
     // 5. Return the result
     logger.log(`[getHistoricalMetricMatches] AI found ${matches.length} potential matches for "${selectedMetric.label}".`);
