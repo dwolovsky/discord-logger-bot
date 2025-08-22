@@ -2176,16 +2176,24 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
                     .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
                     .setDescription(ahaDescription.substring(0, 4096));
 
-                // --- Robust handling for hiddenGrowth with quote formatting ---
-                // Check if hiddenGrowth is an object with the properties we now expect.
-                if (report.hiddenGrowth && typeof report.hiddenGrowth.quote === 'string' && typeof report.hiddenGrowth.paragraph === 'string') {
-                    const quote = report.hiddenGrowth.quote.trim();
-                    const paragraph = report.hiddenGrowth.paragraph.trim();
+                if (report.hiddenGrowth) {
+                    let formattedGrowthText = "";
+                    // Ideal Case: It's an object with both quote and paragraph
+                    if (typeof report.hiddenGrowth.quote === 'string' && typeof report.hiddenGrowth.paragraph === 'string') {
+                        const quote = report.hiddenGrowth.quote.trim();
+                        const paragraph = report.hiddenGrowth.paragraph.trim();
+                        if (quote && paragraph) {
+                            formattedGrowthText = `> ${quote}\n\n${paragraph}`;
+                        }
+                    } 
+                    // Fallback Case: It's just a single string
+                    else if (typeof report.hiddenGrowth === 'string' && report.hiddenGrowth.trim() !== "") {
+                        formattedGrowthText = report.hiddenGrowth;
+                    }
 
-                    if (quote && paragraph) {
-                        // Use Discord's blockquote markdown `>` for the quote.
-                        const formattedGrowthText = `> ${quote}\n\n${paragraph}`;
-                        ahaEmbed.addFields({ name: "You said...", value: formattedGrowthText.substring(0, 1024) });
+                    // Add the field to the embed if we have text to show
+                    if (formattedGrowthText) {
+                        ahaEmbed.addFields({ name: "A Deeper Look...", value: formattedGrowthText.substring(0, 1024) });
                     }
                 }
 
@@ -6738,9 +6746,20 @@ client.on(Events.InteractionCreate, async interaction => {
             }
 
             const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = analysisData.historicalAnalysisData;
+
+            // Normalize all metrics to lowercase to ensure consistency
+            const normalizedIncluded = includedMetrics.map(m => ({
+                label: m.label.toLowerCase(),
+                unit: m.unit.toLowerCase()
+            }));
+            const normalizedPrimary = {
+                label: primaryMetric.label.toLowerCase(),
+                unit: primaryMetric.unit.toLowerCase()
+            };
+
             const result = await callFirebaseFunction('runHistoricalAnalysis', {
-                includedMetrics,
-                primaryMetric,
+                includedMetrics: normalizedIncluded,
+                primaryMetric: normalizedPrimary,
                 numExperimentsToAnalyze
             }, userId);
             
@@ -8566,10 +8585,8 @@ else if (interaction.customId === 'historical_metric_select') {
     console.log(`[${interaction.customId} START ${interactionId}] User selected a metric for historical analysis.`);
 
     try {
-        // CHANGE 1: deferReply instead of deferUpdate
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-        const analysisData = userExperimentSetupData.get(userId);
+        await interaction.deferUpdate(); 
+        const analysisData = userHistoricalAnalysisData.get(userId);
         if (!analysisData || analysisData.dmFlowState !== 'awaiting_historical_metric_selection' || !analysisData.allMetrics) {
             await interaction.editReply({ content: "Your session has expired or the metric list is missing. Please restart with `/stats`.", components: [] });
             return;
@@ -8593,7 +8610,7 @@ else if (interaction.customId === 'historical_metric_select') {
         console.log(`[${interaction.customId} INFO ${interactionId}] Automatically found and included ${includedMetrics.length} exact match(es) for "${selectedLabel}".`);
 
         // Provides immediate feedback to the user
-        await interaction.editReply({ content: `✅ Found **${includedMetrics.length}** exact match(es) for "${selectedLabel}" in your history. Now, I'm checking for other similar-but-different metrics...`, embeds: [], components: [] });
+        await interaction.editReply({ content: `✅ Found **${includedMetrics.length}** exact match(es) for "${selectedLabel}" in your history. Now, I'm checking for other potential matches...`, embeds: [], components: [] });
         // --- END OF NEW LOGIC BLOCK ---
 
         // This function now only fetches FUZZY matches
