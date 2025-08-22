@@ -2193,7 +2193,7 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
 
                     // Add the field to the embed if we have text to show
                     if (formattedGrowthText) {
-                        ahaEmbed.addFields({ name: "A Deeper Look...", value: formattedGrowthText.substring(0, 1024) });
+                        ahaEmbed.addFields({ name: "Your words...", value: formattedGrowthText.substring(0, 1024) });
                     }
                 }
 
@@ -2209,23 +2209,27 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
 
             // --- DM #2: The Trend ---
             if(report.trend) {
-                // Get the unit for the primary metric from the map
-                const unit = report.metricUnitMap[primaryLabel] || "";
+                const primaryLabel = report.primaryMetricLabel;
+                const unitMap = report.metricUnitMap || {};
+
+                // --- START OF FIX ---
+                // Perform a case-insensitive lookup to find the correct unit
+                const correctCaseLabel = Object.keys(unitMap).find(key => key.toLowerCase() === primaryLabel.toLowerCase());
+                const unit = correctCaseLabel ? unitMap[correctCaseLabel] : "";
+                // --- END OF FIX ---
+
+                // REVISED and RELIABLE FORMATTING
+                const priorStats = `Avg: **${report.trend.priorAverage} ${unit}**\nConsistency: **${report.trend.priorConsistency}%**`;
+                const recentStats = `Avg: **${report.trend.recentAverage} ${unit}**\nConsistency: **${report.trend.recentConsistency}%**`;
 
                 const trendEmbed = new EmbedBuilder()
                     .setColor('#0099FF')
                     .setTitle(`📈 The Journey of '${primaryLabel}'`)
- 
-                     .addFields(
-                        { name: `Historical Average (${report.trend.priorDataPoints} days)`, value: `${report.trend.priorAverage} ${unit}`, inline: true },
-                        { name: `Most Recent Avg (${report.trend.recentDataPoints} days)`, value: `${report.trend.recentAverage} ${unit}`, inline: true },
-           
-                         { name: '\u200B', value: '\u200B', inline: true },
-                        { name: 'Historical Consistency', value: `${report.trend.priorConsistency}%`, inline: true },
-                        { name: 'Most Recent Consistency', value: `${report.trend.recentConsistency}%`, inline: true },
-               
-                         { name: '\u200B', value: '\u200B', inline: true }
-                    );
+                    .addFields(
+                        { name: `Historical (${report.trend.priorDataPoints} days)`, value: priorStats, inline: true },
+                        { name: `Most Recent (${report.trend.recentDataPoints} days)`, value: recentStats, inline: true }
+                     );
+
                 await interaction.user.send({ embeds: [trendEmbed] });
             }
 

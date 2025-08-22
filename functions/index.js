@@ -3694,7 +3694,7 @@ exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
  * Returns: { success: true, matches: [{label: string, unit: string}, ...] }
  */
 exports.getHistoricalMetricMatches = onCall(async (request) => {
-  logger.log("[getHistoricalMetricMatches] Function called. Data:", request.data);
+  logger.log("[getHistoricalMetricMatches] V2 Function called. Data:", request.data);
 
   // 1. Authentication & Validation
   if (!request.auth) {
@@ -3713,86 +3713,72 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
 
   const db = admin.firestore();
   try {
-    // 2. Fetch all logs and compile a unique list of historical metrics
+    // 2. Fetch all unique historical metrics
     const logsSnapshot = await db.collection('logs').where('userId', '==', userId).get();
     const historicalMetrics = new Set();
-
     logsSnapshot.forEach(doc => {
       const log = doc.data();
-      // Add the output metric
-      if (log.output && log.output.label && log.output.unit) {
+      if (log.output?.label && log.output?.unit) {
         historicalMetrics.add(JSON.stringify({ label: log.output.label, unit: log.output.unit }));
       }
-      // Add all input metrics
       if (log.inputs && Array.isArray(log.inputs)) {
         log.inputs.forEach(input => {
-          if (input && input.label && input.unit) {
+          if (input?.label && input?.unit) {
             historicalMetrics.add(JSON.stringify({ label: input.label, unit: input.unit }));
           }
         });
       }
     });
-
     const uniqueHistoricalMetrics = Array.from(historicalMetrics).map(item => JSON.parse(item));
     logger.log(`[getHistoricalMetricMatches] Found ${uniqueHistoricalMetrics.length} unique historical metrics for user ${userId}.`);
-
+    
     if (uniqueHistoricalMetrics.length === 0) {
-        return { success: true, matches: [] }; // No history to match against
+        return { success: true, matches: [] };
     }
 
-    // 3. Construct the AI Prompt
+    // 3. Construct a simpler, more robust AI Prompt
     const prompt = `
-      You are a data analyst specializing in cleaning and matching time-series data labels.
-      CONTEXT:
-      The user has selected the metric "${selectedMetric.label}" (unit: ${selectedMetric.unit}) from their current experiment. They want to find similar metrics from their past logs to include in a historical analysis.
-
-      YOUR TASK:
-      From the following JSON array of all historical metrics, identify up to 5 metrics that are **semantically similar but NOT identical** to the user's selected metric.
-      A good match tracks the same underlying concept, even if the wording is different (e.g., if the user selected "Meditation", you might find "Mindfulness Session" and "Jogging" matches "Running").
-
-      **CRITICAL RULE: Do NOT include metrics that have the exact same label AND unit as the user's selected metric.**
+      You are a data analyst. A user selected the metric "${selectedMetric.label}" (unit: ${selectedMetric.unit}).
+      From the following JSON list of historical metrics, find up to 5 that track the same underlying concept, even with different wording.
+      Examples: "Jogging" is similar to "Running". "Clarity of Mind" is similar to "Focus Level".
 
       HISTORICAL METRICS LIST:
       ${JSON.stringify(uniqueHistoricalMetrics, null, 2)}
 
-      Return your response ONLY as a valid JSON array of objects. Each object in the array must be one of the exact objects from the historical list you were given. Do not invent new metrics or modify the existing ones. If you find no good matches, return an empty array [].
+      Return ONLY a valid JSON array of the matching metric objects from the list. If no good matches are found, return an empty array [].
     `;
 
     // 4. Call Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); // Use Flash for this simpler task
     const generationResult = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
     });
     const response = await generationResult.response;
-
-    // First, check if the response was blocked by safety filters.
-    if (response.promptFeedback && response.promptFeedback.blockReason) {
-        const blockReason = response.promptFeedback.blockReason;
-        logger.error(`[getHistoricalMetricMatches] AI response was blocked for user ${userId}. Reason: ${blockReason}`);
-        throw new HttpsError('resource-exhausted', `The AI couldn't analyze the metrics due to content restrictions (${blockReason}). Please try a different metric.`);
-    }
-
     const responseText = response.text().trim();
 
-    let matches = []; // Default to an empty array for safety
-
-    if (responseText) { // Only attempt to parse if the response string is not empty
+    let aiMatches = [];
+    if (responseText) {
         try {
-            matches = JSON.parse(responseText);
+            aiMatches = JSON.parse(responseText);
         } catch (parseError) {
             logger.error(`[getHistoricalMetricMatches] Failed to parse Gemini JSON response for user ${userId}. Raw: "${responseText}". Error:`, parseError);
-            throw new HttpsError('internal', `AI returned an invalid format that could not be parsed: ${parseError.message}`);
+            throw new HttpsError('internal', `AI returned an invalid format: ${parseError.message}`);
         }
     } else {
-        // This is the key change: Log a warning but do not throw an error for an empty response.
-        // Treat it as a valid "no matches found" case.
-        logger.warn(`[getHistoricalMetricMatches] Gemini returned a completely empty response string for user ${userId}. Treating this as "no matches found".`);
+        logger.warn(`[getHistoricalMetricMatches] Gemini returned an empty response string for user ${userId}. Treating as "no matches found".`);
     }
 
-    // 5. Return the result
-    logger.log(`[getHistoricalMetricMatches] AI found ${matches.length} potential matches for "${selectedMetric.label}".`);
-    return { success: true, matches: matches };
+    // 5. Filter out any exact matches the AI might have included
+    const normalizedSelectedLabel = normalizeLabel(selectedMetric.label);
+    const normalizedSelectedUnit = normalizeUnit(selectedMetric.unit);
+    
+    const fuzzyMatches = Array.isArray(aiMatches) ? aiMatches.filter(match => 
+        normalizeLabel(match.label) !== normalizedSelectedLabel || normalizeUnit(match.unit) !== normalizedSelectedUnit
+    ) : [];
+
+    logger.log(`[getHistoricalMetricMatches] AI found ${fuzzyMatches.length} potential fuzzy matches for "${selectedMetric.label}".`);
+    return { success: true, matches: fuzzyMatches };
 
   } catch (error) {
     logger.error(`[getHistoricalMetricMatches] Critical error for user ${userId}:`, error);
@@ -3802,7 +3788,6 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     throw new HttpsError('internal', `An unexpected error occurred while finding historical matches: ${error.message}`);
   }
 });
-
 /**
  * Retrieves a list of all of a user's completed experiment statistics documents.
  */
@@ -4003,7 +3988,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             trend: trend,
             metricUnitMap: metricUnitMap
         };
-        
+
         if (genAI) {
             try {
                 const allNotes = [];
