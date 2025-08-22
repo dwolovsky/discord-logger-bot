@@ -4030,6 +4030,7 @@ CONTEXT:
 - All Significant Correlations Found During Analysis: ${JSON.stringify(allCorrelations)}
 - User's Raw Notes From The Period:
 ${allNotes.slice(-15).join("\n")}
+CRITICAL: If you include a quote from the user's notes that contains double quotes, you MUST escape them with a backslash (e.g., "He said \\"hello\\"").
 
 YOUR TASK:
 Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGrowth", and "shareablePost".
@@ -4050,7 +4051,6 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
     - It must be inspiring and highlight their strongest correlation. Do not use exclamation points.
     - Do not use any cliche language. End with the "🙌" emoji.
 CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
-CRITICAL: If you include a quote from the user's notes that contains double quotes, you MUST escape them with a backslash (e.g., "He said \\"hello\\"").
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
                 try {
