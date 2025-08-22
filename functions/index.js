@@ -4003,24 +4003,25 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             trend: trend,
             metricUnitMap: metricUnitMap
         };
-        // This 'if (genAI)' block is now critical. The whole function depends on its success.
+        
         if (genAI) {
-            const allNotes = [];
-            const noteRanges = extractedChapters.map(c => ({start: new Date(c.startDate), end: new Date(c.endDate)}));
-            for(const range of noteRanges){
-                 const logsSnapshot = await db.collection('logs').where('userId', '==', userId).where('timestamp', '>=', range.start).where('timestamp', '<=', range.end).get();
-                 logsSnapshot.forEach(doc => {
-                     const log = doc.data();
-                     if(log.notes && log.notes.trim()) allNotes.push(`- ${log.notes.trim()}`);
-                 });
-            }
+            try {
+                const allNotes = [];
+                const noteRanges = extractedChapters.map(c => ({start: new Date(c.startDate), end: new Date(c.endDate)}));
+                for(const range of noteRanges){
+                     const logsSnapshot = await db.collection('logs').where('userId', '==', userId).where('timestamp', '>=', range.start).where('timestamp', '<=', range.end).get();
+                     logsSnapshot.forEach(doc => {
+                         const log = doc.data();
+                         if(log.notes && log.notes.trim()) allNotes.push(`- ${log.notes.trim()}`);
+                     });
+                }
 
-            if (allNotes.length > 0) {
-                const allCorrelations = [];
-                extractedChapters.forEach(chapter => {
-                    allCorrelations.push(...chapter.correlations.influencedBy);
-                });
-                const narrativePrompt = `
+                if (allNotes.length > 0) {
+                    const allCorrelations = [];
+                    extractedChapters.forEach(chapter => {
+                        allCorrelations.push(...chapter.correlations.influencedBy);
+                    });
+                    const narrativePrompt = `
 You are an expert habit-science coach. Your task is to analyze a user's habit experiment data and generate a supportive, insightful narrative.
 CONTEXT:
 - User's Primary Metric: "${primaryMetric.label}"
@@ -4031,7 +4032,6 @@ CONTEXT:
 - User's Raw Notes From The Period:
 ${allNotes.slice(-15).join("\n")}
 CRITICAL: If you include a quote from the user's notes that contains double quotes, you MUST escape them with a backslash (e.g., "He said \\"hello\\"").
-
 YOUR TASK:
 Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGrowth", and "shareablePost".
 1.  "holisticInsight":
@@ -4048,64 +4048,56 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 
 3.  "shareablePost":
     - Write a short, celebratory post (2-3 sentences) celebrating the user, whose name is "${username}". Refer to them by their name.
-    - It must be inspiring and highlight their strongest correlation. Do not use exclamation points.
+    - It must be inspiring and highlight their strongest correlation.
+    - Do not use exclamation points.
     - Do not use any cliche language. End with the "🙌" emoji.
 CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
-                try {
-                    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-                const result = await model.generateContent({
-                    contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
-                    generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
-                });
+                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+                    const result = await model.generateContent({
+                        contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
+                        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
+                    });
+                    const response = await result.response;
 
-                const response = await result.response;
+                    if (response.promptFeedback && response.promptFeedback.blockReason) {
+                        const blockReason = response.promptFeedback.blockReason;
+                        logger.error(`[runHistoricalAnalysis V6] AI response was blocked for user ${userId}. Reason: ${blockReason}`);
+                        throw new HttpsError('resource-exhausted', `The AI couldn't generate a narrative due to content restrictions (${blockReason}).`);
+                    }
 
-                // First, check if the response was blocked by safety filters.
-                if (response.promptFeedback && response.promptFeedback.blockReason) {
-                    const blockReason = response.promptFeedback.blockReason;
-                    logger.error(`[runHistoricalAnalysis V6] AI response was blocked for user ${userId}. Reason: ${blockReason}`);
-                    throw new HttpsError('resource-exhausted', `The AI couldn't generate a narrative due to content restrictions (${blockReason}).`);
-                }
+                    const responseText = response.text().trim();
+                    let aiNarrative = null;
 
-                const responseText = response.text().trim();
-
-                if (!responseText) {
-                    // This will now only trigger if the response was not blocked but was still empty.
-                    throw new Error("AI returned an empty response.");
-                }
-                    let aiNarrative;
-                try {
-                    // First, try to parse the response directly, as this is the ideal case.
-                    aiNarrative = JSON.parse(responseText);
-                } catch (initialParseError) {
-                    // If the first parse fails, attempt to find and extract a JSON object from the string.
-                    logger.warn(`[runHistoricalAnalysis V6] Initial JSON parse failed for user ${userId}. Attempting to extract JSON from the response text.`);
-                    try {
-                        const jsonMatch = responseText.match(/\{[\s\S]*\}/); // Find the first '{' to the last '}'
-                        if (jsonMatch && jsonMatch[0]) {
-                            aiNarrative = JSON.parse(jsonMatch[0]);
-                            logger.log(`[runHistoricalAnalysis V6] Successfully parsed AI response after extracting the JSON object.`);
-                        } else {
-                            // If the regex fails, the response is truly invalid.
-                            throw new Error("Could not find a valid JSON object in the AI's response.");
+                    if (responseText) {
+                        try {
+                            const startIndex = responseText.indexOf('{');
+                            const endIndex = responseText.lastIndexOf('}');
+                            if (startIndex !== -1 && endIndex > startIndex) {
+                                const jsonString = responseText.substring(startIndex, endIndex + 1);
+                                aiNarrative = JSON.parse(jsonString);
+                                logger.log(`[runHistoricalAnalysis V6] Successfully parsed AI response after cleaning and extracting the JSON object.`);
+                            } else {
+                                throw new Error("Could not find a valid JSON object structure in the AI's response.");
+                            }
+                        } catch (parseError) {
+                            logger.error(`[runHistoricalAnalysis V6] Failed to parse Gemini JSON response even after cleaning. Raw: "${responseText}". Error:`, parseError);
+                            throw new HttpsError('internal', `The AI failed to generate a valid report. Details: ${parseError.message}`);
                         }
-                    } catch (finalParseError) {
-                        // If it still fails after cleaning, log the error and throw the HttpsError.
-                        logger.error(`[runHistoricalAnalysis V6] Failed to parse Gemini JSON response even after extraction for user ${userId}. Raw: "${responseText}". Error:`, finalParseError);
-                        throw new HttpsError('internal', `The AI failed to generate a narrative for your report. Details: ${finalParseError.message}`);
+                    } else {
+                        logger.warn(`[runHistoricalAnalysis V6] AI returned an empty response for user ${userId}. This will result in a data-only report.`);
+                    }
+
+                    if (aiNarrative) {
+                        finalReport.holisticInsight = aiNarrative.holisticInsight || finalReport.holisticInsight;
+                        finalReport.hiddenGrowth = aiNarrative.hiddenGrowth || finalReport.hiddenGrowth;
+                        finalReport.shareablePost = aiNarrative.shareablePost || finalReport.shareablePost;
                     }
                 }
-
-                    finalReport.holisticInsight = aiNarrative.holisticInsight || finalReport.holisticInsight;
-                    finalReport.hiddenGrowth = aiNarrative.hiddenGrowth || finalReport.hiddenGrowth;
-                    finalReport.shareablePost = aiNarrative.shareablePost || finalReport.shareablePost;
-                } catch (aiError) {
-                    logger.error(`[runHistoricalAnalysis V6] AI narrative generation failed for user ${userId}:`, aiError);
-                    // This is the new logic: throw an error to prevent sending an incomplete report
-                    throw new HttpsError('internal', `The AI failed to generate a narrative for your report. Details: ${aiError.message}`);
-                }
+            } catch (aiError) {
+                logger.error(`[runHistoricalAnalysis V6] AI narrative generation failed for user ${userId}:`, aiError);
+                throw new HttpsError('internal', `The AI failed to generate a narrative for your report. Details: ${aiError.message}`);
             }
         }
         

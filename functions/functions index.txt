@@ -3608,7 +3608,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
         // 4. Call Gemini
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
         const generationResult = await model.generateContent({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: {
@@ -4076,13 +4076,27 @@ Your entire response must be ONLY the raw JSON object, starting with { and endin
                     throw new Error("AI returned an empty response.");
                 }
                     let aiNarrative;
+                try {
+                    // First, try to parse the response directly, as this is the ideal case.
+                    aiNarrative = JSON.parse(responseText);
+                } catch (initialParseError) {
+                    // If the first parse fails, attempt to find and extract a JSON object from the string.
+                    logger.warn(`[runHistoricalAnalysis V6] Initial JSON parse failed for user ${userId}. Attempting to extract JSON from the response text.`);
                     try {
-                        aiNarrative = JSON.parse(responseText);
-                    } catch (initialParseError) {
-                        logger.warn(`[runHistoricalAnalysis V6] Initial JSON parse failed for user ${userId}. Attempting to clean the response.`);
-                        const cleanText = responseText.replace(/```json\n/g, '').replace(/\n```/g, '').trim();
-                        aiNarrative = JSON.parse(cleanText); // Let it throw if it fails again
+                        const jsonMatch = responseText.match(/\{[\s\S]*\}/); // Find the first '{' to the last '}'
+                        if (jsonMatch && jsonMatch[0]) {
+                            aiNarrative = JSON.parse(jsonMatch[0]);
+                            logger.log(`[runHistoricalAnalysis V6] Successfully parsed AI response after extracting the JSON object.`);
+                        } else {
+                            // If the regex fails, the response is truly invalid.
+                            throw new Error("Could not find a valid JSON object in the AI's response.");
+                        }
+                    } catch (finalParseError) {
+                        // If it still fails after cleaning, log the error and throw the HttpsError.
+                        logger.error(`[runHistoricalAnalysis V6] Failed to parse Gemini JSON response even after extraction for user ${userId}. Raw: "${responseText}". Error:`, finalParseError);
+                        throw new HttpsError('internal', `The AI failed to generate a narrative for your report. Details: ${finalParseError.message}`);
                     }
+                }
 
                     finalReport.holisticInsight = aiNarrative.holisticInsight || finalReport.holisticInsight;
                     finalReport.hiddenGrowth = aiNarrative.hiddenGrowth || finalReport.hiddenGrowth;
