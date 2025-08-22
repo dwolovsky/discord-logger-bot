@@ -2499,7 +2499,7 @@ async function presentHistoricalMatchConfirmation(interaction, userId) {
     const embed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle(`Historical Match ${matchIndex + 1} of ${matches.length}`)
-        .setDescription(`I found a potential match from your history: **"${currentMatch.label}"** (unit: *${currentMatch.unit}*).\n\nDo you want to include this data in your analysis?`);
+        .setDescription(`I found a potential match from your history: **"${currentMatch.label}"** (unit: *${currentMatch.unit}*).\n\nIs this the same metric by another name?`);
 
     const includeButton = new ButtonBuilder()
         .setCustomId('historical_match_include_btn')

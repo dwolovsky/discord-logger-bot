@@ -4030,6 +4030,7 @@ CONTEXT:
 - All Significant Correlations Found During Analysis: ${JSON.stringify(allCorrelations)}
 - User's Raw Notes From The Period:
 ${allNotes.slice(-15).join("\n")}
+CRITICAL: If you include a quote from the user's notes that contains double quotes, you MUST escape them with a backslash (e.g., "He said \\"hello\\"").
 
 YOUR TASK:
 Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGrowth", and "shareablePost".
@@ -4054,16 +4055,26 @@ Your entire response must be ONLY the raw JSON object, starting with { and endin
 `;
                 try {
                     const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-                    const result = await model.generateContent({
-                        contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
-                        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
-                    });
-                    const responseText = result.response.text().trim();
+                const result = await model.generateContent({
+                    contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
+                    generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
+                });
 
-                    if (!responseText) {
-                        throw new Error("AI returned an empty response.");
-                    }
+                const response = await result.response;
 
+                // First, check if the response was blocked by safety filters.
+                if (response.promptFeedback && response.promptFeedback.blockReason) {
+                    const blockReason = response.promptFeedback.blockReason;
+                    logger.error(`[runHistoricalAnalysis V6] AI response was blocked for user ${userId}. Reason: ${blockReason}`);
+                    throw new HttpsError('resource-exhausted', `The AI couldn't generate a narrative due to content restrictions (${blockReason}).`);
+                }
+
+                const responseText = response.text().trim();
+
+                if (!responseText) {
+                    // This will now only trigger if the response was not blocked but was still empty.
+                    throw new Error("AI returned an empty response.");
+                }
                     let aiNarrative;
                     try {
                         aiNarrative = JSON.parse(responseText);
