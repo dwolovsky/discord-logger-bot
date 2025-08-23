@@ -4028,7 +4028,7 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 
 2.  "hiddenGrowth":
     - This key's value MUST be a JSON object with two keys: "quote" and "paragraph".
-    - "quote": Find the single, most relevant quote from the notes that encapsulates the user's relationship and journey with the Primary Metric. If no single quote works, create a short (3-5 word) thematic title for your paragraph instead (e.g., "On the theme of consistency").
+    - "quote": Find the most relevant quote from the notes that encapsulates the user's relationship and journey with the Primary Metric. 1-2 sentences. If no single quote works, create a short (3-5 word) thematic title for your paragraph instead (e.g., "On the theme of consistency").
     - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that reflects on the significance of the quote or theme. Frame it as a supportive observation.
 
 3.  "shareablePost":

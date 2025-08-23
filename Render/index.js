@@ -2304,8 +2304,8 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
                 });
 
                 correlationEmbed.addFields({
-                    name: `# ${groupName}`,
-                    value: valueString.trim()
+                    name: '\u200B', // This is a zero-width space to make the title blank
+                    value: `### ${groupName}\n${valueString.trim()}`
                 });
             });
             if (hasCorrelations) {
