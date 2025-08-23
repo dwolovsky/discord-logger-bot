@@ -4020,15 +4020,15 @@ CRITICAL: If you include a quote from the user's notes that contains double quot
 YOUR TASK:
 Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGrowth", and "shareablePost".
 1.  "holisticInsight":
-    - First, infer the real-world meaning of the Primary Metric and its aliases by using the notes as clues. (e.g., "Baw" might be a person, "Slow morning" might be a positive morning routine).
+    - First, infer the real-world meaning of the Primary Metric and its aliases by using the notes as clues. (e.g., "Rosie" might be a person or a dog, "Slow morning" might be a positive morning routine or a negative event the user is trying to avoid, and the user's notes will give clues).
     - Then, write 1-2 SHORT paragraphs (2 sentences each, maximum 60 words total) that synthesize ALL the correlation data.
     - Use bold headers to label the point of each paragraph.
     - Explain how the different habits and outcomes seem to influence each other based on your inferred meaning.
-    - Use tentative language. "Might," "could," "seems to."
+    - Use tentative language when expressing observations about the user's progress. "Might," "could," "seems to." CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
 
 2.  "hiddenGrowth":
     - This key's value MUST be a JSON object with two keys: "quote" and "paragraph".
-    - "quote": Find the single, most relevant quote from the notes. If no single quote works, create a short (3-5 word) thematic title for your paragraph instead (e.g., "On the theme of consistency").
+    - "quote": Find the single, most relevant quote from the notes that encapsulates the user's relationship and journey with the Primary Metric. If no single quote works, create a short (3-5 word) thematic title for your paragraph instead (e.g., "On the theme of consistency").
     - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that reflects on the significance of the quote or theme. Frame it as a supportive observation.
 
 3.  "shareablePost":
@@ -4046,7 +4046,6 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
   },
   "shareablePost": "A short, celebratory post written in the first person from the user's perspective, ending with the 🙌 emoji."
 }
-CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
                     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });

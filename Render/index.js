@@ -2267,6 +2267,7 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
                         strengthText: strengthText,
                         rSquared: (corr.coefficient * corr.coefficient * 100).toFixed(0),
                         isSignificant: corr.pValue !== null && corr.pValue < 0.05,
+                        coefficient: corr.coefficient,
                     };
 
                     if (!groupedCorrelations.has(groupKey)) {
@@ -2280,14 +2281,30 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
             groupedCorrelations.forEach((findings, groupName) => {
                 let valueString = `This relationship was found in **${findings.length} experiment${findings.length > 1 ? 's' : ''}**:\n`;
                 
+                // This is the corrected code
                 findings.forEach(finding => {
-                    let significanceText = finding.isSignificant ? " - Statistically Significant" : "";
+                    // --- Start of New Logic ---
+                    const [otherMetricLabel] = groupName.split(' & '); // Get the label of the other metric
+                    const isOtherTime = isTimeMetric(unitMap[otherMetricLabel]);
+                    const isPrimaryTime = isTimeMetric(unitMap[primaryLabel]);
+
+                    const otherDisplay = isOtherTime ? 'was later' : 'was higher ⤴️';
+                    const primaryDisplay = isPrimaryTime
+                        ? (finding.coefficient >= 0 ? 'was later' : 'was earlier')
+                        : (finding.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
+
+                    const relationshipText = `→ When **'${otherMetricLabel}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay}.`;
+                    // --- End of New Logic ---
+
+                    let significanceText = finding.isSignificant ? " (Statistically Significant)" : "";
+
                     valueString += `• **From ${finding.startDate} - ${finding.endDate}:**\n`;
-                    valueString += `*Strength: ${finding.strengthEmoji} ${finding.strengthText} (${finding.rSquared}%)*${significanceText}\n`;
+                    valueString += `${relationshipText}\n`; // Add the new relationship text
+                    valueString += `  *Strength: ${finding.strengthEmoji} ${finding.strengthText} (${finding.rSquared}%)${significanceText}*\n`;
                 });
 
                 correlationEmbed.addFields({
-                    name: groupName,
+                    name: `# ${groupName}`,
                     value: valueString.trim()
                 });
             });
