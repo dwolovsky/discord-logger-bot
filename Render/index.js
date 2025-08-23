@@ -2283,7 +2283,7 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
                 findings.forEach(finding => {
                     let significanceText = finding.isSignificant ? " - Statistically Significant" : "";
                     valueString += `• **From ${finding.startDate} - ${finding.endDate}:**\n`;
-                    valueString += `&nbsp;&nbsp;&nbsp;*Strength: ${finding.strengthEmoji} ${finding.strengthText} (${finding.rSquared}%)*${significanceText}\n`;
+                    valueString += `*Strength: ${finding.strengthEmoji} ${finding.strengthText} (${finding.rSquared}%)*${significanceText}\n`;
                 });
 
                 correlationEmbed.addFields({
