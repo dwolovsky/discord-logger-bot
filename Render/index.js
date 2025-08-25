@@ -6208,7 +6208,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
                 let finalPlaceholder = 'What did you observe? Any questions or insights?';
                 if (settings.deeperProblem) {
-                    finalPlaceholder = `What details can you recall about your habits today?`;
+                    finalPlaceholder = `What are the costs & rewards of your habits today?`;
                 }
                 notesInput.setPlaceholder(finalPlaceholder);
                 components.push(new ActionRowBuilder().addComponents(notesInput));
@@ -6386,7 +6386,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
             let finalPlaceholder = 'What did you observe? Any questions or insights?';
             if (settings.deeperProblem) {
-                finalPlaceholder = `What details can you recall about your habits today?`;
+                finalPlaceholder = `What are the costs & rewards of your habits today?`;
             }
             notesInput.setPlaceholder(finalPlaceholder);
             components.push(new ActionRowBuilder().addComponents(notesInput));
@@ -6434,7 +6434,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
             let finalPlaceholder = 'What did you observe? Any questions or insights?';
             if (settings.deeperProblem) {
-                finalPlaceholder = `What details can you recall about your habits today?`;
+                finalPlaceholder = `What are the costs & rewards of your habits today?`;
             }
             notesInput.setPlaceholder(finalPlaceholder);
             components.push(new ActionRowBuilder().addComponents(notesInput));
