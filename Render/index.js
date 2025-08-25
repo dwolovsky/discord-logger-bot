@@ -2074,14 +2074,24 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
       .setTitle("✨ Daily Log Summary ✨")
       .setFooter({ text: "This is a private copy of your log entry." });
 
-    // Set the embed's main text to be the user's notes.
+    let finalDescription = "";
+
+    // --- NEW: Add AI appreciation message to the top ---
+    if (aiResponse && aiResponse.acknowledgment && aiResponse.comfortMessage) {
+        finalDescription += `${aiResponse.acknowledgment}\n${aiResponse.comfortMessage}\n\n---\n`;
+    }
+    // --- End of New Logic ---
+
+    // Add the user's notes
     if (payload.notes && payload.notes.trim() !== "") {
-      dmEmbed.setDescription(payload.notes);
+      finalDescription += `**Your Notes:**\n${payload.notes.trim()}`;
     } else {
-      dmEmbed.setDescription("*No notes were provided for this log.*");
+      finalDescription += "*No notes were provided for this log.*";
     }
 
-    // Add the logged numerical data as fields
+    dmEmbed.setDescription(finalDescription);
+
+    // Add the logged numerical data as fields (this part remains the same)
     const loggedMetrics = [];
     if (settings.output) {
         loggedMetrics.push({
@@ -2099,32 +2109,19 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
             });
         }
     }
-    
-            // 1. Build a single description string that INCLUDES the header.
-            let newDescription = payload.notes && payload.notes.trim() !== "" 
-                ? payload.notes.trim() 
-                : "*No notes were provided for this log.*";
 
-            if (loggedMetrics.length > 0) {
-                // Add two newlines for a clean break, then add the bolded header.
-                newDescription += `\n\n**Logged Data**`; 
+    if (loggedMetrics.length > 0) {
+        // Add a blank field for spacing before the grid of metrics
+        dmEmbed.addFields({ name: '\u200B', value: '\u200B' }); 
+        loggedMetrics.forEach(metric => {
+            if (metric.label) {
+                dmEmbed.addFields({ name: `${metric.label} (${metric.unit})`, value: String(metric.value), inline: true });
             }
-
-            dmEmbed.setDescription(newDescription);
-
-            // 2. Now, ONLY add the fields for the actual metrics. Do NOT add the separate header field.
-            if (loggedMetrics.length > 0) {
-                loggedMetrics.forEach(metric => {
-                    if (metric.label) {
-                        dmEmbed.addFields({ name: `${metric.label} (${metric.unit})`, value: `${metric.value}`, inline: true });
-                    }
-                });
-            }
-
+        });
+    }
 
     await interaction.user.send({ embeds: [dmEmbed] });
     console.log(`[sendAppreciationDM] Successfully sent log summary DM to ${interaction.user.tag}.`);
-
   } catch (error) {
     if (error.code === 50007) { // Cannot send messages to this user
       console.warn(`[sendAppreciationDM] Could not send log summary DM to ${interaction.user.tag} (DMs likely disabled).`);
