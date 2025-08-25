@@ -556,7 +556,7 @@ function buildCoreOverviewPage(embed, statsReportData) {
             description += `*Not enough data to calculate stats.*\n\n`;
         } else if (isYesNoMetric(data.unit)) {
             const percentage = (data.average * 100).toFixed(0);
-            description += `**Completion =** ${percentage}% (Goal: ${settings.output.goal})\n\n`;
+            description += `**Completion =** ${percentage}% of days this week\n\n`;
         } else {
             description += `**Average =** ${data.average} ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
         }
@@ -897,7 +897,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     if (targetPage === totalPages) {
         row.addComponents(
             new ButtonBuilder()
-                .setCustomId(`stats_show_continuous_mode_prompt_${experimentId}`)
+                .setCustomId(`start_new_experiment_prompt_btn`)
                 .setLabel('🚀 Start a New Experiment')
                 .setStyle(ButtonStyle.Success)
         );
@@ -937,7 +937,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
                 buildFinalSummaryPage(finalEmbed, finalReportInfo.statsReportData, finalReportInfo.pageConfig);
 
                 const finalButton = new ButtonBuilder()
-                    .setCustomId(`stats_show_continuous_mode_prompt_${finalReportInfo.experimentId}`)
+                    .setCustomId(`start_new_experiment_prompt_btn`)
                     .setLabel('🚀 Start a New Experiment')
                     .setStyle(ButtonStyle.Success);
 
@@ -7601,54 +7601,6 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - buttonClickTime).toFixed(2)}ms`);
     }
 
-    else if (interaction.isButton() && interaction.customId.startsWith('stats_show_continuous_mode_prompt_')) {
-      const nextButtonClickTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      console.log(`[stats_continuous_prompt START ${interactionId}] User ${userId} clicked 'Next' on the final stats page.`);
-
-      try {
-        // Acknowledge the interaction by removing the button from the stats report message
-        await interaction.update({
-            components: []
-        });
-
-        // --- NEW: Clean up the temporary flow document from Firestore ---
-        if (dbAdmin) {
-            const statsReportFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('statsReport');
-            await statsReportFlowRef.delete();
-            console.log(`[stats_continuous_prompt] Cleaned up temporary stats report from Firestore for user ${userId}.`);
-        }
-        // --- END NEW ---
-
-        // Create the "Start New Experiment" button
-        const startNewExpButton = new ButtonBuilder()
-            .setCustomId('start_new_experiment_prompt_btn') 
-            .setLabel('🚀 Start a New Experiment')
-            .setStyle(ButtonStyle.Success);
-        
-        const followUpActionRow = new ActionRowBuilder().addComponents(startNewExpButton);
-
-        // Define the content for the follow-up message
-        const finalMessageContent = `Your experiment has concluded! You now have 2 options:\n\n` +
-            `1. **Start a new experiment**\nUse your insights to design a new experiment. Click the button below to begin.\n\n` +
-            `2. **Continue with the same experiment**\nKeep logging as usual. You'll get a fresh stats report and new AI insights each week!`;
-
-        // Send the follow-up message as a new DM
-        await interaction.user.send({
-            content: finalMessageContent,
-            components: [followUpActionRow]
-        });
-
-        console.log(`[stats_continuous_prompt SUCCESS ${interactionId}] Sent continuous mode prompt to user ${userId}.`);
-
-      } catch (error) {
-        console.error(`[stats_continuous_prompt ERROR ${interactionId}] Error processing 'Next' button for user ${userId}:`, error);
-        // Since the interaction is already updated, we can't send a reply.
-        // The error is logged for debugging.
-      }
-    }
-
     else if (interaction.isButton() && interaction.customId === 'ai_show_share_prompt_btn') {
     const showSharePromptClickTime = performance.now();
     const interactionId = interaction.id;
@@ -7866,46 +7818,6 @@ client.on(Events.InteractionCreate, async interaction => {
         }
       }
       console.log(`[post_ai_log_summary_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - postPublicClickTime).toFixed(2)}ms`);
-    }
-
-    else if (interaction.isButton() && interaction.customId.startsWith('stats_show_continuous_mode_prompt_')) {
-      const nextButtonClickTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      console.log(`[stats_continuous_prompt START ${interactionId}] User ${userId} clicked 'Next' on the final stats page.`);
-
-      try {
-        // Acknowledge the interaction by removing the button from the stats report message
-        await interaction.update({
-            components: []
-        });
-
-        // Create the "Start New Experiment" button
-        const startNewExpButton = new ButtonBuilder()
-            .setCustomId('start_new_experiment_prompt_btn') 
-            .setLabel('🚀 Start a New Experiment')
-            .setStyle(ButtonStyle.Success);
-        
-        const followUpActionRow = new ActionRowBuilder().addComponents(startNewExpButton);
-
-        // Define the content for the follow-up message
-        const finalMessageContent = `Your experiment has concluded! You now have 2 options:\n\n` +
-            `1. **Start a new experiment**\nUse your insights to design a new experiment. Click the button below to begin.\n\n` +
-            `2. **Continue with the same experiment**\nKeep logging as usual. You'll get a fresh stats report and new AI insights each week!`;
-
-        // Send the follow-up message as a new DM
-        await interaction.user.send({
-            content: finalMessageContent,
-            components: [followUpActionRow]
-        });
-
-        console.log(`[stats_continuous_prompt SUCCESS ${interactionId}] Sent continuous mode prompt to user ${userId}.`);
-
-      } catch (error) {
-        console.error(`[stats_continuous_prompt ERROR ${interactionId}] Error processing 'Next' button for user ${userId}:`, error);
-        // Since the interaction is already updated, we can't send a reply.
-        // The error is logged for debugging.
-      }
     }
 
     else if (interaction.customId === 'ai_show_outcome_modal_btn') {
