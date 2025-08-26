@@ -556,7 +556,7 @@ function buildCoreOverviewPage(embed, statsReportData) {
             description += `*Not enough data to calculate stats.*\n\n`;
         } else if (isYesNoMetric(data.unit)) {
             const percentage = (data.average * 100).toFixed(0);
-            description += `**Completion =** ${percentage}% (Goal: ${settings.output.goal})\n\n`;
+            description += `**Completion =** ${percentage}% of days this week\n\n`;
         } else {
             description += `**Average =** ${data.average} ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
         }
@@ -897,7 +897,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     if (targetPage === totalPages) {
         row.addComponents(
             new ButtonBuilder()
-                .setCustomId(`stats_show_continuous_mode_prompt_${experimentId}`)
+                .setCustomId(`start_new_experiment_prompt_btn`)
                 .setLabel('🚀 Start a New Experiment')
                 .setStyle(ButtonStyle.Success)
         );
@@ -937,7 +937,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
                 buildFinalSummaryPage(finalEmbed, finalReportInfo.statsReportData, finalReportInfo.pageConfig);
 
                 const finalButton = new ButtonBuilder()
-                    .setCustomId(`stats_show_continuous_mode_prompt_${finalReportInfo.experimentId}`)
+                    .setCustomId(`start_new_experiment_prompt_btn`)
                     .setLabel('🚀 Start a New Experiment')
                     .setStyle(ButtonStyle.Success);
 
@@ -2074,14 +2074,24 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
       .setTitle("✨ Daily Log Summary ✨")
       .setFooter({ text: "This is a private copy of your log entry." });
 
-    // Set the embed's main text to be the user's notes.
+    let finalDescription = "";
+
+    // --- NEW: Add AI appreciation message to the top ---
+    if (aiResponse && aiResponse.acknowledgment && aiResponse.comfortMessage) {
+        finalDescription += `${aiResponse.acknowledgment}\n${aiResponse.comfortMessage}\n\n---\n`;
+    }
+    // --- End of New Logic ---
+
+    // Add the user's notes
     if (payload.notes && payload.notes.trim() !== "") {
-      dmEmbed.setDescription(payload.notes);
+      finalDescription += `**Your Notes:**\n${payload.notes.trim()}`;
     } else {
-      dmEmbed.setDescription("*No notes were provided for this log.*");
+      finalDescription += "*No notes were provided for this log.*";
     }
 
-    // Add the logged numerical data as fields
+    dmEmbed.setDescription(finalDescription);
+
+    // Add the logged numerical data as fields (this part remains the same)
     const loggedMetrics = [];
     if (settings.output) {
         loggedMetrics.push({
@@ -2099,32 +2109,19 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
             });
         }
     }
-    
-            // 1. Build a single description string that INCLUDES the header.
-            let newDescription = payload.notes && payload.notes.trim() !== "" 
-                ? payload.notes.trim() 
-                : "*No notes were provided for this log.*";
 
-            if (loggedMetrics.length > 0) {
-                // Add two newlines for a clean break, then add the bolded header.
-                newDescription += `\n\n**Logged Data**`; 
+    if (loggedMetrics.length > 0) {
+        // Add a blank field for spacing before the grid of metrics
+        dmEmbed.addFields({ name: '\u200B', value: '\u200B' }); 
+        loggedMetrics.forEach(metric => {
+            if (metric.label) {
+                dmEmbed.addFields({ name: `${metric.label} (${metric.unit})`, value: String(metric.value), inline: true });
             }
-
-            dmEmbed.setDescription(newDescription);
-
-            // 2. Now, ONLY add the fields for the actual metrics. Do NOT add the separate header field.
-            if (loggedMetrics.length > 0) {
-                loggedMetrics.forEach(metric => {
-                    if (metric.label) {
-                        dmEmbed.addFields({ name: `${metric.label} (${metric.unit})`, value: `${metric.value}`, inline: true });
-                    }
-                });
-            }
-
+        });
+    }
 
     await interaction.user.send({ embeds: [dmEmbed] });
     console.log(`[sendAppreciationDM] Successfully sent log summary DM to ${interaction.user.tag}.`);
-
   } catch (error) {
     if (error.code === 50007) { // Cannot send messages to this user
       console.warn(`[sendAppreciationDM] Could not send log summary DM to ${interaction.user.tag} (DMs likely disabled).`);
@@ -2267,6 +2264,7 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
                         strengthText: strengthText,
                         rSquared: (corr.coefficient * corr.coefficient * 100).toFixed(0),
                         isSignificant: corr.pValue !== null && corr.pValue < 0.05,
+                        coefficient: corr.coefficient,
                     };
 
                     if (!groupedCorrelations.has(groupKey)) {
@@ -2280,15 +2278,31 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
             groupedCorrelations.forEach((findings, groupName) => {
                 let valueString = `This relationship was found in **${findings.length} experiment${findings.length > 1 ? 's' : ''}**:\n`;
                 
+                // This is the corrected code
                 findings.forEach(finding => {
-                    let significanceText = finding.isSignificant ? " - Statistically Significant" : "";
+                    // --- Start of New Logic ---
+                    const [otherMetricLabel] = groupName.split(' & '); // Get the label of the other metric
+                    const isOtherTime = isTimeMetric(unitMap[otherMetricLabel]);
+                    const isPrimaryTime = isTimeMetric(unitMap[primaryLabel]);
+
+                    const otherDisplay = isOtherTime ? 'was later' : 'was higher ⤴️';
+                    const primaryDisplay = isPrimaryTime
+                        ? (finding.coefficient >= 0 ? 'was later' : 'was earlier')
+                        : (finding.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
+
+                    const relationshipText = `→ When **'${otherMetricLabel}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay}.`;
+                    // --- End of New Logic ---
+
+                    let significanceText = finding.isSignificant ? " (Statistically Significant)" : "";
+
                     valueString += `• **From ${finding.startDate} - ${finding.endDate}:**\n`;
-                    valueString += `&nbsp;&nbsp;&nbsp;*Strength: ${finding.strengthEmoji} ${finding.strengthText} (${finding.rSquared}%)*${significanceText}\n`;
+                    valueString += `${relationshipText}\n`; // Add the new relationship text
+                    valueString += `  *Strength: ${finding.strengthEmoji} ${finding.strengthText} (${finding.rSquared}%)${significanceText}*\n`;
                 });
 
                 correlationEmbed.addFields({
-                    name: groupName,
-                    value: valueString.trim()
+                    name: '\u200B', // This is a zero-width space to make the title blank
+                    value: `### ${groupName}\n${valueString.trim()}`
                 });
             });
             if (hasCorrelations) {
@@ -4910,128 +4924,55 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.customId === MANUAL_SETUP_BTN_ID) {
-    const manualSetupStartTime = performance.now();
-    const userId = interaction.user.id;
-    const userTag = interaction.user.tag;
-    const interactionId = interaction.id;
-    console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}.`);
-
-    try {
-        await interaction.deferUpdate();
-
-        // Prepare the message with the explanatory image and the continue button
-        const explainerEmbed = new EmbedBuilder()
-            .setColor('#5865F2')
-            .setImage('https://raw.githubusercontent.com/dwolovsky/discord-logger-bot/refs/heads/firebase-migration/Active%20Pictures/Label%20Target%20Scale%20Unit.png'); // Replace with your actual image URL
-
-            const continueButton = new ButtonBuilder()
-            .setCustomId('manual_show_outcome_form_btn')
-            .setLabel('✍️ Continue to Form')
-            .setStyle(ButtonStyle.Success);
-        
-        const row = new ActionRowBuilder().addComponents(continueButton);
-
-        await interaction.editReply({
-            content: "Let's define your Metrics!\nEach metric has 3 parts.",
-            embeds: [explainerEmbed],
-            components: [row]
-        });
-        
-        console.log(`[${interaction.customId} SUCCESS ${interactionId}] Explainer image sent for manual setup to ${userTag}.`);
-
-    } catch (error) {
-        const errorTime = performance.now();
-        console.error(`[${interaction.customId} ERROR ${interactionId}] Error in handler for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
-        // Fallback error reply
-        if (interaction.deferred && !interaction.replied) {
-            try {
-                await interaction.editReply({
-                    content: `❌ Oops! Something went wrong when trying to show setup options. Please try clicking "🔬 Set Experiment" again.`,
-                    embeds: [],
-                    components: []
-                });
-            } catch (fallbackError) {
-                console.error(`[${interaction.customId} FALLBACK_REPLY_ERROR ${interactionId}]`, fallbackError);
-            }
-        }
-    }
-    }
-
-    else if (interaction.customId === 'manual_show_outcome_form_btn') {
         const showFormStartTime = performance.now();
         const userId = interaction.user.id;
         const userTag = interaction.user.tag;
         const interactionId = interaction.id;
-        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}.`);
-        if (!dbAdmin) {
-            console.error(`[${interaction.customId} CRITICAL ${interactionId}] dbAdmin not initialized.`);
-            try {
-                await interaction.reply({ content: "Error: The bot cannot connect to the database. Please contact support.", ephemeral: true });
-            } catch (e) { console.error(`[${interaction.customId} CRITICAL_REPLY_FAIL ${interactionId}]`, e); }
-            return;
-        }
+        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userTag}, showing modal directly.`);
 
         try {
-            const setupData = userExperimentSetupData.get(userId) ||
-            {};
+            const setupData = userExperimentSetupData.get(userId) || {};
             const cachedSettings = setupData.preFetchedWeeklySettings;
-            setupData.messageToCleanUp = interaction.message.id;
 
             if(cachedSettings) {
                 console.log(`[${interaction.customId} CACHE_HIT ${interactionId}] Using pre-fetched settings for ${userTag}.`);
-            } else {
-                console.log(`[${interaction.customId} CACHE_MISS ${interactionId}] No pre-fetched settings found for ${userTag}.`);
             }
 
-            // Initialize or update the in-memory map
             const initialState = {
                 ...setupData,
                 flowType: 'MANUAL',
                 interactionId: interactionId,
             };
             userExperimentSetupData.set(userId, initialState);
-            console.log(`[${interaction.customId} IN_MEMORY_INIT ${interactionId}] Initialized/updated in-memory state for ${userTag}.`);
 
-            // Corrected lines for pre-filling modal, using robust optional chaining
             let deeperProblemValue = cachedSettings?.deeperProblem || "";
-            let outcomeLabelValue = cachedSettings?.output?.label || ""; // Corrected
-            let outcomeUnitValue = cachedSettings?.output?.unit || "";   // Corrected
-            let outcomeGoalValue = (cachedSettings?.output?.goal !== null && cachedSettings?.output?.goal !== undefined) // Corrected
-                                   ? String(cachedSettings.output.goal) : "";
+            let outcomeLabelValue = cachedSettings?.output?.label || "";
+            let outcomeUnitValue = cachedSettings?.output?.unit || "";
+            let outcomeGoalValue = (cachedSettings?.output?.goal !== null && cachedSettings?.output?.goal !== undefined)
+                                ? String(cachedSettings.output.goal) : "";
 
             const outcomeModal = new ModalBuilder()
                 .setCustomId('manual_setup_outcome_modal')
                 .setTitle('🧪 Experiment Setup (1/4): Outcome');
+
             const deeperProblemInput = new TextInputBuilder().setCustomId('deeper_problem_manual').setLabel("🧭 Deeper Wish / Problem To Solve").setPlaceholder("e.g., 'To be less stressed' or 'To have more energy.'").setStyle(TextInputStyle.Paragraph).setValue(deeperProblemValue).setRequired(true);
             const outcomeLabelInput = new TextInputBuilder().setCustomId('outcome_label_manual').setLabel("📊 Outcome Label (under 40 chars)").setPlaceholder("e.g., 'Sleep Quality' or 'Energy Level'").setStyle(TextInputStyle.Short).setValue(outcomeLabelValue).setRequired(true);
             const outcomeUnitInput = new TextInputBuilder().setCustomId('outcome_unit_manual').setLabel("📏 Unit / Scale").setPlaceholder("e.g., 'hours', 'out of 10', 'tasks done'").setStyle(TextInputStyle.Short).setValue(outcomeUnitValue).setRequired(true);
             const outcomeGoalInput = new TextInputBuilder().setCustomId('outcome_goal_manual').setLabel("🎯 Daily Target Number").setPlaceholder("e.g., '7.5', '8', '3'").setStyle(TextInputStyle.Short).setValue(outcomeGoalValue).setRequired(true);
+
             outcomeModal.addComponents(
                 new ActionRowBuilder().addComponents(deeperProblemInput),
                 new ActionRowBuilder().addComponents(outcomeLabelInput),
                 new ActionRowBuilder().addComponents(outcomeGoalInput),
                 new ActionRowBuilder().addComponents(outcomeUnitInput)
             );
+
             await interaction.showModal(outcomeModal);
             const showModalTime = performance.now();
             console.log(`[${interaction.customId} MODAL_SHOWN ${interactionId}] Outcome modal shown to ${userTag}. Total time to show modal: ${(showModalTime - showFormStartTime).toFixed(2)}ms`);
-            // Save the state to Firestore in the background
-            (async () => {
-                try {
-                    const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
-                    await setupStateRef.set({
-                        ...initialState,
-                        createdAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                    console.log(`[${interaction.customId} FIRESTORE_INIT_ASYNC ${interactionId}] Successfully initialized Firestore state for ${userTag}.`);
-                } catch (firestoreError)
-                {
-                  console.error(`[${interaction.customId} FIRESTORE_INIT_ASYNC_ERROR ${interactionId}] Failed to save initial state to Firestore for ${userTag}:`, firestoreError);
-                }
-            })();
+
         } catch (error) {
-            const errorTime = performance.now();
-            console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing outcome modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Error showing outcome modal for ${userTag}:`, error);
         }
     }
 
@@ -6191,7 +6132,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
                 let finalPlaceholder = 'What did you observe? Any questions or insights?';
                 if (settings.deeperProblem) {
-                    finalPlaceholder = `What affected your goal today?\n↳ "${settings.deeperProblem.substring(0, 60)}"`;
+                    finalPlaceholder = `What were the costs & rewards of your habits today?`;
                 }
                 notesInput.setPlaceholder(finalPlaceholder);
                 components.push(new ActionRowBuilder().addComponents(notesInput));
@@ -6369,7 +6310,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
             let finalPlaceholder = 'What did you observe? Any questions or insights?';
             if (settings.deeperProblem) {
-                finalPlaceholder = `What affected your goal today?\n\n ↳ "${settings.deeperProblem.substring(0, 60)}"`;
+                finalPlaceholder = `What were the costs & rewards of your habits today?`;
             }
             notesInput.setPlaceholder(finalPlaceholder);
             components.push(new ActionRowBuilder().addComponents(notesInput));
@@ -6417,7 +6358,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
             let finalPlaceholder = 'What did you observe? Any questions or insights?';
             if (settings.deeperProblem) {
-                finalPlaceholder = `What affected your goal today?\\n↳ "${settings.deeperProblem.substring(0, 60)}"`;
+                finalPlaceholder = `What were the costs & rewards of your habits today?`;
             }
             notesInput.setPlaceholder(finalPlaceholder);
             components.push(new ActionRowBuilder().addComponents(notesInput));
@@ -7553,12 +7494,12 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const aiButton = new ButtonBuilder()
           .setCustomId(AI_ASSISTED_SETUP_BTN_ID) // Existing ID
-          .setLabel('✨ AI Assisted (Beginner)')
+          .setLabel('✨ AI Assisted')
           .setStyle(ButtonStyle.Primary);
 
         const manualButton = new ButtonBuilder()
           .setCustomId(MANUAL_SETUP_BTN_ID) // Existing ID
-          .setLabel('✍️ Manual Setup (Advanced)')
+          .setLabel('✍️ Manual Setup')
           .setStyle(ButtonStyle.Secondary);
 
         const choiceRow = new ActionRowBuilder().addComponents(aiButton, manualButton);
@@ -7582,54 +7523,6 @@ client.on(Events.InteractionCreate, async interaction => {
       }
       const processEndTime = performance.now();
       console.log(`[${interaction.customId} END ${interactionId}] Finished processing. Total time: ${(processEndTime - buttonClickTime).toFixed(2)}ms`);
-    }
-
-    else if (interaction.isButton() && interaction.customId.startsWith('stats_show_continuous_mode_prompt_')) {
-      const nextButtonClickTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      console.log(`[stats_continuous_prompt START ${interactionId}] User ${userId} clicked 'Next' on the final stats page.`);
-
-      try {
-        // Acknowledge the interaction by removing the button from the stats report message
-        await interaction.update({
-            components: []
-        });
-
-        // --- NEW: Clean up the temporary flow document from Firestore ---
-        if (dbAdmin) {
-            const statsReportFlowRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('statsReport');
-            await statsReportFlowRef.delete();
-            console.log(`[stats_continuous_prompt] Cleaned up temporary stats report from Firestore for user ${userId}.`);
-        }
-        // --- END NEW ---
-
-        // Create the "Start New Experiment" button
-        const startNewExpButton = new ButtonBuilder()
-            .setCustomId('start_new_experiment_prompt_btn') 
-            .setLabel('🚀 Start a New Experiment')
-            .setStyle(ButtonStyle.Success);
-        
-        const followUpActionRow = new ActionRowBuilder().addComponents(startNewExpButton);
-
-        // Define the content for the follow-up message
-        const finalMessageContent = `Your experiment has concluded! You now have 2 options:\n\n` +
-            `1. **Start a new experiment**\nUse your insights to design a new experiment. Click the button below to begin.\n\n` +
-            `2. **Continue with the same experiment**\nKeep logging as usual. You'll get a fresh stats report and new AI insights each week!`;
-
-        // Send the follow-up message as a new DM
-        await interaction.user.send({
-            content: finalMessageContent,
-            components: [followUpActionRow]
-        });
-
-        console.log(`[stats_continuous_prompt SUCCESS ${interactionId}] Sent continuous mode prompt to user ${userId}.`);
-
-      } catch (error) {
-        console.error(`[stats_continuous_prompt ERROR ${interactionId}] Error processing 'Next' button for user ${userId}:`, error);
-        // Since the interaction is already updated, we can't send a reply.
-        // The error is logged for debugging.
-      }
     }
 
     else if (interaction.isButton() && interaction.customId === 'ai_show_share_prompt_btn') {
@@ -7849,46 +7742,6 @@ client.on(Events.InteractionCreate, async interaction => {
         }
       }
       console.log(`[post_ai_log_summary_btn END ${interactionId}] Finished processing. Total time: ${(performance.now() - postPublicClickTime).toFixed(2)}ms`);
-    }
-
-    else if (interaction.isButton() && interaction.customId.startsWith('stats_show_continuous_mode_prompt_')) {
-      const nextButtonClickTime = performance.now();
-      const interactionId = interaction.id;
-      const userId = interaction.user.id;
-      console.log(`[stats_continuous_prompt START ${interactionId}] User ${userId} clicked 'Next' on the final stats page.`);
-
-      try {
-        // Acknowledge the interaction by removing the button from the stats report message
-        await interaction.update({
-            components: []
-        });
-
-        // Create the "Start New Experiment" button
-        const startNewExpButton = new ButtonBuilder()
-            .setCustomId('start_new_experiment_prompt_btn') 
-            .setLabel('🚀 Start a New Experiment')
-            .setStyle(ButtonStyle.Success);
-        
-        const followUpActionRow = new ActionRowBuilder().addComponents(startNewExpButton);
-
-        // Define the content for the follow-up message
-        const finalMessageContent = `Your experiment has concluded! You now have 2 options:\n\n` +
-            `1. **Start a new experiment**\nUse your insights to design a new experiment. Click the button below to begin.\n\n` +
-            `2. **Continue with the same experiment**\nKeep logging as usual. You'll get a fresh stats report and new AI insights each week!`;
-
-        // Send the follow-up message as a new DM
-        await interaction.user.send({
-            content: finalMessageContent,
-            components: [followUpActionRow]
-        });
-
-        console.log(`[stats_continuous_prompt SUCCESS ${interactionId}] Sent continuous mode prompt to user ${userId}.`);
-
-      } catch (error) {
-        console.error(`[stats_continuous_prompt ERROR ${interactionId}] Error processing 'Next' button for user ${userId}:`, error);
-        // Since the interaction is already updated, we can't send a reply.
-        // The error is logged for debugging.
-      }
     }
 
     else if (interaction.customId === 'ai_show_outcome_modal_btn') {
