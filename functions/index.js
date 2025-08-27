@@ -3975,16 +3975,42 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
        // *** NEW AI-Powered Narrative Generation ***
         const trend = _calculateTrend(extractedChapters);
         const metricUnitMap = {};
+
+        // Initialize with the selected primary metric's data first to ensure it's prioritized.
+        metricUnitMap[primaryMetric.label] = primaryMetric.unit;
+
         chaptersToAnalyze.forEach(chapter => {
             if (chapter.calculatedMetricStats) {
                 Object.values(chapter.calculatedMetricStats).forEach(metric => {
                     if (metric.label && metric.unit) {
-                        metricUnitMap[metric.label] = metric.unit;
+                        // Find if a case-insensitive match already exists.
+                        const existingKey = Object.keys(metricUnitMap).find(key => key.toLowerCase() === metric.label.toLowerCase());
+                        // Only add the unit if we haven't already recorded one for this metric label.
+                        if (!existingKey) {
+                            metricUnitMap[metric.label] = metric.unit;
+                        }
                     }
                 });
             }
         });
         const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label, metricUnitMap);
+        // --- NEW LOGIC TO DETERMINE METRIC TYPE ---
+        let primaryMetricType = 'unknown';
+        const latestChapterSettings = chaptersToAnalyze.length > 0 ? chaptersToAnalyze[chaptersToAnalyze.length - 1].activeExperimentSettings : null;
+        if (latestChapterSettings) {
+            const normalizedPrimaryLabel = normalizeLabel(primaryMetric.label);
+            if (normalizeLabel(latestChapterSettings.output?.label) === normalizedPrimaryLabel) {
+                primaryMetricType = 'outcome';
+            } else {
+                for (let i = 1; i <= 3; i++) {
+                    if (normalizeLabel(latestChapterSettings[`input${i}`]?.label) === normalizedPrimaryLabel) {
+                        primaryMetricType = 'habit';
+                        break;
+                    }
+                }
+            }
+        }
+        // --- END NEW LOGIC ---
         let finalReport = {
             primaryMetricLabel: primaryMetric.label,
             ahaMoment: ahaMoment,
@@ -4027,11 +4053,14 @@ CRITICAL: If you include a quote from the user's notes that contains double quot
 YOUR TASK:
 Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGrowth", and "shareablePost".
 1.  "holisticInsight":
-    - First, infer the real-world meaning of the Primary Metric and its aliases by using the notes as clues. (e.g., "Rosie" might be a person or a dog, "Slow morning" might be a positive morning routine or a negative event the user is trying to avoid, and the user's notes will give clues).
-    - Then, write 1-2 SHORT paragraphs (2 sentences each, maximum 60 words total) that synthesize ALL the correlation data.
+    - Your goal is to help the user see the story in their data and suggest possible real-life interpretations, not to tell them what their data means.
+    - Use the notes for context, but **NEVER state your inferences as facts**. It should sound natural (e.g., instead of "It seems that Jennifer is your wife...", say things like "It seems your connection with Jennifer is...").
+    - Write a 1-2 paragraph narrative (max 60 words total) that synthesizes the correlation data into a tentative story.
+    - **Address the user directly using "you" and "your".**
     - Use bold headers to label the point of each paragraph.
-    - Explain how the different habits and outcomes seem to influence each other based on your inferred meaning.
-    - Use tentative language when expressing observations about the user's progress. "Might," "could," "seems to." CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
+    - Explain how the different habits and outcomes seem to influence each other based on your inferred meaning. Your goal is to brainstorm possible real-life interpretations of the user's data.
+    - Use tentative, observational language like "It appears...", "The data might suggest...", "It's interesting how...".
+    - CRITICAL: Do not show your inference process (e.g., "Infer Meaning:"). Only return the final, user-facing text in the JSON values.
 
 2.  "hiddenGrowth":
     - This key's value MUST be a JSON object with two keys: "quote" and "paragraph".
@@ -4039,10 +4068,11 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
     - "paragraph": Write a compassionate, 2-3 sentence paragraph in the second person ("You...") that reflects on the significance of the quote or theme. Frame it as a supportive observation.
 
 3.  "shareablePost":
-    - Write a short, celebratory post (2-3 sentences) celebrating the user, whose name is "${username}". Refer to them by their name.
-    - It must be inspiring and highlight their strongest correlation.
+    - Write a short, celebratory post (2-3 sentences) celebrating the user's journey.
+    - The post MUST be from the perspective of a supportive friend or coach, written in the third person. **Refer to the user as "@${username}"**.
+    - It must be inspiring and highlight their strongest correlation or a key insight from their journey.
     - Do not use exclamation points.
-    - Do not use any cliche language. End with the "🙌" emoji.
+    - Do not use any cliche language.
 
     YOUR ENTIRE RESPONSE MUST BE ONLY a raw JSON object matching this structure exactly:
 {
@@ -4051,7 +4081,7 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
     "quote": "A direct quote from the notes or a thematic title.",
     "paragraph": "A 2-3 sentence compassionate reflection on the quote/theme."
   },
-  "shareablePost": "A short, celebratory post written in the first person from the user's perspective, ending with the 🙌 emoji."
+  "shareablePost": "A short, celebratory post written in the third person about '@${username}."
 }
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;

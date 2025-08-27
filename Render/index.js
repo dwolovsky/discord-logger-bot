@@ -2279,30 +2279,44 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
                 let valueString = `This relationship was found in **${findings.length} experiment${findings.length > 1 ? 's' : ''}**:\n`;
                 
                 // This is the corrected code
-                findings.forEach(finding => {
-                    // --- Start of New Logic ---
-                    const [otherMetricLabel] = groupName.split(' & '); // Get the label of the other metric
-                    const isOtherTime = isTimeMetric(unitMap[otherMetricLabel]);
-                    const isPrimaryTime = isTimeMetric(unitMap[primaryLabel]);
+            findings.forEach(finding => {
+                // --- Start of New Logic ---
+                const primaryMetricType = report.primaryMetricType || 'outcome'; // Default to outcome for safety
+                const [otherMetricLabel] = groupName.split(' & ');
 
-                    const otherDisplay = isOtherTime ? 'was later' : 'was higher ⤴️';
-                    const primaryDisplay = isPrimaryTime
-                        ? (finding.coefficient >= 0 ? 'was later' : 'was earlier')
-                        : (finding.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
+                let habitLabel, outcomeLabel;
+                if (primaryMetricType === 'habit') {
+                    habitLabel = primaryLabel;
+                    outcomeLabel = otherMetricLabel;
+                } else { // 'outcome' or 'unknown'
+                    habitLabel = otherMetricLabel;
+                    outcomeLabel = primaryLabel;
+                }
 
-                    const relationshipText = `→ When **'${otherMetricLabel}'** ${otherDisplay}, **'${primaryLabel}'** ${primaryDisplay}.`;
-                    // --- End of New Logic ---
+                const isHabitTime = isTimeMetric(unitMap[habitLabel]);
+                const isOutcomeTime = isTimeMetric(unitMap[outcomeLabel]);
 
-                    let significanceText = finding.isSignificant ? " (Statistically Significant)" : "";
+                const habitDisplay = isHabitTime ? 'was later' : 'was higher ⤴️';
+                const outcomeDisplay = isOutcomeTime
+                    ? (finding.coefficient >= 0 ? 'was later' : 'was earlier')
+                    : (finding.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
 
-                    valueString += `• **From ${finding.startDate} - ${finding.endDate}:**\n`;
-                    valueString += `${relationshipText}\n`; // Add the new relationship text
-                    valueString += `  *Strength: ${finding.strengthEmoji} ${finding.strengthText} (${finding.rSquared}%)${significanceText}*\n`;
-                });
+                const relationshipText = `→ When **'${habitLabel}'** ${habitDisplay}, **'${outcomeLabel}'** ${outcomeDisplay}.`;
+                // --- End of New Logic ---
+
+                const confidenceText = finding.isSignificant
+                    ? "Statistically significant relationship."
+                    : "Need more data to confirm this relationship.";
+
+                valueString += `• **From ${finding.startDate} - ${finding.endDate}:**\n`;
+                valueString += `${relationshipText}\n`;
+                valueString += `  *Strength: ${finding.strengthEmoji} ${finding.strengthText} (${finding.rSquared}%)*\n`;
+                valueString += `  *${confidenceText}*\n`;
+            });
 
                 correlationEmbed.addFields({
                     name: '\u200B', // This is a zero-width space to make the title blank
-                    value: `### ${groupName}\n${valueString.trim()}`
+                    value: `**${groupName}**\n${valueString.trim()}`
                 });
             });
             if (hasCorrelations) {

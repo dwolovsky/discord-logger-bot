@@ -1663,7 +1663,7 @@ async function sendNextTimeLogPrompt(interaction, userId) {
     
     const finalButton = new ButtonBuilder()
         .setCustomId('continue_to_final_log_btn')
-        .setLabel('✍️ Continue to Final Step')
+        .setLabel('Continue to log notes')
         .setStyle(ButtonStyle.Success);
 
     await interaction.editReply({
@@ -6100,132 +6100,155 @@ client.on(Events.InteractionCreate, async interaction => {
 
     // --- Handler for "Log Daily Data" Button (NEW, WITH CACHE-FIRST LOGIC) ---
     else if (interaction.customId === 'log_daily_progress_btn') {
-        const logButtonStartTime = performance.now();
-        const userId = interaction.user.id;
-        const interactionId = interaction.id;
-        console.log(`[log_daily_progress_btn START ${interactionId}] Button clicked by User: ${userId}`);
+    const logButtonStartTime = performance.now();
+    const userId = interaction.user.id;
+    const interactionId = interaction.id;
+    console.log(`[log_daily_progress_btn START ${interactionId}] Button clicked by User: ${userId}`);
+    try {
+        const setupData = userExperimentSetupData.get(userId) || {};
+        if (interaction.guildId) {
+            setupData.guildId = interaction.guildId;
+        }
 
-        try {
-            const setupData = userExperimentSetupData.get(userId) || {};
-            if (interaction.guildId) {
-                setupData.guildId = interaction.guildId;
-            }
+        const hasTimeMetrics = setupData.logFlowHasTimeMetrics;
+        const cachedSettings = setupData.preFetchedWeeklySettings;
+        const isTimeMetric = (unit) => TIME_OF_DAY_KEYWORDS.includes(unit?.toLowerCase().trim());
+        
+        // Helper function to build the standard log modal, now defined inside this handler
+        const buildStandardLogModal = (settings, setupData) => {
+            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
+            const components = [];
+            const temp_notes = setupData.tempLogData?.notes || "";
+            const temp_output = setupData.tempLogData?.outputValue || "";
+            const temp_inputs = setupData.tempLogData?.inputValues || [];
 
-            const hasTimeMetrics = setupData.logFlowHasTimeMetrics;
-            const cachedSettings = setupData.preFetchedWeeklySettings;
-            const isTimeMetric = (unit) => TIME_OF_DAY_KEYWORDS.includes(unit?.toLowerCase().trim());
-            const buildStandardLogModal = (settings) => {
-                const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
-                const components = [settings.output, settings.input1, settings.input2, settings.input3]
-                    .filter(metric => metric && metric.label)
-                    .map(metric => {
-                        let customId;
-                        if (metric.label === settings.output.label) customId = 'log_output_value';
-                        else if (metric.label === settings.input1.label) customId = 'log_input1_value';
-                        else if (metric.label === settings.input2.label) customId = 'log_input2_value';
-                        else if (metric.label === settings.input3.label) customId = 'log_input3_value';
+            // 1. Add the Notes input first with the correct placeholder and temporary value
+            const notesInput = new TextInputBuilder()
+                .setCustomId('log_notes')
+                .setLabel('💭 Experiment & Life Notes')
+                .setStyle(TextInputStyle.Paragraph)
+                .setRequired(true)
+                .setPlaceholder("What were the prices and payoffs of your habits today?")
+                .setValue(temp_notes);
+            components.push(new ActionRowBuilder().addComponents(notesInput));
 
-                        return new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label}`.substring(0, 45)).setPlaceholder(`${metric.unit}`).setStyle(TextInputStyle.Short).setRequired(true)
-                        );
-                    });
-                const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
-                let finalPlaceholder = 'What did you observe? Any questions or insights?';
-                if (settings.deeperProblem) {
-                    finalPlaceholder = `What were the costs & rewards of your habits today?`;
-                }
-                notesInput.setPlaceholder(finalPlaceholder);
-                components.push(new ActionRowBuilder().addComponents(notesInput));
-                modal.addComponents(components);
-                return modal;
-            };
-            
-            // ---- CACHED / FAST PATH ----
-            if (cachedSettings) {
-                console.log(`[log_daily_progress_btn CACHE_HIT ${interactionId}] Using cached settings.`);
-                setupData.logFlowSettings = cachedSettings; 
-
-                if (hasTimeMetrics) {
-                    console.log(`[log_daily_progress_btn CACHE_TIME_METRICS ${interactionId}] Path A: Cached settings have time metrics. Editing message.`);
-                    await interaction.deferUpdate();
-                    const metrics = [cachedSettings.output, cachedSettings.input1, cachedSettings.input2, cachedSettings.input3].filter(Boolean);
-                    setupData.logFlowTimeMetrics = metrics.filter(metric => isTimeMetric(metric.unit));
-                    setupData.logFlowOtherMetrics = metrics.filter(metric => !isTimeMetric(metric.unit));
-                    setupData.timeLogIndex = 0;
-                    setupData.loggedTimeValues = {};
-                    userExperimentSetupData.set(userId, setupData);
-                    await sendNextTimeLogPrompt(interaction, userId);
-                } else {
-                    console.log(`[log_daily_progress_btn CACHE_NO_TIME_METRICS ${interactionId}] Path B: Cached settings have no time metrics. Showing modal directly.`);
-                    const modal = buildStandardLogModal(cachedSettings);
-                    await interaction.showModal(modal);
-                }
-            } 
-            // ---- NOT CACHED / FALLBACK PATH ----
-            else {
-                console.log(`[log_daily_progress_btn FALLBACK_PATH ${interactionId}] Fallback: Settings not cached. Deferring reply and fetching.`);
-                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-                const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
-                if (!settingsResult || !settingsResult.settings) {
-                    await interaction.editReply({ content: "🤔 You haven't set up your weekly experiment yet. Please use the 'Set Experiment' button first.", components: [] });
-                    return;
-                }
-
-                const settings = settingsResult.settings;
-                setupData.logFlowSettings = settings; 
-
-                const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
-                const timeMetrics = metrics.filter(metric => isTimeMetric(metric.unit));
-
-                if (timeMetrics.length > 0) {
-                    console.log(`[log_daily_progress_btn FALLBACK_TIME_METRICS ${interactionId}] Path C: Fetched settings have time metrics. Editing message.`);
-                    setupData.logFlowTimeMetrics = timeMetrics;
-                    setupData.logFlowOtherMetrics = metrics.filter(metric => !isTimeMetric(metric.unit));
-                    setupData.timeLogIndex = 0;
-                    setupData.loggedTimeValues = {};
-                    userExperimentSetupData.set(userId, setupData);
-                    await sendNextTimeLogPrompt(interaction, userId);
-                } else {
-                    console.log(`[log_daily_progress_btn FALLBACK_NO_TIME_METRICS ${interactionId}] Path D: Fetched settings have no time metrics. Showing intermediate button.`);
-                    userExperimentSetupData.set(userId, setupData); 
-                    const openModalButton = new ButtonBuilder()
-                        .setCustomId('show_standard_log_modal_btn')
-                        .setLabel('✍️ Open Log Form')
-                        .setStyle(ButtonStyle.Success);
-                    await interaction.editReply({
-                        content: "Ready to log your daily metrics? Click the button below to open the form.",
-                        components: [new ActionRowBuilder().addComponents(openModalButton)]
-                    });
-                }
-            }
-        } catch (error) {
-            console.error(`[log_daily_progress_btn ERROR ${interactionId}] Error for User ${userId}:`, error);
-            let userErrorMessage = `❌ An error occurred while preparing your log form. Please try again.`;
-
-            // Check for the specific "Unknown Interaction" error which indicates a timeout
-            if (error.code === 10062) {
-                 userErrorMessage = "🚗 Had to warm up the engine and the connection timed out. Please click '✍️ Log Data' again now";
-            }
-
-            // Universal error handler that checks interaction state
-            if (interaction.replied || interaction.deferred) {
-                try { 
-                    await interaction.editReply({ content: userErrorMessage, components: [], embeds: [] }); 
-                } catch (e) {
-                    // If editReply also fails (likely because the interaction is truly gone), try a followup
-                    try {
-                        await interaction.followUp({ content: userErrorMessage, ephemeral: true });
-                    } catch (followUpError) {
-                         console.error(`[log_daily_progress_btn] Fallback followUp failed:`, followUpError);
+            // 2. Create and add the other metric inputs from the 'settings' object
+            const metricComponents = [settings.output, settings.input1, settings.input2, settings.input3]
+                .filter(metric => metric && metric.label)
+                .map((metric) => {
+                    let customId, tempValue = "";
+                    if (metric.label === settings.output.label) {
+                        customId = 'log_output_value';
+                        tempValue = temp_output;
+                    } else {
+                        const inputIndex = [settings.input1, settings.input2, settings.input3].findIndex(s => s?.label === metric.label);
+                        if (inputIndex !== -1) {
+                            customId = `log_input${inputIndex + 1}_value`;
+                            tempValue = temp_inputs[inputIndex] || "";
+                        }
                     }
-                }
+
+                    if (customId) {
+                         return new ActionRowBuilder().addComponents(
+                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                        );
+                    }
+                    return null;
+                }).filter(Boolean);
+            
+            components.push(...metricComponents);
+            modal.addComponents(components);
+            return modal;
+        };
+        
+        // ---- CACHED / FAST PATH ----
+        if (cachedSettings) {
+            console.log(`[log_daily_progress_btn CACHE_HIT ${interactionId}] Using cached settings.`);
+            setupData.logFlowSettings = cachedSettings; 
+
+            if (hasTimeMetrics) {
+                console.log(`[log_daily_progress_btn CACHE_TIME_METRICS ${interactionId}] Path A: Cached settings have time metrics. Deferring update.`);
+                await interaction.deferUpdate();
+                const metrics = [cachedSettings.output, cachedSettings.input1, cachedSettings.input2, cachedSettings.input3].filter(Boolean);
+                setupData.logFlowTimeMetrics = metrics.filter(metric => isTimeMetric(metric.unit));
+                setupData.logFlowOtherMetrics = metrics.filter(metric => !isTimeMetric(metric.unit));
+                setupData.timeLogIndex = 0;
+                setupData.loggedTimeValues = {};
+                userExperimentSetupData.set(userId, setupData);
+                await sendNextTimeLogPrompt(interaction, userId);
             } else {
-                try { await interaction.reply({ content: userErrorMessage, ephemeral: true }); }
-                catch (e) { console.error(`[log_daily_progress_btn] Fallback reply failed:`, e); }
+                console.log(`[log_daily_progress_btn CACHE_NO_TIME_METRICS ${interactionId}] Path B: Cached settings have no time metrics. Showing modal directly.`);
+                const modal = buildStandardLogModal(cachedSettings, setupData);
+                await interaction.showModal(modal);
+                // Clear the temp data after using it
+                if (setupData.tempLogData) {
+                    delete setupData.tempLogData;
+                    userExperimentSetupData.set(userId, setupData);
+                }
+            }
+        } 
+        // ---- NOT CACHED / FALLBACK PATH ----
+        else {
+            console.log(`[log_daily_progress_btn FALLBACK_PATH ${interactionId}] Fallback: Settings not cached. Deferring reply and fetching.`);
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+            const settingsResult = await callFirebaseFunction('getWeeklySettings', {}, userId);
+            if (!settingsResult || !settingsResult.settings) {
+                await interaction.editReply({ content: "🤔 You haven't set up your weekly experiment yet. Please use the 'Set Experiment' button first.", components: [] });
+                return;
+            }
+
+            const settings = settingsResult.settings;
+            setupData.logFlowSettings = settings; 
+
+            const metrics = [settings.output, settings.input1, settings.input2, settings.input3].filter(Boolean);
+            const timeMetrics = metrics.filter(metric => isTimeMetric(metric.unit));
+            if (timeMetrics.length > 0) {
+                console.log(`[log_daily_progress_btn FALLBACK_TIME_METRICS ${interactionId}] Path C: Fetched settings have time metrics. Editing message.`);
+                setupData.logFlowTimeMetrics = timeMetrics;
+                setupData.logFlowOtherMetrics = metrics.filter(metric => !isTimeMetric(metric.unit));
+                setupData.timeLogIndex = 0;
+                setupData.loggedTimeValues = {};
+                userExperimentSetupData.set(userId, setupData);
+                await sendNextTimeLogPrompt(interaction, userId);
+            } else {
+                console.log(`[log_daily_progress_btn FALLBACK_NO_TIME_METRICS ${interactionId}] Path D: Fetched settings have no time metrics. Showing intermediate button.`);
+                userExperimentSetupData.set(userId, setupData); 
+                const openModalButton = new ButtonBuilder()
+                    .setCustomId('show_standard_log_modal_btn')
+                    .setLabel('✍️ Open Log Form')
+                    .setStyle(ButtonStyle.Success);
+                await interaction.editReply({
+                    content: "Ready to log your daily metrics? Click the button below to open the form.",
+                    components: [new ActionRowBuilder().addComponents(openModalButton)]
+                });
+            }
+        }
+    } catch (error) {
+        console.error(`[log_daily_progress_btn ERROR ${interactionId}] Error for User ${userId}:`, error);
+        let userErrorMessage = `❌ An error occurred while preparing your log form. Please try again.`;
+        if (error.code === 10062) {
+             userErrorMessage = "🚗 Had to warm up the engine and the connection timed out. Please click '✍️ Log Data' again now";
+        }
+
+        if (interaction.replied || interaction.deferred) {
+            try { 
+                await interaction.editReply({ content: userErrorMessage, components: [], embeds: [] });
+            } catch (e) {
+                try {
+                    await interaction.followUp({ content: userErrorMessage, ephemeral: true });
+                } catch (followUpError) {
+                     console.error(`[log_daily_progress_btn] Fallback followUp failed:`, followUpError);
+                }
+            }
+        } else {
+            try { await interaction.reply({ content: userErrorMessage, ephemeral: true });
+            }
+            catch (e) { console.error(`[log_daily_progress_btn] Fallback reply failed:`, e);
             }
         }
     }
+}
 
     else if (interaction.customId === LOG_TIME_NEXT_BTN_ID) {
         const timeNextButtonStartTime = performance.now();
@@ -6271,112 +6294,134 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.customId === 'continue_to_final_log_btn') {
-        const finalLogButtonStartTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Building final modal for non-time metrics.`);
-        try {
-            const setupData = userExperimentSetupData.get(userId);
-            const otherMetrics = setupData?.logFlowOtherMetrics || [];
-            const settings = setupData?.logFlowSettings;
+    const finalLogButtonStartTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Building final modal for non-time metrics.`);
+    try {
+        const setupData = userExperimentSetupData.get(userId);
+        const otherMetrics = setupData?.logFlowOtherMetrics || [];
+        const settings = setupData?.logFlowSettings;
+        if (!settings) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
+            await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Daily Data' again.", ephemeral: true });
+            return;
+        }
 
-            if (!settings) {
-                console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
-                await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Daily Data' again.", ephemeral: true });
-                return;
+        const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Notes & Other Metrics`);
+        const components = [];
+        const temp_notes = setupData.tempLogData?.notes || "";
+        const temp_output = setupData.tempLogData?.outputValue || "";
+        const temp_inputs = setupData.tempLogData?.inputValues || [];
+
+        // 1. Add the Notes input first with the correct placeholder and temporary value
+        const notesInput = new TextInputBuilder()
+            .setCustomId('log_notes')
+            .setLabel('💭 Experiment & Life Notes')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+            .setPlaceholder("What were the prices and payoffs of your habits today?")
+            .setValue(temp_notes);
+        components.push(new ActionRowBuilder().addComponents(notesInput));
+
+        // 2. Add inputs for non-time metrics after the notes
+        otherMetrics.forEach(metric => {
+            let customId, tempValue;
+            if (metric.label === settings.output.label) {
+                customId = 'log_output_value';
+                tempValue = temp_output;
+            } else {
+                const inputIndex = [settings.input1, settings.input2, settings.input3].findIndex(s => s?.label === metric.label);
+                if (inputIndex !== -1) {
+                    customId = `log_input${inputIndex + 1}_value`;
+                    tempValue = temp_inputs[inputIndex] || "";
+                }
             }
+            
+            if (customId) {
+                components.push(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                    )
+                );
+            }
+        });
 
-            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Final Step: Notes & Other Metrics`);
-            const components = [];
+        modal.addComponents(components);
+        await interaction.showModal(modal);
 
-            // Add inputs ONLY for non-time metrics
-            otherMetrics.forEach(metric => {
+        // --- NEW: Clear the temp data after using it ---
+        if (setupData.tempLogData) {
+            delete setupData.tempLogData;
+            userExperimentSetupData.set(userId, setupData);
+            logger.log(`[${interaction.customId}] Cleared temporary log data for ${userId} after pre-populating modal.`);
+        }
+
+        console.log(`[${interaction.customId} SUCCESS ${interactionId}] Final modal shown to ${userId}.`);
+    } catch (error) {
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show final modal for ${userId}:`, error);
+    }
+    }
+
+    else if (interaction.customId === 'show_standard_log_modal_btn') {
+    const showLogModalClickTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing standard log modal.`);
+
+    try {
+        const setupData = userExperimentSetupData.get(userId);
+        const settings = setupData?.logFlowSettings;
+
+        if (!settings) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
+            await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Data' again.", ephemeral: true });
+            return;
+        }
+
+        const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Every Day Is Data`);
+        const components = [];
+
+        // 1. Add the Notes input first with the correct placeholder
+        const notesInput = new TextInputBuilder()
+            .setCustomId('log_notes')
+            .setLabel('💭 Experiment & Life Notes')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+            .setPlaceholder("What were the prices and payoffs of your habits today?");
+        components.push(new ActionRowBuilder().addComponents(notesInput));
+
+        // 2. Create and add the metric inputs after the notes
+        const metricComponents = [settings.output, settings.input1, settings.input2, settings.input3]
+            .filter(metric => metric && metric.label)
+            .map(metric => {
                 let customId;
                 if (metric.label === settings.output.label) customId = 'log_output_value';
                 else if (metric.label === settings.input1.label) customId = 'log_input1_value';
                 else if (metric.label === settings.input2.label) customId = 'log_input2_value';
                 else if (metric.label === settings.input3.label) customId = 'log_input3_value';
-                
-                if (customId) {
-                    components.push(
-                        new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
-                        )
-                    );
-                }
+
+                return new ActionRowBuilder().addComponents(
+                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                );
             });
+        
+        components.push(...metricComponents);
+        modal.addComponents(components);
 
-            // Always add the notes field
-            const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
-            let finalPlaceholder = 'What did you observe? Any questions or insights?';
-            if (settings.deeperProblem) {
-                finalPlaceholder = `What were the costs & rewards of your habits today?`;
+        await interaction.showModal(modal);
+        console.log(`[${interaction.customId} SUCCESS ${interactionId}] Standard log modal shown to ${userId}.`);
+
+    } catch (error) {
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show standard log modal for ${userId}:`, error);
+        if (!interaction.replied && !interaction.deferred) {
+            try {
+                await interaction.reply({ content: "An error occurred while opening the log form. Please try again.", ephemeral: true });
+            } catch (e) {
+                // ignore further errors
             }
-            notesInput.setPlaceholder(finalPlaceholder);
-            components.push(new ActionRowBuilder().addComponents(notesInput));
-
-            modal.addComponents(components);
-            await interaction.showModal(modal);
-            console.log(`[${interaction.customId} SUCCESS ${interactionId}] Final modal shown to ${userId}.`);
-
-        } catch (error) {
-            console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show final modal for ${userId}:`, error);
         }
     }
-
-    else if (interaction.customId === 'show_standard_log_modal_btn') {
-        const showLogModalClickTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing standard log modal.`);
-
-        try {
-            const setupData = userExperimentSetupData.get(userId);
-            const settings = setupData?.logFlowSettings;
-
-            if (!settings) {
-                console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
-                await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Data' again.", ephemeral: true });
-                return;
-            }
-
-            // This logic is adapted from your 'log_daily_progress_btn' handler 
-            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Every Day Is Data`);
-            const components = [settings.output, settings.input1, settings.input2, settings.input3]
-                .filter(metric => metric && metric.label)
-                .map(metric => {
-                    let customId;
-                    if (metric.label === settings.output.label) customId = 'log_output_value';
-                    else if (metric.label === settings.input1.label) customId = 'log_input1_value';
-                    else if (metric.label === settings.input2.label) customId = 'log_input2_value';
-                    else if (metric.label === settings.input3.label) customId = 'log_input3_value';
-
-                    return new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
-                    );
-                });
-            const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
-            let finalPlaceholder = 'What did you observe? Any questions or insights?';
-            if (settings.deeperProblem) {
-                finalPlaceholder = `What were the costs & rewards of your habits today?`;
-            }
-            notesInput.setPlaceholder(finalPlaceholder);
-            components.push(new ActionRowBuilder().addComponents(notesInput));
-            modal.addComponents(components);
-
-            await interaction.showModal(modal);
-            console.log(`[${interaction.customId} SUCCESS ${interactionId}] Standard log modal shown to ${userId}.`);
-
-        } catch (error) {
-            console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show standard log modal for ${userId}:`, error);
-            if (!interaction.replied && !interaction.deferred) {
-                try {
-                    await interaction.reply({ content: "An error occurred while opening the log form. Please try again.", ephemeral: true });
-                } catch (e) {
-                    // ignore further errors
-                }
-            }
-        }
     }
 
     else if (interaction.isButton() && (interaction.customId === CONFIRM_OUTCOME_TARGET_TIME_BTN_ID || interaction.customId === CONFIRM_INPUT_TARGET_TIME_BTN_ID)) {
@@ -8600,9 +8645,19 @@ else if (interaction.customId === 'historical_metric_select') {
             }
 
             if (payload.outputValue === undefined || payload.outputValue === null || (payload.inputValues[0] === undefined || payload.inputValues[0] === null || payload.inputValues[0] === "") || !payload.notes) {
-                await interaction.editReply({ content: "❌ Missing required fields (Outcome, Habit 1, or Notes)." });
-                return;
-            }
+            // --- NEW: Save the invalid data before replying ---
+            const currentSetupData = userExperimentSetupData.get(interaction.user.id) || {};
+            currentSetupData.tempLogData = {
+                notes: payload.notes,
+                outputValue: payload.outputValue,
+                inputValues: payload.inputValues
+            };
+            userExperimentSetupData.set(interaction.user.id, currentSetupData);
+            logger.log(`[dailyLogModal_firebase] Saved temporary log data for ${interaction.user.tag} due to validation failure.`);
+            
+            await interaction.editReply({ content: "❌ Missing required fields (Outcome, Habit 1, or Notes). When you reopen the form, your notes will be preserved." });
+            return;
+        }
 
             // 4. Call the synchronous Firebase Function
             console.log(`[dailyLogModal_firebase] Calling submitAndAnalyzeLog for User: ${interaction.user.id}`);
@@ -8613,6 +8668,13 @@ else if (interaction.customId === 'historical_metric_select') {
 
             console.log(`[dailyLogModal_firebase] Log ${result.logId} saved. AI Response received.`);
             
+            // --- NEW: Clean up any temporary log data on successful submission ---
+            if (setupData && setupData.tempLogData) {
+                delete setupData.tempLogData;
+                userExperimentSetupData.set(interaction.user.id, setupData);
+                logger.log(`[dailyLogModal_firebase] Cleared temporary log data for ${interaction.user.tag} after successful submission.`);
+            }
+
             // 5. Construct and send the final ephemeral reply
             let finalEphemeralMessage = "";
             const components = [];

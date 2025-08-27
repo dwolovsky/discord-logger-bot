@@ -3230,60 +3230,67 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 // --- AI Personalization Logic ---
                 if (genAI && schedule.scheduledExperimentSettings) {
                     try {
-                        // A. Fetch last log for context
-                        const logsQuery = db.collection('logs').where('userId', '==', userId).orderBy('timestamp', 'desc').limit(1);
-                        const logsSnapshot = await logsQuery.get();
-                        let lastLogNote = "No recent notes available.";
-                        let habitToMention = null;
+                        // A. Fetch last 3 logs for context
+                const logsQuery = db.collection('logs').where('userId', '==', userId).orderBy('timestamp', 'desc').limit(3);
+                const logsSnapshot = await logsQuery.get();
+                let recentNotes = "No recent notes available.";
+                let habitToMention = null;
 
-                        if (!logsSnapshot.empty) {
-                            const lastLogData = logsSnapshot.docs[0].data();
-                            lastLogNote = lastLogData.notes?.trim() || "No recent notes available.";
+                if (!logsSnapshot.empty) {
+                    // Get all notes from the fetched logs, newest first
+                    const notesEntries = logsSnapshot.docs
+                        .map(doc => doc.data().notes?.trim())
+                        .filter(Boolean); // Filter out any empty or null notes
 
-                            // Find a habit that was below its goal
-                            if (Array.isArray(lastLogData.inputs)) {
-                                for (const loggedInput of lastLogData.inputs) {
-                                    const settingKey = Object.keys(schedule.scheduledExperimentSettings).find(k => schedule.scheduledExperimentSettings[k]?.label === loggedInput.label);
-                                    if (settingKey) {
-                                        const habitSetting = schedule.scheduledExperimentSettings[settingKey];
-                                        if (loggedInput.value < habitSetting.goal) {
-                                            habitToMention = loggedInput.label;
-                                            break; // Found one, stop looking
-                                        }
-                                    }
+                    if (notesEntries.length > 0) {
+                        // Join notes with a separator to provide them all to the AI
+                        recentNotes = notesEntries.join("\n---\n");
+                    }
+                    
+                    // Still identify the single most recent log for the habit-to-mention logic
+                    const lastLogData = logsSnapshot.docs[0].data();
+
+                    // Find a habit that was below its goal from the most recent log
+                    if (Array.isArray(lastLogData.inputs)) {
+                        for (const loggedInput of lastLogData.inputs) {
+                            const settingKey = Object.keys(schedule.scheduledExperimentSettings).find(k => schedule.scheduledExperimentSettings[k]?.label === loggedInput.label);
+                            if (settingKey) {
+                                const habitSetting = schedule.scheduledExperimentSettings[settingKey];
+                                if (loggedInput.value < habitSetting.goal) {
+                                    habitToMention = loggedInput.label;
+                                    break; // Found one, stop looking
                                 }
                             }
                         }
+                    }
+                }
 
-                        // B. Construct Prompt
-                        const randomSeedMessage = defaultReminderMessages[Math.floor(Math.random() * defaultReminderMessages.length)];
-                        let timeContextForPrompt = "It's currently a general time for the user.";
-                        if (typeof schedule.initialUTCOffsetHours === 'number') {
-                            const userLocalHour = (currentUTCHour - schedule.initialUTCOffsetHours + 24) % 24;
-                            if (userLocalHour >= 5 && userLocalHour < 12) timeContextForPrompt = "It's currently morning for the user.";
-                            else if (userLocalHour >= 12 && userLocalHour < 17) timeContextForPrompt = "It's currently the afternoon for the user.";
-                            else if (userLocalHour >= 17 && userLocalHour < 21) timeContextForPrompt = "It's currently evening for the user.";
-                            else timeContextForPrompt = "It's currently nighttime for the user.";
-                        }
+                                    // B. Construct Prompt
+                    const randomSeedMessage = defaultReminderMessages[Math.floor(Math.random() * defaultReminderMessages.length)];
+                    const userHabits = [
+                        schedule.scheduledExperimentSettings?.input1?.label,
+                        schedule.scheduledExperimentSettings?.input2?.label,
+                        schedule.scheduledExperimentSettings?.input3?.label
+                    ].filter(Boolean).join(', ');
+
+                    const aiPromptText = `
+                        You are a witty, empathetic accountability partner and habit coach. Your goal is to reframe a reminder from a "to-do" into a creative, gentle invitation to find an intrinsic reward, using a specific theme (1-3 sentences, under 150 characters).
+
+                        CONTEXT:
+                        - Creative Theme: Your reminder MUST be inspired by the theme of this message: "${randomSeedMessage}"
+                        - User's Deeper Wish: "${schedule.scheduledExperimentSettings?.deeperProblem || 'Not specified'}"
+                        - User's Habits: ${userHabits}
+                        - User's Recent Notes (Newest First): "${recentNotes}"
+                        - Habit to Focus On (if any): "${habitToMention || 'None specified'}"
+
+                        YOUR TASK:
+                        1.  Read all the context, especially the "Creative Theme".
+                        2.  Analyze the "Recent Notes" to find a potential "intrinsic reward" for one of the user's habits. An intrinsic reward is a small, positive sensory detail or feeling experienced *during* the activity (e.g., the warmth of a mug, the feeling of fresh air, a moment of mental quiet), or immediately afterward (accomplishment, resilience, etc.).
+                        3.  Craft a short, gentle reminder (1-3 sentences, under 150 characters) that invites the user to notice this potential reward.
+                        4.  CRITICAL: You MUST frame your reminder through the lens of the "Creative Theme". For example, if the theme is 'painting a moment', your reminder about a coffee habit might be, "What tiny detail could you 'paint' into your memory from your coffee break today? Maybe the swirl of the cream or the warmth of the mug."
+                        5.  If a specific "Habit to Focus On" is provided, tailor the message to that habit. Otherwise, choose the most relevant habit based on their notes.
                         
-                        let promptFocus = "Focus on broad encouragement or curiosity about any of their habits.";
-                        if (habitToMention) {
-                            promptFocus = `Subtly weave in a reference to their habit: '${habitToMention}'. Spark their curiosity about the intrinsic or immediate reward of doing the tiniest amount of the habit.`;
-                        }
-
-                        const aiPromptText = `
-                            You are a witty, empathetic accountability partner. Your goal is to generate a short, curiosity-sparking reminder (1-3 sentences, under 150 characters) to help a user stay engaged with their habit experiment.
-                            CONTEXT:
-                            - Creative Seed: Your main goal is to adapt the core idea of this message: "${randomSeedMessage}"
-                            - User's Last Note: "${lastLogNote}"
-                            - Time Context: ${timeContextForPrompt}
-                            - Specific Focus: ${promptFocus}
-
-                            YOUR TASK:
-                            1. Start with the "Creative Seed" as your core theme.
-                            2. Personalize it using the user's "Last Note" and your "Specific Focus".
-                            3. Use the "Time Context" to ensure your message is appropriate (e.g., don't mention a bedtime habit in a morning reminder). If the focus habit is time-incongruent, be more general. AVOID time-based cliches like "afternoon slump."
-                            4. Be direct, conversational, and avoid greetings. Generate ONLY the reminder message text.`;
+                        Generate ONLY the reminder message text. Be conversational and avoid greetings.`;
 
                         // C. Call AI
                         const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
