@@ -4121,7 +4121,16 @@ Your entire response must be ONLY the raw JSON object, starting with { and endin
                     }
 
                     if (aiNarrative) {
-                        finalReport.holisticInsight = aiNarrative.holisticInsight || finalReport.holisticInsight;
+                        if (typeof aiNarrative.holisticInsight === 'string') {
+                            let insightText = aiNarrative.holisticInsight.trim();
+                            // Check if the string is wrapped in braces and remove them
+                            if (insightText.startsWith('{') && insightText.endsWith('}')) {
+                                insightText = insightText.substring(1, insightText.length - 1).trim();
+                            }
+                            finalReport.holisticInsight = insightText;
+                        } else {
+                            logger.warn('AI returned non-string for holisticInsight, using fallback.', aiNarrative.holisticInsight);
+                        }
                         finalReport.hiddenGrowth = aiNarrative.hiddenGrowth || finalReport.hiddenGrowth;
                         finalReport.shareablePost = aiNarrative.shareablePost || finalReport.shareablePost;
                     }

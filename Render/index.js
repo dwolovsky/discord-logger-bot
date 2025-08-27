@@ -2202,8 +2202,7 @@ async function _sendHistoricalReportAsDMs(interaction, part, directReport = null
                 await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
                 await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
             } else if (part === 'full_report') {
-            await interaction.update({ components: [] }); // Acknowledge the button click
-
+            
             // --- DM #2: The Trend ---
             if(report.trend) {
                 const primaryLabel = report.primaryMetricLabel;
@@ -2597,12 +2596,41 @@ async function sendHistoricalReportPage(interaction, userId, targetPage) {
             buildHistoricalCorrelationsPage(embed, report);
             break;
         case 'combined_effects':
-            // Placeholder - you can build this out similarly
-            embed.setDescription("Combined Effects analysis will be displayed here.");
+            report.analyzedChapters.forEach(chapter => {
+                const significantCombos = Object.values(chapter.pairwiseInteractionResults || {}).filter(combo => combo.summary && !combo.summary.toLowerCase().includes("skipped") && !combo.summary.toLowerCase().includes("no meaningful conclusion"));
+                if (significantCombos.length > 0) {
+                    const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
+                    const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
+                    const comboText = significantCombos.map(combo => `*${combo.summary}*`).join('\n\n');
+                    embed.addFields({
+                        name: `Experiment: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: comboText.substring(0, 1024)
+                    });
+                }
+            });
             break;
         case 'lag_time':
-             // Placeholder - you can build this out similarly
-            embed.setDescription("Day-After Effects analysis will be displayed here.");
+            const primaryLabel = report.primaryMetricLabel;
+            const unitMap = report.metricUnitMap || {};
+            report.analyzedChapters.forEach(chapter => {
+                const relevantLagCorrs = Object.values(chapter.lagTimeCorrelations || {})
+                    .filter(lag => lag.todayMetricLabel === primaryLabel && Math.abs(lag.coefficient) >= 0.2)
+                    .map(lag => {
+                        const yesterdayDisplay = isTimeMetric(unitMap[lag.yesterdayMetricLabel]) ? 'was later' : 'was higher ⤴️';
+                        const todayDisplay = isTimeMetric(unitMap[lag.todayMetricLabel]) ? (lag.coefficient >= 0 ? 'was later' : 'was earlier') : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
+                        const confidenceText = (lag.pValue !== null && lag.pValue < 0.05) ? "Statistically Significant" : "More data needed";
+                        return `**When Yesterday's '${lag.yesterdayMetricLabel}' ${yesterdayDisplay}**\n→ **Today's '${lag.todayMetricLabel}' ${todayDisplay}**\n*(${confidenceText})*`;
+                    });
+
+                if (relevantLagCorrs.length > 0) {
+                    const chapterStartDate = new Date(chapter.startDate).toLocaleDateString();
+                    const chapterEndDate = new Date(chapter.endDate).toLocaleDateString();
+                    embed.addFields({
+                        name: `From Experiment: ${chapterStartDate} - ${chapterEndDate}`,
+                        value: relevantLagCorrs.join('\n\n').substring(0, 1024)
+                    });
+                }
+            });
             break;
         case 'holistic_insight':
             embed.setDescription(report.holisticInsight || "AI analysis could not be generated.");
