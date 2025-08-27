@@ -2135,7 +2135,7 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
  * Manages and sends the multi-part narrative historical report to the user's DMs.
  * This final version includes a holistic AI insight and all data sections.
  */
-async function sendHistoricalReport(interaction, part, directReport = null) {
+async function _sendHistoricalReportAsDMs(interaction, part, directReport = null) {
     const userId = interaction.user.id;
     
     // Use the directly passed report if it exists. This is the key fix.
@@ -2433,6 +2433,206 @@ async function sendHistoricalReport(interaction, part, directReport = null) {
     } catch (error) {
         console.error(`[sendHistoricalReport] Error sending report part '${part}' to user ${userId}:`, error);
     }
+}
+
+/**
+ * An array defining the pages of the historical report, their titles, and builder functions.
+ * This will be generated dynamically based on the report's content.
+ */
+function generateHistoricalPageConfig(report) {
+    const pageConfig = [];
+
+    // Page 1: Always show the Aha! Moment if it exists.
+    if (report.ahaMoment) {
+        pageConfig.push({ type: 'aha_moment', title: `💡 Your Big Insight for '${report.primaryMetricLabel}'` });
+    }
+
+    // Page 2: Always show the Trend if it exists.
+    if (report.trend) {
+        pageConfig.push({ type: 'trend', title: `📈 The Journey of '${report.primaryMetricLabel}'` });
+    }
+
+    // Page 3: Correlations, if any exist.
+    const hasCorrelations = report.analyzedChapters.some(c => c.correlations?.influencedBy?.length > 0);
+    if (hasCorrelations) {
+        pageConfig.push({ type: 'correlations', title: `🔗 What Correlates with '${report.primaryMetricLabel}'?` });
+    }
+    
+    // Page 4: Combined Effects, if any exist.
+    const hasCombinedEffects = report.analyzedChapters.some(c => Object.values(c.pairwiseInteractionResults || {}).some(combo => combo.summary && !combo.summary.toLowerCase().includes("skipped")));
+    if (hasCombinedEffects) {
+        pageConfig.push({ type: 'combined_effects', title: `🔀 Combined Habit Effects on '${report.primaryMetricLabel}'` });
+    }
+
+    // Page 5: Lag Time Effects, if any exist.
+    const hasLagTime = report.analyzedChapters.some(c => Object.keys(c.lagTimeCorrelations || {}).length > 0);
+    if (hasLagTime) {
+        pageConfig.push({ type: 'lag_time', title: `🕑 Day-After Effects on '${report.primaryMetricLabel}'` });
+    }
+
+    // Page 6: AI Holistic Insight
+    pageConfig.push({ type: 'holistic_insight', title: `🔎 AI Analysis: The Full Story` });
+
+    return pageConfig;
+}
+
+
+/**
+ * Builds the embed for the Trend page of the historical report.
+ */
+function buildHistoricalTrendPage(embed, report) {
+    if (!report.trend) return;
+    const unit = report.metricUnitMap[report.primaryMetricLabel] || "";
+    const priorStats = `Avg: **${report.trend.priorAverage} ${unit}**\nConsistency: **${report.trend.priorConsistency.toFixed(1)}%**`;
+    const recentStats = `Avg: **${report.trend.recentAverage} ${unit}**\nConsistency: **${report.trend.recentConsistency.toFixed(1)}%**`;
+    embed.addFields(
+        { name: `Historical (${report.trend.priorDataPoints} days)`, value: priorStats, inline: true },
+        { name: `Most Recent (${report.trend.recentDataPoints} days)`, value: recentStats, inline: true }
+    );
+}
+
+/**
+ * Builds the embed for the Correlations page of the historical report.
+ */
+function buildHistoricalCorrelationsPage(embed, report) {
+    const primaryLabel = report.primaryMetricLabel;
+    const unitMap = report.metricUnitMap || {};
+    const primaryMetricType = report.primaryMetricType || 'outcome';
+    
+    const groupedCorrelations = new Map();
+    report.analyzedChapters.forEach(chapter => {
+        chapter.correlations.influencedBy.forEach(corr => {
+            if (Math.abs(corr.coefficient) < 0.2) return;
+            const groupKey = `${corr.withMetric} & ${primaryLabel}`;
+            const finding = {
+                startDate: new Date(chapter.startDate).toLocaleDateString(),
+                endDate: new Date(chapter.endDate).toLocaleDateString(),
+                coefficient: corr.coefficient,
+                isSignificant: corr.pValue !== null && corr.pValue < 0.05
+            };
+            if (!groupedCorrelations.has(groupKey)) {
+                groupedCorrelations.set(groupKey, []);
+            }
+            groupedCorrelations.get(groupKey).push(finding);
+        });
+    });
+
+    if (groupedCorrelations.size === 0) {
+        embed.setDescription("No strong correlations were found in this analysis period.");
+        return;
+    }
+
+    groupedCorrelations.forEach((findings, groupName) => {
+        let valueString = `This relationship was found in **${findings.length} experiment${findings.length > 1 ? 's' : ''}**:\n`;
+        findings.forEach(finding => {
+            const [otherMetricLabel] = groupName.split(' & ');
+            let habitLabel = primaryMetricType === 'habit' ? primaryLabel : otherMetricLabel;
+            let outcomeLabel = primaryMetricType === 'habit' ? otherMetricLabel : primaryLabel;
+            
+            const isHabitTime = isTimeMetric(unitMap[habitLabel]);
+            const isOutcomeTime = isTimeMetric(unitMap[outcomeLabel]);
+            const habitDisplay = isHabitTime ? 'was later' : 'was higher ⤴️';
+            const outcomeDisplay = isOutcomeTime
+                ? (finding.coefficient >= 0 ? 'was later' : 'was earlier')
+                : (finding.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
+            const relationshipText = `→ When **'${habitLabel}'** ${habitDisplay}, **'${outcomeLabel}'** ${outcomeDisplay}.`;
+            const confidenceText = finding.isSignificant ? "This is a statistically significant relationship." : "We need more data to confirm this relationship.";
+            
+            valueString += `• **From ${finding.startDate} - ${finding.endDate}:**\n${relationshipText}\n  *${confidenceText}*\n`;
+        });
+        embed.addFields({ name: `**${groupName}**`, value: valueString.substring(0, 1024) });
+    });
+}
+
+/**
+ * The new main paginator function for the interactive historical report.
+ */
+async function sendHistoricalReportPage(interaction, userId, targetPage) {
+    const isUpdate = interaction.isButton() || interaction.isStringSelectMenu();
+    if (isUpdate) {
+        try {
+            if (!interaction.deferred) await interaction.deferUpdate();
+        } catch (e) {
+            console.warn(`[sendHistoricalReportPage] DeferUpdate failed (likely expired): ${e.message}`);
+            return;
+        }
+    }
+
+    const reportData = userHistoricalReportData.get(userId);
+    if (!reportData || !reportData.report || !reportData.pageConfig) {
+        await interaction.editReply({ content: "Your report session has expired. Please run `/stats` again.", components: [], embeds: [] });
+        return;
+    }
+
+    const { report, pageConfig } = reportData;
+    const totalPages = pageConfig.length;
+    const pageIndex = targetPage - 1;
+
+    if (pageIndex < 0 || pageIndex >= totalPages) {
+        console.error(`Invalid targetPage ${targetPage} requested.`);
+        return;
+    }
+
+    reportData.currentPage = targetPage;
+    userHistoricalReportData.set(userId, reportData);
+
+    const currentPage = pageConfig[pageIndex];
+    const embed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle(`${currentPage.title} (Page ${targetPage} of ${totalPages})`)
+        .setFooter({ text: `Analysis of ${report.analyzedChapters.length} experiment(s).` });
+
+    // Build the embed content based on the page type
+    switch (currentPage.type) {
+        case 'aha_moment':
+            embed.setDescription(report.ahaMoment.text || "No specific insight generated.");
+            if (report.hiddenGrowth?.paragraph) {
+                 embed.addFields({ name: "Your Words...", value: `> ${report.hiddenGrowth.quote}\n\n${report.hiddenGrowth.paragraph}` });
+            }
+            break;
+        case 'trend':
+            buildHistoricalTrendPage(embed, report);
+            break;
+        case 'correlations':
+            buildHistoricalCorrelationsPage(embed, report);
+            break;
+        case 'combined_effects':
+            // Placeholder - you can build this out similarly
+            embed.setDescription("Combined Effects analysis will be displayed here.");
+            break;
+        case 'lag_time':
+             // Placeholder - you can build this out similarly
+            embed.setDescription("Day-After Effects analysis will be displayed here.");
+            break;
+        case 'holistic_insight':
+            embed.setDescription(report.holisticInsight || "AI analysis could not be generated.");
+            break;
+    }
+
+    // Build Navigation Buttons
+    const backButton = new ButtonBuilder()
+        .setCustomId(`hist_report_nav_back_${targetPage - 1}`)
+        .setLabel('⬅️ Back')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(targetPage === 1);
+
+    const nextButton = new ButtonBuilder()
+        .setCustomId(`hist_report_nav_next_${targetPage + 1}`)
+        .setLabel('Next ➡️')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(targetPage === totalPages);
+        
+    const sendToDmsButton = new ButtonBuilder()
+        .setCustomId('hist_report_send_to_dm')
+        .setLabel('✉️ Send Full Report to DMs')
+        .setStyle(ButtonStyle.Success);
+
+    const row = new ActionRowBuilder();
+    if (targetPage > 1) row.addComponents(backButton);
+    if (targetPage < totalPages) row.addComponents(nextButton);
+    if (targetPage === totalPages) row.addComponents(sendToDmsButton);
+
+    await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 /**
@@ -6767,27 +6967,29 @@ client.on(Events.InteractionCreate, async interaction => {
                 numExperimentsToAnalyze
             }, userId);
             
-            if (result && result.success) {
-                if (result.report) {
-                    userHistoricalReportData.set(userId, { report: result.report });
-                    
-                    // NEW: Check if an ahaMoment was generated.
-                    if (result.report.ahaMoment) {
-                        // If there's an ahaMoment, start with that part.
-                        await sendHistoricalReport(interaction, 'aha_moment', result.report);
-                    } else {
-                        // If ahaMoment is null, skip it and go directly to the full report.
-                        await interaction.editReply({ content: `✅ Analysis complete! No single striking insight was found in your most recent experiment, but here is your detailed report in your DMs.`, components: [], embeds: [] });
-                        await sendHistoricalReport(interaction, 'full_report', result.report);
-                    }
-                } else {
-                    // Success, but no report (e.g., not enough completed experiments)
-                    await interaction.editReply({ content: `💡 ${result.message}`, components: [] });
-                }
-            } else {
-                // The function call itself failed
-                throw new Error(result?.message || 'The analysis returned no data or failed.');
+            if (result && result.success && result.report) {
+            // Generate the dynamic page configuration based on the report's content
+            const pageConfig = generateHistoricalPageConfig(result.report);
+
+            if (pageConfig.length === 0) {
+                await interaction.editReply({ content: "✅ Analysis complete, but no data was available to generate report pages.", components: [] });
+                return;
             }
+
+            // Store the report and page config for the interactive session
+            userHistoricalReportData.set(userId, {
+                report: result.report,
+                pageConfig: pageConfig,
+                currentPage: 1
+            });
+
+            // Start the interactive report on page 1
+            await sendHistoricalReportPage(interaction, userId, 1);
+
+        } else {
+            // Handle cases where the analysis was successful but generated no report (e.g., not enough data)
+            await interaction.editReply({ content: `✅ Analysis complete. ${result.message || "No report was generated."}`, components: [] });
+        }
 
           } catch (error) {
             console.error(`[${interaction.customId} ERROR ${interactionId}]`, error);
@@ -6806,7 +7008,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.customId === HISTORICAL_REPORT_MORE_STATS) {
-        await sendHistoricalReport(interaction, 'full_report');
+        await _sendHistoricalReportAsDMs(interaction, 'full_report');
     }
 
     else if (interaction.customId === HISTORICAL_REPORT_NO_SHARE) {
@@ -7845,6 +8047,29 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     }
 
+    // --- START: NEW HANDLERS for Interactive Historical Report ---
+
+    else if (interaction.customId.startsWith('hist_report_nav_')) {
+        const targetPage = parseInt(interaction.customId.split('_').pop(), 10);
+        await sendHistoricalReportPage(interaction, interaction.user.id, targetPage);
+    }
+
+    else if (interaction.customId === 'hist_report_send_to_dm') {
+        await interaction.deferUpdate();
+        const reportData = userHistoricalReportData.get(interaction.user.id);
+        if (!reportData || !reportData.report) {
+            await interaction.editReply({ content: "Your session has expired. Please run `/stats` again.", components: [], embeds: [] });
+            return;
+        }
+        
+        // Use the renamed function to send all DMs
+        await _sendHistoricalReportAsDMs(interaction, 'full_report', reportData.report);
+
+        await interaction.editReply({ content: "✅ I've sent the full report to your DMs for your records!", components: [], embeds: [] });
+        userHistoricalReportData.delete(interaction.user.id); // Clean up the session
+    }
+
+    // --- END: NEW HANDLERS for Interactive Historical Report ---
 
 
   } // End of "if (interaction.isButton())" block
