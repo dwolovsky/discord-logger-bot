@@ -6115,30 +6115,37 @@ client.on(Events.InteractionCreate, async interaction => {
             const cachedSettings = setupData.preFetchedWeeklySettings;
             const isTimeMetric = (unit) => TIME_OF_DAY_KEYWORDS.includes(unit?.toLowerCase().trim());
             const buildStandardLogModal = (settings) => {
-                const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
-                const components = [settings.output, settings.input1, settings.input2, settings.input3]
-                    .filter(metric => metric && metric.label)
-                    .map(metric => {
-                        let customId;
-                        if (metric.label === settings.output.label) customId = 'log_output_value';
-                        else if (metric.label === settings.input1.label) customId = 'log_input1_value';
-                        else if (metric.label === settings.input2.label) customId = 'log_input2_value';
-                        else if (metric.label === settings.input3.label) customId = 'log_input3_value';
+            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
+            const components = [];
 
-                        return new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label}`.substring(0, 45)).setPlaceholder(`${metric.unit}`).setStyle(TextInputStyle.Short).setRequired(true)
-                        );
-                    });
-                const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
-                let finalPlaceholder = 'What did you observe? Any questions or insights?';
-                if (settings.deeperProblem) {
-                    finalPlaceholder = `What were the costs & rewards of your habits today?`;
-                }
-                notesInput.setPlaceholder(finalPlaceholder);
-                components.push(new ActionRowBuilder().addComponents(notesInput));
-                modal.addComponents(components);
-                return modal;
-            };
+            // 1. Add the Notes input first with the correct placeholder
+            const notesInput = new TextInputBuilder()
+                .setCustomId('log_notes')
+                .setLabel('💭 Experiment & Life Notes')
+                .setStyle(TextInputStyle.Paragraph)
+                .setRequired(true)
+                .setPlaceholder("What were the prices and payoffs of your habits today?");
+            components.push(new ActionRowBuilder().addComponents(notesInput));
+
+            // 2. Create and add the other metric inputs from the 'settings' object
+            const metricComponents = [settings.output, settings.input1, settings.input2, settings.input3]
+                .filter(metric => metric && metric.label)
+                .map(metric => {
+                    let customId;
+                    if (metric.label === settings.output.label) customId = 'log_output_value';
+                    else if (metric.label === settings.input1.label) customId = 'log_input1_value';
+                    else if (metric.label === settings.input2.label) customId = 'log_input2_value';
+                    else if (metric.label === settings.input3.label) customId = 'log_input3_value';
+
+                    return new ActionRowBuilder().addComponents(
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                    );
+                });
+
+            components.push(...metricComponents);
+            modal.addComponents(components);
+            return modal;
+        };
             
             // ---- CACHED / FAST PATH ----
             if (cachedSettings) {
@@ -6271,112 +6278,118 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     else if (interaction.customId === 'continue_to_final_log_btn') {
-        const finalLogButtonStartTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Building final modal for non-time metrics.`);
-        try {
-            const setupData = userExperimentSetupData.get(userId);
-            const otherMetrics = setupData?.logFlowOtherMetrics || [];
-            const settings = setupData?.logFlowSettings;
+    const finalLogButtonStartTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Building final modal for non-time metrics.`);
+    try {
+        const setupData = userExperimentSetupData.get(userId);
+        const otherMetrics = setupData?.logFlowOtherMetrics || [];
+        const settings = setupData?.logFlowSettings;
 
-            if (!settings) {
-                console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
-                await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Daily Data' again.", ephemeral: true });
-                return;
+        if (!settings) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
+            await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Daily Data' again.", ephemeral: true });
+            return;
+        }
+
+        const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Final Step: Notes & Other Metrics`);
+        const components = [];
+
+        // 1. Add the Notes input first with the correct placeholder
+        const notesInput = new TextInputBuilder()
+            .setCustomId('log_notes')
+            .setLabel('💭 Experiment & Life Notes')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+            .setPlaceholder("What were the prices and payoffs of your habits today?");
+        components.push(new ActionRowBuilder().addComponents(notesInput));
+
+        // 2. Add inputs for non-time metrics after the notes
+        otherMetrics.forEach(metric => {
+            let customId;
+            if (metric.label === settings.output.label) customId = 'log_output_value';
+            else if (metric.label === settings.input1.label) customId = 'log_input1_value';
+            else if (metric.label === settings.input2.label) customId = 'log_input2_value';
+            else if (metric.label === settings.input3.label) customId = 'log_input3_value';
+            
+            if (customId) {
+                components.push(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                    )
+                );
             }
+        });
 
-            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Final Step: Notes & Other Metrics`);
-            const components = [];
+        modal.addComponents(components);
+        await interaction.showModal(modal);
+        console.log(`[${interaction.customId} SUCCESS ${interactionId}] Final modal shown to ${userId}.`);
 
-            // Add inputs ONLY for non-time metrics
-            otherMetrics.forEach(metric => {
+    } catch (error) {
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show final modal for ${userId}:`, error);
+    }
+    }
+
+    else if (interaction.customId === 'show_standard_log_modal_btn') {
+    const showLogModalClickTime = performance.now();
+    const interactionId = interaction.id;
+    const userId = interaction.user.id;
+    console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing standard log modal.`);
+
+    try {
+        const setupData = userExperimentSetupData.get(userId);
+        const settings = setupData?.logFlowSettings;
+
+        if (!settings) {
+            console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
+            await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Data' again.", ephemeral: true });
+            return;
+        }
+
+        const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Every Day Is Data`);
+        const components = [];
+
+        // 1. Add the Notes input first with the correct placeholder
+        const notesInput = new TextInputBuilder()
+            .setCustomId('log_notes')
+            .setLabel('💭 Experiment & Life Notes')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+            .setPlaceholder("What were the prices and payoffs of your habits today?");
+        components.push(new ActionRowBuilder().addComponents(notesInput));
+
+        // 2. Create and add the metric inputs after the notes
+        const metricComponents = [settings.output, settings.input1, settings.input2, settings.input3]
+            .filter(metric => metric && metric.label)
+            .map(metric => {
                 let customId;
                 if (metric.label === settings.output.label) customId = 'log_output_value';
                 else if (metric.label === settings.input1.label) customId = 'log_input1_value';
                 else if (metric.label === settings.input2.label) customId = 'log_input2_value';
                 else if (metric.label === settings.input3.label) customId = 'log_input3_value';
-                
-                if (customId) {
-                    components.push(
-                        new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
-                        )
-                    );
-                }
+
+                return new ActionRowBuilder().addComponents(
+                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                );
             });
+        
+        components.push(...metricComponents);
+        modal.addComponents(components);
 
-            // Always add the notes field
-            const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
-            let finalPlaceholder = 'What did you observe? Any questions or insights?';
-            if (settings.deeperProblem) {
-                finalPlaceholder = `What were the costs & rewards of your habits today?`;
+        await interaction.showModal(modal);
+        console.log(`[${interaction.customId} SUCCESS ${interactionId}] Standard log modal shown to ${userId}.`);
+
+    } catch (error) {
+        console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show standard log modal for ${userId}:`, error);
+        if (!interaction.replied && !interaction.deferred) {
+            try {
+                await interaction.reply({ content: "An error occurred while opening the log form. Please try again.", ephemeral: true });
+            } catch (e) {
+                // ignore further errors
             }
-            notesInput.setPlaceholder(finalPlaceholder);
-            components.push(new ActionRowBuilder().addComponents(notesInput));
-
-            modal.addComponents(components);
-            await interaction.showModal(modal);
-            console.log(`[${interaction.customId} SUCCESS ${interactionId}] Final modal shown to ${userId}.`);
-
-        } catch (error) {
-            console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show final modal for ${userId}:`, error);
         }
     }
-
-    else if (interaction.customId === 'show_standard_log_modal_btn') {
-        const showLogModalClickTime = performance.now();
-        const interactionId = interaction.id;
-        const userId = interaction.user.id;
-        console.log(`[${interaction.customId} START ${interactionId}] Clicked by ${userId}. Preparing standard log modal.`);
-
-        try {
-            const setupData = userExperimentSetupData.get(userId);
-            const settings = setupData?.logFlowSettings;
-
-            if (!settings) {
-                console.error(`[${interaction.customId} ERROR ${interactionId}] Missing logFlowSettings for ${userId}.`);
-                await interaction.reply({ content: "Error: Your logging session has expired. Please try clicking 'Log Data' again.", ephemeral: true });
-                return;
-            }
-
-            // This logic is adapted from your 'log_daily_progress_btn' handler 
-            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Every Day Is Data`);
-            const components = [settings.output, settings.input1, settings.input2, settings.input3]
-                .filter(metric => metric && metric.label)
-                .map(metric => {
-                    let customId;
-                    if (metric.label === settings.output.label) customId = 'log_output_value';
-                    else if (metric.label === settings.input1.label) customId = 'log_input1_value';
-                    else if (metric.label === settings.input2.label) customId = 'log_input2_value';
-                    else if (metric.label === settings.input3.label) customId = 'log_input3_value';
-
-                    return new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
-                    );
-                });
-            const notesInput = new TextInputBuilder().setCustomId('log_notes').setLabel('💭 Experiment & Life Notes').setStyle(TextInputStyle.Paragraph).setRequired(true);
-            let finalPlaceholder = 'What did you observe? Any questions or insights?';
-            if (settings.deeperProblem) {
-                finalPlaceholder = `What were the costs & rewards of your habits today?`;
-            }
-            notesInput.setPlaceholder(finalPlaceholder);
-            components.push(new ActionRowBuilder().addComponents(notesInput));
-            modal.addComponents(components);
-
-            await interaction.showModal(modal);
-            console.log(`[${interaction.customId} SUCCESS ${interactionId}] Standard log modal shown to ${userId}.`);
-
-        } catch (error) {
-            console.error(`[${interaction.customId} ERROR ${interactionId}] Failed to show standard log modal for ${userId}:`, error);
-            if (!interaction.replied && !interaction.deferred) {
-                try {
-                    await interaction.reply({ content: "An error occurred while opening the log form. Please try again.", ephemeral: true });
-                } catch (e) {
-                    // ignore further errors
-                }
-            }
-        }
     }
 
     else if (interaction.isButton() && (interaction.customId === CONFIRM_OUTCOME_TARGET_TIME_BTN_ID || interaction.customId === CONFIRM_INPUT_TARGET_TIME_BTN_ID)) {
