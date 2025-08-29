@@ -1273,35 +1273,38 @@ exports.getAllUserMetrics = onCall(async (request) => {
     try {
         const logsSnapshot = await db.collection('logs').where('userId', '==', userId).get();
         
-        // Use a Set to store unique metrics, preventing duplicates.
-        // We store the stringified object to ensure uniqueness of the label/unit pair.
-        const uniqueMetricsSet = new Set();
+        // Use a Map to store unique metrics, preventing duplicates based on a normalized key.
+        const uniqueMetricsMap = new Map();
+
+        const addMetricToMap = (metric) => {
+            if (metric && metric.label && metric.unit) {
+                const normalizedLabel = metric.label.toLowerCase().trim();
+                const normalizedUnit = metric.unit.toLowerCase().trim();
+                const key = `${normalizedLabel}|${normalizedUnit}`;
+                
+                // Only add the metric if we haven't seen this normalized version before.
+                // This ensures "Meditation" and "meditation" are treated as the same.
+                if (!uniqueMetricsMap.has(key)) {
+                    uniqueMetricsMap.set(key, {
+                        label: metric.label, // Keep the original casing for display
+                        unit: metric.unit
+                    });
+                }
+            }
+        };
 
         logsSnapshot.forEach(doc => {
             const log = doc.data();
             // Process the output metric
-            if (log.output && log.output.label && log.output.unit) {
-                uniqueMetricsSet.add(JSON.stringify({
-                    label: log.output.label,
-                    unit: log.output.unit
-                }));
-            }
+            addMetricToMap(log.output);
             // Process all input metrics
             if (log.inputs && Array.isArray(log.inputs)) {
-                log.inputs.forEach(input => {
-                    if (input && input.label && input.unit) {
-                        uniqueMetricsSet.add(JSON.stringify({
-                            label: input.label,
-                            unit: input.unit
-                        }));
-                    }
-                });
+                log.inputs.forEach(addMetricToMap);
             }
         });
 
-        // Convert the Set of strings back into an array of objects
-        const uniqueMetricsArray = Array.from(uniqueMetricsSet).map(item => JSON.parse(item));
-
+        // Convert the Map values back into an array
+        const uniqueMetricsArray = Array.from(uniqueMetricsMap.values());
         // Sort the array alphabetically by label for a consistent order
         uniqueMetricsArray.sort((a, b) => a.label.localeCompare(b.label));
 
@@ -1312,7 +1315,7 @@ exports.getAllUserMetrics = onCall(async (request) => {
         logger.error(`[getAllUserMetrics] Error fetching metrics for user ${userId}:`, error);
         throw new HttpsError('internal', 'Could not retrieve your historical metrics due to a server error.', error.message);
     }
-});  
+});
 
     /**
      * Saves the experiment duration, reminder schedule, generates an experimentId,
@@ -3958,15 +3961,35 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                     }
                 }
             }
+                // Start: NEW filtering logic
+                const filteredPairwiseForThisChapter = {};
+                if (chapter.pairwiseInteractionResults) {
+                    for (const pairKey in chapter.pairwiseInteractionResults) {
+                        const interaction = chapter.pairwiseInteractionResults[pairKey];
+                        if (interaction && interaction.outputMetricLabel && includedLabels.has(normalizeLabel(interaction.outputMetricLabel))) {
+                            filteredPairwiseForThisChapter[pairKey] = interaction;
+                        }
+                    }
+                }
 
+                const filteredLagTimeForThisChapter = {};
+                if (chapter.lagTimeCorrelations) {
+                    for (const lagKey in chapter.lagTimeCorrelations) {
+                        const lag = chapter.lagTimeCorrelations[lagKey];
+                        if (lag && lag.todayMetricLabel && includedLabels.has(normalizeLabel(lag.todayMetricLabel))) {
+                            filteredLagTimeForThisChapter[lagKey] = lag;
+                        }
+                    }
+                }
+                // End: NEW filtering logic
             return {
-                startDate: chapter.experimentSettingsTimestamp,
-                endDate: chapter.experimentEndDateISO,
-                primaryMetricStats: chapter.calculatedMetricStats[primaryInChapter.label],
-                correlations: { influencedBy: finalCorrelationsForThisChapter },
-                lagTimeCorrelations: chapter.lagTimeCorrelations || {},
-                pairwiseInteractionResults: chapter.pairwiseInteractionResults || {}
-            };
+            startDate: chapter.experimentSettingsTimestamp,
+            endDate: chapter.experimentEndDateISO,
+            primaryMetricStats: chapter.calculatedMetricStats[primaryInChapter.label],
+            correlations: { influencedBy: finalCorrelationsForThisChapter },
+            lagTimeCorrelations: filteredLagTimeForThisChapter,         // Use the filtered object
+            pairwiseInteractionResults: filteredPairwiseForThisChapter // Use the filtered object
+        };
         }).filter(Boolean);
         if (extractedChapters.length === 0) {
             return { success: true, report: null, message: "Not enough data within the selected experiments to generate a report." };
@@ -3994,6 +4017,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             }
         });
         const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label, metricUnitMap);
+        const ahaMomentText = ahaMoment ? ahaMoment.text : "No single strong correlation was found in this period.";
         // --- NEW LOGIC TO DETERMINE METRIC TYPE ---
         let primaryMetricType = 'unknown';
         const latestChapterSettings = chaptersToAnalyze.length > 0 ? chaptersToAnalyze[chaptersToAnalyze.length - 1].activeExperimentSettings : null;
@@ -4044,7 +4068,7 @@ You are an expert habit-science coach. Your task is to analyze a user's habit ex
 CONTEXT:
 - User's Primary Metric: "${primaryMetric.label}"
 - All Included Metric Aliases: ${JSON.stringify(includedMetrics.map(m => m.label))}
-- The Strongest Single Correlation Found: "${ahaMoment.text}"
+- The Strongest Single Correlation Found: "${ahaMomentText}"
 - The Overall Trend: The user's recent average for '${primaryMetric.label}' has ${trend ? (trend.recentAverage > trend.priorAverage ? 'increased' : 'decreased') : 'stayed consistent'}.
 - All Significant Correlations Found During Analysis: ${JSON.stringify(allCorrelations)}
 - User's Raw Notes From The Period:
@@ -4091,6 +4115,10 @@ Your entire response must be ONLY the raw JSON object, starting with { and endin
                         generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
                     });
                     const response = await result.response;
+                    if (!response) {
+                    logger.error(`[runHistoricalAnalysis V6] AI generation resulted in a null response object for user ${userId}. This could be due to safety filters or an API issue.`);
+                    throw new HttpsError('internal', 'The AI service returned a null response, possibly due to content safety filters.');
+                }
 
                     if (response.promptFeedback && response.promptFeedback.blockReason) {
                         const blockReason = response.promptFeedback.blockReason;

@@ -8985,6 +8985,23 @@ else if (interaction.customId === 'historical_metric_select') {
         } catch (error) {
             const errorTime = performance.now();
             console.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error);
+            
+             // START: ADD THIS NEW LOGIC BLOCK
+            const currentSetupData = userExperimentSetupData.get(interaction.user.id) || {};
+            const payloadFromModal = { // Re-capture the data from the modal fields
+                notes: interaction.fields.getTextInputValue('log_notes')?.trim(),
+                outputValue: interaction.fields.getTextInputValue('log_output_value')?.trim(),
+                inputValues: [
+                    interaction.fields.getTextInputValue('log_input1_value')?.trim(),
+                    interaction.fields.getTextInputValue('log_input2_value')?.trim(),
+                    interaction.fields.getTextInputValue('log_input3_value')?.trim()
+                ]
+            };
+            currentSetupData.tempLogData = payloadFromModal;
+            userExperimentSetupData.set(interaction.user.id, currentSetupData);
+            logger.log(`[dailyLogModal_firebase] Saved temporary log data for ${interaction.user.tag} due to submission error.`);
+            // END: ADD THIS NEW LOGIC BLOCK
+    s
             const userErrorMessage = `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`;
             if (interaction.deferred || interaction.replied) {
                 try { await interaction.editReply({ content: userErrorMessage, components: [] }); }
