@@ -9001,7 +9001,7 @@ else if (interaction.customId === 'historical_metric_select') {
             userExperimentSetupData.set(interaction.user.id, currentSetupData);
             console.log(`[dailyLogModal_firebase] Saved temporary log data for ${interaction.user.tag} due to submission error.`);
             // END: ADD THIS NEW LOGIC BLOCK
-    s
+            
             const userErrorMessage = `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`;
             if (interaction.deferred || interaction.replied) {
                 try { await interaction.editReply({ content: userErrorMessage, components: [] }); }
