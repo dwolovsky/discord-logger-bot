@@ -8999,7 +8999,7 @@ else if (interaction.customId === 'historical_metric_select') {
             };
             currentSetupData.tempLogData = payloadFromModal;
             userExperimentSetupData.set(interaction.user.id, currentSetupData);
-            logger.log(`[dailyLogModal_firebase] Saved temporary log data for ${interaction.user.tag} due to submission error.`);
+            console.log(`[dailyLogModal_firebase] Saved temporary log data for ${interaction.user.tag} due to submission error.`);
             // END: ADD THIS NEW LOGIC BLOCK
     s
             const userErrorMessage = `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`;
