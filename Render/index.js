@@ -496,7 +496,24 @@ function formatLagTimeAsString(statsReportData) {
                 const yesterdayDisplay = isYesterdayTime ? 'was later' : 'was higher ⤴️';
                 const todayDisplay = isTodayTime ? (lag.coefficient >= 0 ? 'was later' : 'was earlier') : (lag.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
                 
-                parts.push(`**When Yesterday's ${lag.yesterdayMetricLabel} ${yesterdayDisplay}**\n→ Today's **${lag.todayMetricLabel}** ${todayDisplay}`);
+                // --- NEW: Strength Calculation Logic ---
+                const isConfident = lag.pValue !== null && lag.pValue < 0.05;
+                const confidenceText = isConfident ? "This is a statistically significant relationship." : "We need more data to confirm this.";
+                let strengthText = "No detectable";
+                let strengthEmoji = "🟦";
+                const absCoeff = Math.abs(lag.coefficient);
+                if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+                else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+                else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+                else if (absCoeff >= 0.15) { strengthText = "Weak"; strengthEmoji = "🟩"; }
+                
+                // --- UPDATED: New formatted string ---
+                parts.push(
+                    `**When Yesterday's ${lag.yesterdayMetricLabel} ${yesterdayDisplay}**\n` +
+                    `→ Today's **${lag.todayMetricLabel}** ${todayDisplay}\n` +
+                    `**Strength:** ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(1)}%)\n` +
+                    `*${confidenceText}*`
+                );
             }
         }
     }
