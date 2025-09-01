@@ -940,42 +940,42 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
             }
         }
 
-    // --- TIMEOUT MECHANISM: Set a new timer ---
-    const timeout = setTimeout(async () => {
-        console.log(`[StatsTimeout] Session for user ${userId}, experiment ${experimentId} has expired.`);
-        const finalReportInfo = userStatsReportData.get(userId);
-        if (finalReportInfo && finalReportInfo.experimentId === experimentId) { // Check if the session is still the same
-            try {
-                const finalEmbed = new EmbedBuilder()
-                    .setColor(0xFFA500) // Orange for timeout
-                    .setTitle('📈 Full Raw Stats Report (Session Timed Out)')
-                    .setFooter({ text: `Experiment ID: ${finalReportInfo.experimentId}` });
+     if (targetPage < totalPages) {
+        const timeout = setTimeout(async () => {
+            console.log(`[StatsTimeout] Session for user ${userId}, experiment ${experimentId} has expired.`);
+            const finalReportInfo = userStatsReportData.get(userId);
+            if (finalReportInfo && finalReportInfo.experimentId === experimentId) { 
+                try {
+                    const finalEmbed = new EmbedBuilder()
+                        .setColor(0xFFA500) 
+                        .setTitle('📈 Full Raw Stats Report (Session Timed Out)')
+                        .setFooter({ text: `Experiment ID: ${finalReportInfo.experimentId}` });
 
-                buildFinalSummaryPage(finalEmbed, finalReportInfo.statsReportData, finalReportInfo.pageConfig);
+                    // This is the source of the second bug, which we will fix next.
+                    buildFinalSummaryPage(finalEmbed, finalReportInfo.statsReportData, finalReportInfo.aiEnhancedInsights, finalReportInfo.pageConfig);
 
-                const finalButton = new ButtonBuilder()
-                    .setCustomId(`start_new_experiment_prompt_btn`)
-                    .setLabel('🚀 Start a New Experiment')
-                    .setStyle(ButtonStyle.Success);
-
-                await user.send({
-                    content: "It looks like our interactive stats session timed out, but here is your complete report for your records!",
-                    embeds: [finalEmbed],
-                    components: [new ActionRowBuilder().addComponents(finalButton)]
-                });
-                console.log(`[StatsTimeout] Sent final raw report to user ${userId} via new message.`);
-            } catch (timeoutError) {
-                console.error(`[StatsTimeout] Failed to send timeout fallback message to user ${userId}:`, timeoutError);
-            } finally {
-                userStatsReportData.delete(userId); // Clean up the session
+                    const finalButton = new ButtonBuilder()
+                        .setCustomId(`start_new_experiment_prompt_btn`)
+                        .setLabel('🚀 Start a New Experiment')
+                        .setStyle(ButtonStyle.Success);
+                    await user.send({
+                        content: "It looks like our interactive stats session timed out, but here is your complete report for your records!",
+                        embeds: [finalEmbed],
+                        components: [new ActionRowBuilder().addComponents(finalButton)]
+                    });
+                    console.log(`[StatsTimeout] Sent final raw report to user ${userId} via new message.`);
+                } catch (timeoutError) {
+                    console.error(`[StatsTimeout] Failed to send timeout fallback message to user ${userId}:`, timeoutError);
+                } finally {
+                    userStatsReportData.delete(userId);
+                }
             }
-        }
-    }, 20 * 60 * 1000); // 20 minutes
+        }, 20 * 60 * 1000); 
 
-    // Store the timer so it can be cleared on the next navigation
-    if (reportInfo) {
-        reportInfo.timeoutTimer = timeout;
-        userStatsReportData.set(userId, reportInfo);
+        if (reportInfo) {
+            reportInfo.timeoutTimer = timeout;
+            userStatsReportData.set(userId, reportInfo);
+        }
     }
 }
 
