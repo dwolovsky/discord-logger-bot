@@ -1791,7 +1791,8 @@ const LOG_TIME_NEXT_BTN_ID = 'log_time_next_btn';
 // This list is used to flexibly identify when a user-entered UNIT
 // should trigger the special time-picker UI. It is checked case-insensitively.
 const TIME_OF_DAY_KEYWORDS = [
-    'time of day',      // The primary, explicit unit
+    'time of day',
+    'time',     // The primary, explicit unit
     'clock time',       // A common alternative
     'specific time',
     'exact time',
