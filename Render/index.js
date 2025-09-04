@@ -2512,7 +2512,9 @@ function generateHistoricalPageConfig(report) {
     }
 
     // Page 5: Lag Time Effects, if any exist.
-    const hasLagTime = report.analyzedChapters.some(c => Object.keys(c.lagTimeCorrelations || {}).length > 0);
+    const hasLagTime = report.analyzedChapters.some(c => 
+        Object.values(c.lagTimeCorrelations || {}).some(lag => lag.todayMetricLabel === report.primaryMetricLabel && Math.abs(lag.coefficient) >= 0.2)
+    );
     if (hasLagTime) {
         pageConfig.push({ type: 'lag_time', title: `🕑 Day-After Effects on '${report.primaryMetricLabel}'` });
     }
@@ -2530,8 +2532,19 @@ function generateHistoricalPageConfig(report) {
 function buildHistoricalTrendPage(embed, report) {
     if (!report.trend) return;
     const unit = report.metricUnitMap[report.primaryMetricLabel] || "";
-    const priorStats = `Avg: **${report.trend.priorAverage} ${unit}**\nConsistency: **${report.trend.priorConsistency.toFixed(1)}%**`;
-    const recentStats = `Avg: **${report.trend.recentAverage} ${unit}**\nConsistency: **${report.trend.recentConsistency.toFixed(1)}%**`;
+
+    const formatStats = (average, consistency) => {
+        if (isYesNoMetric(unit)) {
+            const percentage = (average * 100).toFixed(0);
+            return `**Completion:** ${percentage}% of days\n**Consistency:** ${consistency.toFixed(1)}%`;
+        } else {
+            return `**Avg:** ${average} ${unit}\n**Consistency:** ${consistency.toFixed(1)}%`;
+        }
+    };
+
+    const priorStats = formatStats(report.trend.priorAverage, report.trend.priorConsistency);
+    const recentStats = formatStats(report.trend.recentAverage, report.trend.recentConsistency);
+    
     embed.addFields(
         { name: `Historical (${report.trend.priorDataPoints} days)`, value: priorStats, inline: true },
         { name: `Most Recent (${report.trend.recentDataPoints} days)`, value: recentStats, inline: true }
@@ -2575,7 +2588,7 @@ function buildHistoricalCorrelationsPage(embed, report) {
             const [otherMetricLabel] = groupName.split(' & ');
             let habitLabel = primaryMetricType === 'habit' ? primaryLabel : otherMetricLabel;
             let outcomeLabel = primaryMetricType === 'habit' ? otherMetricLabel : primaryLabel;
-            
+
             const isHabitTime = isTimeMetric(unitMap[habitLabel]);
             const isOutcomeTime = isTimeMetric(unitMap[outcomeLabel]);
             const habitDisplay = isHabitTime ? 'was later' : 'was higher ⤴️';
@@ -2583,9 +2596,22 @@ function buildHistoricalCorrelationsPage(embed, report) {
                 ? (finding.coefficient >= 0 ? 'was later' : 'was earlier')
                 : (finding.coefficient >= 0 ? 'was higher ⤴️' : 'was lower ⤵️');
             const relationshipText = `→ When **'${habitLabel}'** ${habitDisplay}, **'${outcomeLabel}'** ${outcomeDisplay}.`;
+            
+            // --- NEW STRENGTH LOGIC ---
+            const rSquared = finding.coefficient * finding.coefficient;
+            let strengthText = "No detectable";
+            let strengthEmoji = "🟦";
+            const absCoeff = Math.abs(finding.coefficient);
+            if (absCoeff >= 0.7) { strengthText = "Very Strong"; strengthEmoji = "🟥"; }
+            else if (absCoeff >= 0.45) { strengthText = "Strong"; strengthEmoji = "🟧"; }
+            else if (absCoeff >= 0.3) { strengthText = "Moderate"; strengthEmoji = "🟨"; }
+            else if (absCoeff >= 0.2) { strengthText = "Weak"; strengthEmoji = "🟩"; }
+            const strengthDisplay = `*Strength: ${strengthEmoji} ${strengthText} (${(rSquared * 100).toFixed(0)}%)*`;
+            // --- END NEW LOGIC ---
+
             const confidenceText = finding.isSignificant ? "This is a statistically significant relationship." : "We need more data to confirm this relationship.";
             
-            valueString += `• **From ${finding.startDate} - ${finding.endDate}:**\n${relationshipText}\n  *${confidenceText}*\n`;
+            valueString += `• **From ${finding.startDate} - ${finding.endDate}:**\n${relationshipText}\n  ${strengthDisplay}\n  *${confidenceText}*\n`;
         });
         embed.addFields({ name: `**${groupName}**`, value: valueString.substring(0, 1024) });
     });

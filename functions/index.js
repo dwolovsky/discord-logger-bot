@@ -4025,7 +4025,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 });
             }
         });
-        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric.label, metricUnitMap);
+        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric, primaryMetricType, metricUnitMap);
         const ahaMomentText = ahaMoment ? ahaMoment.text : "No single strong correlation was found in this period.";
         // --- NEW LOGIC TO DETERMINE METRIC TYPE ---
         let primaryMetricType = 'unknown';
@@ -4250,12 +4250,11 @@ function _calculateTrend(analyzedChapters) {
     };
 }
 
-function _determineAhaMoment(analyzedChapters, primaryMetricLabel, metricUnitMap) {
+function _determineAhaMoment(analyzedChapters, primaryMetric, primaryMetricType, metricUnitMap) {
     if (!analyzedChapters || analyzedChapters.length === 0) return null;
 
     let strongestCorrelationOverall = { coefficient: 0, withMetric: null, chapterDate: '' };
 
-    // Iterate over all chapters to find the strongest correlation
     analyzedChapters.forEach(chapter => {
         if (chapter.correlations && chapter.correlations.influencedBy && chapter.correlations.influencedBy.length > 0) {
             const strongestInChapter = chapter.correlations.influencedBy.reduce(
@@ -4266,32 +4265,44 @@ function _determineAhaMoment(analyzedChapters, primaryMetricLabel, metricUnitMap
             if (Math.abs(strongestInChapter.coefficient) > Math.abs(strongestCorrelationOverall.coefficient)) {
                 strongestCorrelationOverall = {
                     ...strongestInChapter,
-                    chapterDate: new Date(chapter.startDate).toLocaleDateString() // Store which experiment it came from
+                    chapterDate: new Date(chapter.startDate).toLocaleDateString()
                 };
             }
         }
     });
 
-    // This threshold can be adjusted if needed.
     if (Math.abs(strongestCorrelationOverall.coefficient) < 0.20) {
         return null;
     }
 
-    // If significant, format and return the insight object.
-    const primaryUnit = metricUnitMap[primaryMetricLabel];
-    const otherUnit = metricUnitMap[strongestCorrelationOverall.withMetric];
-    const isPrimaryTime = isTimeMetric(primaryUnit);
-    const isOtherTime = isTimeMetric(otherUnit);
+    // --- NEW LOGIC TO CORRECTLY IDENTIFY HABIT AND OUTCOME ---
+    const otherMetricLabel = strongestCorrelationOverall.withMetric;
+    let habitLabel, outcomeLabel;
 
-    const primaryDisplay = isPrimaryTime ? (strongestCorrelationOverall.coefficient >= 0 ? 'later' : 'earlier') : (strongestCorrelationOverall.coefficient >= 0 ? 'higher' : 'lower');
-    const otherDisplay = isOtherTime ? 'later' : 'higher';
+    if (primaryMetricType === 'habit') {
+        habitLabel = primaryMetric.label;
+        outcomeLabel = otherMetricLabel;
+    } else { // 'outcome' or 'unknown'
+        habitLabel = otherMetricLabel;
+        outcomeLabel = primaryMetric.label;
+    }
+
+    const habitUnit = metricUnitMap[habitLabel];
+    const outcomeUnit = metricUnitMap[outcomeLabel];
+    const isHabitTime = isTimeMetric(habitUnit);
+    const isOutcomeTime = isTimeMetric(outcomeUnit);
+
+    const habitDisplay = isHabitTime ? 'was later' : 'was higher';
+    const outcomeDisplay = isOutcomeTime
+        ? (strongestCorrelationOverall.coefficient >= 0 ? 'was later' : 'was earlier')
+        : (strongestCorrelationOverall.coefficient >= 0 ? 'was higher' : 'was lower');
 
     const strength = Math.abs(strongestCorrelationOverall.coefficient) >= 0.45 ? "strong" : "moderate";
     const direction = strongestCorrelationOverall.coefficient > 0 ? "positive" : "negative";
 
     return {
         type: 'Most Striking Correlation',
-        text: `Looking back at your experiment from **${strongestCorrelationOverall.chapterDate}**, the most striking pattern was a 🟨 ${strength} ${direction} correlation: when '${strongestCorrelationOverall.withMetric}' was ${otherDisplay}, your '${primaryMetricLabel}' tended to be ${primaryDisplay}.`
+        text: `Looking back at your experiment from **${strongestCorrelationOverall.chapterDate}**, the most striking pattern was a 🟨 ${strength} ${direction} correlation: when **'${habitLabel}'** ${habitDisplay}, your **'${outcomeLabel}'** tended to be ${outcomeDisplay}.`
     };
 }
 
