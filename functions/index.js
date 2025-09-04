@@ -946,6 +946,14 @@ exports.getLeaderboard = onCall(async (request) => {
  * @returns {{value: number | null, error: string | null}} An object with the parsed numeric value or an error message.
  */
 function parseYesNoOrNumber(valueStr, metricSetting, metricName) {
+
+    const trimmedValue = String(valueStr).trim().toLowerCase();
+
+    const skipKeywords = ['n/a', '-', 'na', 'skip'];
+    if (skipKeywords.includes(trimmedValue)) {
+        return { value: null, error: null }; // Return null to indicate a skipped value
+    }
+
     if (valueStr === null || String(valueStr).trim() === '') {
         return { value: null, error: `Value for ${metricName} (${metricSetting.label}) is required.` };
     }
@@ -3908,10 +3916,11 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
         let chaptersToAnalyze = [];
         if (numExperimentsToAnalyze === 'all_time') {
-            chaptersToAnalyze = relevantStatsDocs.reverse();
+            chaptersToAnalyze = relevantStatsDocs.reverse(); // Reverse the whole list to be oldest to newest
         } else {
             const num = parseInt(numExperimentsToAnalyze, 10);
-            chaptersToAnalyze = relevantStatsDocs.reverse().slice(-num);
+            // First, slice the most recent 'num' experiments, then reverse that smaller list.
+            chaptersToAnalyze = relevantStatsDocs.slice(0, num).reverse();
         }
         
         if (chaptersToAnalyze.length === 0) {
@@ -4037,6 +4046,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         // --- END NEW LOGIC ---
         let finalReport = {
             primaryMetricLabel: primaryMetric.label,
+            primaryMetricType: primaryMetricType,
             ahaMoment: ahaMoment,
             hiddenGrowth: "Could not generate a summary from your notes for this period.",
             holisticInsight: "AI analysis of combined correlations could not be generated.",
@@ -4044,7 +4054,8 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             analyzedChapters: extractedChapters,
             trend: trend,
             metricUnitMap: metricUnitMap
-        };
+        
+ };
 
         if (genAI) {
             try {

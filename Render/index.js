@@ -1684,7 +1684,7 @@ async function sendNextTimeLogPrompt(interaction, userId) {
         .setStyle(ButtonStyle.Success);
 
     await interaction.editReply({
-        content: "---\n---\n\nClick below to log your remaining metrics and notes.",
+        content: "Click below to log your remaining metrics and notes.",
         embeds: [],
         components: [new ActionRowBuilder().addComponents(finalButton)]
     });
@@ -2220,6 +2220,36 @@ async function _sendHistoricalReportAsDMs(interaction, part, directReport = null
                 await interaction.user.send({ embeds: [ahaEmbed], components: [new ActionRowBuilder().addComponents(moreStatsButton)] });
                 await interaction.editReply({ content: `✅ Analysis complete! I've sent the first insight to your DMs.`, components: [], embeds: [] });
             } else if (part === 'full_report') {
+
+            // --- DM #1: The Aha! Moment & Hidden Growth ---
+            let initialDmDescription = "An insight could not be generated for this period.";
+            if (report.ahaMoment && typeof report.ahaMoment.text === 'string' && report.ahaMoment.text.trim() !== "") {
+                initialDmDescription = report.ahaMoment.text;
+            }
+
+            const initialDmEmbed = new EmbedBuilder()
+                .setColor('#FEE75C') // Yellow for insights
+                .setTitle(`💡 Your Big Insight for '${primaryLabel}'`)
+                .setDescription(initialDmDescription.substring(0, 4096));
+
+            if (report.hiddenGrowth) {
+                let formattedGrowthText = "";
+                if (typeof report.hiddenGrowth.quote === 'string' && typeof report.hiddenGrowth.paragraph === 'string') {
+                    const quote = report.hiddenGrowth.quote.trim();
+                    const paragraph = report.hiddenGrowth.paragraph.trim();
+                    if (quote && paragraph) {
+                        formattedGrowthText = `> ${quote}\n\n${paragraph}`;
+                    }
+                } else if (typeof report.hiddenGrowth === 'string' && report.hiddenGrowth.trim() !== "") {
+                    formattedGrowthText = report.hiddenGrowth;
+                }
+
+                if (formattedGrowthText) {
+                    initialDmEmbed.addFields({ name: "A Deeper Look (From Your Notes)", value: formattedGrowthText.substring(0, 1024) });
+                }
+            }
+            // Send the first DM with the core insights
+            await interaction.user.send({ embeds: [initialDmEmbed] });
             
             // --- DM #2: The Trend ---
             if(report.trend) {
@@ -2776,7 +2806,7 @@ async function presentHistoricalMatchConfirmation(interaction, userId) {
 
     const embed = new EmbedBuilder()
         .setColor('#5865F2')
-        .setTitle(`Historical Match ${matchIndex + 1} of ${matches.length}`)
+        .setTitle(`Same Metric, Different Name? (${matchIndex + 1} of ${matches.length})`)
         .setDescription(`I found a potential match from your history: **"${currentMatch.label}"** (unit: *${currentMatch.unit}*).\n\nIs this the same metric by another name?`);
 
     const includeButton = new ButtonBuilder()
@@ -9001,29 +9031,48 @@ else if (interaction.customId === 'historical_metric_select') {
               });
 
         } catch (error) {
-            const errorTime = performance.now();
-            console.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error);
-            
-             // START: ADD THIS NEW LOGIC BLOCK
+    const errorTime = performance.now();
+    console.error(`[dailyLogModal_firebase] MAIN CATCH BLOCK ERROR for User ${interaction.user.tag} at ${errorTime.toFixed(2)}ms:`, error);
+    
+            // START: MODIFIED LOGIC
             const currentSetupData = userExperimentSetupData.get(interaction.user.id) || {};
-            const payloadFromModal = { // Re-capture the data from the modal fields
-                notes: interaction.fields.getTextInputValue('log_notes')?.trim(),
-                outputValue: interaction.fields.getTextInputValue('log_output_value')?.trim(),
+            
+            // Helper function to safely get a field's value
+            const getSafeValue = (customId) => {
+                try {
+                    return interaction.fields.getTextInputValue(customId)?.trim();
+                } catch (e) {
+                    // This error is expected if the field is not in the modal
+                    if (e.code === 'ModalSubmitInteractionFieldNotFound') {
+                        return null; // Return null if the field doesn't exist
+                    }
+                    // Re-throw other unexpected errors
+                    throw e;
+                }
+            };
+
+            const payloadFromModal = { 
+                notes: getSafeValue('log_notes'),
+                outputValue: getSafeValue('log_output_value'),
                 inputValues: [
-                    interaction.fields.getTextInputValue('log_input1_value')?.trim(),
-                    interaction.fields.getTextInputValue('log_input2_value')?.trim(),
-                    interaction.fields.getTextInputValue('log_input3_value')?.trim()
+                    getSafeValue('log_input1_value'),
+                    getSafeValue('log_input2_value'),
+                    getSafeValue('log_input3_value')
                 ]
             };
             currentSetupData.tempLogData = payloadFromModal;
             userExperimentSetupData.set(interaction.user.id, currentSetupData);
             console.log(`[dailyLogModal_firebase] Saved temporary log data for ${interaction.user.tag} due to submission error.`);
-            // END: ADD THIS NEW LOGIC BLOCK
+            // END: MODIFIED LOGIC
             
-            const userErrorMessage = `❌ An unexpected error occurred: ${error.message || 'Please try again.'}`;
+            const userErrorMessage = `❌ An error occurred: ${error.message || 'Please try again.'}`;
             if (interaction.deferred || interaction.replied) {
-                try { await interaction.editReply({ content: userErrorMessage, components: [] }); }
-                catch (e) { console.error('[dailyLogModal_firebase] Failed to send error via editReply:', e); }
+                try { 
+                    await interaction.editReply({ content: userErrorMessage, components: [] });
+                }
+                catch (e) { 
+                    console.error('[dailyLogModal_firebase] Failed to send error via editReply:', e);
+                }
             }
         }
         const modalProcessEndTime = performance.now();
