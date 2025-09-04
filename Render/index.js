@@ -2849,18 +2849,18 @@ async function promptForExperimentRange(interaction, userId) {
 
     // This is the final, corrected list of options.
     const experimentRangeOptions = [
-        { label: 'Last 2 Experiments', value: '2' },
-        { label: 'Last 3 Experiments', value: '3' },
-        { label: 'Last 4 Experiments', value: '4' },
-        { label: 'Last 6 Experiments', value: '6' },
-        { label: 'Last 10 Experiments', value: '10' },
-        { label: 'Last 15 Experiments', value: '15' },
+        { label: 'Last 2 Weeks', value: '2' },
+        { label: 'Last 3 Weeks', value: '3' },
+        { label: 'Last 4 Weeks', value: '4' },
+        { label: 'Last 6 Weeks', value: '6' },
+        { label: 'Last 10 Weeks', value: '10' },
+        { label: 'Last 15 Weeks', value: '15' },
         { label: 'All Time', value: 'all_time' }
     ];
 
     const rangeSelect = new StringSelectMenuBuilder()
         .setCustomId('historical_experiment_range_select')
-        .setPlaceholder('Select how many recent experiments to analyze...')
+        .setPlaceholder('Select how many weeks to analyze...')
         .addOptions(experimentRangeOptions.map(opt => new StringSelectMenuOptionBuilder().setLabel(opt.label).setValue(opt.value)));
     
     const runButton = new ButtonBuilder()
@@ -8884,7 +8884,7 @@ else if (interaction.customId === 'historical_metric_select') {
 
             // Find the text label of the selected option to update the placeholder
             const selectedOption = interaction.message.components[0].components[0].options.find(opt => opt.value === selectedValue);
-            const newPlaceholder = selectedOption ? `✅ ${selectedOption.label}` : 'Select how many experiments...';
+            const newPlaceholder = selectedOption ? `✅ ${selectedOption.label}` : 'Select how many weeks...';
 
             // Rebuild the components with the "Run Analysis" button enabled
             const updatedComponents = interaction.message.components.map(row => {
