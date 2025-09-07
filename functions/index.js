@@ -504,68 +504,58 @@ function parseAndValidatePriority(priorityStr, fieldName, isOptional = false) {
     const trimmedStr = (priorityStr && typeof priorityStr === 'string') ? priorityStr.trim() : "";
 
     if (!trimmedStr) {
-      if (isOptional) {
-        return { isEmpty: true }; // Valid empty state for optional fields
-      } else {
-        throw new HttpsError('invalid-argument', `Setting for ${fieldName} cannot be empty.`);
-      }
+        if (isOptional) {
+            return { isEmpty: true };
+        } else {
+            throw new HttpsError('invalid-argument', `Setting for ${fieldName} cannot be empty.`);
+        }
     }
 
     const priorityPattern = /^(.*?)\s*,\s*(.*?)\s*,\s*(.+)$/;
     const match = trimmedStr.match(priorityPattern);
     if (!match) {
-      throw new HttpsError(
-        'invalid-argument',
-        `${fieldName} ("${trimmedStr}") must be in "Goal #, Unit, Label" format. Use a comma as separator (e.g., "15.5, minutes, meditation" or "yes, yes/no, Take Vitamins").`
-      );
+        throw new HttpsError('invalid-argument', `${fieldName} ("${trimmedStr}") must be in "Goal #, Unit, Label" format.`);
     }
 
     const goalStr = match[1].trim();
     const unit = match[2].trim();
     const label = match[3].trim();
+
     if (!goalStr || !unit || !label) {
-      throw new HttpsError(
-        'invalid-argument',
-        `${fieldName} ("${trimmedStr}") must be in "Goal #, Unit, Label" format. Use a comma as separator (e.g., "15.5, minutes, meditation" or "yes, yes/no, Take Vitamins").`
-      );
+        throw new HttpsError('invalid-argument', `${fieldName} ("${trimmedStr}") is missing a Goal, Unit, or Label.`);
     }
 
-    //-- START OF MODIFIED SECTION --//
-
     let goal;
+    const lowerUnit = unit.toLowerCase();
     const lowerGoalStr = goalStr.toLowerCase();
 
-    if (lowerGoalStr === 'yes') {
+    // --- NEW TIME-HANDLING LOGIC ---
+    if (lowerUnit === 'am' || lowerUnit === 'pm') {
+        let hour = parseInt(goalStr, 10);
+        if (isNaN(hour) || hour < 1 || hour > 12) {
+            throw new HttpsError('invalid-argument', `For a unit of '${unit}', the Goal for ${fieldName} must be a number from 1 to 12.`);
+        }
+        if (lowerUnit === 'pm' && hour < 12) hour += 12;
+        if (lowerUnit === 'am' && hour === 12) hour = 0; // Midnight case
+        goal = hour;
+    } else if (lowerGoalStr === 'yes') {
         goal = 1;
     } else if (lowerGoalStr === 'no') {
         goal = 0;
     } else {
-        // Original logic for purely numeric goals
         goal = parseFloat(goalStr);
         if (isNaN(goal)) {
-          throw new HttpsError(
-            'invalid-argument',
-            `Goal for ${fieldName} ("${goalStr}") must be a number, 'yes', or 'no'.`
-          );
+            throw new HttpsError('invalid-argument', `Goal for ${fieldName} ("${goalStr}") must be a valid number, 'yes', or 'no'.`);
         }
         if (goal < 0) {
-          throw new HttpsError(
-            'invalid-argument',
-            `Goal for ${fieldName} ("${goalStr}") must be 0 or a positive number.`
-          );
+            throw new HttpsError('invalid-argument', `Goal for ${fieldName} must be 0 or a positive number.`);
         }
     }
-    
-    //-- END OF MODIFIED SECTION --//
+    // --- END NEW LOGIC ---
 
-
-    // Validate Label Length
     const MAX_LABEL_LENGTH = 45;
     if (label.length > MAX_LABEL_LENGTH) {
-      throw new HttpsError(
-        'invalid-argument',
-        `Label for ${fieldName} ("${label}") must be ${MAX_LABEL_LENGTH} characters or less.`
-      );
+        throw new HttpsError('invalid-argument', `Label for ${fieldName} ("${label}") must be ${MAX_LABEL_LENGTH} characters or less.`);
     }
 
     return { goal: goal, unit: unit, label: label };

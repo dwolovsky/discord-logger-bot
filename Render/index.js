@@ -9610,17 +9610,34 @@ else if (interaction.customId === 'historical_metric_select') {
             validationErrors.push(`The combined Label and Unit are too long for the daily log form (max 45 chars).`);
         }
 
-        let outcomeGoal = null;
-        if (!outcomeGoalStr) {
-            validationErrors.push("The 'Target Number' is required.");
-        } else {
-            const goalResult = parseGoalValue(outcomeGoalStr);
-            if (goalResult.error) {
-                validationErrors.push(goalResult.error);
+        // --- START: NEW FLEXIBLE VALIDATION LOGIC ---
+            let outcomeGoal = null;
+            let validationError = null;
+            const lowerUnit = outcomeUnit?.toLowerCase() || "";
+
+            if (lowerUnit === 'am' || lowerUnit === 'pm') {
+                let hour = parseInt(outcomeGoalStr, 10);
+                if (isNaN(hour) || hour < 1 || hour > 12) {
+                    validationError = `For a unit of '${outcomeUnit}', the Target must be a number from 1 to 12.`;
+                } else {
+                    if (lowerUnit === 'pm' && hour < 12) hour += 12;
+                    if (lowerUnit === 'am' && hour === 12) hour = 0; // Midnight case
+                    outcomeGoal = hour;
+                }
             } else {
-                outcomeGoal = goalResult.goal;
+                const goalResult = parseGoalValue(outcomeGoalStr);
+                if (goalResult.error) {
+                    validationError = goalResult.error;
+                } else {
+                    outcomeGoal = goalResult.goal;
+                }
             }
-        }
+            
+            if (validationError) {
+                await interaction.editReply({ content: `❌ Validation Error: ${validationError}`, components: [], embeds: [] });
+                return;
+            }
+            // --- END: NEW FLEXIBLE VALIDATION LOGIC ---
 
         /*
         if (validationErrors.length > 0) {
@@ -9744,59 +9761,48 @@ else if (interaction.customId === 'historical_metric_select') {
                 } catch (e) {
                     console.warn(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Could not delete previous message ${setupData.messageToCleanUp}: ${e.message}`);
                 }
-                delete setupData.messageToCleanUp; // Clean up the ID
+                delete setupData.messageToCleanUp;
             }
 
             const habit1Label = interaction.fields.getTextInputValue('habit1_label_manual')?.trim();
             const habit1Unit = interaction.fields.getTextInputValue('habit1_unit_manual')?.trim();
             const habit1GoalStr = interaction.fields.getTextInputValue('habit1_goal_manual')?.trim();
             
-            const validationErrors = [];
-            if (!habit1Label) {
-                validationErrors.push("The 'Habit 1' label is required.");
-            } else if (habit1Label.length > 30) {
-                validationErrors.push(`The Habit 1 Label is too long (max 30 characters).`);
-            }
-
-            if (!habit1Unit) {
-                validationErrors.push("The 'Unit / Scale' for Habit 1 is required.");
-            } else if (habit1Unit.length > 15) {
-                validationErrors.push(`The Unit/Scale for Habit 1 is too long (max 15 characters).`);
-            }
-            
-            if (habit1Label && habit1Unit && (habit1Label.length + habit1Unit.length + 1) > 45) {
-                validationErrors.push(`The combined Label and Unit for Habit 1 are too long for the daily log form (max 45 chars).`);
-            }
-            
+            // --- START: FLEXIBLE VALIDATION LOGIC ---
             let habit1Goal = null;
-            if (!habit1GoalStr) {
-                validationErrors.push("The 'Target Number' for Habit 1 is required.");
+            let validationError = null;
+            const lowerUnit = habit1Unit?.toLowerCase() || "";
+
+            if (lowerUnit === 'am' || lowerUnit === 'pm') {
+                let hour = parseInt(habit1GoalStr, 10);
+                if (isNaN(hour) || hour < 1 || hour > 12) {
+                    validationError = `For a unit of '${habit1Unit}', the Target must be a number from 1 to 12.`;
+                } else {
+                    if (lowerUnit === 'pm' && hour < 12) hour += 12;
+                    if (lowerUnit === 'am' && hour === 12) hour = 0; // Midnight case
+                    habit1Goal = hour;
+                }
             } else {
                 const goalResult = parseGoalValue(habit1GoalStr);
                 if (goalResult.error) {
-                    validationErrors.push(goalResult.error);
+                    validationError = goalResult.error;
                 } else {
                     habit1Goal = goalResult.goal;
                 }
             }
-
-            /*
-            if (validationErrors.length > 0) {
-                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 1.`);
-                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 1').setDescription('Please correct the following issues and try defining Habit 1 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
-                await interaction.editReply({ embeds: [errorEmbed], components: [] });
+            
+            if (validationError) {
+                await interaction.editReply({ content: `❌ Validation Error for Habit 1: ${validationError}`, components: [], embeds: [] });
                 return;
             }
-            */
+            // --- END: FLEXIBLE VALIDATION LOGIC ---
 
             if (!setupData.inputs) setupData.inputs = [];
             setupData.inputs[0] = { label: habit1Label, unit: habit1Unit, goal: habit1Goal };
-            // This is the correct next step after confirming the first habit in the AI flow
             setupData.dmFlowState = 'awaiting_add_another_habit_choice';
             userExperimentSetupData.set(userId, setupData);
             
             console.log(`[${interaction.customId} HABIT1_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 1. State is now '${setupData.dmFlowState}'.`);
-            // --- Ask to add another habit or finish ---
             const confirmationEmbed = new EmbedBuilder()
                 .setColor('#57F287')
                 .setTitle('✅ Habit 1 Confirmed!')
@@ -9856,72 +9862,59 @@ else if (interaction.customId === 'historical_metric_select') {
                 await interaction.editReply({ content: '❌ Error: Your session data is out of sync. Please restart the setup.', components: [], embeds: [] });
                 return;
             }
-
-            // Clean up the previous message that had the button to open this modal
+            
             if (setupData.messageToCleanUp) {
                 try {
                     const previousMessage = await interaction.channel.messages.fetch(setupData.messageToCleanUp);
                     await previousMessage.delete();
-                    console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Deleted previous ephemeral message ${setupData.messageToCleanUp}.`);
                 } catch (e) {
                     console.warn(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Could not delete previous message ${setupData.messageToCleanUp}: ${e.message}`);
                 }
-                delete setupData.messageToCleanUp; // Clean up the ID
+                delete setupData.messageToCleanUp;
             }
 
             const habit2Label = interaction.fields.getTextInputValue('habit2_label_manual')?.trim();
             const habit2Unit = interaction.fields.getTextInputValue('habit2_unit_manual')?.trim();
             const habit2GoalStr = interaction.fields.getTextInputValue('habit2_goal_manual')?.trim();
             
-            const validationErrors = [];
-            if (!habit2Label) {
-                validationErrors.push("The 'Habit 2' label is required.");
-            } else if (habit2Label.length > 30) {
-                validationErrors.push(`The Habit 2 Label is too long (max 30 characters).`);
-            }
-
-            if (!habit2Unit) {
-                validationErrors.push("The 'Unit / Scale' for Habit 2 is required.");
-            } else if (habit2Unit.length > 15) {
-                validationErrors.push(`The Unit/Scale for Habit 2 is too long (max 15 characters).`);
-            }
-
-            if (habit2Label && habit2Unit && (habit2Label.length + habit2Unit.length + 1) > 45) {
-                validationErrors.push(`The combined Label and Unit for Habit 2 are too long for the daily log form (max 45 chars).`);
-            }
-            
+            // --- START: FLEXIBLE VALIDATION LOGIC ---
             let habit2Goal = null;
-            if (!habit2GoalStr) {
-                validationErrors.push("The 'Target Number' for Habit 2 is required.");
+            let validationError = null;
+            const lowerUnit = habit2Unit?.toLowerCase() || "";
+
+            if (lowerUnit === 'am' || lowerUnit === 'pm') {
+                let hour = parseInt(habit2GoalStr, 10);
+                if (isNaN(hour) || hour < 1 || hour > 12) {
+                    validationError = `For a unit of '${habit2Unit}', the Target must be a number from 1 to 12.`;
+                } else {
+                    if (lowerUnit === 'pm' && hour < 12) hour += 12;
+                    if (lowerUnit === 'am' && hour === 12) hour = 0; // Midnight case
+                    habit2Goal = hour;
+                }
             } else {
                 const goalResult = parseGoalValue(habit2GoalStr);
                 if (goalResult.error) {
-                    validationErrors.push(goalResult.error);
+                    validationError = goalResult.error;
                 } else {
                     habit2Goal = goalResult.goal;
                 }
             }
-
-            /*
-            if (validationErrors.length > 0) {
-                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 2.`);
-                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 2').setDescription('Please correct the following issues and try defining Habit 2 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
-                await interaction.editReply({ embeds: [errorEmbed], components: [] });
+            
+            if (validationError) {
+                await interaction.editReply({ content: `❌ Validation Error for Habit 2: ${validationError}`, components: [], embeds: [] });
                 return;
             }
-            */
+            // --- END: FLEXIBLE VALIDATION LOGIC ---
 
             setupData.inputs[1] = { label: habit2Label, unit: habit2Unit, goal: habit2Goal };
             setupData.dmFlowState = 'awaiting_add_another_habit_choice';
             userExperimentSetupData.set(userId, setupData);
             console.log(`[${interaction.customId} HABIT2_CONFIRMED ${interactionId}] User ${userTag} confirmed Habit 2. State is now '${setupData.dmFlowState}'.`);
-            
             const confirmationEmbed = new EmbedBuilder()
                 .setColor('#57F287')
                 .setTitle('✅ Habit 2 Confirmed!')
                 .setDescription(`**${formatGoalForDisplay(habit2Goal, habit2Unit)} ${habit2Unit}, ${habit2Label}**`)
                 .addFields({ name: '\u200B', value: "Would you like to add a 3rd (and final) habit to test?" });
-
             const addHabitButtons = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
@@ -9933,7 +9926,6 @@ else if (interaction.customId === 'historical_metric_select') {
                         .setLabel('⏭️ No More Habits')
                         .setStyle(ButtonStyle.Primary)
                 );
-
             await interaction.editReply({
                 embeds: [confirmationEmbed],
                 components: [addHabitButtons]
@@ -9943,11 +9935,7 @@ else if (interaction.customId === 'historical_metric_select') {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing Habit 2 modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
             if (interaction.deferred || interaction.replied) {
-                try {
-                    await interaction.editReply({ content: '❌ An unexpected error occurred while saving Habit 2. Please try again.', components: [], embeds: [] });
-                } catch (editError) {
-                    console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback editReply failed:`, editError);
-                }
+                await interaction.editReply({ content: '❌ An unexpected error occurred while saving Habit 2. Please try again.', components: [], embeds: [] });
             }
         }
     }
@@ -9977,74 +9965,61 @@ else if (interaction.customId === 'historical_metric_select') {
                 await interaction.editReply({ content: '❌ Error: Your session data is out of sync. Please restart the setup.', components: [], embeds: [] });
                 return;
             }
-
-            // Clean up the previous message that had the button to open this modal
+            
             if (setupData.messageToCleanUp) {
                 try {
                     const previousMessage = await interaction.channel.messages.fetch(setupData.messageToCleanUp);
                     await previousMessage.delete();
-                    console.log(`[${interaction.customId} CLEANUP_SUCCESS ${interactionId}] Deleted previous ephemeral message ${setupData.messageToCleanUp}.`);
                 } catch (e) {
                     console.warn(`[${interaction.customId} CLEANUP_FAIL ${interactionId}] Could not delete previous message ${setupData.messageToCleanUp}: ${e.message}`);
                 }
-                delete setupData.messageToCleanUp; // Clean up the ID
+                delete setupData.messageToCleanUp;
             }
 
             const habit3Label = interaction.fields.getTextInputValue('habit3_label_manual')?.trim();
             const habit3Unit = interaction.fields.getTextInputValue('habit3_unit_manual')?.trim();
             const habit3GoalStr = interaction.fields.getTextInputValue('habit3_goal_manual')?.trim();
             
-            const validationErrors = [];
-            if (!habit3Label) {
-                validationErrors.push("The 'Habit 3' label is required.");
-            } else if (habit3Label.length > 30) {
-                validationErrors.push(`The Habit 3 Label is too long (max 30 characters).`);
-            }
-
-            if (!habit3Unit) {
-                validationErrors.push("The 'Unit / Scale' for Habit 3 is required.");
-            } else if (habit3Unit.length > 15) {
-                validationErrors.push(`The Unit/Scale for Habit 3 is too long (max 15 characters).`);
-            }
-
-            if (habit3Label && habit3Unit && (habit3Label.length + habit3Unit.length + 1) > 45) {
-                validationErrors.push(`The combined Label and Unit for Habit 3 are too long for the daily log form (max 45 chars).`);
-            }
-            
+            // --- START: FLEXIBLE VALIDATION LOGIC ---
             let habit3Goal = null;
-            if (!habit3GoalStr) {
-                validationErrors.push("The 'Target Number' for Habit 3 is required.");
+            let validationError = null;
+            const lowerUnit = habit3Unit?.toLowerCase() || "";
+
+            if (lowerUnit === 'am' || lowerUnit === 'pm') {
+                let hour = parseInt(habit3GoalStr, 10);
+                if (isNaN(hour) || hour < 1 || hour > 12) {
+                    validationError = `For a unit of '${habit3Unit}', the Target must be a number from 1 to 12.`;
+                } else {
+                    if (lowerUnit === 'pm' && hour < 12) hour += 12;
+                    if (lowerUnit === 'am' && hour === 12) hour = 0; // Midnight case
+                    habit3Goal = hour;
+                }
             } else {
                 const goalResult = parseGoalValue(habit3GoalStr);
                 if (goalResult.error) {
-                    validationErrors.push(goalResult.error);
+                    validationError = goalResult.error;
                 } else {
                     habit3Goal = goalResult.goal;
                 }
             }
-
-            /*
-            if (validationErrors.length > 0) {
-                console.warn(`[${interaction.customId} VALIDATION_FAIL ${interactionId}] User ${userTag} had validation errors for Habit 3.`);
-                const errorEmbed = new EmbedBuilder().setColor('#ED4245').setTitle('Validation Error for Habit 3').setDescription('Please correct the following issues and try defining Habit 3 again:\n\n' + validationErrors.map(e => `• ${e}`).join('\n'));
-                await interaction.editReply({ embeds: [errorEmbed], components: [] });
+            
+            if (validationError) {
+                await interaction.editReply({ content: `❌ Validation Error for Habit 3: ${validationError}`, components: [], embeds: [] });
                 return;
             }
-            */
+            // --- END: FLEXIBLE VALIDATION LOGIC ---
 
             setupData.inputs[2] = { label: habit3Label, unit: habit3Unit, goal: habit3Goal };
             userExperimentSetupData.set(userId, setupData);
             console.log(`[${interaction.customId} IN_MEMORY_UPDATE ${interactionId}] Updated in-memory state with Habit 3 data.`);
             
             const setupStateRef = dbAdmin.collection('users').doc(userId).collection('inProgressFlows').doc('experimentSetup');
-
-            await setupStateRef.set({ // Change update() to set()
-            inputs: setupData.inputs,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            }, { merge: true }); // Add { merge: true }
+            await setupStateRef.set({
+                inputs: setupData.inputs,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
 
             console.log(`[${interaction.customId} FIRESTORE_UPDATE_SUCCESS ${interactionId}] Successfully saved Habit 3 data to Firestore.`);
-            
             const finishSetupButton = new ButtonBuilder().setCustomId('manual_finish_setup_btn').setLabel('✅ Looks Good, Finish Setup').setStyle(ButtonStyle.Success);
             const backToStartButton = new ButtonBuilder().setCustomId('manual_back_to_outcome_modal_btn').setLabel('⬅️ Edit Outcome').setStyle(ButtonStyle.Secondary);
             const row = new ActionRowBuilder().addComponents(backToStartButton, finishSetupButton);
@@ -10054,11 +10029,11 @@ else if (interaction.customId === 'historical_metric_select') {
                 .setDescription(
                     `Here is the full summary of your experiment. If it looks correct, click "Finish Setup" to proceed. You can also go back to edit the Outcome.\n\n` +
                     `**Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
-                    `**Outcome:**\n**${setupData.outcome.goal}** **${setupData.outcome.unit}** for **${setupData.outcome.label}**\n\n` +
+                    `**Outcome:**\n**${formatGoalForDisplay(setupData.outcome.goal, setupData.outcome.unit)}** for **${setupData.outcome.label}** (${setupData.outcome.unit})\n\n` +
                     `**Habits:**\n` +
-                    `1. **${setupData.inputs[0].goal}** **${setupData.inputs[0].unit}** for **${setupData.inputs[0].label}**.\n` +
-                    `2. **${setupData.inputs[1].goal}** **${setupData.inputs[1].unit}** for **${setupData.inputs[1].label}**.\n` +
-                    `3. **${setupData.inputs[2].goal}** **${setupData.inputs[2].unit}** for **${setupData.inputs[2].label}**.`
+                    `1. **${formatGoalForDisplay(setupData.inputs[0].goal, setupData.inputs[0].unit)}** for **${setupData.inputs[0].label}** (${setupData.inputs[0].unit}).\n` +
+                    `2. **${formatGoalForDisplay(setupData.inputs[1].goal, setupData.inputs[1].unit)}** for **${setupData.inputs[1].label}** (${setupData.inputs[1].unit}).\n` +
+                    `3. **${formatGoalForDisplay(setupData.inputs[2].goal, setupData.inputs[2].unit)}** for **${setupData.inputs[2].label}** (${setupData.inputs[2].unit}).`
                 );
             await interaction.editReply({
                 embeds: [fullSummaryEmbed],
@@ -10069,11 +10044,7 @@ else if (interaction.customId === 'historical_metric_select') {
             const errorTime = performance.now();
             console.error(`[${interaction.customId} CATCH_BLOCK_ERROR ${interactionId}] Error processing Habit 3 modal for ${userTag} at ${errorTime.toFixed(2)}ms:`, error);
             if (interaction.deferred || interaction.replied) {
-                try {
-                    await interaction.editReply({ content: '❌ An unexpected error occurred while saving Habit 3. Please try again.', components: [], embeds: [] });
-                } catch (editError) {
-                    console.error(`[${interaction.customId} FALLBACK_ERROR ${interactionId}] Fallback editReply failed:`, editError);
-                }
+                await interaction.editReply({ content: '❌ An unexpected error occurred while saving Habit 3. Please try again.', components: [], embeds: [] });
             }
         }
     }
