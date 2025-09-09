@@ -9047,14 +9047,13 @@ else if (interaction.customId === 'historical_metric_select') {
                 sendAppreciationDM(interaction, null, settings, payload);
             }
             
-              // First, process any pending streak/milestone messages
-              await processPendingActions(interaction, interaction.user.id);
-
-              // Then, show the AI response and prompt
+              // First, show the AI response and prompt
               await interaction.editReply({ 
                   content: finalEphemeralMessage, 
                   components: components 
               });
+              // Then, process any pending streak/milestone messages
+              await processPendingActions(interaction, interaction.user.id);
 
         } catch (error) {
     const errorTime = performance.now();
