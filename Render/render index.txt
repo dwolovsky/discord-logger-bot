@@ -563,40 +563,56 @@ function buildCoreOverviewPage(embed, statsReportData) {
         return;
     }
 
-    let description = "A summary of your basic outcome and habit stats.\n\n";
+    // Helper to format each metric with full details
+    const formatMetricForOverview = (metricData) => {
+        if (!metricData || metricData.status === 'skipped_insufficient_data') {
+            return `*Not enough data (had ${metricData.dataPoints || 0}, needed 5).*`;
+        } else if (isYesNoMetric(metricData.unit)) {
+            const percentage = (metricData.average * 100).toFixed(0);
+            const completions = Math.round(metricData.average * metricData.dataPoints);
+            return `**Completion:** ${percentage}% (*${completions} of ${metricData.dataPoints} days*)`;
+        } else {
+            const unit = metricData.unit ? ` ${metricData.unit}` : '';
+            const formatValue = (val) => (isTimeMetric(metricData.unit) ? formatDecimalAsTime(val) : val);
+            const variation = metricData.variationPercentage;
+            let consistencyLabel = "Not enough data";
+            if (variation !== undefined && variation !== null) {
+                if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
+                else if (variation <= 35) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
+                else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
+            }
+            return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}\n` +
+                   `**Consistency:** ${consistencyLabel}\n` +
+                   `**Data Points:** ${String(metricData.dataPoints)}`;
+        }
+    };
+
+    embed.setDescription("A summary of your outcome and habit stats.");
+
     // Outcome Snapshot
     const outcomeLabel = settings.output?.label;
     if (outcomeLabel && statsReportData.calculatedMetricStats?.[outcomeLabel]) {
         const data = statsReportData.calculatedMetricStats[outcomeLabel];
-        description += `**Outcome:** ${outcomeLabel}\n`;
-        if (data.status === 'skipped_insufficient_data') {
-            description += `*Not enough data to calculate stats.*\n\n`;
-        } else if (isYesNoMetric(data.unit)) {
-            const percentage = (data.average * 100).toFixed(0);
-            description += `**Completion =** ${percentage}% of days this week\n\n`;
-        } else {
-            description += `**Average =** ${data.average} ${data.unit || ''} (Goal: ${settings.output.goal})\n\n`;
-        }
+        embed.addFields({
+            name: `📊 Outcome: ${outcomeLabel}`,
+            value: formatMetricForOverview(data),
+            inline: false
+        });
     }
 
     // Habits Snapshot
-    description += "**Habits:**\n";
     for (let i = 1; i <= 3; i++) {
         const inputSetting = settings[`input${i}`];
         const inputLabel = inputSetting?.label;
         if (inputLabel && statsReportData.calculatedMetricStats?.[inputLabel]) {
             const data = statsReportData.calculatedMetricStats[inputLabel];
-            if (data.status === 'skipped_insufficient_data') {
-                description += `*${inputLabel}: Not enough data.*\n`;
-            } else if (isYesNoMetric(data.unit)) {
-                const percentage = (data.average * 100).toFixed(0);
-                description += `*${inputLabel}*: Completion = ${percentage}% (Goal: ${inputSetting.goal})\n`;
-            } else {
-                description += `*${inputLabel}*: Avg = ${data.average} ${data.unit || ''} (Goal: ${inputSetting.goal})\n`;
-            }
+            embed.addFields({
+                name: `🛠️ Habit ${i}: ${inputLabel}`,
+                value: formatMetricForOverview(data),
+                inline: false
+            });
         }
     }
-    embed.setDescription(description);
 }
 
 /**
@@ -678,11 +694,19 @@ function buildCoreStatsSummary(embed, statsReportData) {
             return `*Not enough data (had ${metricData.dataPoints || 0}, needed 5).*`;
         } else if (isYesNoMetric(metricData.unit)) {
             const percentage = (metricData.average * 100).toFixed(0);
-            return `**Completion:** ${percentage}%`;
+            const completions = Math.round(metricData.average * metricData.dataPoints);
+            return `**Completion:** ${percentage}% (*${completions} of ${metricData.dataPoints} days*)`;
         } else {
             const unit = metricData.unit ? ` ${metricData.unit}` : '';
             const formatValue = (val) => (isTimeMetric(metricData.unit) ? formatDecimalAsTime(val) : val);
-            return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit} | **Data Points:** ${metricData.dataPoints}`;
+            const variation = metricData.variationPercentage;
+            let consistencyLabel = "Not enough data";
+            if (variation !== undefined && variation !== null) {
+                if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
+                else if (variation <= 40) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
+                else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
+            }
+            return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}\n**Consistency:** ${consistencyLabel} | **Data Points:** ${metricData.dataPoints}`;
         }
     };
 
