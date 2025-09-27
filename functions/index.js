@@ -3684,36 +3684,35 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     });
     const uniqueHistoricalMetrics = Array.from(historicalMetrics).map(item => JSON.parse(item));
     logger.log(`[getHistoricalMetricMatches] Found ${uniqueHistoricalMetrics.length} unique historical metrics for user ${userId}.`);
-    
     if (uniqueHistoricalMetrics.length === 0) {
         return { success: true, matches: [] };
     }
 
-    // 3. Construct a simpler, more robust AI Prompt
+    // 3. Construct the AI Prompt
     const prompt = `
-      You are a data analyst. A user selected the metric "${selectedMetric.label}" (unit: ${selectedMetric.unit}).
+      You are a data analyst.
+      A user selected the metric "${selectedMetric.label}" (unit: ${selectedMetric.unit}).
       From the following JSON list of historical metrics, find up to 5 that track the same underlying concept, even with different wording.
       Examples: "Jogging" is similar to "Running". "Clarity of Mind" is similar to "Focus Level".
-
       HISTORICAL METRICS LIST:
       ${JSON.stringify(uniqueHistoricalMetrics, null, 2)}
 
-      Return ONLY a valid JSON array of the matching metric objects from the list. If no good matches are found, return an empty array [].
+      Return ONLY a valid JSON array of the matching metric objects from the list.
+      If no good matches are found, return an empty array [].
     `;
-
-    // 4. Call OpenAI
-        const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
-
+    
+    // 4. Call OpenAI via your helper function
+    const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
     let aiMatches = [];
     if (responseText) {
         try {
             aiMatches = JSON.parse(responseText);
         } catch (parseError) {
-            logger.error(`[getHistoricalMetricMatches] Failed to parse Gemini JSON response for user ${userId}. Raw: "${responseText}". Error:`, parseError);
+            logger.error(`[getHistoricalMetricMatches] Failed to parse OpenAI JSON response for user ${userId}. Raw: "${responseText}". Error:`, parseError);
             throw new HttpsError('internal', `AI returned an invalid format: ${parseError.message}`);
         }
     } else {
-        logger.warn(`[getHistoricalMetricMatches] Gemini returned an empty response string for user ${userId}. Treating as "no matches found".`);
+        logger.warn(`[getHistoricalMetricMatches] OpenAI returned an empty response string for user ${userId}. Treating as "no matches found".`);
     }
 
     // 5. Filter out any exact matches the AI might have included
@@ -3723,10 +3722,8 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     const fuzzyMatches = Array.isArray(aiMatches) ? aiMatches.filter(match => 
         normalizeLabel(match.label) !== normalizedSelectedLabel || normalizeUnit(match.unit) !== normalizedSelectedUnit
     ) : [];
-
     logger.log(`[getHistoricalMetricMatches] AI found ${fuzzyMatches.length} potential fuzzy matches for "${selectedMetric.label}".`);
     return { success: true, matches: fuzzyMatches };
-
   } catch (error) {
     logger.error(`[getHistoricalMetricMatches] Critical error for user ${userId}:`, error);
     if (error instanceof HttpsError) {

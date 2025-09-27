@@ -1,4 +1,11 @@
+// Forcing new deployment on Render
 require('dotenv').config();
+const { OpenAI } = require('openai');
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, 
+});
+
 const {
   Client, GatewayIntentBits, ModalBuilder, TextInputBuilder, TextInputStyle,
   ActionRowBuilder, Events, REST, Routes, SlashCommandBuilder,
@@ -61,6 +68,17 @@ if (serviceAccount) {
     console.warn("Firebase Admin SDK NOT Initialized - Firestore listener for stats notifications and other admin features will NOT work.");
 }
 
+// Helper function to centralize AI calls
+async function getOpenAIChatCompletion(prompt, model = 'gpt-4o') {
+    const completion = await openai.chat.completions.create({
+        messages: [{ role: 'user', content: prompt }],
+        model: model,
+        temperature: 0.8,
+        max_tokens: 1500,
+        top_p: 0.95,
+    });
+    return completion.choices[0].message.content.trim();
+}
 
 // This map will temporarily hold the full stats report for a user navigating the paginated view.
 // Key: userId, Value: { statsReportData, experimentId }

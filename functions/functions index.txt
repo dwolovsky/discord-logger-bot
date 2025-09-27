@@ -2,6 +2,8 @@
 //      STREAK CONFIGURATION
 // ==================================
 
+require('dotenv').config();
+
 const STREAK_CONFIG = {
     // Using field names from Firestore 'users' collection directly
     FIELDS: {
@@ -158,26 +160,25 @@ const { logger, config } = require("firebase-functions"); // MODIFIED: Added 'co
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
 
-// ============== AI INSIGHTS SETUP (VERTEX AI) ==================
-const { VertexAI } = require('@google-cloud/vertexai');
+// ============== AI INSIGHTS SETUP (OPENAI - CHATGPT) ==================
+const { OpenAI } = require('openai');
 
-// Initialize Vertex AI using the project's secure, built-in credentials
-const vertex_ai = new VertexAI({
-    project: process.env.GCLOUD_PROJECT,
-    location: 'us-central1'
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, // The key you just added to Render
 });
 
-// This replaces the old GEMINI_CONFIG constant by centralizing it here
-const generativeModel = vertex_ai.getGenerativeModel({
-    // Using the most stable model to ensure it works after the API changes
-    model: 'gemini-pro',
-    generationConfig: {
-        maxOutputTokens: 1500, // Your original value
-        temperature: 0.8,      // Your original value
-        topP: 0.95,            // Your original value
-        topK: 50               // Your original value
-    },
-});
+// A helper function to centralize AI calls
+async function getOpenAIChatCompletion(prompt, model = 'gpt-4o') {
+    const completion = await openai.chat.completions.create({
+        messages: [{ role: 'user', content: prompt }],
+        model: model,
+        temperature: 0.8, // Corresponds to Gemini's temperature [cite: 43]
+        max_tokens: 1500, // Corresponds to Gemini's maxOutputTokens
+        top_p: 0.95,      // Corresponds to Gemini's topP [cite: 43]
+    });
+    return completion.choices[0].message.content.trim();
+}
+// ============== END OF AI INSIGHTS SETUP ==================
 
 const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
 
@@ -3287,12 +3288,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         Generate ONLY the reminder message text. Be conversational and avoid greetings.`;
 
                         // C. Call AI
-                        const request = {
-                            contents: [{ role: "user", parts: [{ text: aiPromptText }] }],
-                        };
-                        const result = await generativeModel.generateContent(request);
-                        const response = result.response;
-                        const candidateText = response.text().trim();
+                        const candidateText = await getOpenAIChatCompletion(aiPromptText, 'gpt-4o');
 
                         if (candidateText && candidateText.length > 0 && candidateText.length <= 200) {
                             finalReminderMessage = candidateText;
@@ -3437,25 +3433,8 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
       experimentNotesSummary,
     };
 
-    // 4b. Populate and Call Gemini
-    const request = {
-        contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
-    };
-    const result = await generativeModel.generateContent(request);
-    const response = result.response;
-
-    // First, check if the response was blocked by safety filters.
-    if (response.promptFeedback && response.promptFeedback.blockReason) {
-        const blockReason = response.promptFeedback.blockReason;
-        logger.error(`[fetchOrGenerateAiInsights] AI response was blocked for experiment ${targetExperimentId}. Reason: ${blockReason}`);
-        throw new HttpsError('resource-exhausted', `The AI couldn't generate insights due to content restrictions (${blockReason}).`);
-    }
-
-    const responseText = response.text().trim();
-
-    if (!responseText) {
-        throw new HttpsError('internal', 'AI generated an empty response.');
-    }
+    // 4b. Populate and Call OpenAI
+    const responseText = await getOpenAIChatCompletion(finalPrompt, 'gpt-4o');
 
     let newEnhancedInsights;
     try {
@@ -3595,13 +3574,8 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
         logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
-        // 4. Call Gemini
-        const request = {
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-        };
-        const result = await generativeModel.generateContent(request);
-        const response = result.response;
-        const responseText = response.text().trim();
+        // 4. Call OpenAI
+        const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
 
         if (!responseText) {
             logger.warn(`[_analyzeNotesLogic] Gemini returned an empty response for log ${logId}.`);
@@ -3727,13 +3701,8 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
       Return ONLY a valid JSON array of the matching metric objects from the list. If no good matches are found, return an empty array [].
     `;
 
-    // 4. Call Gemini
-    const request = {
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-    };
-    const result = await generativeModel.generateContent(request);
-    const response = result.response;
-    const responseText = response.text().trim();
+    // 4. Call OpenAI
+        const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
 
     let aiMatches = [];
     if (responseText) {
@@ -4075,23 +4044,8 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 }
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
-                    const request = {
-                        contents: [{ role: "user", parts: [{ text: narrativePrompt }] }],
-                    };
-                    const result = await generativeModel.generateContent(request);
-                    const response = result.response;
-                    if (!response) {
-                    logger.error(`[runHistoricalAnalysis V6] AI generation resulted in a null response object for user ${userId}. This could be due to safety filters or an API issue.`);
-                    throw new HttpsError('internal', 'The AI service returned a null response, possibly due to content safety filters.');
-                }
+                    const responseText = await getOpenAIChatCompletion(narrativePrompt, 'gpt-4o');
 
-                    if (response.promptFeedback && response.promptFeedback.blockReason) {
-                        const blockReason = response.promptFeedback.blockReason;
-                        logger.error(`[runHistoricalAnalysis V6] AI response was blocked for user ${userId}. Reason: ${blockReason}`);
-                        throw new HttpsError('resource-exhausted', `The AI couldn't generate a narrative due to content restrictions (${blockReason}).`);
-                    }
-
-                    const responseText = response.text().trim();
                     let aiNarrative = null;
 
                     if (responseText) {
@@ -4344,12 +4298,8 @@ const promptText = `
   logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-        const request = {
-        contents: [{ role: "user", parts: [{ text: promptText }] }],
-    };
-    const result = await generativeModel.generateContent(request);
-    const response = result.response;
-    const responseText = response.text().trim();
+    // 4. Call OpenAI
+    const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
 
     if (!responseText) {
         logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
@@ -4468,12 +4418,8 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   logger.info(`[generateInputLabelSuggestions] Sending advanced, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    const request = {
-    contents: [{ role: "user", parts: [{ text: promptText }] }],
-    };
-    const result = await generativeModel.generateContent(request);
-    const response = result.response;
-    const responseText = response.text().trim();
+    // 4. Call OpenAI
+        const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
 
     if (!responseText) {
         logger.warn(`[generateInputLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
