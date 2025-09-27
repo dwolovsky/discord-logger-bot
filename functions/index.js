@@ -158,33 +158,26 @@ const { logger, config } = require("firebase-functions"); // MODIFIED: Added 'co
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
 
-// ============== AI INSIGHTS SETUP ==================
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+// ============== AI INSIGHTS SETUP (VERTEX AI) ==================
+const { VertexAI } = require('@google-cloud/vertexai');
 
-let genAI;
-// Check for the environment variable that your deployment logs show is being set.
-const apiKeyToUse = process.env.GEMINI_API_KEY; // Using GEMINI_API_KEY with underscore
+// Initialize Vertex AI using the project's secure, built-in credentials
+const vertex_ai = new VertexAI({
+    project: process.env.GCLOUD_PROJECT,
+    location: 'us-central1'
+});
 
-if (apiKeyToUse) {
-  try {
-    genAI = new GoogleGenerativeAI(apiKeyToUse);
-    logger.info(`GoogleGenerativeAI initialized successfully using API key from process.env.GEMINI_API_KEY.`);
-  } catch (error) {
-    logger.error("Failed to initialize GoogleGenerativeAI with process.env.GEMINI_API_KEY:", error);
-    genAI = null; 
-  }
-} else {
-  // This warning means the specific variable process.env.GEMINI_API_KEY was not found.
-  logger.warn("process.env.GEMINI_API_KEY was NOT found. AI-dependent features will be unavailable.");
-  genAI = null; 
-}
-
-const GEMINI_CONFIG = {
-  temperature: 0.8,
-  topK: 50,
-  topP: 0.95,
-  maxOutputTokens: 1500,
-};
+// This replaces the old GEMINI_CONFIG constant by centralizing it here
+const generativeModel = vertex_ai.getGenerativeModel({
+    // Using the most stable model to ensure it works after the API changes
+    model: 'gemini-pro',
+    generationConfig: {
+        maxOutputTokens: 1500, // Your original value
+        temperature: 0.8,      // Your original value
+        topP: 0.95,            // Your original value
+        topK: 50               // Your original value
+    },
+});
 
 const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
 
@@ -3294,12 +3287,11 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         Generate ONLY the reminder message text. Be conversational and avoid greetings.`;
 
                         // C. Call AI
-                        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-                        const generationResult = await model.generateContent({
+                        const request = {
                             contents: [{ role: "user", parts: [{ text: aiPromptText }] }],
-                            generationConfig: { ...GEMINI_CONFIG, temperature: 0.95 },
-                        });
-                        const response = await generationResult.response;
+                        };
+                        const result = await generativeModel.generateContent(request);
+                        const response = result.response;
                         const candidateText = response.text().trim();
 
                         if (candidateText && candidateText.length > 0 && candidateText.length <= 200) {
@@ -3450,13 +3442,11 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     };
 
     // 4b. Populate and Call Gemini
-    const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-    const generationResult = await model.generateContent({
-        contents: [{ role: "user", parts: [{text: finalPrompt}] }],
-        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
-    });
-    const response = await generationResult.response;
+    const request = {
+        contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
+    };
+    const result = await generativeModel.generateContent(request);
+    const response = result.response;
 
     // First, check if the response was blocked by safety filters.
     if (response.promptFeedback && response.promptFeedback.blockReason) {
@@ -3616,16 +3606,11 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
         // 4. Call Gemini
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-        const generationResult = await model.generateContent({
+        const request = {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: {
-                ...GEMINI_CONFIG,
-                temperature: 0.7,
-                responseMimeType: "application/json",
-            },
-        });
-        const response = await generationResult.response;
+        };
+        const result = await generativeModel.generateContent(request);
+        const response = result.response;
         const responseText = response.text().trim();
 
         if (!responseText) {
@@ -3757,12 +3742,11 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     `;
 
     // 4. Call Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" }); // Use Flash for this simpler task
-    const generationResult = await model.generateContent({
+    const request = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
-    });
-    const response = await generationResult.response;
+    };
+    const result = await generativeModel.generateContent(request);
+    const response = result.response;
     const responseText = response.text().trim();
 
     let aiMatches = [];
@@ -4110,12 +4094,11 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 }
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
-                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-                    const result = await model.generateContent({
-                        contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
-                        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
-                    });
-                    const response = await result.response;
+                    const request = {
+                        contents: [{ role: "user", parts: [{ text: narrativePrompt }] }],
+                    };
+                    const result = await generativeModel.generateContent(request);
+                    const response = result.response;
                     if (!response) {
                     logger.error(`[runHistoricalAnalysis V6] AI generation resulted in a null response object for user ${userId}. This could be due to safety filters or an API issue.`);
                     throw new HttpsError('internal', 'The AI service returned a null response, possibly due to content safety filters.');
@@ -4386,16 +4369,11 @@ const promptText = `
   logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-    const generationResult = await model.generateContent({
-        contents: [{ role: "user", parts: [{text: promptText}] }],
-        generationConfig: {
-            ...GEMINI_CONFIG,
-            temperature: 0.85, 
-            responseMimeType: "application/json",
-        },
-    });
-    const response = await generationResult.response;
+        const request = {
+        contents: [{ role: "user", parts: [{ text: promptText }] }],
+    };
+    const result = await generativeModel.generateContent(request);
+    const response = result.response;
     const responseText = response.text().trim();
 
     if (!responseText) {
@@ -4521,16 +4499,11 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   logger.info(`[generateInputLabelSuggestions] Sending advanced, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-    const generationResult = await model.generateContent({
-        contents: [{ role: "user", parts: [{text: promptText}] }],
-        generationConfig: {
-            ...GEMINI_CONFIG,
-            temperature: 0.9, // Increased temperature for more creative, chain-of-behavior ideas
-            responseMimeType: "application/json",
-        },
-    });
-    const response = await generationResult.response;
+    const request = {
+    contents: [{ role: "user", parts: [{ text: promptText }] }],
+    };
+    const result = await generativeModel.generateContent(request);
+    const response = result.response;
     const responseText = response.text().trim();
 
     if (!responseText) {
