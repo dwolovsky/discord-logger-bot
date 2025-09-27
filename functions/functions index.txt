@@ -158,33 +158,26 @@ const { logger, config } = require("firebase-functions"); // MODIFIED: Added 'co
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
 
-// ============== AI INSIGHTS SETUP ==================
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+// ============== AI INSIGHTS SETUP (VERTEX AI) ==================
+const { VertexAI } = require('@google-cloud/vertexai');
 
-let genAI;
-// Check for the environment variable that your deployment logs show is being set.
-const apiKeyToUse = process.env.GEMINI_API_KEY; // Using GEMINI_API_KEY with underscore
+// Initialize Vertex AI using the project's secure, built-in credentials
+const vertex_ai = new VertexAI({
+    project: process.env.GCLOUD_PROJECT,
+    location: 'us-central1'
+});
 
-if (apiKeyToUse) {
-  try {
-    genAI = new GoogleGenerativeAI(apiKeyToUse);
-    logger.info(`GoogleGenerativeAI initialized successfully using API key from process.env.GEMINI_API_KEY.`);
-  } catch (error) {
-    logger.error("Failed to initialize GoogleGenerativeAI with process.env.GEMINI_API_KEY:", error);
-    genAI = null; 
-  }
-} else {
-  // This warning means the specific variable process.env.GEMINI_API_KEY was not found.
-  logger.warn("process.env.GEMINI_API_KEY was NOT found. AI-dependent features will be unavailable.");
-  genAI = null; 
-}
-
-const GEMINI_CONFIG = {
-  temperature: 0.8,
-  topK: 50,
-  topP: 0.95,
-  maxOutputTokens: 1500,
-};
+// This replaces the old GEMINI_CONFIG constant by centralizing it here
+const generativeModel = vertex_ai.getGenerativeModel({
+    // Using the most stable model to ensure it works after the API changes
+    model: 'gemini-pro',
+    generationConfig: {
+        maxOutputTokens: 1500, // Your original value
+        temperature: 0.8,      // Your original value
+        topP: 0.95,            // Your original value
+        topK: 50               // Your original value
+    },
+});
 
 const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
 
@@ -3229,7 +3222,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 let usedAiMessage = false;
 
                 // --- AI Personalization Logic ---
-                if (genAI && schedule.scheduledExperimentSettings) {
+                if (schedule.scheduledExperimentSettings) {
                     try {
                         // A. Fetch last 3 logs for context
                 const logsQuery = db.collection('logs').where('userId', '==', userId).orderBy('timestamp', 'desc').limit(3);
@@ -3294,12 +3287,11 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         Generate ONLY the reminder message text. Be conversational and avoid greetings.`;
 
                         // C. Call AI
-                        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-                        const generationResult = await model.generateContent({
+                        const request = {
                             contents: [{ role: "user", parts: [{ text: aiPromptText }] }],
-                            generationConfig: { ...GEMINI_CONFIG, temperature: 0.95 },
-                        });
-                        const response = await generationResult.response;
+                        };
+                        const result = await generativeModel.generateContent(request);
+                        const response = result.response;
                         const candidateText = response.text().trim();
 
                         if (candidateText && candidateText.length > 0 && candidateText.length <= 200) {
@@ -3397,10 +3389,6 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     // 4. If Generating New Insights (Cache Miss)
     logger.log(`[fetchOrGenerateAiInsights] Generating new enhanced insights for experiment ${targetExperimentId}.`);
-    if (!genAI) {
-        logger.error("[fetchOrGenerateAiInsights] Gemini AI client (genAI) is not initialized.");
-        throw new HttpsError('internal', "The AI insights service is currently unavailable.");
-    }
 
     // 4a. Data Preparation for Prompt
     const activeSettings = targetExperimentStatsData.activeExperimentSettings;
@@ -3450,13 +3438,11 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     };
 
     // 4b. Populate and Call Gemini
-    const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-    const generationResult = await model.generateContent({
-        contents: [{ role: "user", parts: [{text: finalPrompt}] }],
-        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
-    });
-    const response = await generationResult.response;
+    const request = {
+        contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
+    };
+    const result = await generativeModel.generateContent(request);
+    const response = result.response;
 
     // First, check if the response was blocked by safety filters.
     if (response.promptFeedback && response.promptFeedback.blockReason) {
@@ -3564,12 +3550,6 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             return null; // Return null if there are no notes to analyze
         }
 
-        // 2. Check if Gemini AI client is available
-        if (!genAI) {
-            logger.error("[_analyzeNotesLogic] Gemini AI client not initialized. Cannot analyze notes.");
-            throw new Error("AI service is unavailable. (AI client not ready)");
-        }
-
         // 3. Construct the AI prompt
         const inputLabels = inputs.filter(i => i.label).map(i => `'${i.label}'`).join(', ') || 'no specific habits';
 
@@ -3616,16 +3596,11 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
         // 4. Call Gemini
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-        const generationResult = await model.generateContent({
+        const request = {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: {
-                ...GEMINI_CONFIG,
-                temperature: 0.7,
-                responseMimeType: "application/json",
-            },
-        });
-        const response = await generationResult.response;
+        };
+        const result = await generativeModel.generateContent(request);
+        const response = result.response;
         const responseText = response.text().trim();
 
         if (!responseText) {
@@ -3714,10 +3689,6 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
   if (!selectedMetric || !selectedMetric.label || !selectedMetric.unit) {
     throw new HttpsError('invalid-argument', 'A valid "selectedMetric" object with label and unit must be provided.');
   }
-  if (!genAI) {
-    logger.error("[getHistoricalMetricMatches] Gemini AI client (genAI) is not initialized.");
-    throw new HttpsError('internal', "The AI analysis service is currently unavailable.");
-  }
 
   const db = admin.firestore();
   try {
@@ -3757,12 +3728,11 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     `;
 
     // 4. Call Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Use Flash for this simpler task
-    const generationResult = await model.generateContent({
+    const request = {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
-    });
-    const response = await generationResult.response;
+    };
+    const result = await generativeModel.generateContent(request);
+    const response = result.response;
     const responseText = response.text().trim();
 
     let aiMatches = [];
@@ -3850,11 +3820,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
     if (!Array.isArray(includedMetrics) || !primaryMetric || !numExperimentsToAnalyze) {
         throw new HttpsError('invalid-argument', 'Missing required parameters for analysis.');
-    }
-    if (!genAI) {
-        logger.error("[runHistoricalAnalysis V6] Gemini AI client is not initialized.");
-        // Throw an error here to prevent sending a report without AI insights
-        throw new HttpsError('internal', "The AI analysis service is currently unavailable.");
     }
 
     const db = admin.firestore();
@@ -4110,12 +4075,11 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 }
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
-                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-                    const result = await model.generateContent({
-                        contents: [{ role: "user", parts: [{text: narrativePrompt}] }],
-                        generationConfig: { ...GEMINI_CONFIG, responseMimeType: "application/json" },
-                    });
-                    const response = await result.response;
+                    const request = {
+                        contents: [{ role: "user", parts: [{ text: narrativePrompt }] }],
+                    };
+                    const result = await generativeModel.generateContent(request);
+                    const response = result.response;
                     if (!response) {
                     logger.error(`[runHistoricalAnalysis V6] AI generation resulted in a null response object for user ${userId}. This could be due to safety filters or an API issue.`);
                     throw new HttpsError('internal', 'The AI service returned a null response, possibly due to content safety filters.');
@@ -4326,12 +4290,6 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
   
   const isThoroughPath = userBlockers && userPositiveHabits && userVision;
   logger.info(`[generateOutcomeLabelSuggestions] Processing request for user: ${userId}. Path: ${isThoroughPath ? 'Thorough' : 'Express'}.`);
-  
-  // 2. Check if Gemini Client is available
-  if (!genAI) {
-    logger.error("[generateOutcomeLabelSuggestions] Gemini AI client (genAI) is not initialized. Cannot generate suggestions.");
-    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
-  }
 
   // 3. Conditionally construct the USER CONTEXT block for the prompt
   let userContextPromptBlock = `- Deeper Wish: "${userWish}"`;
@@ -4386,16 +4344,11 @@ const promptText = `
   logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const generationResult = await model.generateContent({
-        contents: [{ role: "user", parts: [{text: promptText}] }],
-        generationConfig: {
-            ...GEMINI_CONFIG,
-            temperature: 0.85, 
-            responseMimeType: "application/json",
-        },
-    });
-    const response = await generationResult.response;
+        const request = {
+        contents: [{ role: "user", parts: [{ text: promptText }] }],
+    };
+    const result = await generativeModel.generateContent(request);
+    const response = result.response;
     const responseText = response.text().trim();
 
     if (!responseText) {
@@ -4459,12 +4412,6 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   }
   
   logger.info(`[generateInputLabelSuggestions] Processing for user: ${userId}, wish: "${userWish}", outcome: "${outcomeMetric.label}", defined inputs: ${definedInputs.length}`);
-  
-  // 2. Check if Gemini Client is available
-  if (!genAI) {
-    logger.error("[generateInputLabelSuggestions] Gemini AI client (genAI) is not initialized.");
-    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
-  }
 
   // 3. Construct context for the prompt
   let definedInputsContext = "The user has not defined any habits yet.";
@@ -4521,16 +4468,11 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   logger.info(`[generateInputLabelSuggestions] Sending advanced, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const generationResult = await model.generateContent({
-        contents: [{ role: "user", parts: [{text: promptText}] }],
-        generationConfig: {
-            ...GEMINI_CONFIG,
-            temperature: 0.9, // Increased temperature for more creative, chain-of-behavior ideas
-            responseMimeType: "application/json",
-        },
-    });
-    const response = await generationResult.response;
+    const request = {
+    contents: [{ role: "user", parts: [{ text: promptText }] }],
+    };
+    const result = await generativeModel.generateContent(request);
+    const response = result.response;
     const responseText = response.text().trim();
 
     if (!responseText) {
