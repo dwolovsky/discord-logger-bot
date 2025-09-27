@@ -3222,7 +3222,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                 let usedAiMessage = false;
 
                 // --- AI Personalization Logic ---
-                if (genAI && schedule.scheduledExperimentSettings) {
+                if (schedule.scheduledExperimentSettings) {
                     try {
                         // A. Fetch last 3 logs for context
                 const logsQuery = db.collection('logs').where('userId', '==', userId).orderBy('timestamp', 'desc').limit(3);
@@ -3389,10 +3389,6 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     // 4. If Generating New Insights (Cache Miss)
     logger.log(`[fetchOrGenerateAiInsights] Generating new enhanced insights for experiment ${targetExperimentId}.`);
-    if (!genAI) {
-        logger.error("[fetchOrGenerateAiInsights] Gemini AI client (genAI) is not initialized.");
-        throw new HttpsError('internal', "The AI insights service is currently unavailable.");
-    }
 
     // 4a. Data Preparation for Prompt
     const activeSettings = targetExperimentStatsData.activeExperimentSettings;
@@ -3554,12 +3550,6 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             return null; // Return null if there are no notes to analyze
         }
 
-        // 2. Check if Gemini AI client is available
-        if (!genAI) {
-            logger.error("[_analyzeNotesLogic] Gemini AI client not initialized. Cannot analyze notes.");
-            throw new Error("AI service is unavailable. (AI client not ready)");
-        }
-
         // 3. Construct the AI prompt
         const inputLabels = inputs.filter(i => i.label).map(i => `'${i.label}'`).join(', ') || 'no specific habits';
 
@@ -3699,10 +3689,6 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
   if (!selectedMetric || !selectedMetric.label || !selectedMetric.unit) {
     throw new HttpsError('invalid-argument', 'A valid "selectedMetric" object with label and unit must be provided.');
   }
-  if (!genAI) {
-    logger.error("[getHistoricalMetricMatches] Gemini AI client (genAI) is not initialized.");
-    throw new HttpsError('internal', "The AI analysis service is currently unavailable.");
-  }
 
   const db = admin.firestore();
   try {
@@ -3834,11 +3820,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
 
     if (!Array.isArray(includedMetrics) || !primaryMetric || !numExperimentsToAnalyze) {
         throw new HttpsError('invalid-argument', 'Missing required parameters for analysis.');
-    }
-    if (!genAI) {
-        logger.error("[runHistoricalAnalysis V6] Gemini AI client is not initialized.");
-        // Throw an error here to prevent sending a report without AI insights
-        throw new HttpsError('internal', "The AI analysis service is currently unavailable.");
     }
 
     const db = admin.firestore();
@@ -4309,12 +4290,6 @@ exports.generateOutcomeLabelSuggestions = onCall(async (request) => {
   
   const isThoroughPath = userBlockers && userPositiveHabits && userVision;
   logger.info(`[generateOutcomeLabelSuggestions] Processing request for user: ${userId}. Path: ${isThoroughPath ? 'Thorough' : 'Express'}.`);
-  
-  // 2. Check if Gemini Client is available
-  if (!genAI) {
-    logger.error("[generateOutcomeLabelSuggestions] Gemini AI client (genAI) is not initialized. Cannot generate suggestions.");
-    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
-  }
 
   // 3. Conditionally construct the USER CONTEXT block for the prompt
   let userContextPromptBlock = `- Deeper Wish: "${userWish}"`;
@@ -4437,12 +4412,6 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   }
   
   logger.info(`[generateInputLabelSuggestions] Processing for user: ${userId}, wish: "${userWish}", outcome: "${outcomeMetric.label}", defined inputs: ${definedInputs.length}`);
-  
-  // 2. Check if Gemini Client is available
-  if (!genAI) {
-    logger.error("[generateInputLabelSuggestions] Gemini AI client (genAI) is not initialized.");
-    throw new HttpsError('internal', "The AI suggestion service is currently unavailable. (AI client not ready)");
-  }
 
   // 3. Construct context for the prompt
   let definedInputsContext = "The user has not defined any habits yet.";
