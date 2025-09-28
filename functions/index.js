@@ -3976,7 +3976,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         
  };
 
-        if (genAI) {
             try {
                 const allNotes = [];
                 const noteRanges = extractedChapters.map(c => ({start: new Date(c.startDate), end: new Date(c.endDate)}));
@@ -4076,7 +4075,6 @@ Your entire response must be ONLY the raw JSON object, starting with { and endin
                 logger.error(`[runHistoricalAnalysis V6] AI narrative generation failed for user ${userId}:`, aiError);
                 throw new HttpsError('internal', `The AI failed to generate a narrative for your report. Details: ${aiError.message}`);
             }
-        }
         
         return { success: true, report: finalReport };
     } catch (error) {
