@@ -3438,24 +3438,13 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     let newEnhancedInsights;
     try {
-        // First, try to parse the response directly
-        newEnhancedInsights = JSON.parse(responseText);
-    } catch (initialParseError) {
-        // If the first parse fails, attempt to clean the string and retry
-        logger.warn(`[fetchOrGenerateAiInsights] Initial JSON parse failed for log ${targetExperimentId}. Attempting to clean the response. Error:`, initialParseError.message);
-        
-        // This removes common markdown code fences that the AI sometimes adds
-        const cleanText = responseText.replace(/```json\n/g, '').replace(/\n```/g, '').trim();
-
-        try {
-            newEnhancedInsights = JSON.parse(cleanText);
-            logger.log(`[fetchOrGenerateAiInsights] Successfully parsed AI response after cleaning markdown fences.`);
-        } catch (finalParseError) {
-            // If it still fails after cleaning, then we log the error and throw
-            logger.error(`[fetchOrGenerateAiInsights] Failed to parse Gemini JSON response even after cleaning for log ${targetExperimentId}. Raw: "${responseText}". Error:`, finalParseError);
-            throw new HttpsError('internal', `AI returned an invalid format that could not be automatically corrected: ${finalParseError.message}`);
+    // Clean the raw response from the AI of any markdown code fences before parsing.
+    const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+    newEnhancedInsights = JSON.parse(cleanedText);
+        } catch (parseError) {
+            logger.error(`[fetchOrGenerateAiInsights] Failed to parse Gemini JSON response for log ${targetExperimentId}. Raw: "${responseText}". Error:`, parseError);
+            throw new HttpsError('internal', `AI returned an invalid format that could not be automatically corrected: ${parseError.message}`);
         }
-    }
 
     if (!newEnhancedInsights.strikingInsight || !newEnhancedInsights.experimentStory || !newEnhancedInsights.nextExperimentSuggestions) {
         throw new HttpsError('internal', 'AI response was missing one or more required fields.');
@@ -3584,7 +3573,10 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
         let aiResult;
         try {
-            aiResult = JSON.parse(responseText);
+            // Clean the raw response from the AI
+            const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+            // Parse the cleaned response
+            aiResult = JSON.parse(cleanedText);
         } catch (parseError) {
             logger.error(`[_analyzeNotesLogic] Failed to parse Gemini JSON response for log ${logId}. Raw: "${responseText}". Error:`, parseError);
             throw new Error(`AI returned an invalid format: ${parseError.message}`);
@@ -3706,7 +3698,11 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     let aiMatches = [];
     if (responseText) {
         try {
-            aiMatches = JSON.parse(responseText);
+        // ADD THIS LINE to remove the markdown formatting from the AI's response
+        const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+        
+        // CHANGE THIS LINE to parse the cleaned text
+        aiMatches = JSON.parse(cleanedText);
         } catch (parseError) {
             logger.error(`[getHistoricalMetricMatches] Failed to parse OpenAI JSON response for user ${userId}. Raw: "${responseText}". Error:`, parseError);
             throw new HttpsError('internal', `AI returned an invalid format: ${parseError.message}`);
@@ -4047,15 +4043,10 @@ Your entire response must be ONLY the raw JSON object, starting with { and endin
 
                     if (responseText) {
                         try {
-                            const startIndex = responseText.indexOf('{');
-                            const endIndex = responseText.lastIndexOf('}');
-                            if (startIndex !== -1 && endIndex > startIndex) {
-                                const jsonString = responseText.substring(startIndex, endIndex + 1);
-                                aiNarrative = JSON.parse(jsonString);
-                                logger.log(`[runHistoricalAnalysis V6] Successfully parsed AI response after cleaning and extracting the JSON object.`);
-                            } else {
-                                throw new Error("Could not find a valid JSON object structure in the AI's response.");
-                            }
+                            // Clean the raw response from the AI of any markdown code fences before parsing.
+                            const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+                            aiNarrative = JSON.parse(cleanedText);
+                            logger.log(`[runHistoricalAnalysis V6] Successfully parsed AI response after cleaning.`);
                         } catch (parseError) {
                             logger.error(`[runHistoricalAnalysis V6] Failed to parse Gemini JSON response even after cleaning. Raw: "${responseText}". Error:`, parseError);
                             throw new HttpsError('internal', `The AI failed to generate a valid report. Details: ${parseError.message}`);
@@ -4305,11 +4296,13 @@ const promptText = `
 
     let suggestions;
     try {
-        suggestions = JSON.parse(responseText);
-    } catch (parseError) {
-        logger.error(`[generateOutcomeLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}"`);
-        throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
-    }
+    // Clean the raw response from the AI of any markdown code fences before parsing.
+    const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+    suggestions = JSON.parse(cleanedText);
+        } catch (parseError) {
+            logger.error(`[generateOutcomeLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}"`);
+            throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
+        }
 
     if (!Array.isArray(suggestions) || suggestions.length === 0) { // Check for empty array too
         logger.error(`[generateOutcomeLabelSuggestions] Parsed response is not a non-empty array for user ${userId}. Parsed:`, suggestions);
@@ -4425,7 +4418,9 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
 
     let suggestions;
     try {
-        suggestions = JSON.parse(responseText);
+    // Clean the raw response from the AI of any markdown code fences before parsing.
+    const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+    suggestions = JSON.parse(cleanedText);
     } catch (parseError) {
         logger.error(`[generateInputLabelSuggestions] Failed to parse Gemini JSON response. Error: ${parseError.message}. Raw: "${responseText}"`);
         throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
