@@ -3942,8 +3942,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 });
             }
         });
-        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric, primaryMetricType, metricUnitMap);
-        const ahaMomentText = ahaMoment ? ahaMoment.text : "No single strong correlation was found in this period.";
         // --- NEW LOGIC TO DETERMINE METRIC TYPE ---
         let primaryMetricType = 'unknown';
         const latestChapterSettings = chaptersToAnalyze.length > 0 ? chaptersToAnalyze[chaptersToAnalyze.length - 1].activeExperimentSettings : null;
@@ -3961,6 +3959,10 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             }
         }
         // --- END NEW LOGIC ---
+        
+        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric, primaryMetricType, metricUnitMap);
+        const ahaMomentText = ahaMoment ? ahaMoment.text : "No single strong correlation was found in this period.";
+        
         let finalReport = {
             primaryMetricLabel: primaryMetric.label,
             primaryMetricType: primaryMetricType,
