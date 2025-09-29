@@ -3434,6 +3434,7 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     };
 
     // 4b. Populate and Call OpenAI
+    const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
     const responseText = await getOpenAIChatCompletion(finalPrompt, 'gpt-4o');
 
     let newEnhancedInsights;
