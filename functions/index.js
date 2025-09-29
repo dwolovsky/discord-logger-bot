@@ -168,11 +168,11 @@ const openai = new OpenAI({
 });
 
 // A helper function to centralize AI calls
-async function getOpenAIChatCompletion(prompt, model = 'gpt-4o') {
+async function getOpenAIChatCompletion(prompt, model = 'gpt-4o', temperature = 0.85) {
     const completion = await openai.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         model: model,
-        temperature: 0.8, // Corresponds to Gemini's temperature [cite: 43]
+        temperature: temperature, // Corresponds to Gemini's temperature [cite: 43]
         max_tokens: 1500, // Corresponds to Gemini's maxOutputTokens
         top_p: 0.95,      // Corresponds to Gemini's topP [cite: 43]
     });
@@ -3288,7 +3288,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         Generate ONLY the reminder message text. Be conversational and avoid greetings.`;
 
                         // C. Call AI
-                        const candidateText = await getOpenAIChatCompletion(aiPromptText, 'gpt-4o');
+                        const candidateText = await getOpenAIChatCompletion(aiPromptText, 'gpt-4o', 0.9);
 
                         if (candidateText && candidateText.length > 0 && candidateText.length <= 200) {
                             finalReminderMessage = candidateText;
