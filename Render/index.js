@@ -545,11 +545,18 @@ function formatLagTimeAsString(statsReportData) {
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} aiInsights - The AI-generated insights object.
  */
-function buildAhaMomentPage(embed, aiInsights) {
+function buildAhaMomentPage(embed, aiInsights, statsReportData) {
     embed.setTitle('💡 Your Experiment\'s Big Insight!')
          .setDescription(
              "Here's the most striking insight from your latest experiment.\nRemember, it's just more data.\n\nWisdom fuel for your future self!"
          );
+
+         // START NEW CODE BLOCK
+    const deeperWish = statsReportData?.activeExperimentSettings?.deeperProblem;
+    if (deeperWish) {
+        embed.addFields({ name: '❣️ Your Deeper Wish', value: deeperWish, inline: false });
+    }
+    // END NEW CODE BLOCK
 
     const insightData = aiInsights.strikingInsight;
     let fieldName = "Striking Insight";
@@ -902,7 +909,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     // Call the correct builder function based on the dynamic page type
     switch (currentPageConfig.type) {
         case 'aha':
-            buildAhaMomentPage(embed, aiEnhancedInsights);
+            buildAhaMomentPage(embed, aiEnhancedInsights, statsReportData);
             break;
         case 'story':
             buildExperimentStoryPage(embed, aiEnhancedInsights);
