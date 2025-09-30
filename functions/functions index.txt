@@ -168,11 +168,11 @@ const openai = new OpenAI({
 });
 
 // A helper function to centralize AI calls
-async function getOpenAIChatCompletion(prompt, model = 'gpt-4o') {
+async function getOpenAIChatCompletion(prompt, model = 'gpt-4o', temperature = 0.85) {
     const completion = await openai.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         model: model,
-        temperature: 0.8, // Corresponds to Gemini's temperature [cite: 43]
+        temperature: temperature, // Corresponds to Gemini's temperature [cite: 43]
         max_tokens: 1500, // Corresponds to Gemini's maxOutputTokens
         top_p: 0.95,      // Corresponds to Gemini's topP [cite: 43]
     });
@@ -3288,7 +3288,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         Generate ONLY the reminder message text. Be conversational and avoid greetings.`;
 
                         // C. Call AI
-                        const candidateText = await getOpenAIChatCompletion(aiPromptText, 'gpt-4o');
+                        const candidateText = await getOpenAIChatCompletion(aiPromptText, 'gpt-4o', 0.9);
 
                         if (candidateText && candidateText.length > 0 && candidateText.length <= 200) {
                             finalReminderMessage = candidateText;
@@ -3434,28 +3434,18 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     };
 
     // 4b. Populate and Call OpenAI
+    const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
     const responseText = await getOpenAIChatCompletion(finalPrompt, 'gpt-4o');
 
     let newEnhancedInsights;
     try {
-        // First, try to parse the response directly
-        newEnhancedInsights = JSON.parse(responseText);
-    } catch (initialParseError) {
-        // If the first parse fails, attempt to clean the string and retry
-        logger.warn(`[fetchOrGenerateAiInsights] Initial JSON parse failed for log ${targetExperimentId}. Attempting to clean the response. Error:`, initialParseError.message);
-        
-        // This removes common markdown code fences that the AI sometimes adds
-        const cleanText = responseText.replace(/```json\n/g, '').replace(/\n```/g, '').trim();
-
-        try {
-            newEnhancedInsights = JSON.parse(cleanText);
-            logger.log(`[fetchOrGenerateAiInsights] Successfully parsed AI response after cleaning markdown fences.`);
-        } catch (finalParseError) {
-            // If it still fails after cleaning, then we log the error and throw
-            logger.error(`[fetchOrGenerateAiInsights] Failed to parse Gemini JSON response even after cleaning for log ${targetExperimentId}. Raw: "${responseText}". Error:`, finalParseError);
-            throw new HttpsError('internal', `AI returned an invalid format that could not be automatically corrected: ${finalParseError.message}`);
+    // Clean the raw response from the AI of any markdown code fences before parsing.
+    const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+    newEnhancedInsights = JSON.parse(cleanedText);
+        } catch (parseError) {
+            logger.error(`[fetchOrGenerateAiInsights] Failed to parse Gemini JSON response for log ${targetExperimentId}. Raw: "${responseText}". Error:`, parseError);
+            throw new HttpsError('internal', `AI returned an invalid format that could not be automatically corrected: ${parseError.message}`);
         }
-    }
 
     if (!newEnhancedInsights.strikingInsight || !newEnhancedInsights.experimentStory || !newEnhancedInsights.nextExperimentSuggestions) {
         throw new HttpsError('internal', 'AI response was missing one or more required fields.');
@@ -3953,8 +3943,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                 });
             }
         });
-        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric, primaryMetricType, metricUnitMap);
-        const ahaMomentText = ahaMoment ? ahaMoment.text : "No single strong correlation was found in this period.";
         // --- NEW LOGIC TO DETERMINE METRIC TYPE ---
         let primaryMetricType = 'unknown';
         const latestChapterSettings = chaptersToAnalyze.length > 0 ? chaptersToAnalyze[chaptersToAnalyze.length - 1].activeExperimentSettings : null;
@@ -3972,6 +3960,10 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
             }
         }
         // --- END NEW LOGIC ---
+        
+        const ahaMoment = _determineAhaMoment(extractedChapters, primaryMetric, primaryMetricType, metricUnitMap);
+        const ahaMomentText = ahaMoment ? ahaMoment.text : "No single strong correlation was found in this period.";
+        
         let finalReport = {
             primaryMetricLabel: primaryMetric.label,
             primaryMetricType: primaryMetricType,
@@ -3985,7 +3977,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         
  };
 
-        if (genAI) {
             try {
                 const allNotes = [];
                 const noteRanges = extractedChapters.map(c => ({start: new Date(c.startDate), end: new Date(c.endDate)}));
@@ -4054,15 +4045,10 @@ Your entire response must be ONLY the raw JSON object, starting with { and endin
 
                     if (responseText) {
                         try {
-                            const startIndex = responseText.indexOf('{');
-                            const endIndex = responseText.lastIndexOf('}');
-                            if (startIndex !== -1 && endIndex > startIndex) {
-                                const jsonString = responseText.substring(startIndex, endIndex + 1);
-                                aiNarrative = JSON.parse(jsonString);
-                                logger.log(`[runHistoricalAnalysis V6] Successfully parsed AI response after cleaning and extracting the JSON object.`);
-                            } else {
-                                throw new Error("Could not find a valid JSON object structure in the AI's response.");
-                            }
+                            // Clean the raw response from the AI of any markdown code fences before parsing.
+                            const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+                            aiNarrative = JSON.parse(cleanedText);
+                            logger.log(`[runHistoricalAnalysis V6] Successfully parsed AI response after cleaning.`);
                         } catch (parseError) {
                             logger.error(`[runHistoricalAnalysis V6] Failed to parse Gemini JSON response even after cleaning. Raw: "${responseText}". Error:`, parseError);
                             throw new HttpsError('internal', `The AI failed to generate a valid report. Details: ${parseError.message}`);
@@ -4090,7 +4076,6 @@ Your entire response must be ONLY the raw JSON object, starting with { and endin
                 logger.error(`[runHistoricalAnalysis V6] AI narrative generation failed for user ${userId}:`, aiError);
                 throw new HttpsError('internal', `The AI failed to generate a narrative for your report. Details: ${aiError.message}`);
             }
-        }
         
         return { success: true, report: finalReport };
     } catch (error) {
@@ -4312,11 +4297,13 @@ const promptText = `
 
     let suggestions;
     try {
-        suggestions = JSON.parse(responseText);
-    } catch (parseError) {
-        logger.error(`[generateOutcomeLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}"`);
-        throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
-    }
+    // Clean the raw response from the AI of any markdown code fences before parsing.
+    const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+    suggestions = JSON.parse(cleanedText);
+        } catch (parseError) {
+            logger.error(`[generateOutcomeLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}"`);
+            throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
+        }
 
     if (!Array.isArray(suggestions) || suggestions.length === 0) { // Check for empty array too
         logger.error(`[generateOutcomeLabelSuggestions] Parsed response is not a non-empty array for user ${userId}. Parsed:`, suggestions);
@@ -4432,7 +4419,9 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
 
     let suggestions;
     try {
-        suggestions = JSON.parse(responseText);
+    // Clean the raw response from the AI of any markdown code fences before parsing.
+    const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
+    suggestions = JSON.parse(cleanedText);
     } catch (parseError) {
         logger.error(`[generateInputLabelSuggestions] Failed to parse Gemini JSON response. Error: ${parseError.message}. Raw: "${responseText}"`);
         throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);

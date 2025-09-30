@@ -7460,12 +7460,13 @@ client.on(Events.InteractionCreate, async interaction => {
         // --- NEW: Total Reminders Select Menu ---
         const totalRemindersSelect = new StringSelectMenuBuilder()
           .setCustomId(REMINDER_SELECT_FREQUENCY_ID) // We can reuse the ID, its meaning is now "total reminders"
-          .setPlaceholder('How many RANDOM reminders per week?')
+          .setPlaceholder('How many reminders per week? Randomly distributed within your window')
           .addOptions(
-            new StringSelectMenuOptionBuilder().setLabel('No Reminders').setValue('0').setDescription("I'll log on my own."),
+            new StringSelectMenuOptionBuilder().setLabel('No Reminders').setValue('0').setDescription("Changed my mind, no reminders."),
             new StringSelectMenuOptionBuilder().setLabel('3 Reminders / week').setValue('3').setDescription('~1 every other day.'),
-            new StringSelectMenuOptionBuilder().setLabel('7 Reminders / week').setValue('7').setDescription('About 1 per day, randomly timed.'),
-            new StringSelectMenuOptionBuilder().setLabel('14 Reminders / week').setValue('14').setDescription('About 2 per day, randomly timed.')
+            new StringSelectMenuOptionBuilder().setLabel('7 Reminders / week').setValue('7').setDescription('Avg 1 per day, but random.'),
+            new StringSelectMenuOptionBuilder().setLabel('10 Reminders / week').setValue('10').setDescription('A bit more than one per day.'),
+            new StringSelectMenuOptionBuilder().setLabel('14 Reminders / week').setValue('14').setDescription('2+ some days, none other days.')
           );
         const rowTotalReminders = new ActionRowBuilder().addComponents(totalRemindersSelect);
 
