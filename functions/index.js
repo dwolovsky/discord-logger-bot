@@ -172,9 +172,9 @@ async function getOpenAIChatCompletion(prompt, model = 'gpt-4o', temperature = 0
     const completion = await openai.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         model: model,
-        temperature: temperature, // Corresponds to Gemini's temperature [cite: 43]
+        temperature: temperature, // Corresponds to Gemini's temperature 
         max_tokens: 1500, // Corresponds to Gemini's maxOutputTokens
-        top_p: 0.95,      // Corresponds to Gemini's topP [cite: 43]
+        top_p: 0.95,      // Corresponds to Gemini's topP 
     });
     return completion.choices[0].message.content.trim();
 }
@@ -3007,14 +3007,6 @@ exports.getComparativeExperimentStats = onCall(async (request) => {
 });
 
 
-function getDayOfYear(date) { // [cite: 819, 820]
-    const start = new Date(date.getUTCFullYear(), 0, 0);
-    const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
-    const oneDay = 1000 * 60 * 60 * 24;
-    return Math.floor(diff / oneDay);
-}
-
-
 /**
  * Calculates the duration of a time window in hours.
  * Handles windows that span midnight.
@@ -3523,7 +3515,8 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         const inputLabels = inputs.filter(i => i.label).map(i => `'${i.label}'`).join(', ') || 'no specific habits';
 
         const prompt = `
-            You are a witty, supportive friend. Your tone is conversational, informal, and always encouraging a growth mindset. Use everyday language and humor. Analyze the user's log notes and provide feedback that sounds like it's from a real person who cares.
+            You are a witty, supportive friend. Your tone is conversational, informal, and always encouraging a growth mindset. Use everyday language and humor.
+            Analyze the user's log notes and provide feedback that sounds like it's from a real person who cares.
             **User's Context:**
             - Deeper Wish: "${deeperProblem}"
             - Main Outcome Metric: "${outputMetric.label || 'N/A'}" (Goal: ${outputMetric.goal || 'N/A'} ${outputMetric.unit || 'N/A'})
@@ -3536,22 +3529,23 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
             **Your Task:**
             Use the Daily Log Notes and "Previous Day's Note", as well as their metrics for context on their journey.
-            1.  **Acknowledge Experience (25-50 characters):** Based on the user's notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme in a warm, supportive way.
-            It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
-            2.  **Comfort/Support Message (50-100 characters):** Provide a short, uplifting, and mindfulness inspiring message *to the user* that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
-            Try to encourage mindfulness, a growth mindset, self love, or realistic optimism. You should inspire feelings of patience and hope for tomorrow. Use the wordd "you" in the message.
-            3.  **Public Post Suggestion (80-130 characters):** Create a concise 1-2 sentence message that the user *could* post to a chat group.
-            This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
-            It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
-            Examples:
-                * "Today was a tough one for me with [Habit or Outcome]. Anyone have tips for staying consistent on low-energy days [or more specific problem from notes]?"
-                * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
-                * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins!"
-                * "I've been wanting [Deeper Wish], and today felt a step in that direction because [reason from notes]. It's cool to see new connections."
-                * "My main takeaway from today: [brief, insightful summary of a learning]. Curious if that resonates with anyone."
+            1.  **Acknowledge Experience (50-120 characters):** Based on the user's notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme in a warm, supportive way.
+                **CRITICAL: You MUST incorporate at least one specific, positive detail from the notes (e.g., an activity, a feeling, or a place mentioned). If there is no positive detail, reflect that things are hard for them. Remind them that sometimes it's enough to just survive or struggle well.**
+            2.  **Comfort/Support Message (70-150 characters):** Provide a short, uplifting, and mindfulness inspiring message *to the user* that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
+                Try to encourage mindfulness, a growth mindset, or realistic optimism. You should inspire feelings of patience and hope for tomorrow. Use the word "you" in the message.
+                **CRITICAL: Your message must be grounded in the provided notes. Make sure you are congruent with the user's meaning in the notes.**
+            3.  **Public Post Suggestion (100-140 characters):** Create a concise 1-2 sentence message that the user *could* post to a chat group.
+                This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
+                It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
+                **CRITICAL: Be precise. If the user mentions a "first time feeling," do not generalize it to a "first time event." Preserve the user's specific nuance.**
+                Examples:
+                    * "Today was a tough one for me with [Habit or Outcome]. Anyone have tips for staying consistent on low-energy days [or more specific problem from notes]?"
+                    * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
+                    * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins!"
+                    * "I've been wanting [Deeper Wish], and today felt a step in that direction because [reason from notes]. It's cool to see new connections."
+                    * "My main takeaway from today: [brief, insightful summary of a learning]. Curious if that resonates with anyone."
             
-            DO NOT say "Anyone else..." at the end of the message.
-            DO NOT use cliches like "small wins add up." The language of the message *must* be in the style of the user's notes.
+                DO NOT use cliches. The language of the message *must* be in the style of the user's notes.
 
             Return your response ONLY as a JSON object with the following structure:
             {
