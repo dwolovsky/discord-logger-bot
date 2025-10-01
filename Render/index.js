@@ -1883,6 +1883,7 @@ const REMINDER_SELECT_TIME_M_ID = 'reminder_select_time_m';
 const REMINDER_SELECT_TIME_AP_ID = 'reminder_select_time_ap';
 const CONFIRM_REMINDER_BTN_ID = 'confirm_reminder_btn';
 const REMINDERS_SET_TIME_NEXT_BTN_ID = 'reminders_set_time_next_btn';
+const CONFIRM_REMINDER_RESET_BTN_ID = 'confirm_reminder_reset_btn';
 
 // --- New Custom IDs for Experiment Setup Choice ---
 const AI_ASSISTED_SETUP_BTN_ID = 'ai_assisted_setup_btn';
@@ -3089,6 +3090,10 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
           new SlashCommandBuilder()
           .setName('stats')
           .setDescription('Get historical stats for one of your current metrics.')
+          .toJSON(),
+          new SlashCommandBuilder()
+          .setName('reminders')
+          .setDescription('Reset or change your daily reminder settings.')
           .toJSON(),
         new SlashCommandBuilder()
           .setName('hi')
@@ -4875,6 +4880,60 @@ client.on(Events.InteractionCreate, async interaction => {
             }
           }
           break;
+          }
+
+          case 'reminders': {
+        try {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            const userId = interaction.user.id;
+
+            // Initialize the flow state
+            const setupData = userExperimentSetupData.get(userId) || {};
+            setupData.flowType = 'REMINDER_RESET'; // Flag for our button handlers
+            userExperimentSetupData.set(userId, setupData);
+
+            // --- Display Step 1: Get Current Time (reusing existing UI) ---
+            const timeEmbed = new EmbedBuilder()
+                .setColor('#72418c')
+                .setTitle('⏰ Reset Reminders - Step 1 of 2')
+                .setDescription('To reset your reminders, please first set your **CURRENT LOCAL TIME**.');
+
+            const timeHourSelect = new StringSelectMenuBuilder()
+                .setCustomId(REMINDER_SELECT_TIME_H_ID)
+                .setPlaceholder('Select your CURRENT LOCAL HOUR')
+                .addOptions(
+                    Array.from({ length: 24 }, (_, i) => {
+                        const hour12 = i % 12 === 0 ? 12 : i % 12;
+                        const period = i < 12 ? 'AM' : 'PM';
+                        const label = i === 0 ? `12 AM (Midnight)` : `${hour12} ${period}`;
+                        return new StringSelectMenuOptionBuilder().setLabel(label).setValue(String(i));
+                    })
+                );
+
+            const timeMinuteSelect = new StringSelectMenuBuilder()
+                .setCustomId(REMINDER_SELECT_TIME_M_ID)
+                // ... add your :00, :05, etc. options here ...
+                .setPlaceholder('Select the MINUTE');
+                // (Omitted for brevity, but copy from your existing code)
+
+            const nextButtonSetTime = new ButtonBuilder()
+                .setCustomId(REMINDERS_SET_TIME_NEXT_BTN_ID)
+                .setLabel('Next: Set Reminder Window')
+                .setStyle(ButtonStyle.Primary);
+
+            await interaction.editReply({
+                embeds: [timeEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(timeHourSelect),
+                    new ActionRowBuilder().addComponents(timeMinuteSelect),
+                    new ActionRowBuilder().addComponents(nextButtonSetTime)
+                ]
+            });
+        } catch (error) {
+            console.error('[/reminders] Error:', error);
+            if (interaction.deferred) await interaction.editReply({ content: '❌ An error occurred.' });
+        }
+        break;
           }
 
           case 'stats': {
@@ -7477,11 +7536,16 @@ client.on(Events.InteractionCreate, async interaction => {
           );
         const rowTotalReminders = new ActionRowBuilder().addComponents(totalRemindersSelect);
 
-        const confirmAllButton = new ButtonBuilder()
-          .setCustomId(CONFIRM_REMINDER_BTN_ID) // This is the existing final confirm button
-          .setLabel('Confirm All Reminder Settings')
-          .setStyle(ButtonStyle.Success);
-        const rowConfirm = new ActionRowBuilder().addComponents(confirmAllButton);
+    // START MODIFICATION
+        // Determine which final confirmation button to show
+        const isResetFlow = setupData.flowType === 'REMINDER_RESET';
+        const finalConfirmButton = new ButtonBuilder()
+            .setCustomId(isResetFlow ? CONFIRM_REMINDER_RESET_BTN_ID : CONFIRM_REMINDER_BTN_ID)
+            .setLabel(isResetFlow ? '✅ Confirm Reset' : 'Confirm All Reminder Settings')
+            .setStyle(ButtonStyle.Success);
+        // END MODIFICATION
+
+        const rowConfirm = new ActionRowBuilder().addComponents(finalConfirmButton);
 
         console.log(`[${interaction.customId} EDIT_REPLY ${interactionId}] Editing reply to display reminder step 2 (window/total count) for ${userId}.`);
         await interaction.editReply({

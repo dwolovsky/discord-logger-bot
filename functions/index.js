@@ -1459,6 +1459,92 @@ exports.setExperimentSchedule = onCall(async (request) => {
     }
 });
 
+/**
+ * Updates only the reminder settings for a user's active experiment.
+ * Does not change the experiment duration, ID, or snapshotted settings.
+ *
+ * Expected request.data: { 
+ * userCurrentTime: string, 
+ * reminderWindowStartHour: string, 
+ * reminderWindowEndHour: string,
+ * reminderFrequency: string
+ * }
+ */
+exports.updateReminderSettings = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'You must be logged in to update reminders.');
+    }
+
+    const userId = request.auth.uid;
+    const data = request.data;
+    const db = admin.firestore();
+    const userDocRef = db.collection('users').doc(userId);
+
+    logger.log(`[updateReminderSettings] Called by user: ${userId} with data:`, data);
+
+    // --- Validate Input Data ---
+    const totalWeeklyReminders = parseInt(data.reminderFrequency, 10);
+    if (isNaN(totalWeeklyReminders) || !data.userCurrentTime || !data.reminderWindowStartHour || !data.reminderWindowEndHour) {
+        throw new HttpsError('invalid-argument', 'Missing required reminder settings.');
+    }
+
+    try {
+        const userDoc = await userDocRef.get();
+        if (!userDoc.exists || !userDoc.data().experimentCurrentSchedule) {
+            throw new HttpsError('not-found', "No active experiment found. Please start an experiment with `/go` before setting reminders.");
+        }
+
+        // --- Calculate UTC reminder window (reusing logic from setExperimentSchedule) ---
+        let reminderWindowStartUTC = null;
+        let reminderWindowEndUTC = null;
+        let initialUTCOffsetHours = null;
+
+        try {
+            const nowUtcDate = new Date();
+            const serverCurrentUTCHour = nowUtcDate.getUTCHours();
+            const [timePart, ampmPart] = data.userCurrentTime.split(' ');
+            let [userReportedLocalHour, userReportedLocalMinute] = timePart.split(':').map(Number);
+
+            if (ampmPart.toUpperCase() === 'PM' && userReportedLocalHour !== 12) userReportedLocalHour += 12;
+            if (ampmPart.toUpperCase() === 'AM' && userReportedLocalHour === 12) userReportedLocalHour = 0;
+            
+            initialUTCOffsetHours = serverCurrentUTCHour - userReportedLocalHour;
+            const localStartHourInt = parseInt(data.reminderWindowStartHour, 10);
+            const localEndHourInt = parseInt(data.reminderWindowEndHour, 10);
+            reminderWindowStartUTC = (localStartHourInt + initialUTCOffsetHours + 24) % 24;
+            reminderWindowEndUTC = (localEndHourInt + initialUTCOffsetHours + 24) % 24;
+        } catch (e) {
+            logger.error(`[updateReminderSettings] User ${userId}: Error calculating UTC reminder window.`, e);
+            throw new HttpsError('internal', 'Could not calculate the reminder time window.');
+        }
+
+        // --- Prepare an update object with dot notation to modify only specific fields ---
+        const updatePayload = {
+            'experimentCurrentSchedule.remindersSkipped': false,
+            'experimentCurrentSchedule.userCurrentTimeAtSetup': data.userCurrentTime,
+            'experimentCurrentSchedule.reminderWindowStartLocal': data.reminderWindowStartHour,
+            'experimentCurrentSchedule.reminderWindowEndLocal': data.reminderWindowEndHour,
+            'experimentCurrentSchedule.reminderFrequency': data.reminderFrequency,
+            'experimentCurrentSchedule.totalWeeklyReminders': totalWeeklyReminders,
+            'experimentCurrentSchedule.remindersLeftToSend': totalWeeklyReminders, // Reset the count
+            'experimentCurrentSchedule.weeklyReminderPeriodStart': FieldValue.serverTimestamp(), // Start new 7-day period
+            'experimentCurrentSchedule.reminderWindowStartUTC': reminderWindowStartUTC,
+            'experimentCurrentSchedule.reminderWindowEndUTC': reminderWindowEndUTC,
+            'experimentCurrentSchedule.initialUTCOffsetHours': initialUTCOffsetHours
+        };
+
+        await userDocRef.update(updatePayload);
+
+        logger.log(`[updateReminderSettings] Successfully updated reminders for user ${userId}.`);
+        return { success: true, message: "✅ Your reminder settings have been updated successfully!" };
+
+    } catch (error) {
+        logger.error(`[updateReminderSettings] Error for user ${userId}:`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', 'A server error occurred while updating your reminders.');
+    }
+});
+
 // ============== STATS HELPER FUNCTIONS ==============
 function calculateMean(arr) {
     if (!arr || arr.length === 0) return 0;
