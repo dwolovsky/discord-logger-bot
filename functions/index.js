@@ -218,7 +218,7 @@ const AI_STATS_ANALYSIS_PROMPT_TEMPLATE = (data) => {
   };
 
   return `
-You are a "Self Science" assistant. Your goal is to analyze a user's habit experiment data and present it as a supportive, insightful, and actionable story. Your tone is empowering and non-judgmental, but realistic, focusing on curiosity and small, sustainable changes.
+You are a "Self Science" assistant. Your goal is to support the user's journey toward self love by analyzing their habit experiment data and presenting it as a supportive, insightful, and actionable story. Your tone is empowering and non-judgmental, but realistic, focusing on curiosity and small, sustainable changes.
 
 **USER'S DATA SUMMARY:**
 - Deeper Wish: "${data.deeperProblem || "Not specified"}"
@@ -255,7 +255,7 @@ Your insight must be a single, impactful sentence framed in a supportive, empowe
 
 **2. "experimentStory":**
 This key's value must be a JSON object with three keys: "biggestStruggle", "hiddenGrowth", and "aQuestionToPonder".
-Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long. Weave in themes or a short quote from their notes. Use cautious, observational language ("It seems like...").
+Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long. Weave in themes or a short quote from their notes. Use cautious, observational language ("It seems like you...").
 - **biggestStruggle:** Acknowledge struggles mentioned in the notes with compassion.
 - **hiddenGrowth:** Look for "hidden wins" like maintaining effort or mindset shifts.
 - **aQuestionToPonder:** Pose a single, thoughtful coaching question based on a surprising pattern to inspire curiosity.
@@ -3281,7 +3281,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         YOUR TASK:
                         1.  Read all the context, especially the "Creative Theme".
                         2.  Analyze the "Recent Notes" to find a potential "intrinsic reward" for one of the user's habits. An intrinsic reward is a small, positive sensory detail or feeling experienced *during* the activity (e.g., the warmth of a mug, the feeling of fresh air, a moment of mental quiet), or immediately afterward (accomplishment, resilience, etc.).
-                        3.  Craft a short, gentle reminder (1-3 sentences, under 150 characters) that invites the user to notice this potential reward.
+                        3.  Craft a short, gentle reminder (1-3 sentences, under 160 characters) that invites the user to notice this potential reward.
                         4.  CRITICAL: You MUST frame your reminder through the lens of the "Creative Theme". For example, if the theme is 'painting a moment', your reminder about a coffee habit might be, "What tiny detail could you 'paint' into your memory from your coffee break today? Maybe the swirl of the cream or the warmth of the mug."
                         5.  If a specific "Habit to Focus On" is provided, tailor the message to that habit. Otherwise, choose the most relevant habit based on their notes.
                         
@@ -3536,11 +3536,11 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
             **Your Task:**
             Use the Daily Log Notes and "Previous Day's Note", as well as their metrics for context on their journey.
-            1.  **Acknowledge Experience (25-50 characters):** Based on the notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme.
+            1.  **Acknowledge Experience (25-50 characters):** Based on the user's notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme in a warm, supportive way.
             It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
-            2.  **Comfort/Support Message (50-100 characters):** Provide a short, uplifting, and mindfulness inspiring message that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
-            Try to encourage mindfulness, a growth mindset, or realistic optimism.
-            3.  **Public Post Suggestion (80-130 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group.
+            2.  **Comfort/Support Message (50-100 characters):** Provide a short, uplifting, and mindfulness inspiring message *to the user* that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
+            Try to encourage mindfulness, a growth mindset, self love, or realistic optimism. You should inspire feelings of patience and hope for tomorrow. Use the wordd "you" in the message.
+            3.  **Public Post Suggestion (80-130 characters):** Create a concise 1-2 sentence message that the user *could* post to a chat group.
             This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
             It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
             Examples:
@@ -3551,7 +3551,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
                 * "My main takeaway from today: [brief, insightful summary of a learning]. Curious if that resonates with anyone."
             
             DO NOT say "Anyone else..." at the end of the message.
-            DO NOT use cliches like "small wins add up." The language of the message should be in the style of the notes.
+            DO NOT use cliches like "small wins add up." The language of the message *must* be in the style of the user's notes.
 
             Return your response ONLY as a JSON object with the following structure:
             {
@@ -3994,7 +3994,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                         allCorrelations.push(...chapter.correlations.influencedBy);
                     });
                     const narrativePrompt = `
-You are an expert habit-science coach. Your task is to analyze a user's habit experiment data and generate a supportive, insightful narrative.
+You are a warm and expert habit-science coach. Your task is to analyze a user's habit experiment data and generate a supportive, insightful narrative.
 CONTEXT:
 - User's Primary Metric: "${primaryMetric.label}"
 - All Included Metric Aliases: ${JSON.stringify(includedMetrics.map(m => m.label))}
