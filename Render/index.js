@@ -4913,8 +4913,21 @@ client.on(Events.InteractionCreate, async interaction => {
             const timeMinuteSelect = new StringSelectMenuBuilder()
                 .setCustomId(REMINDER_SELECT_TIME_M_ID)
                 // ... add your :00, :05, etc. options here ...
-                .setPlaceholder('Select the MINUTE');
-                // (Omitted for brevity, but copy from your existing code)
+                .setPlaceholder('Select the MINUTE')
+                .addOptions(
+                    new StringSelectMenuOptionBuilder().setLabel(':00').setValue('00'),
+                    new StringSelectMenuOptionBuilder().setLabel(':05').setValue('05'),
+                    new StringSelectMenuOptionBuilder().setLabel(':10').setValue('10'),
+                    new StringSelectMenuOptionBuilder().setLabel(':15').setValue('15'),
+                    new StringSelectMenuOptionBuilder().setLabel(':20').setValue('20'),
+                    new StringSelectMenuOptionBuilder().setLabel(':25').setValue('25'),
+                    new StringSelectMenuOptionBuilder().setLabel(':30').setValue('30'),
+                    new StringSelectMenuOptionBuilder().setLabel(':35').setValue('35'),
+                    new StringSelectMenuOptionBuilder().setLabel(':40').setValue('40'),
+                    new StringSelectMenuOptionBuilder().setLabel(':45').setValue('45'),
+                    new StringSelectMenuOptionBuilder().setLabel(':50').setValue('50'),
+                    new StringSelectMenuOptionBuilder().setLabel(':55').setValue('55')
+                );
 
             const nextButtonSetTime = new ButtonBuilder()
                 .setCustomId(REMINDERS_SET_TIME_NEXT_BTN_ID)
