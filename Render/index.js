@@ -7781,6 +7781,47 @@ client.on(Events.InteractionCreate, async interaction => {
     }
    }
 
+    else if (interaction.customId === CONFIRM_REMINDER_RESET_BTN_ID) {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const userId = interaction.user.id;
+        const setupData = userExperimentSetupData.get(userId);
+
+        // Re-run validation from the original button handler
+        if (!setupData || !setupData.reminderStartHour || !setupData.reminderEndHour || !setupData.reminderFrequency || !setupData.reminderTimeH || !setupData.reminderTimeM) {
+            await interaction.editReply({ content: '⚠️ Please ensure all reminder options are selected.' });
+            return;
+        }
+        
+        // Reconstruct current time for payload
+        const hour24 = parseInt(setupData.reminderTimeH, 10);
+        const minuteStr = setupData.reminderTimeM;
+        const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+        const period = hour24 < 12 ? 'AM' : 'PM';
+        const reconstructedTime = `${hour12}:${minuteStr} ${period}`;
+
+        const payload = {
+            userCurrentTime: reconstructedTime,
+            reminderWindowStartHour: setupData.reminderStartHour,
+            reminderWindowEndHour: setupData.reminderEndHour,
+            reminderFrequency: setupData.reminderFrequency,
+        };
+
+        try {
+            // Call the NEW Firebase function
+            const result = await callFirebaseFunction('updateReminderSettings', payload, userId);
+            if (result && result.success) {
+                await interaction.editReply({ content: result.message, components: [], embeds: [] });
+            } else {
+                throw new Error(result?.message || 'Failed to update settings.');
+            }
+        } catch (error) {
+            console.error(`[CONFIRM_REMINDER_RESET_BTN_ID] Error:`, error);
+            await interaction.editReply({ content: `❌ Error: ${error.message}` });
+        } finally {
+            userExperimentSetupData.delete(userId); // Clean up session
+        }
+    }
+
    // Button handlers for the FINAL "Post to group?"
    else if (interaction.isButton() && interaction.customId === 'post_exp_final_yes') {
       await interaction.deferUpdate();
