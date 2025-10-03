@@ -2054,7 +2054,7 @@ async function showPostToGroupPrompt(interaction, setupData) {
        // Check if we can editReply (it should be possible as the interaction was deferred/updated)
        if (interaction.replied || interaction.deferred) {
             await interaction.editReply({
-               content: "✨ Your experiment is fully configured!\n\nShare your commitment with the #experiments channel?\n\n*(I'll send you a DM with your setup summary after you choose.)*",
+               content: "✨ Your experiment is fully configured!\n\n(P.S. You can change these reminder settings at any time by typing `/reminders` and pressing send.)\n\nShare your commitment with the #experiments channel?",
                components: [postToGroupButtons],
                embeds: [] // Clear any previous ephemeral embeds
            });
@@ -2062,7 +2062,7 @@ async function showPostToGroupPrompt(interaction, setupData) {
        } else {
             // Fallback if somehow the interaction wasn't replied/deferred (less likely)
             await interaction.reply({
-                content: "✨ Your experiment is fully configured!\n\nShare your commitment with the #experiments channel?\n\n*(I'll send you a DM with your setup summary after you choose.)*",
+                content: "✨ Your experiment is fully configured!\n\n(P.S. You can change these reminder settings at any time by typing `/reminders` and pressing send.)\n\nShare your commitment with the #experiments channel?",
                 components: [postToGroupButtons],
                 flags: MessageFlags.Ephemeral
             });
