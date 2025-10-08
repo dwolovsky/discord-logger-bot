@@ -3098,6 +3098,10 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('hi')
           .setDescription('Begin the welcome and onboarding sequence.')
+          .toJSON(),
+          new SlashCommandBuilder()
+          .setName('test-embedding')
+          .setDescription('Tests the connection to the Vertex AI embedding model.')
           .toJSON()
       ]}
     );
