@@ -545,11 +545,18 @@ function formatLagTimeAsString(statsReportData) {
  * @param {EmbedBuilder} embed - The embed to add fields to.
  * @param {object} aiInsights - The AI-generated insights object.
  */
-function buildAhaMomentPage(embed, aiInsights) {
+function buildAhaMomentPage(embed, aiInsights, statsReportData) {
     embed.setTitle('💡 Your Experiment\'s Big Insight!')
          .setDescription(
              "Here's the most striking insight from your latest experiment.\nRemember, it's just more data.\n\nWisdom fuel for your future self!"
          );
+
+         // START NEW CODE BLOCK
+    const deeperWish = statsReportData?.activeExperimentSettings?.deeperProblem;
+    if (deeperWish) {
+        embed.addFields({ name: '❣️ Your Deeper Wish', value: deeperWish, inline: false });
+    }
+    // END NEW CODE BLOCK
 
     const insightData = aiInsights.strikingInsight;
     let fieldName = "Striking Insight";
@@ -902,7 +909,7 @@ async function sendStatsPage(interactionOrUser, userId, experimentId, targetPage
     // Call the correct builder function based on the dynamic page type
     switch (currentPageConfig.type) {
         case 'aha':
-            buildAhaMomentPage(embed, aiEnhancedInsights);
+            buildAhaMomentPage(embed, aiEnhancedInsights, statsReportData);
             break;
         case 'story':
             buildExperimentStoryPage(embed, aiEnhancedInsights);
@@ -1876,6 +1883,7 @@ const REMINDER_SELECT_TIME_M_ID = 'reminder_select_time_m';
 const REMINDER_SELECT_TIME_AP_ID = 'reminder_select_time_ap';
 const CONFIRM_REMINDER_BTN_ID = 'confirm_reminder_btn';
 const REMINDERS_SET_TIME_NEXT_BTN_ID = 'reminders_set_time_next_btn';
+const CONFIRM_REMINDER_RESET_BTN_ID = 'confirm_reminder_reset_btn';
 
 // --- New Custom IDs for Experiment Setup Choice ---
 const AI_ASSISTED_SETUP_BTN_ID = 'ai_assisted_setup_btn';
@@ -2046,7 +2054,7 @@ async function showPostToGroupPrompt(interaction, setupData) {
        // Check if we can editReply (it should be possible as the interaction was deferred/updated)
        if (interaction.replied || interaction.deferred) {
             await interaction.editReply({
-               content: "✨ Your experiment is fully configured!\n\nShare your commitment with the #experiments channel?\n\n*(I'll send you a DM with your setup summary after you choose.)*",
+               content: "✨ Your experiment is fully configured!\n\n(P.S. You can change these reminder settings at any time by typing `/reminders` and pressing send.)\n\nShare your commitment with the #experiments channel?",
                components: [postToGroupButtons],
                embeds: [] // Clear any previous ephemeral embeds
            });
@@ -2054,7 +2062,7 @@ async function showPostToGroupPrompt(interaction, setupData) {
        } else {
             // Fallback if somehow the interaction wasn't replied/deferred (less likely)
             await interaction.reply({
-                content: "✨ Your experiment is fully configured!\n\nShare your commitment with the #experiments channel?\n\n*(I'll send you a DM with your setup summary after you choose.)*",
+                content: "✨ Your experiment is fully configured!\n\n(P.S. You can change these reminder settings at any time by typing `/reminders` and pressing send.)\n\nShare your commitment with the #experiments channel?",
                 components: [postToGroupButtons],
                 flags: MessageFlags.Ephemeral
             });
@@ -3082,6 +3090,10 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
           new SlashCommandBuilder()
           .setName('stats')
           .setDescription('Get historical stats for one of your current metrics.')
+          .toJSON(),
+          new SlashCommandBuilder()
+          .setName('reminders')
+          .setDescription('Reset or change your daily reminder settings.')
           .toJSON(),
         new SlashCommandBuilder()
           .setName('hi')
@@ -4868,6 +4880,73 @@ client.on(Events.InteractionCreate, async interaction => {
             }
           }
           break;
+          }
+
+          case 'reminders': {
+        try {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            const userId = interaction.user.id;
+
+            // Initialize the flow state
+            const setupData = userExperimentSetupData.get(userId) || {};
+            setupData.flowType = 'REMINDER_RESET'; // Flag for our button handlers
+            userExperimentSetupData.set(userId, setupData);
+
+            // --- Display Step 1: Get Current Time (reusing existing UI) ---
+            const timeEmbed = new EmbedBuilder()
+                .setColor('#72418c')
+                .setTitle('⏰ Reset Reminders - Step 1 of 2')
+                .setDescription('To reset your reminders, please first set your **CURRENT LOCAL TIME**.');
+
+            const timeHourSelect = new StringSelectMenuBuilder()
+                .setCustomId(REMINDER_SELECT_TIME_H_ID)
+                .setPlaceholder('Select your CURRENT LOCAL HOUR')
+                .addOptions(
+                    Array.from({ length: 24 }, (_, i) => {
+                        const hour12 = i % 12 === 0 ? 12 : i % 12;
+                        const period = i < 12 ? 'AM' : 'PM';
+                        const label = i === 0 ? `12 AM (Midnight)` : `${hour12} ${period}`;
+                        return new StringSelectMenuOptionBuilder().setLabel(label).setValue(String(i));
+                    })
+                );
+
+            const timeMinuteSelect = new StringSelectMenuBuilder()
+                .setCustomId(REMINDER_SELECT_TIME_M_ID)
+                // ... add your :00, :05, etc. options here ...
+                .setPlaceholder('Select the MINUTE')
+                .addOptions(
+                    new StringSelectMenuOptionBuilder().setLabel(':00').setValue('00'),
+                    new StringSelectMenuOptionBuilder().setLabel(':05').setValue('05'),
+                    new StringSelectMenuOptionBuilder().setLabel(':10').setValue('10'),
+                    new StringSelectMenuOptionBuilder().setLabel(':15').setValue('15'),
+                    new StringSelectMenuOptionBuilder().setLabel(':20').setValue('20'),
+                    new StringSelectMenuOptionBuilder().setLabel(':25').setValue('25'),
+                    new StringSelectMenuOptionBuilder().setLabel(':30').setValue('30'),
+                    new StringSelectMenuOptionBuilder().setLabel(':35').setValue('35'),
+                    new StringSelectMenuOptionBuilder().setLabel(':40').setValue('40'),
+                    new StringSelectMenuOptionBuilder().setLabel(':45').setValue('45'),
+                    new StringSelectMenuOptionBuilder().setLabel(':50').setValue('50'),
+                    new StringSelectMenuOptionBuilder().setLabel(':55').setValue('55')
+                );
+
+            const nextButtonSetTime = new ButtonBuilder()
+                .setCustomId(REMINDERS_SET_TIME_NEXT_BTN_ID)
+                .setLabel('Next: Set Reminder Window')
+                .setStyle(ButtonStyle.Primary);
+
+            await interaction.editReply({
+                embeds: [timeEmbed],
+                components: [
+                    new ActionRowBuilder().addComponents(timeHourSelect),
+                    new ActionRowBuilder().addComponents(timeMinuteSelect),
+                    new ActionRowBuilder().addComponents(nextButtonSetTime)
+                ]
+            });
+        } catch (error) {
+            console.error('[/reminders] Error:', error);
+            if (interaction.deferred) await interaction.editReply({ content: '❌ An error occurred.' });
+        }
+        break;
           }
 
           case 'stats': {
@@ -7460,20 +7539,26 @@ client.on(Events.InteractionCreate, async interaction => {
         // --- NEW: Total Reminders Select Menu ---
         const totalRemindersSelect = new StringSelectMenuBuilder()
           .setCustomId(REMINDER_SELECT_FREQUENCY_ID) // We can reuse the ID, its meaning is now "total reminders"
-          .setPlaceholder('How many RANDOM reminders per week?')
+          .setPlaceholder('How many reminders per week? Randomly distributed within your window')
           .addOptions(
-            new StringSelectMenuOptionBuilder().setLabel('No Reminders').setValue('0').setDescription("I'll log on my own."),
+            new StringSelectMenuOptionBuilder().setLabel('No Reminders').setValue('0').setDescription("Changed my mind, no reminders."),
             new StringSelectMenuOptionBuilder().setLabel('3 Reminders / week').setValue('3').setDescription('~1 every other day.'),
-            new StringSelectMenuOptionBuilder().setLabel('7 Reminders / week').setValue('7').setDescription('About 1 per day, randomly timed.'),
-            new StringSelectMenuOptionBuilder().setLabel('14 Reminders / week').setValue('14').setDescription('About 2 per day, randomly timed.')
+            new StringSelectMenuOptionBuilder().setLabel('7 Reminders / week').setValue('7').setDescription('Avg 1 per day, but random.'),
+            new StringSelectMenuOptionBuilder().setLabel('10 Reminders / week').setValue('10').setDescription('A bit more than one per day.'),
+            new StringSelectMenuOptionBuilder().setLabel('14 Reminders / week').setValue('14').setDescription('2+ some days, none other days.')
           );
         const rowTotalReminders = new ActionRowBuilder().addComponents(totalRemindersSelect);
 
-        const confirmAllButton = new ButtonBuilder()
-          .setCustomId(CONFIRM_REMINDER_BTN_ID) // This is the existing final confirm button
-          .setLabel('Confirm All Reminder Settings')
-          .setStyle(ButtonStyle.Success);
-        const rowConfirm = new ActionRowBuilder().addComponents(confirmAllButton);
+    // START MODIFICATION
+        // Determine which final confirmation button to show
+        const isResetFlow = setupData.flowType === 'REMINDER_RESET';
+        const finalConfirmButton = new ButtonBuilder()
+            .setCustomId(isResetFlow ? CONFIRM_REMINDER_RESET_BTN_ID : CONFIRM_REMINDER_BTN_ID)
+            .setLabel(isResetFlow ? '✅ Confirm Reset' : 'Confirm All Reminder Settings')
+            .setStyle(ButtonStyle.Success);
+        // END MODIFICATION
+
+        const rowConfirm = new ActionRowBuilder().addComponents(finalConfirmButton);
 
         console.log(`[${interaction.customId} EDIT_REPLY ${interactionId}] Editing reply to display reminder step 2 (window/total count) for ${userId}.`);
         await interaction.editReply({
@@ -7695,6 +7780,47 @@ client.on(Events.InteractionCreate, async interaction => {
       await interaction.editReply({ content: `❌ An error occurred while finalizing your experiment (reminders skipped): ${error.message}. Your experiment settings and duration are saved.`, components: [] });
     }
    }
+
+    else if (interaction.customId === CONFIRM_REMINDER_RESET_BTN_ID) {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const userId = interaction.user.id;
+        const setupData = userExperimentSetupData.get(userId);
+
+        // Re-run validation from the original button handler
+        if (!setupData || !setupData.reminderStartHour || !setupData.reminderEndHour || !setupData.reminderFrequency || !setupData.reminderTimeH || !setupData.reminderTimeM) {
+            await interaction.editReply({ content: '⚠️ Please ensure all reminder options are selected.' });
+            return;
+        }
+        
+        // Reconstruct current time for payload
+        const hour24 = parseInt(setupData.reminderTimeH, 10);
+        const minuteStr = setupData.reminderTimeM;
+        const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+        const period = hour24 < 12 ? 'AM' : 'PM';
+        const reconstructedTime = `${hour12}:${minuteStr} ${period}`;
+
+        const payload = {
+            userCurrentTime: reconstructedTime,
+            reminderWindowStartHour: setupData.reminderStartHour,
+            reminderWindowEndHour: setupData.reminderEndHour,
+            reminderFrequency: setupData.reminderFrequency,
+        };
+
+        try {
+            // Call the NEW Firebase function
+            const result = await callFirebaseFunction('updateReminderSettings', payload, userId);
+            if (result && result.success) {
+                await interaction.editReply({ content: result.message, components: [], embeds: [] });
+            } else {
+                throw new Error(result?.message || 'Failed to update settings.');
+            }
+        } catch (error) {
+            console.error(`[CONFIRM_REMINDER_RESET_BTN_ID] Error:`, error);
+            await interaction.editReply({ content: `❌ Error: ${error.message}` });
+        } finally {
+            userExperimentSetupData.delete(userId); // Clean up session
+        }
+    }
 
    // Button handlers for the FINAL "Post to group?"
    else if (interaction.isButton() && interaction.customId === 'post_exp_final_yes') {

@@ -152,11 +152,12 @@ function isTimeMetric(unit) {
 }
 
 // Gen 2 Imports
+const functions = require("firebase-functions");
+const { logger, config } = functions;
 const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { jStat } = require("jstat");
 const { onSchedule } = require("firebase-functions/v2/scheduler"); 
-const { logger, config } = require("firebase-functions"); // MODIFIED: Added 'config'
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
 
@@ -3625,11 +3626,11 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
                 It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
                 **CRITICAL: Be precise. If the user mentions a "first time feeling," do not generalize it to a "first time event." Preserve the user's specific nuance.**
                 Examples:
-                    * "Today was a tough one for me with [Habit or Outcome]. Anyone have tips for staying consistent on low-energy days [or more specific problem from notes]?"
+                    * "Today was a tough one for me with [Habit or Outcome]. Looking for some tips to stay consistent on low-energy days [or more specific problem from notes]?"
                     * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
-                    * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins!"
-                    * "I've been wanting [Deeper Wish], and today felt a step in that direction because [reason from notes]. It's cool to see new connections."
-                    * "My main takeaway from today: [brief, insightful summary of a learning]. Curious if that resonates with anyone."
+                    * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]."
+                    * "I've been wanting [Deeper Wish], and today felt like a step in that direction because [reason from notes]. It's cool to feel progress."
+                    * "My main takeaway from today: [brief, insightful summary of a learning]."
             
                 DO NOT use cliches. The language of the message *must* be in the style of the user's notes.
 
@@ -3859,6 +3860,45 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         throw new HttpsError('unauthenticated', 'You must be logged in to run an analysis.');
     }
     const userId = request.auth.uid;
+
+
+ // ===================================================================
+    // =========== TEMPORARY VERTEX AI EMBEDDING TEST - START ============
+    // ===================================================================
+    try {
+        logger.log(`[Vertex Test within runHistoricalAnalysis] STARTING for user ${userId}.`);
+        
+        // 1. Initialize Vertex AI Client
+        const vertex_ai = new VertexAI({ project: process.env.GCLOUD_PROJECT, location: 'us-central1' });
+        const model = 'textembedding-gecko@003';
+
+        const generativeModel = vertex_ai.getGenerativeModel({ model: model });
+
+        // 2. Define text and send request
+        const textToEmbed = "This is a test from the /stats command flow!";
+        const resp = await generativeModel.embedContent(textToEmbed);
+        const embedding = resp.response?.embeddings?.[0]?.values;
+
+        // 3. Validate and return success message
+        if (embedding && Array.isArray(embedding) && embedding.length > 0) {
+            const vectorLength = embedding.length;
+            const successMessage = `✅ VERTEX AI TEST SUCCESSFUL! Received a vector embedding with ${vectorLength} dimensions. You can now remove the test code.`;
+            logger.log(`[Vertex Test within runHistoricalAnalysis] ${successMessage}`);
+            return { success: true, report: null, message: successMessage };
+        } else {
+            logger.error("[Vertex Test within runHistoricalAnalysis] Vertex AI returned an unexpected response structure.", resp);
+            throw new HttpsError('internal', 'AI returned an invalid or empty embedding.');
+        }
+    } catch (error) {
+        logger.error(`[Vertex Test within runHistoricalAnalysis] FAILED for user ${userId}:`, error);
+        throw new HttpsError('internal', `Vertex AI Embedding Test FAILED: ${error.message}`);
+    }
+    // ===================================================================
+    // ============== TEMPORARY VERTEX AI EMBEDDING TEST - END =============
+    // ===================================================================
+
+
+
     const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = request.data;
 
     if (!Array.isArray(includedMetrics) || !primaryMetric || !numExperimentsToAnalyze) {
@@ -4535,6 +4575,59 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
     throw new HttpsError('internal', `Failed to generate AI habit suggestions. Details: ${error.message}`);
   }
 });
+
+
+// ===================================================================
+// =========== NEW MINIMAL LIBRARY LOADING TEST - START ==============
+// ===================================================================
+/**
+ * A minimal, isolated onCall function to test if the Vertex AI library
+ * can be loaded and instantiated within the Cloud Function environment.
+ */
+exports.testVertexAILibrary = onCall(async (request) => {
+    logger.log("[testVertexAILibrary] V2 Function triggered.");
+
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Auth required.');
+    }
+
+    try {
+        // Log before the import to confirm the function starts
+        logger.log("[testVertexAILibrary] Step 1: Function started successfully.");
+
+        // Import the library locally, inside the function, to isolate any startup errors.
+        const { VertexAI } = require("@google-cloud/aiplatform").v1;
+
+        if (typeof VertexAI !== 'function') {
+            logger.error(`[testVertexAILibrary] Step 2 FAILED: 'VertexAI' is not a function after local import. Type is: ${typeof VertexAI}`);
+            throw new Error(`The imported VertexAI is not a constructor. Type: ${typeof VertexAI}`);
+        }
+        logger.log("[testVertexAILibrary] Step 2 PASSED: The imported VertexAI object is a function.");
+
+        // Now, try to instantiate it
+        const vertex_ai_instance = new VertexAI({ project: process.env.GCLOUD_PROJECT, location: 'us-central1' });
+        
+        if (typeof vertex_ai_instance.getGenerativeModel !== 'function') {
+             logger.error("[testVertexAILibrary] Step 3 FAILED: The instantiated client does not have the 'getGenerativeModel' method.");
+             throw new Error("The VertexAI client was instantiated, but it's missing expected methods.");
+        }
+
+        logger.log("[testVertexAILibrary] Step 3 PASSED: Successfully instantiated the VertexAI client.");
+
+        // If we get here, the library is loading and instantiating correctly.
+        const successMessage = "✅ SUCCESS: The @google-cloud/aiplatform library was imported LOCALLY and instantiated correctly.";
+        logger.info(`[testVertexAILibrary] FINAL RESULT: ${successMessage}`);
+
+        return { success: true, message: successMessage };
+
+    } catch (error) {
+        logger.error(`[testVertexAILibrary] An error occurred during the test: ${error.message}`);
+        throw new HttpsError('internal', `Library Test FAILED: ${error.message}`);
+    }
+});
+// ===================================================================
+// ============= NEW MINIMAL LIBRARY LOADING TEST - END ==============
+// ===================================================================
 
 
 // Final blank line below this comment

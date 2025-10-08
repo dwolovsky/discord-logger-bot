@@ -4787,6 +4787,33 @@ client.on(Events.InteractionCreate, async interaction => {
             break; // Ensure break statement is present
           } // End case 'leaderboard'
 
+
+            case 'test-embedding': {
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                try {
+                    console.log(`[/test-embedding] Calling testVertexAILibrary function for User: ${interaction.user.id}`);
+                    // Call the NEW function name
+                    const result = await callFirebaseFunction(
+                        'testVertexAILibrary',
+                        {}, // No data needed
+                        interaction.user.id
+                    );
+
+                    if (result && result.success) {
+                        await interaction.editReply({ content: result.message });
+                    } else {
+                        throw new Error(result?.message || 'The function did not return a success message.');
+                    }
+                } catch (error) {
+                    console.error(`[/test-embedding] Error executing command:`, error);
+                    await interaction.editReply({
+                        content: `❌ An error occurred during the library test: ${error.message || 'Please check the logs.'}`,
+                    });
+                }
+                break;
+            }
+
+
           case 'go': { // <<< RENAMED from 'exp'
             const goCommandStartTime = performance.now();
             console.log(`[/go] Command received. User: ${interaction.user.tag}, InteractionID: ${interaction.id}. Time: ${goCommandStartTime.toFixed(2)}ms.`);

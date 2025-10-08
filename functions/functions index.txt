@@ -152,11 +152,13 @@ function isTimeMetric(unit) {
 }
 
 // Gen 2 Imports
+const functions = require("firebase-functions");
+const { logger, config } = functions;
+const { VertexAI } = require("@google-cloud/aiplatform");
 const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { jStat } = require("jstat");
 const { onSchedule } = require("firebase-functions/v2/scheduler"); 
-const { logger, config } = require("firebase-functions"); // MODIFIED: Added 'config'
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
 
@@ -172,9 +174,9 @@ async function getOpenAIChatCompletion(prompt, model = 'gpt-4o', temperature = 0
     const completion = await openai.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         model: model,
-        temperature: temperature, // Corresponds to Gemini's temperature [cite: 43]
+        temperature: temperature, // Corresponds to Gemini's temperature 
         max_tokens: 1500, // Corresponds to Gemini's maxOutputTokens
-        top_p: 0.95,      // Corresponds to Gemini's topP [cite: 43]
+        top_p: 0.95,      // Corresponds to Gemini's topP 
     });
     return completion.choices[0].message.content.trim();
 }
@@ -218,7 +220,7 @@ const AI_STATS_ANALYSIS_PROMPT_TEMPLATE = (data) => {
   };
 
   return `
-You are a "Self Science" assistant. Your goal is to analyze a user's habit experiment data and present it as a supportive, insightful, and actionable story. Your tone is empowering and non-judgmental, but realistic, focusing on curiosity and small, sustainable changes.
+You are a "Self Science" assistant. Your goal is to support the user's journey toward self love by analyzing their habit experiment data and presenting it as a supportive, insightful, and actionable story. Your tone is empowering and non-judgmental, but realistic, focusing on curiosity and small, sustainable changes.
 
 **USER'S DATA SUMMARY:**
 - Deeper Wish: "${data.deeperProblem || "Not specified"}"
@@ -255,7 +257,7 @@ Your insight must be a single, impactful sentence framed in a supportive, empowe
 
 **2. "experimentStory":**
 This key's value must be a JSON object with three keys: "biggestStruggle", "hiddenGrowth", and "aQuestionToPonder".
-Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long. Weave in themes or a short quote from their notes. Use cautious, observational language ("It seems like...").
+Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long. Weave in themes or a short quote from their notes. Use cautious, observational language ("It seems like you...").
 - **biggestStruggle:** Acknowledge struggles mentioned in the notes with compassion.
 - **hiddenGrowth:** Look for "hidden wins" like maintaining effort or mindset shifts.
 - **aQuestionToPonder:** Pose a single, thoughtful coaching question based on a surprising pattern to inspire curiosity.
@@ -1456,6 +1458,92 @@ exports.setExperimentSchedule = onCall(async (request) => {
     } catch (error) {
         logger.error("Error running setExperimentSchedule transaction for user:", userId, error);
         throw new HttpsError('internal', 'Could not save experiment schedule due to a server error.', error.message);
+    }
+});
+
+/**
+ * Updates only the reminder settings for a user's active experiment.
+ * Does not change the experiment duration, ID, or snapshotted settings.
+ *
+ * Expected request.data: { 
+ * userCurrentTime: string, 
+ * reminderWindowStartHour: string, 
+ * reminderWindowEndHour: string,
+ * reminderFrequency: string
+ * }
+ */
+exports.updateReminderSettings = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'You must be logged in to update reminders.');
+    }
+
+    const userId = request.auth.uid;
+    const data = request.data;
+    const db = admin.firestore();
+    const userDocRef = db.collection('users').doc(userId);
+
+    logger.log(`[updateReminderSettings] Called by user: ${userId} with data:`, data);
+
+    // --- Validate Input Data ---
+    const totalWeeklyReminders = parseInt(data.reminderFrequency, 10);
+    if (isNaN(totalWeeklyReminders) || !data.userCurrentTime || !data.reminderWindowStartHour || !data.reminderWindowEndHour) {
+        throw new HttpsError('invalid-argument', 'Missing required reminder settings.');
+    }
+
+    try {
+        const userDoc = await userDocRef.get();
+        if (!userDoc.exists || !userDoc.data().experimentCurrentSchedule) {
+            throw new HttpsError('not-found', "No active experiment found. Please start an experiment with `/go` before setting reminders.");
+        }
+
+        // --- Calculate UTC reminder window (reusing logic from setExperimentSchedule) ---
+        let reminderWindowStartUTC = null;
+        let reminderWindowEndUTC = null;
+        let initialUTCOffsetHours = null;
+
+        try {
+            const nowUtcDate = new Date();
+            const serverCurrentUTCHour = nowUtcDate.getUTCHours();
+            const [timePart, ampmPart] = data.userCurrentTime.split(' ');
+            let [userReportedLocalHour, userReportedLocalMinute] = timePart.split(':').map(Number);
+
+            if (ampmPart.toUpperCase() === 'PM' && userReportedLocalHour !== 12) userReportedLocalHour += 12;
+            if (ampmPart.toUpperCase() === 'AM' && userReportedLocalHour === 12) userReportedLocalHour = 0;
+            
+            initialUTCOffsetHours = serverCurrentUTCHour - userReportedLocalHour;
+            const localStartHourInt = parseInt(data.reminderWindowStartHour, 10);
+            const localEndHourInt = parseInt(data.reminderWindowEndHour, 10);
+            reminderWindowStartUTC = (localStartHourInt + initialUTCOffsetHours + 24) % 24;
+            reminderWindowEndUTC = (localEndHourInt + initialUTCOffsetHours + 24) % 24;
+        } catch (e) {
+            logger.error(`[updateReminderSettings] User ${userId}: Error calculating UTC reminder window.`, e);
+            throw new HttpsError('internal', 'Could not calculate the reminder time window.');
+        }
+
+        // --- Prepare an update object with dot notation to modify only specific fields ---
+        const updatePayload = {
+            'experimentCurrentSchedule.remindersSkipped': false,
+            'experimentCurrentSchedule.userCurrentTimeAtSetup': data.userCurrentTime,
+            'experimentCurrentSchedule.reminderWindowStartLocal': data.reminderWindowStartHour,
+            'experimentCurrentSchedule.reminderWindowEndLocal': data.reminderWindowEndHour,
+            'experimentCurrentSchedule.reminderFrequency': data.reminderFrequency,
+            'experimentCurrentSchedule.totalWeeklyReminders': totalWeeklyReminders,
+            'experimentCurrentSchedule.remindersLeftToSend': totalWeeklyReminders, // Reset the count
+            'experimentCurrentSchedule.weeklyReminderPeriodStart': FieldValue.serverTimestamp(), // Start new 7-day period
+            'experimentCurrentSchedule.reminderWindowStartUTC': reminderWindowStartUTC,
+            'experimentCurrentSchedule.reminderWindowEndUTC': reminderWindowEndUTC,
+            'experimentCurrentSchedule.initialUTCOffsetHours': initialUTCOffsetHours
+        };
+
+        await userDocRef.update(updatePayload);
+
+        logger.log(`[updateReminderSettings] Successfully updated reminders for user ${userId}.`);
+        return { success: true, message: "✅ Your reminder settings have been updated successfully!" };
+
+    } catch (error) {
+        logger.error(`[updateReminderSettings] Error for user ${userId}:`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError('internal', 'A server error occurred while updating your reminders.');
     }
 });
 
@@ -3007,14 +3095,6 @@ exports.getComparativeExperimentStats = onCall(async (request) => {
 });
 
 
-function getDayOfYear(date) { // [cite: 819, 820]
-    const start = new Date(date.getUTCFullYear(), 0, 0);
-    const diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
-    const oneDay = 1000 * 60 * 60 * 24;
-    return Math.floor(diff / oneDay);
-}
-
-
 /**
  * Calculates the duration of a time window in hours.
  * Handles windows that span midnight.
@@ -3281,7 +3361,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         YOUR TASK:
                         1.  Read all the context, especially the "Creative Theme".
                         2.  Analyze the "Recent Notes" to find a potential "intrinsic reward" for one of the user's habits. An intrinsic reward is a small, positive sensory detail or feeling experienced *during* the activity (e.g., the warmth of a mug, the feeling of fresh air, a moment of mental quiet), or immediately afterward (accomplishment, resilience, etc.).
-                        3.  Craft a short, gentle reminder (1-3 sentences, under 150 characters) that invites the user to notice this potential reward.
+                        3.  Craft a short, gentle reminder (1-3 sentences, under 160 characters) that invites the user to notice this potential reward.
                         4.  CRITICAL: You MUST frame your reminder through the lens of the "Creative Theme". For example, if the theme is 'painting a moment', your reminder about a coffee habit might be, "What tiny detail could you 'paint' into your memory from your coffee break today? Maybe the swirl of the cream or the warmth of the mug."
                         5.  If a specific "Habit to Focus On" is provided, tailor the message to that habit. Otherwise, choose the most relevant habit based on their notes.
                         
@@ -3523,7 +3603,8 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         const inputLabels = inputs.filter(i => i.label).map(i => `'${i.label}'`).join(', ') || 'no specific habits';
 
         const prompt = `
-            You are a witty, supportive friend. Your tone is conversational, informal, and always encouraging a growth mindset. Use everyday language and humor. Analyze the user's log notes and provide feedback that sounds like it's from a real person who cares.
+            You are a witty, supportive friend. Your tone is conversational, informal, and always encouraging a growth mindset. Use everyday language and humor.
+            Analyze the user's log notes and provide feedback that sounds like it's from a real person who cares.
             **User's Context:**
             - Deeper Wish: "${deeperProblem}"
             - Main Outcome Metric: "${outputMetric.label || 'N/A'}" (Goal: ${outputMetric.goal || 'N/A'} ${outputMetric.unit || 'N/A'})
@@ -3536,22 +3617,23 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
             **Your Task:**
             Use the Daily Log Notes and "Previous Day's Note", as well as their metrics for context on their journey.
-            1.  **Acknowledge Experience (25-50 characters):** Based on the notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme.
-            It should sound like: "It sounds like you [acknowledgment]." or "It seems you [acknowledgment]." Be specific about emotion or effort.
-            2.  **Comfort/Support Message (50-100 characters):** Provide a short, uplifting, and mindfulness inspiring message that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
-            Try to encourage mindfulness, a growth mindset, or realistic optimism.
-            3.  **Public Post Suggestion (80-130 characters):** Create a *single, engaging sentence* that the user *could* post to a chat group.
-            This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
-            It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
-            Examples:
-                * "Today was a tough one for me with [Habit or Outcome]. Anyone have tips for staying consistent on low-energy days [or more specific problem from notes]?"
-                * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
-                * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]. Small wins!"
-                * "I've been wanting [Deeper Wish], and today felt a step in that direction because [reason from notes]. It's cool to see new connections."
-                * "My main takeaway from today: [brief, insightful summary of a learning]. Curious if that resonates with anyone."
+            1.  **Acknowledge Experience (50-120 characters):** Based on the user's notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme in a warm, supportive way.
+                **CRITICAL: You MUST incorporate at least one specific, positive detail from the notes (e.g., an activity, a feeling, or a place mentioned). If there is no positive detail, reflect that things are hard for them. Remind them that sometimes it's enough to just survive or struggle well.**
+            2.  **Comfort/Support Message (70-150 characters):** Provide a short, uplifting, and mindfulness inspiring message *to the user* that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
+                Try to encourage mindfulness, a growth mindset, or realistic optimism. You should inspire feelings of patience and hope for tomorrow. Use the word "you" in the message.
+                **CRITICAL: Your message must be grounded in the provided notes. Make sure you are congruent with the user's meaning in the notes.**
+            3.  **Public Post Suggestion (100-140 characters):** Create a concise 1-2 sentence message that the user *could* post to a chat group.
+                This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
+                It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
+                **CRITICAL: Be precise. If the user mentions a "first time feeling," do not generalize it to a "first time event." Preserve the user's specific nuance.**
+                Examples:
+                    * "Today was a tough one for me with [Habit or Outcome]. Looking for some tips to stay consistent on low-energy days [or more specific problem from notes]?"
+                    * "Interesting pattern from my experiment today: I did [describe the way they did a habit], and I noticed [something interesting happened]. Just a small thing I'm now paying attention to."
+                    * "Felt great after hitting my goal for [Habit] today! It really seemed to help with [positive effect mentioned in notes]."
+                    * "I've been wanting [Deeper Wish], and today felt like a step in that direction because [reason from notes]. It's cool to feel progress."
+                    * "My main takeaway from today: [brief, insightful summary of a learning]."
             
-            DO NOT say "Anyone else..." at the end of the message.
-            DO NOT use cliches like "small wins add up." The language of the message should be in the style of the notes.
+                DO NOT use cliches. The language of the message *must* be in the style of the user's notes.
 
             Return your response ONLY as a JSON object with the following structure:
             {
@@ -3994,7 +4076,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
                         allCorrelations.push(...chapter.correlations.influencedBy);
                     });
                     const narrativePrompt = `
-You are an expert habit-science coach. Your task is to analyze a user's habit experiment data and generate a supportive, insightful narrative.
+You are a warm and expert habit-science coach. Your task is to analyze a user's habit experiment data and generate a supportive, insightful narrative.
 CONTEXT:
 - User's Primary Metric: "${primaryMetric.label}"
 - All Included Metric Aliases: ${JSON.stringify(includedMetrics.map(m => m.label))}
@@ -4455,6 +4537,7 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
     throw new HttpsError('internal', `Failed to generate AI habit suggestions. Details: ${error.message}`);
   }
 });
+
 
 
 // Final blank line below this comment
