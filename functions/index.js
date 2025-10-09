@@ -3,6 +3,7 @@
 // ==================================
 
 require('dotenv').config();
+const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
 
 const STREAK_CONFIG = {
     // Using field names from Firestore 'users' collection directly
@@ -3615,7 +3616,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             "${previousLogNote}"
 
             **Your Task:**
-            Use the Daily Log Notes and "Previous Day's Note", as well as their metrics for context on their journey.
+            Use the Daily Log Notes and "Previous Day's Note" (for context only and make sure not to confuse the previous day with today), as well as their metrics for context on their journey.
             1.  **Acknowledge Experience (50-120 characters):** Based on the user's notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme in a warm, supportive way.
                 **CRITICAL: You MUST incorporate at least one specific, positive detail from the notes (e.g., an activity, a feeling, or a place mentioned). If there is no positive detail, reflect that things are hard for them. Remind them that sometimes it's enough to just survive or struggle well.**
             2.  **Comfort/Support Message (70-150 characters):** Provide a short, uplifting, and mindfulness inspiring message *to the user* that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
@@ -3679,43 +3680,6 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             }
         }
 
-
-/**
- * Analyzes a user's log notes using Gemini and creates a document in a 
- * dedicated collection for the bot to pick up and send as a DM.
- * This is the onCall wrapper for the internal logic.
- *
- * Expected request.data: { logId: string, userId: string, userTag: string }
-
-exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
-    logger.log("[analyzeAndSummarizeLogNotes] Function triggered. Request data:", request.data);
-
-    // 1. Authentication & Validation
-    if (!request.auth) {
-        logger.warn("[analyzeAndSummarizeLogNotes] Unauthenticated access attempt.");
-        throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
-    }
-    const { logId, userId, userTag } = request.data;
-    if (!logId || !userId || !userTag) {
-        logger.warn("[analyzeAndSummarizeLogNotes] Invalid arguments: logId, userId, or userTag missing.");
-        throw new HttpsError('invalid-argument', 'Missing required parameters: logId, userId, userTag.');
-    }
-
-    // 2. Call the internal logic function
-    try {
-        // This now calls the helper function with the core logic.
-        const result = await _analyzeAndSummarizeNotesLogic(logId, userId, userTag);
-        return result; // Forward the result to the client
-    } catch (error) {
-        logger.error(`[analyzeAndSummarizeLogNotes] Error processing log ${logId} for user ${userId}:`, error);
-        // Convert internal errors to HttpsError for the client
-        if (error.message && error.message.toLowerCase().includes('safety')) {
-            throw new HttpsError('resource-exhausted', "AI couldn't analyze notes due to content restrictions. Please try rephrasing.");
-        }
-        throw new HttpsError('internal', `Failed to analyze log notes: ${error.message}`);
-    }
-});
-*/
 
 /**
  * Scans a user's entire log history and uses AI to find historical metrics that
@@ -4584,45 +4548,73 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
  * A minimal, isolated onCall function to test if the Vertex AI library
  * can be loaded and instantiated within the Cloud Function environment.
  */
+/**
+ * FINAL TEST: Calls Vertex AI embedding model using a direct REST API call,
+ * bypassing the problematic @google-cloud/aiplatform library.
+ */
 exports.testVertexAILibrary = onCall(async (request) => {
-    logger.log("[testVertexAILibrary] V2 Function triggered.");
+    logger.log("[testVertexAILibrary - REST] V4 Function triggered.");
 
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'Auth required.');
     }
 
     try {
-        // Log before the import to confirm the function starts
-        logger.log("[testVertexAILibrary] Step 1: Function started successfully.");
+        const project = process.env.GCLOUD_PROJECT;
+        const location = 'us-central1';
+        const model = 'text-embedding-004';
+        const textToEmbed = "This is a direct REST API test!";
 
-        // Import the library locally, inside the function, to isolate any startup errors.
-        const { VertexAI } = require("@google-cloud/aiplatform").v1;
-
-        if (typeof VertexAI !== 'function') {
-            logger.error(`[testVertexAILibrary] Step 2 FAILED: 'VertexAI' is not a function after local import. Type is: ${typeof VertexAI}`);
-            throw new Error(`The imported VertexAI is not a constructor. Type: ${typeof VertexAI}`);
+        // Step 1: Get an authentication token for the service account
+        const authUrl = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
+        const tokenResponse = await fetch(authUrl, {
+            headers: { 'Metadata-Flavor': 'Google' }
+        });
+        if (!tokenResponse.ok) {
+            throw new Error(`Failed to get auth token: ${tokenResponse.statusText}`);
         }
-        logger.log("[testVertexAILibrary] Step 2 PASSED: The imported VertexAI object is a function.");
+        const tokenJson = await tokenResponse.json();
+        const accessToken = tokenJson.access_token;
+        logger.log("[testVertexAILibrary - REST] Successfully fetched an auth token.");
 
-        // Now, try to instantiate it
-        const vertex_ai_instance = new VertexAI({ project: process.env.GCLOUD_PROJECT, location: 'us-central1' });
-        
-        if (typeof vertex_ai_instance.getGenerativeModel !== 'function') {
-             logger.error("[testVertexAILibrary] Step 3 FAILED: The instantiated client does not have the 'getGenerativeModel' method.");
-             throw new Error("The VertexAI client was instantiated, but it's missing expected methods.");
+        // Step 2: Construct and send the request to the Vertex AI REST endpoint
+        const vertexUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:predict`;
+
+        const response = await fetch(vertexUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                instances: [{
+                    content: textToEmbed
+                }]
+            })
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Vertex AI API request failed with status ${response.status}: ${errorBody}`);
         }
 
-        logger.log("[testVertexAILibrary] Step 3 PASSED: Successfully instantiated the VertexAI client.");
+        const responseData = await response.json();
+        const embedding = responseData.predictions?.[0]?.embeddings?.values;
 
-        // If we get here, the library is loading and instantiating correctly.
-        const successMessage = "✅ SUCCESS: The @google-cloud/aiplatform library was imported LOCALLY and instantiated correctly.";
-        logger.info(`[testVertexAILibrary] FINAL RESULT: ${successMessage}`);
-
-        return { success: true, message: successMessage };
+        // Step 3: Validate and return success
+        if (embedding && Array.isArray(embedding) && embedding.length > 0) {
+            const vectorLength = embedding.length;
+            const successMessage = `✅ REST API SUCCESS! Received a vector embedding with ${vectorLength} dimensions.`;
+            logger.info(`[testVertexAILibrary - REST] ${successMessage}`);
+            return { success: true, message: successMessage };
+        } else {
+            logger.error("[testVertexAILibrary - REST] Vertex AI returned an unexpected response structure.", responseData);
+            throw new HttpsError('internal', 'AI returned an invalid or empty embedding via REST.');
+        }
 
     } catch (error) {
-        logger.error(`[testVertexAILibrary] An error occurred during the test: ${error.message}`);
-        throw new HttpsError('internal', `Library Test FAILED: ${error.message}`);
+        logger.error(`[testVertexAILibrary - REST] An error occurred: ${error.message}`);
+        throw new HttpsError('internal', `REST API Test FAILED: ${error.message}`);
     }
 });
 // ===================================================================
