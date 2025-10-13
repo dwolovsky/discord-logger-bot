@@ -10229,9 +10229,9 @@ else if (interaction.customId === 'historical_metric_select') {
                     `**Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
                     `**Outcome:**\n**${formatGoalForDisplay(setupData.outcome.goal, setupData.outcome.unit)}** for **${setupData.outcome.label}** (${setupData.outcome.unit})\n\n` +
                     `**Habits:**\n` +
-                    `1. **${formatGoalForDisplay(setupData.inputs[0].goal, setupData.inputs[0].unit)}** for **${setupData.inputs[0].label}** (${setupData.inputs[0].unit}).\n` +
-                    `2. **${formatGoalForDisplay(setupData.inputs[1].goal, setupData.inputs[1].unit)}** for **${setupData.inputs[1].label}** (${setupData.inputs[1].unit}).\n` +
-                    `3. **${formatGoalForDisplay(setupData.inputs[2].goal, setupData.inputs[2].unit)}** for **${setupData.inputs[2].label}** (${setupData.inputs[2].unit}).`
+                    `1. **${formatGoalForDisplay(setupData.inputs[0].goal, setupData.inputs[0].unit)} ${setupData.inputs[0].unit}** for **${setupData.inputs[0].label}**.\n` +
+                    `2. **${formatGoalForDisplay(setupData.inputs[1].goal, setupData.inputs[1].unit)} ${setupData.inputs[1].unit}** for **${setupData.inputs[1].label}**.\n` +
+                    `3. **${formatGoalForDisplay(setupData.inputs[2].goal, setupData.inputs[2].unit)} ${setupData.inputs[2].unit}** for **${setupData.inputs[2].label}**.`
                 );
             await interaction.editReply({
                 embeds: [fullSummaryEmbed],
