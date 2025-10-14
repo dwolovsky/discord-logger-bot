@@ -1,6 +1,7 @@
 // ==================================
 //      STREAK CONFIGURATION
 // ==================================
+//force redeploy
 
 require('dotenv').config();
 const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
@@ -318,6 +319,62 @@ exports.getFirebaseAuthToken = onCall(async (request) => {
     );
   }
 });
+
+// In functions/index.js, near the top
+
+// Helper function to centralize Gemini text generation calls via REST API
+async function getGeminiTextCompletion(prompt, model = 'gemini-1.5-flash-001', temperature = 0.85) {
+    const project = process.env.GCLOUD_PROJECT;
+    const location = 'us-central1';
+
+    // Step 1: Get an authentication token
+    const authUrl = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
+    const tokenResponse = await fetch(authUrl, {
+        headers: { 'Metadata-Flavor': 'Google' }
+    });
+    if (!tokenResponse.ok) {
+        throw new Error(`Failed to get auth token: ${tokenResponse.statusText}`);
+    }
+    const tokenJson = await tokenResponse.json();
+    const accessToken = tokenJson.access_token;
+
+    // Step 2: Call the Gemini Model
+    const vertexUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
+    const response = await fetch(vertexUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            contents: [{
+                parts: [{ "text": prompt }]
+            }],
+            generationConfig: {
+                "temperature": temperature,
+                "topP": 0.95,
+                "maxOutputTokens": 1500,
+                "responseMimeType": "application/json" // Important for JSON prompts
+            }
+        })
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Vertex AI API request failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const responseData = await response.json();
+    const candidateText = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!candidateText) {
+         console.error("Gemini returned an unexpected response structure:", JSON.stringify(responseData, null, 2));
+         throw new Error("Failed to extract text from Gemini response.");
+    }
+
+    return candidateText.trim();
+}
 
 /**
  * Calculates and updates the user's streak data.
@@ -3515,7 +3572,7 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     // 4b. Populate and Call OpenAI
     const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
-    const responseText = await getOpenAIChatCompletion(finalPrompt, 'gpt-4o');
+    const responseText = await getGeminiTextCompletion(finalPrompt);
 
     let newEnhancedInsights;
     try {
@@ -3646,8 +3703,8 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
         logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
-        // 4. Call OpenAI
-        const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
+        // 4. Call Gemini
+        const responseText = await getGeminiTextCompletion(prompt);
 
         if (!responseText) {
             logger.warn(`[_analyzeNotesLogic] Gemini returned an empty response for log ${logId}.`);
@@ -3739,8 +3796,8 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
       If no good matches are found, return an empty array [].
     `;
     
-    // 4. Call OpenAI via your helper function
-    const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
+    // 4. Call Gemini via your helper function
+    const responseText = await getGeminiTextCompletion(prompt);
     let aiMatches = [];
     if (responseText) {
         try {
@@ -3824,44 +3881,6 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         throw new HttpsError('unauthenticated', 'You must be logged in to run an analysis.');
     }
     const userId = request.auth.uid;
-
-
- // ===================================================================
-    // =========== TEMPORARY VERTEX AI EMBEDDING TEST - START ============
-    // ===================================================================
-    try {
-        logger.log(`[Vertex Test within runHistoricalAnalysis] STARTING for user ${userId}.`);
-        
-        // 1. Initialize Vertex AI Client
-        const vertex_ai = new VertexAI({ project: process.env.GCLOUD_PROJECT, location: 'us-central1' });
-        const model = 'textembedding-gecko@003';
-
-        const generativeModel = vertex_ai.getGenerativeModel({ model: model });
-
-        // 2. Define text and send request
-        const textToEmbed = "This is a test from the /stats command flow!";
-        const resp = await generativeModel.embedContent(textToEmbed);
-        const embedding = resp.response?.embeddings?.[0]?.values;
-
-        // 3. Validate and return success message
-        if (embedding && Array.isArray(embedding) && embedding.length > 0) {
-            const vectorLength = embedding.length;
-            const successMessage = `✅ VERTEX AI TEST SUCCESSFUL! Received a vector embedding with ${vectorLength} dimensions. You can now remove the test code.`;
-            logger.log(`[Vertex Test within runHistoricalAnalysis] ${successMessage}`);
-            return { success: true, report: null, message: successMessage };
-        } else {
-            logger.error("[Vertex Test within runHistoricalAnalysis] Vertex AI returned an unexpected response structure.", resp);
-            throw new HttpsError('internal', 'AI returned an invalid or empty embedding.');
-        }
-    } catch (error) {
-        logger.error(`[Vertex Test within runHistoricalAnalysis] FAILED for user ${userId}:`, error);
-        throw new HttpsError('internal', `Vertex AI Embedding Test FAILED: ${error.message}`);
-    }
-    // ===================================================================
-    // ============== TEMPORARY VERTEX AI EMBEDDING TEST - END =============
-    // ===================================================================
-
-
 
     const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = request.data;
 
@@ -4123,7 +4142,7 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 }
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
-                    const responseText = await getOpenAIChatCompletion(narrativePrompt, 'gpt-4o');
+                    const responseText = await getGeminiTextCompletion(narrativePrompt);
 
                     let aiNarrative = null;
 
@@ -4371,8 +4390,9 @@ const promptText = `
   logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    // 4. Call OpenAI
-    const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
+    // 4. Call Gemini
+    const responseText = await getGeminiTextCompletion(promptText);
+    
 
     if (!responseText) {
         logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
@@ -4493,8 +4513,8 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   logger.info(`[generateInputLabelSuggestions] Sending advanced, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    // 4. Call OpenAI
-        const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
+    // 4. Call Gemini
+        const responseText = await getGeminiTextCompletion(promptText);
 
     if (!responseText) {
         logger.warn(`[generateInputLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
