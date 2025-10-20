@@ -1518,6 +1518,115 @@ exports.setExperimentSchedule = onCall(async (request) => {
 });
 
 /**
+ * Ends a user's experiment early (or generates an on-demand report in continuous mode)
+ * and triggers the stats calculation process.
+ * Expects no data payload, uses authentication context.
+ */
+exports.endExperimentEarly = onCall(async (request) => {
+    // 1. Auth check
+    if (!request.auth) {
+        logger.warn("endExperimentEarly called without authentication.");
+        throw new HttpsError('unauthenticated', 'You must be logged in to end an experiment.');
+    }
+    const userId = request.auth.uid;
+    logger.log(`endExperimentEarly called by authenticated user: ${userId}`);
+
+    // 2. Fetch user data and schedule
+    const db = admin.firestore();
+    const userDocRef = db.collection('users').doc(userId);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists || !userDoc.data()?.experimentCurrentSchedule) {
+        throw new HttpsError('not-found', "You do not have an active experiment to end.");
+    }
+
+    const userData = userDoc.data();
+    const schedule = userData.experimentCurrentSchedule;
+    const userTag = userData.userTag || `User_${userId}`;
+
+    // 3. Validation and Logic Branching
+    let startDate, settings, experimentIdForStats;
+
+    if (schedule.statsMode === 'continuous') {
+        // --- CONTINUOUS MODE LOGIC ---
+        logger.log(`[endExperimentEarly] User ${userId} is in continuous mode. Generating on-demand report.`);
+        startDate = schedule.continuousStatsStartDate;
+        settings = schedule.scheduledExperimentSettings;
+        experimentIdForStats = schedule.statsDocumentId; // Reuse the ID
+
+        if (!startDate || !settings || !experimentIdForStats) {
+            throw new HttpsError('failed-precondition', 'Your continuous experiment schedule is missing key data. Cannot generate a report.');
+        }
+
+    } else if (schedule.statsProcessed === false) {
+        // --- ACTIVE, DEFINED EXPERIMENT LOGIC ---
+        logger.log(`[endExperimentEarly] User ${userId} is ending a defined experiment early. Experiment ID: ${schedule.experimentId}`);
+        startDate = schedule.experimentSetAt;
+        settings = schedule.scheduledExperimentSettings;
+        experimentIdForStats = schedule.experimentId;
+
+        if (!startDate || !settings || !experimentIdForStats) {
+            throw new HttpsError('failed-precondition', 'Your active experiment schedule is missing key data. Cannot generate a report.');
+        }
+
+    } else {
+        // --- NO ACTIVE EXPERIMENT TO END ---
+        throw new HttpsError('failed-precondition', "You do not have an active experiment to end. It may have already been completed.");
+    }
+
+    // 4. Call the core stats logic function
+    const statsResult = await _calculateAndStorePeriodStatsLogic(
+        userId,
+        userTag,
+        experimentIdForStats,
+        startDate,
+        new Date().toISOString(), // The end date is always NOW
+        settings,
+        "endExperimentEarly" // Caller identifier
+    );
+
+    // 5. Handle the result of the stats calculation
+    if (statsResult && statsResult.success) {
+        const nextWeeklyTimestamp = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+        // Regardless of the original mode, the user is now in continuous mode, with the timer reset.
+        await userDocRef.update({
+            'experimentCurrentSchedule.statsProcessed': true,
+            'experimentCurrentSchedule.statsDocumentId': statsResult.experimentId,
+            'experimentCurrentSchedule.statsCalculationTimestamp': FieldValue.serverTimestamp(),
+            'experimentCurrentSchedule.statsMode': 'continuous',
+            'experimentCurrentSchedule.continuousStatsStartDate': startDate,
+            'experimentCurrentSchedule.nextWeeklyStatsTimestamp': admin.firestore.Timestamp.fromDate(nextWeeklyTimestamp)
+        });
+
+        // Create notification for the bot to pick up
+        const notificationRef = db.collection('pendingStatsNotifications').doc(`${userId}_${statsResult.experimentId}`);
+        await notificationRef.set({
+            userId: userId,
+            userTag: userTag,
+            experimentId: statsResult.experimentId,
+            statsDocumentId: statsResult.experimentId,
+            status: 'ready',
+            generatedAt: FieldValue.serverTimestamp(),
+            message: statsResult.message
+        });
+
+        logger.log(`[endExperimentEarly] Successfully processed and created notification for user ${userId}.`);
+        
+        let successMessage = `✅ Your report is being generated and will be sent to your DMs shortly.`;
+        if (statsResult.status === 'insufficient_overall_data') {
+            successMessage = `✅ ${statsResult.message}`;
+        }
+        
+        return { success: true, message: successMessage };
+
+    } else {
+        // The stats logic itself failed
+        throw new HttpsError('internal', statsResult?.message || 'Failed to calculate statistics for an unknown reason.');
+    }
+});
+
+/**
  * Updates only the reminder settings for a user's active experiment.
  * Does not change the experiment duration, ID, or snapshotted settings.
  *

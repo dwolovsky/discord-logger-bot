@@ -3100,8 +3100,8 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
           .setDescription('Begin the welcome and onboarding sequence.')
           .toJSON(),
           new SlashCommandBuilder()
-          .setName('test-embedding')
-          .setDescription('Tests the connection to the Vertex AI embedding model.')
+          .setName('end')
+          .setDescription('End your current experiment early and calculate stats.')
           .toJSON()
       ]}
     );
@@ -4914,7 +4914,7 @@ client.on(Events.InteractionCreate, async interaction => {
           }
 
           case 'reminders': {
-        try {
+            try {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const userId = interaction.user.id;
 
@@ -4973,11 +4973,27 @@ client.on(Events.InteractionCreate, async interaction => {
                     new ActionRowBuilder().addComponents(nextButtonSetTime)
                 ]
             });
-        } catch (error) {
-            console.error('[/reminders] Error:', error);
-            if (interaction.deferred) await interaction.editReply({ content: '❌ An error occurred.' });
-        }
-        break;
+            } catch (error) {
+                console.error('[/reminders] Error:', error);
+                if (interaction.deferred) await interaction.editReply({ content: '❌ An error occurred.' });
+            }
+            break;
+            }
+
+          case 'end': {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            try {
+              // This function will be created in the next step in functions/index.js
+              const result = await callFirebaseFunction('endExperimentEarly', {}, interaction.user.id);
+              if (result && result.success) {
+                await interaction.editReply({ content: result.message });
+              } else {
+                throw new Error(result?.message || 'The backend function did not return a success message.');
+              }
+            } catch (error) {
+              await interaction.editReply({ content: `❌ An error occurred while ending your experiment: ${error.message}` });
+            }
+            break;
           }
 
           case 'stats': {
