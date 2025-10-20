@@ -1,7 +1,6 @@
 // ==================================
 //      STREAK CONFIGURATION
 // ==================================
-//force redeploy
 
 require('dotenv').config();
 const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
@@ -183,7 +182,7 @@ async function getOpenAIChatCompletion(prompt, model = 'gpt-4o', temperature = 0
 }
 // ============== END OF AI INSIGHTS SETUP ==================
 
-const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
+const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 3;
 
 const AI_STATS_ANALYSIS_PROMPT_TEMPLATE = (data) => {
   // Helper to format metric stats for the prompt
@@ -323,7 +322,7 @@ exports.getFirebaseAuthToken = onCall(async (request) => {
 // In functions/index.js, near the top
 
 // Helper function to centralize Gemini text generation calls via REST API
-async function getGeminiTextCompletion(prompt, model = 'gemini-1.5-flash-001', temperature = 0.85) {
+async function getGeminiTextCompletion(prompt, model = 'gemini-1.5-flash-latest', temperature = 0.85) {
     const project = process.env.GCLOUD_PROJECT;
     const location = 'us-central1';
 
@@ -1843,7 +1842,7 @@ async function _calculateAndStorePeriodStatsLogic(
     }
 
     // Step 3: Initial Log Count Check (Code from original function, lines 391-400)
-    const MINIMUM_OVERALL_LOGS = 5;
+    const MINIMUM_OVERALL_LOGS = 3;
     const totalLogsInPeriodProcessed = fetchedLogs.length;
 
     if (totalLogsInPeriodProcessed < MINIMUM_OVERALL_LOGS) {
@@ -2026,7 +2025,7 @@ async function _calculateAndStorePeriodStatsLogic(
     logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Starting core statistics calculation for user ${userId}, experiment ${experimentId}.`);
     const calculatedMetricStats = {};
     const skippedMetrics = [];
-    const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
+    const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 3;
     for (const labelKey in transformedMetricValues) {
         if (Object.prototype.hasOwnProperty.call(transformedMetricValues, labelKey)) {
             const values = transformedMetricValues[labelKey];
@@ -2080,7 +2079,7 @@ async function _calculateAndStorePeriodStatsLogic(
     // Step 5: Calculate Correlations
     logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Starting correlation calculations for user ${userId}, experiment ${experimentId}.`);
     const correlations = {};
-    const MINIMUM_PAIRS_FOR_CORRELATION = 5;
+    const MINIMUM_PAIRS_FOR_CORRELATION = 3;
     const outputMetricLabel = activeExperimentSettings.output.label;
     const outputValues = transformedMetricValues[outputMetricLabel];
     const outputStats = calculatedMetricStats[outputMetricLabel];
@@ -2396,7 +2395,7 @@ async function _calculateAndStorePeriodStatsLogic(
             // ============== START: Lag Time Correlation Analysis Logic ==============
             logger.log(`[${callingFunction}] [LagTimeCorrelation] Starting lag time analysis for user ${userId}, experiment ${experimentId}.`);
             const lagTimeCorrelations = {};
-            const MIN_PAIRS_FOR_LAG_CORRELATION = 5; // Use the same minimum as regular correlations
+            const MIN_PAIRS_FOR_LAG_CORRELATION = 3; // Use the same minimum as regular correlations
 
             if (totalLogsInPeriodProcessed >= MIN_PAIRS_FOR_LAG_CORRELATION + 1) { // Need at least 6 logs for 5 pairs
                 // Create a map of logDate -> logData for easy lookup
@@ -3572,7 +3571,7 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     // 4b. Populate and Call OpenAI
     const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
-    const responseText = await getGeminiTextCompletion(finalPrompt);
+    const responseText = await getOpenAIChatCompletion(finalPrompt); // Use the same variable name (finalPrompt, etc.)
 
     let newEnhancedInsights;
     try {
@@ -3680,8 +3679,10 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
                 Try to encourage mindfulness, a growth mindset, or realistic optimism. You should inspire feelings of patience and hope for tomorrow. Use the word "you" in the message.
                 **CRITICAL: Your message must be grounded in the provided notes. Make sure you are congruent with the user's meaning in the notes.**
             3.  **Public Post Suggestion (100-140 characters):** Create a concise 1-2 sentence message that the user *could* post to a chat group.
-                This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
-                It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
+                This should be from *their perspective* (first-person), positive, and subtly invite conversation.
+                It should highlight a key win, an interesting insight, or a gentle question/struggle. Use vocabulary directly from the user's notes as much as possible.
+                **CRITICAL: Avoid generic, open-ended questions like 'Anyone else feel this way?' or 'Can anyone relate?'. Focus on sharing a personal experience or asking for specific advice (ONLY if the user is wondering about something or wanting to know the answer to a question).**
+                The post should highlight a key win, an interesting insight, or a gentle, *specific* question. Avoid jargon.
                 **CRITICAL: Be precise. If the user mentions a "first time feeling," do not generalize it to a "first time event." Preserve the user's specific nuance.**
                 Examples:
                     * "Today was a tough one for me with [Habit or Outcome]. Looking for some tips to stay consistent on low-energy days [or more specific problem from notes]?"
@@ -3690,7 +3691,8 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
                     * "I've been wanting [Deeper Wish], and today felt like a step in that direction because [reason from notes]. It's cool to feel progress."
                     * "My main takeaway from today: [brief, insightful summary of a learning]."
             
-                DO NOT use cliches. The language of the message *must* be in the style of the user's notes.
+                DO NOT use cliches.
+                **The language of the message *must* be in the style of the user's notes (e.g., if they are concise, you are concise; if they are expressive, you are more expressive).**
 
             Return your response ONLY as a JSON object with the following structure:
             {
@@ -3703,8 +3705,8 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
         logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
-        // 4. Call Gemini
-        const responseText = await getGeminiTextCompletion(prompt);
+        // 4. Call OpenAI
+        const responseText = await getOpenAIChatCompletion(prompt);
 
         if (!responseText) {
             logger.warn(`[_analyzeNotesLogic] Gemini returned an empty response for log ${logId}.`);
@@ -3796,8 +3798,8 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
       If no good matches are found, return an empty array [].
     `;
     
-    // 4. Call Gemini via your helper function
-    const responseText = await getGeminiTextCompletion(prompt);
+    // 4. Call OpenAI
+    const responseText = await getOpenAIChatCompletion(prompt); // or promptText, narrativePrompt
     let aiMatches = [];
     if (responseText) {
         try {
@@ -4142,7 +4144,7 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 }
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
-                    const responseText = await getGeminiTextCompletion(narrativePrompt);
+                    const responseText = await getOpenAIChatCompletion(narrativePrompt);
 
                     let aiNarrative = null;
 
@@ -4390,8 +4392,8 @@ const promptText = `
   logger.info(`[generateOutcomeLabelSuggestions] Sending new, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    // 4. Call Gemini
-    const responseText = await getGeminiTextCompletion(promptText);
+    // 4. Call OpenAI
+    const responseText = await getOpenAIChatCompletion(prompt); // or promptText, narrativePrompt
     
 
     if (!responseText) {
@@ -4513,8 +4515,8 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   logger.info(`[generateInputLabelSuggestions] Sending advanced, context-rich prompt to Gemini for user ${userId}.`);
   
   try {
-    // 4. Call Gemini
-        const responseText = await getGeminiTextCompletion(promptText);
+    // 4. Call OpenAI
+        const responseText = await getOpenAIChatCompletion(prompt); // or promptText, narrativePrompt
 
     if (!responseText) {
         logger.warn(`[generateInputLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
@@ -4561,85 +4563,6 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
 });
 
 
-// ===================================================================
-// =========== NEW MINIMAL LIBRARY LOADING TEST - START ==============
-// ===================================================================
-/**
- * A minimal, isolated onCall function to test if the Vertex AI library
- * can be loaded and instantiated within the Cloud Function environment.
- */
-/**
- * FINAL TEST: Calls Vertex AI embedding model using a direct REST API call,
- * bypassing the problematic @google-cloud/aiplatform library.
- */
-exports.testVertexAILibrary = onCall(async (request) => {
-    logger.log("[testVertexAILibrary - REST] V4 Function triggered.");
-
-    if (!request.auth) {
-        throw new HttpsError('unauthenticated', 'Auth required.');
-    }
-
-    try {
-        const project = process.env.GCLOUD_PROJECT;
-        const location = 'us-central1';
-        const model = 'text-embedding-004';
-        const textToEmbed = "This is a direct REST API test!";
-
-        // Step 1: Get an authentication token for the service account
-        const authUrl = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
-        const tokenResponse = await fetch(authUrl, {
-            headers: { 'Metadata-Flavor': 'Google' }
-        });
-        if (!tokenResponse.ok) {
-            throw new Error(`Failed to get auth token: ${tokenResponse.statusText}`);
-        }
-        const tokenJson = await tokenResponse.json();
-        const accessToken = tokenJson.access_token;
-        logger.log("[testVertexAILibrary - REST] Successfully fetched an auth token.");
-
-        // Step 2: Construct and send the request to the Vertex AI REST endpoint
-        const vertexUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:predict`;
-
-        const response = await fetch(vertexUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                instances: [{
-                    content: textToEmbed
-                }]
-            })
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            throw new Error(`Vertex AI API request failed with status ${response.status}: ${errorBody}`);
-        }
-
-        const responseData = await response.json();
-        const embedding = responseData.predictions?.[0]?.embeddings?.values;
-
-        // Step 3: Validate and return success
-        if (embedding && Array.isArray(embedding) && embedding.length > 0) {
-            const vectorLength = embedding.length;
-            const successMessage = `✅ REST API SUCCESS! Received a vector embedding with ${vectorLength} dimensions.`;
-            logger.info(`[testVertexAILibrary - REST] ${successMessage}`);
-            return { success: true, message: successMessage };
-        } else {
-            logger.error("[testVertexAILibrary - REST] Vertex AI returned an unexpected response structure.", responseData);
-            throw new HttpsError('internal', 'AI returned an invalid or empty embedding via REST.');
-        }
-
-    } catch (error) {
-        logger.error(`[testVertexAILibrary - REST] An error occurred: ${error.message}`);
-        throw new HttpsError('internal', `REST API Test FAILED: ${error.message}`);
-    }
-});
-// ===================================================================
-// ============= NEW MINIMAL LIBRARY LOADING TEST - END ==============
-// ===================================================================
 
 
 // Final blank line below this comment

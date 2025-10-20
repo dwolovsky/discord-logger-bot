@@ -6591,12 +6591,13 @@ client.on(Events.InteractionCreate, async interaction => {
             const temp_inputs = setupData.tempLogData?.inputValues || [];
 
             // 1. Add the Notes input first with the correct placeholder and temporary value
+            const deeperWish = settings?.deeperProblem || 'your deeper wish';
             const notesInput = new TextInputBuilder()
                 .setCustomId('log_notes')
                 .setLabel('💭 Experiment & Life Notes')
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(true)
-                .setPlaceholder("What were the prices and payoffs of your habits today?")
+                .setPlaceholder("Thoughts on habits or '${deeperWish}'?")
                 .setValue(temp_notes);
             components.push(new ActionRowBuilder().addComponents(notesInput));
 
@@ -6783,12 +6784,13 @@ client.on(Events.InteractionCreate, async interaction => {
         const temp_inputs = setupData.tempLogData?.inputValues || [];
 
         // 1. Add the Notes input first with the correct placeholder and temporary value
+        const deeperWish = settings?.deeperProblem || 'your deeper wish';
         const notesInput = new TextInputBuilder()
             .setCustomId('log_notes')
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder("What were the prices and payoffs of your habits today?")
+            .setPlaceholder("Thoughts on habits or '${deeperWish}'?")
             .setValue(temp_notes);
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
@@ -6851,12 +6853,13 @@ client.on(Events.InteractionCreate, async interaction => {
         const components = [];
 
         // 1. Add the Notes input first with the correct placeholder
+        const deeperWish = settings?.deeperProblem || 'your deeper wish';
         const notesInput = new TextInputBuilder()
             .setCustomId('log_notes')
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder("What were the prices and payoffs of your habits today?");
+            .setPlaceholder("Thoughts on any habits or '${deeperWish}'?");
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
         // 2. Create and add the metric inputs after the notes
@@ -6870,7 +6873,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 else if (metric.label === settings.input3.label) customId = 'log_input3_value';
 
                 return new ActionRowBuilder().addComponents(
-                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "-" or "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true)
                 );
             });
         

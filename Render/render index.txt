@@ -3098,6 +3098,10 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
         new SlashCommandBuilder()
           .setName('hi')
           .setDescription('Begin the welcome and onboarding sequence.')
+          .toJSON(),
+          new SlashCommandBuilder()
+          .setName('test-embedding')
+          .setDescription('Tests the connection to the Vertex AI embedding model.')
           .toJSON()
       ]}
     );
@@ -4786,6 +4790,33 @@ client.on(Events.InteractionCreate, async interaction => {
             // --- End of new code ---
             break; // Ensure break statement is present
           } // End case 'leaderboard'
+
+
+            case 'test-embedding': {
+                await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+                try {
+                    console.log(`[/test-embedding] Calling testVertexAILibrary function for User: ${interaction.user.id}`);
+                    // Call the NEW function name
+                    const result = await callFirebaseFunction(
+                        'testVertexAILibrary',
+                        {}, // No data needed
+                        interaction.user.id
+                    );
+
+                    if (result && result.success) {
+                        await interaction.editReply({ content: result.message });
+                    } else {
+                        throw new Error(result?.message || 'The function did not return a success message.');
+                    }
+                } catch (error) {
+                    console.error(`[/test-embedding] Error executing command:`, error);
+                    await interaction.editReply({
+                        content: `❌ An error occurred during the library test: ${error.message || 'Please check the logs.'}`,
+                    });
+                }
+                break;
+            }
+
 
           case 'go': { // <<< RENAMED from 'exp'
             const goCommandStartTime = performance.now();
@@ -6565,7 +6596,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setLabel('💭 Experiment & Life Notes')
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(true)
-                .setPlaceholder("What were the prices and payoffs of your habits today?")
+                .setPlaceholder("Ups and Downs of Your Habits Today?")
                 .setValue(temp_notes);
             components.push(new ActionRowBuilder().addComponents(notesInput));
 
@@ -6757,7 +6788,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder("What were the prices and payoffs of your habits today?")
+            .setPlaceholder("Ups and Downs of Your Habits Today?")
             .setValue(temp_notes);
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
@@ -6825,7 +6856,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder("What were the prices and payoffs of your habits today?");
+            .setPlaceholder("Ups and Downs of Your Habits Today?");
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
         // 2. Create and add the metric inputs after the notes
@@ -10198,9 +10229,9 @@ else if (interaction.customId === 'historical_metric_select') {
                     `**Deeper Wish:**\n${setupData.deeperProblem}\n\n` +
                     `**Outcome:**\n**${formatGoalForDisplay(setupData.outcome.goal, setupData.outcome.unit)}** for **${setupData.outcome.label}** (${setupData.outcome.unit})\n\n` +
                     `**Habits:**\n` +
-                    `1. **${formatGoalForDisplay(setupData.inputs[0].goal, setupData.inputs[0].unit)}** for **${setupData.inputs[0].label}** (${setupData.inputs[0].unit}).\n` +
-                    `2. **${formatGoalForDisplay(setupData.inputs[1].goal, setupData.inputs[1].unit)}** for **${setupData.inputs[1].label}** (${setupData.inputs[1].unit}).\n` +
-                    `3. **${formatGoalForDisplay(setupData.inputs[2].goal, setupData.inputs[2].unit)}** for **${setupData.inputs[2].label}** (${setupData.inputs[2].unit}).`
+                    `1. **${formatGoalForDisplay(setupData.inputs[0].goal, setupData.inputs[0].unit)} ${setupData.inputs[0].unit}** for **${setupData.inputs[0].label}**.\n` +
+                    `2. **${formatGoalForDisplay(setupData.inputs[1].goal, setupData.inputs[1].unit)} ${setupData.inputs[1].unit}** for **${setupData.inputs[1].label}**.\n` +
+                    `3. **${formatGoalForDisplay(setupData.inputs[2].goal, setupData.inputs[2].unit)} ${setupData.inputs[2].unit}** for **${setupData.inputs[2].label}**.`
                 );
             await interaction.editReply({
                 embeds: [fullSummaryEmbed],

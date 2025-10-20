@@ -3,6 +3,7 @@
 // ==================================
 
 require('dotenv').config();
+const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
 
 const STREAK_CONFIG = {
     // Using field names from Firestore 'users' collection directly
@@ -154,7 +155,6 @@ function isTimeMetric(unit) {
 // Gen 2 Imports
 const functions = require("firebase-functions");
 const { logger, config } = functions;
-const { VertexAI } = require("@google-cloud/aiplatform");
 const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { jStat } = require("jstat");
@@ -182,7 +182,7 @@ async function getOpenAIChatCompletion(prompt, model = 'gpt-4o', temperature = 0
 }
 // ============== END OF AI INSIGHTS SETUP ==================
 
-const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
+const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 3;
 
 const AI_STATS_ANALYSIS_PROMPT_TEMPLATE = (data) => {
   // Helper to format metric stats for the prompt
@@ -318,6 +318,62 @@ exports.getFirebaseAuthToken = onCall(async (request) => {
     );
   }
 });
+
+// In functions/index.js, near the top
+
+// Helper function to centralize Gemini text generation calls via REST API
+async function getGeminiTextCompletion(prompt, model = 'gemini-1.5-flash-latest', temperature = 0.85) {
+    const project = process.env.GCLOUD_PROJECT;
+    const location = 'us-central1';
+
+    // Step 1: Get an authentication token
+    const authUrl = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
+    const tokenResponse = await fetch(authUrl, {
+        headers: { 'Metadata-Flavor': 'Google' }
+    });
+    if (!tokenResponse.ok) {
+        throw new Error(`Failed to get auth token: ${tokenResponse.statusText}`);
+    }
+    const tokenJson = await tokenResponse.json();
+    const accessToken = tokenJson.access_token;
+
+    // Step 2: Call the Gemini Model
+    const vertexUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
+    const response = await fetch(vertexUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            contents: [{
+                parts: [{ "text": prompt }]
+            }],
+            generationConfig: {
+                "temperature": temperature,
+                "topP": 0.95,
+                "maxOutputTokens": 1500,
+                "responseMimeType": "application/json" // Important for JSON prompts
+            }
+        })
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Vertex AI API request failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const responseData = await response.json();
+    const candidateText = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!candidateText) {
+         console.error("Gemini returned an unexpected response structure:", JSON.stringify(responseData, null, 2));
+         throw new Error("Failed to extract text from Gemini response.");
+    }
+
+    return candidateText.trim();
+}
 
 /**
  * Calculates and updates the user's streak data.
@@ -1786,7 +1842,7 @@ async function _calculateAndStorePeriodStatsLogic(
     }
 
     // Step 3: Initial Log Count Check (Code from original function, lines 391-400)
-    const MINIMUM_OVERALL_LOGS = 5;
+    const MINIMUM_OVERALL_LOGS = 3;
     const totalLogsInPeriodProcessed = fetchedLogs.length;
 
     if (totalLogsInPeriodProcessed < MINIMUM_OVERALL_LOGS) {
@@ -1969,7 +2025,7 @@ async function _calculateAndStorePeriodStatsLogic(
     logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Starting core statistics calculation for user ${userId}, experiment ${experimentId}.`);
     const calculatedMetricStats = {};
     const skippedMetrics = [];
-    const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 5;
+    const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 3;
     for (const labelKey in transformedMetricValues) {
         if (Object.prototype.hasOwnProperty.call(transformedMetricValues, labelKey)) {
             const values = transformedMetricValues[labelKey];
@@ -2023,7 +2079,7 @@ async function _calculateAndStorePeriodStatsLogic(
     // Step 5: Calculate Correlations
     logger.log(`[${callingFunction}] [calculateAndStorePeriodStats] Starting correlation calculations for user ${userId}, experiment ${experimentId}.`);
     const correlations = {};
-    const MINIMUM_PAIRS_FOR_CORRELATION = 5;
+    const MINIMUM_PAIRS_FOR_CORRELATION = 3;
     const outputMetricLabel = activeExperimentSettings.output.label;
     const outputValues = transformedMetricValues[outputMetricLabel];
     const outputStats = calculatedMetricStats[outputMetricLabel];
@@ -2339,7 +2395,7 @@ async function _calculateAndStorePeriodStatsLogic(
             // ============== START: Lag Time Correlation Analysis Logic ==============
             logger.log(`[${callingFunction}] [LagTimeCorrelation] Starting lag time analysis for user ${userId}, experiment ${experimentId}.`);
             const lagTimeCorrelations = {};
-            const MIN_PAIRS_FOR_LAG_CORRELATION = 5; // Use the same minimum as regular correlations
+            const MIN_PAIRS_FOR_LAG_CORRELATION = 3; // Use the same minimum as regular correlations
 
             if (totalLogsInPeriodProcessed >= MIN_PAIRS_FOR_LAG_CORRELATION + 1) { // Need at least 6 logs for 5 pairs
                 // Create a map of logDate -> logData for easy lookup
@@ -3515,7 +3571,7 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
 
     // 4b. Populate and Call OpenAI
     const finalPrompt = AI_STATS_ANALYSIS_PROMPT_TEMPLATE(promptData);
-    const responseText = await getOpenAIChatCompletion(finalPrompt, 'gpt-4o');
+    const responseText = await getOpenAIChatCompletion(finalPrompt); // Use the same variable name (finalPrompt, etc.)
 
     let newEnhancedInsights;
     try {
@@ -3616,7 +3672,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             "${previousLogNote}"
 
             **Your Task:**
-            Use the Daily Log Notes and "Previous Day's Note", as well as their metrics for context on their journey.
+            Use the Daily Log Notes and "Previous Day's Note" (for context only and make sure not to confuse the previous day with today), as well as their metrics for context on their journey.
             1.  **Acknowledge Experience (50-120 characters):** Based on the user's notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme in a warm, supportive way.
                 **CRITICAL: You MUST incorporate at least one specific, positive detail from the notes (e.g., an activity, a feeling, or a place mentioned). If there is no positive detail, reflect that things are hard for them. Remind them that sometimes it's enough to just survive or struggle well.**
             2.  **Comfort/Support Message (70-150 characters):** Provide a short, uplifting, and mindfulness inspiring message *to the user* that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
@@ -3647,7 +3703,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         logger.info(`[_analyzeNotesLogic] Sending prompt to Gemini for log ${logId}.`);
 
         // 4. Call OpenAI
-        const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
+        const responseText = await getOpenAIChatCompletion(prompt);
 
         if (!responseText) {
             logger.warn(`[_analyzeNotesLogic] Gemini returned an empty response for log ${logId}.`);
@@ -3680,43 +3736,6 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             }
         }
 
-
-/**
- * Analyzes a user's log notes using Gemini and creates a document in a 
- * dedicated collection for the bot to pick up and send as a DM.
- * This is the onCall wrapper for the internal logic.
- *
- * Expected request.data: { logId: string, userId: string, userTag: string }
-
-exports.analyzeAndSummarizeLogNotes = onCall(async (request) => {
-    logger.log("[analyzeAndSummarizeLogNotes] Function triggered. Request data:", request.data);
-
-    // 1. Authentication & Validation
-    if (!request.auth) {
-        logger.warn("[analyzeAndSummarizeLogNotes] Unauthenticated access attempt.");
-        throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');
-    }
-    const { logId, userId, userTag } = request.data;
-    if (!logId || !userId || !userTag) {
-        logger.warn("[analyzeAndSummarizeLogNotes] Invalid arguments: logId, userId, or userTag missing.");
-        throw new HttpsError('invalid-argument', 'Missing required parameters: logId, userId, userTag.');
-    }
-
-    // 2. Call the internal logic function
-    try {
-        // This now calls the helper function with the core logic.
-        const result = await _analyzeAndSummarizeNotesLogic(logId, userId, userTag);
-        return result; // Forward the result to the client
-    } catch (error) {
-        logger.error(`[analyzeAndSummarizeLogNotes] Error processing log ${logId} for user ${userId}:`, error);
-        // Convert internal errors to HttpsError for the client
-        if (error.message && error.message.toLowerCase().includes('safety')) {
-            throw new HttpsError('resource-exhausted', "AI couldn't analyze notes due to content restrictions. Please try rephrasing.");
-        }
-        throw new HttpsError('internal', `Failed to analyze log notes: ${error.message}`);
-    }
-});
-*/
 
 /**
  * Scans a user's entire log history and uses AI to find historical metrics that
@@ -3776,8 +3795,8 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
       If no good matches are found, return an empty array [].
     `;
     
-    // 4. Call OpenAI via your helper function
-    const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
+    // 4. Call OpenAI
+    const responseText = await getOpenAIChatCompletion(prompt); // or promptText, narrativePrompt
     let aiMatches = [];
     if (responseText) {
         try {
@@ -3861,6 +3880,7 @@ exports.runHistoricalAnalysis = onCall(async (request) => {
         throw new HttpsError('unauthenticated', 'You must be logged in to run an analysis.');
     }
     const userId = request.auth.uid;
+
     const { includedMetrics, primaryMetric, numExperimentsToAnalyze } = request.data;
 
     if (!Array.isArray(includedMetrics) || !primaryMetric || !numExperimentsToAnalyze) {
@@ -4121,7 +4141,7 @@ Return a single, valid JSON object with three keys: "holisticInsight", "hiddenGr
 }
 Your entire response must be ONLY the raw JSON object, starting with { and ending with }.
 `;
-                    const responseText = await getOpenAIChatCompletion(narrativePrompt, 'gpt-4o');
+                    const responseText = await getOpenAIChatCompletion(narrativePrompt);
 
                     let aiNarrative = null;
 
@@ -4370,7 +4390,8 @@ const promptText = `
   
   try {
     // 4. Call OpenAI
-    const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
+    const responseText = await getOpenAIChatCompletion(prompt); // or promptText, narrativePrompt
+    
 
     if (!responseText) {
         logger.warn(`[generateOutcomeLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
@@ -4492,7 +4513,7 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
   
   try {
     // 4. Call OpenAI
-        const responseText = await getOpenAIChatCompletion(prompt, 'gpt-4o');
+        const responseText = await getOpenAIChatCompletion(prompt); // or promptText, narrativePrompt
 
     if (!responseText) {
         logger.warn(`[generateInputLabelSuggestions] Gemini returned an empty response for user ${userId}.`);
@@ -4537,6 +4558,7 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
     throw new HttpsError('internal', `Failed to generate AI habit suggestions. Details: ${error.message}`);
   }
 });
+
 
 
 
