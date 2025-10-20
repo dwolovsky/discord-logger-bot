@@ -186,10 +186,11 @@ function buildOutcomeStatsPage(embed, metricData) {
         const variation = metricData.variationPercentage;
         let consistencyLabel = "Not enough data";
         if (variation !== undefined && variation !== null) {
-            if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
-            else if (variation <= 35) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
-            else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
-        }
+        const consistency = 100 - variation;
+        if (consistency > 80) consistencyLabel = `🟩 Consistent (${consistency.toFixed(1)}% Consistent)`;
+        else if (consistency >= 65) consistencyLabel = `🟨 Moderate (${consistency.toFixed(1)}% Consistent)`;
+        else consistencyLabel = `🟧 Variable (${consistency.toFixed(1)}% Consistent)`;
+    }
         
         embed.addFields(
             { name: `Average: ${formatValue(metricData.average)}${unit}`, value: '\u200B', inline: true },
@@ -225,10 +226,11 @@ function buildHabitStatsPage(embed, metricData, habitNumber) {
         const variation = metricData.variationPercentage;
         let consistencyLabel = "Not enough data";
         if (variation !== undefined && variation !== null) {
-            if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
-            else if (variation <= 35) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
-            else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
-        }
+        const consistency = 100 - variation;
+        if (consistency > 80) consistencyLabel = `🟩 Consistent (${consistency.toFixed(1)}% Consistent)`;
+        else if (consistency >= 65) consistencyLabel = `🟨 Moderate (${consistency.toFixed(1)}% Consistent)`;
+        else consistencyLabel = `🟧 Variable (${consistency.toFixed(1)}% Consistent)`;
+    }
 
         embed.addFields(
             { name: `Average: ${formatValue(metricData.average)}${unit}`, value: '\u200B', inline: true },
@@ -602,9 +604,10 @@ function buildCoreOverviewPage(embed, statsReportData) {
             const variation = metricData.variationPercentage;
             let consistencyLabel = "Not enough data";
             if (variation !== undefined && variation !== null) {
-                if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
-                else if (variation <= 35) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
-                else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
+                const consistency = 100 - variation;
+                if (consistency > 80) consistencyLabel = `🟩 Consistent (${consistency.toFixed(1)}% Consistent)`;
+                else if (consistency >= 60) consistencyLabel = `🟨 Moderate (${consistency.toFixed(1)}% Consistent)`;
+                else consistencyLabel = `🟧 Variable (${consistency.toFixed(1)}% Consistent)`;
             }
             return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}\n` +
                    `**Consistency:** ${consistencyLabel}\n` +
@@ -727,9 +730,10 @@ function buildCoreStatsSummary(embed, statsReportData) {
             const variation = metricData.variationPercentage;
             let consistencyLabel = "Not enough data";
             if (variation !== undefined && variation !== null) {
-                if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
-                else if (variation <= 40) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
-                else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
+                const consistency = 100 - variation;
+                if (consistency > 80) consistencyLabel = `🟩 Consistent (${consistency.toFixed(1)}% Consistent)`;
+                else if (consistency >= 60) consistencyLabel = `🟨 Moderate (${consistency.toFixed(1)}% Consistent)`;
+                else consistencyLabel = `🟧 Variable (${consistency.toFixed(1)}% Consistent)`;
             }
             return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}\n**Consistency:** ${consistencyLabel} | **Data Points:** ${metricData.dataPoints}`;
         }
