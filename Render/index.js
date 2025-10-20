@@ -187,9 +187,9 @@ function buildOutcomeStatsPage(embed, metricData) {
         let consistencyLabel = "Not enough data";
         if (variation !== undefined && variation !== null) {
         const consistency = 100 - variation;
-        if (consistency > 80) consistencyLabel = `🟩 Consistent (${consistency.toFixed(1)}% Consistent)`;
-        else if (consistency >= 65) consistencyLabel = `🟨 Moderate (${consistency.toFixed(1)}% Consistent)`;
-        else consistencyLabel = `🟧 Variable (${consistency.toFixed(1)}% Consistent)`;
+        if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
+        else if (consistency >= 65) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
+        else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
     }
         
         embed.addFields(
@@ -227,9 +227,9 @@ function buildHabitStatsPage(embed, metricData, habitNumber) {
         let consistencyLabel = "Not enough data";
         if (variation !== undefined && variation !== null) {
         const consistency = 100 - variation;
-        if (consistency > 80) consistencyLabel = `🟩 Consistent (${consistency.toFixed(1)}% Consistent)`;
-        else if (consistency >= 65) consistencyLabel = `🟨 Moderate (${consistency.toFixed(1)}% Consistent)`;
-        else consistencyLabel = `🟧 Variable (${consistency.toFixed(1)}% Consistent)`;
+        if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
+        else if (consistency >= 65) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
+        else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
     }
 
         embed.addFields(
@@ -605,9 +605,9 @@ function buildCoreOverviewPage(embed, statsReportData) {
             let consistencyLabel = "Not enough data";
             if (variation !== undefined && variation !== null) {
                 const consistency = 100 - variation;
-                if (consistency > 80) consistencyLabel = `🟩 Consistent (${consistency.toFixed(1)}% Consistent)`;
-                else if (consistency >= 60) consistencyLabel = `🟨 Moderate (${consistency.toFixed(1)}% Consistent)`;
-                else consistencyLabel = `🟧 Variable (${consistency.toFixed(1)}% Consistent)`;
+                if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
+                else if (consistency >= 60) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
+                else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
             }
             return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}\n` +
                    `**Consistency:** ${consistencyLabel}\n` +
@@ -731,9 +731,9 @@ function buildCoreStatsSummary(embed, statsReportData) {
             let consistencyLabel = "Not enough data";
             if (variation !== undefined && variation !== null) {
                 const consistency = 100 - variation;
-                if (consistency > 80) consistencyLabel = `🟩 Consistent (${consistency.toFixed(1)}% Consistent)`;
-                else if (consistency >= 60) consistencyLabel = `🟨 Moderate (${consistency.toFixed(1)}% Consistent)`;
-                else consistencyLabel = `🟧 Variable (${consistency.toFixed(1)}% Consistent)`;
+                if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
+                else if (consistency >= 60) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
+                else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
             }
             return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}\n**Consistency:** ${consistencyLabel} | **Data Points:** ${metricData.dataPoints}`;
         }
