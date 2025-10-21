@@ -6617,7 +6617,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 .setLabel('💭 Experiment & Life Notes')
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(true)
-                .setPlaceholder("Thoughts on habits or '${deeperWish}'?")
+                .setPlaceholder(`Thoughts on any habits or '${deeperWish}'?`)
                 .setValue(temp_notes);
             components.push(new ActionRowBuilder().addComponents(notesInput));
 
@@ -6639,7 +6639,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                     if (customId) {
                          return new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "-" or "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
                         );
                     }
                     return null;
@@ -6810,7 +6810,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder("Thoughts on habits or '${deeperWish}'?")
+            .setPlaceholder(`Thoughts on any habits or '${deeperWish}'?`)
             .setValue(temp_notes);
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
@@ -6831,7 +6831,7 @@ client.on(Events.InteractionCreate, async interaction => {
             if (customId) {
                 components.push(
                     new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "-" or "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
                     )
                 );
             }
@@ -6879,7 +6879,7 @@ client.on(Events.InteractionCreate, async interaction => {
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder("Thoughts on any habits or '${deeperWish}'?");
+            .setPlaceholder(`Thoughts on any habits or '${deeperWish}'?`)
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
         // 2. Create and add the metric inputs after the notes
