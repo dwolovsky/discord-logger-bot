@@ -162,39 +162,38 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
 
-// ============== AI INSIGHTS SETUP (OPENAI - CHATGPT) ==================
-// functions/index.js - Add this near the top
-const Anthropic = require('@anthropic-ai/sdk'); // Make sure this line is added
+
+// ============== AI INSIGHTS SETUP (ANTHROPIC - CLAUDE) ==================
+const Anthropic = require('@anthropic-ai/sdk');
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY, // Reads the key you added
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 /**
  * Helper function to centralize Claude API calls.
  * @param {string} prompt The user's prompt text.
- * @param {string} [model='claude-3-opus-20240229'] The Claude model to use.
+ * @param {string} [model='claude-3-5-sonnet-20241022'] The Claude model to use.
  * @param {number} [temperature=0.85] The temperature for generation.
  * @param {number} [max_tokens=1500] The maximum number of tokens to generate.
  * @returns {Promise<string>} The trimmed text content from Claude's response.
  */
-async function getClaudeChatCompletion(prompt, model = 'claude-3-opus-20240229', temperature = 0.85, max_tokens = 1500) {
-  logger.log(`[getClaudeChatCompletion] Calling Claude model ${model}. Prompt length: ${prompt.length}`); // Added logging
+async function getClaudeChatCompletion(prompt, model = 'claude-3-5-sonnet-20241022', temperature = 0.85, max_tokens = 1500) {
+  logger.log(`[getClaudeChatCompletion] Calling Claude model ${model}. Prompt length: ${prompt.length}`);
   try {
     const response = await anthropic.messages.create({
       model: model,
       max_tokens: max_tokens,
       temperature: temperature,
       messages: [{ role: 'user', content: prompt }],
-      // Add top_p here if needed: top_p: 0.95,
     });
 
-    logger.log(`[getClaudeChatCompletion] Received response from Claude.`); // Added logging
+    logger.log(`[getClaudeChatCompletion] Received response from Claude.`);
 
     // Extract the text content
     if (response.content && response.content.length > 0 && response.content[0].type === 'text') {
        const resultText = response.content[0].text.trim();
-       logger.log(`[getClaudeChatCompletion] Extracted text. Length: ${resultText.length}`); // Added logging
+       logger.log(`[getClaudeChatCompletion] Extracted text. Length: ${resultText.length}`);
        return resultText;
     } else {
        logger.error("[getClaudeChatCompletion] Claude returned an unexpected response structure:", JSON.stringify(response, null, 2));
@@ -202,48 +201,24 @@ async function getClaudeChatCompletion(prompt, model = 'claude-3-opus-20240229',
     }
   } catch (error) {
     logger.error("[getClaudeChatCompletion] Error calling Anthropic Claude API:", error);
-    // Include more details from the error if available (e.g., error.status, error.message)
     let errorMessage = `Claude API request failed: ${error.message}`;
     if (error.status) {
         errorMessage += ` (Status: ${error.status})`;
     }
-    // Re-throw a potentially more informative error
     throw new Error(errorMessage);
   }
 }
 
-const { OpenAI } = require('openai');
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // The key you just added to Render
-});
-
-// A helper function to centralize AI calls
-// functions/index.js - REPLACE the old getOpenAIChatCompletion with this
-
 /**
- * Gets a chat completion using the configured AI provider (now Claude).
- * @param {string} prompt The user's prompt text.
- * @param {string} [model='claude-3-opus-20240229'] The AI model to use.
- * @param {number} [temperature=0.85] The temperature for generation.
- * @returns {Promise<string>} The trimmed text content from the AI's response.
+ * Alias for backwards compatibility - calls Claude instead of OpenAI
  */
-async function getOpenAIChatCompletion(prompt, model = 'claude-3-opus-20240229', temperature = 0.85) { // Kept original name, updated default model
-    logger.log(`[getOpenAIChatCompletion -> getClaudeChatCompletion] Routing call. Model: ${model}`); // Added logging
-    try {
-        // Call the new Claude helper function
-        // Pass through parameters, using default max_tokens from the Claude helper
-        const claudeResult = await getClaudeChatCompletion(prompt, model, temperature);
-        return claudeResult;
-    } catch (error) {
-         // Log the error from the perspective of this wrapper function
-         logger.error("[getOpenAIChatCompletion wrapper] Error getting AI completion via Claude:", error);
-         // Re-throw the error so the original caller can handle it
-         throw error;
-    }
+async function getOpenAIChatCompletion(prompt, model = 'claude-3-5-sonnet-20241022', temperature = 0.85) {
+    return getClaudeChatCompletion(prompt, model, temperature);
 }
 
 // ============== END OF AI INSIGHTS SETUP ==================
+
+
 
 const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 3;
 
