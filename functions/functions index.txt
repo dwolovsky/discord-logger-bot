@@ -163,6 +163,55 @@ const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
 
 // ============== AI INSIGHTS SETUP (OPENAI - CHATGPT) ==================
+// functions/index.js - Add this near the top
+const Anthropic = require('@anthropic-ai/sdk'); // Make sure this line is added
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY, // Reads the key you added
+});
+
+/**
+ * Helper function to centralize Claude API calls.
+ * @param {string} prompt The user's prompt text.
+ * @param {string} [model='claude-3-opus-20240229'] The Claude model to use.
+ * @param {number} [temperature=0.85] The temperature for generation.
+ * @param {number} [max_tokens=1500] The maximum number of tokens to generate.
+ * @returns {Promise<string>} The trimmed text content from Claude's response.
+ */
+async function getClaudeChatCompletion(prompt, model = 'claude-3-opus-20240229', temperature = 0.85, max_tokens = 1500) {
+  logger.log(`[getClaudeChatCompletion] Calling Claude model ${model}. Prompt length: ${prompt.length}`); // Added logging
+  try {
+    const response = await anthropic.messages.create({
+      model: model,
+      max_tokens: max_tokens,
+      temperature: temperature,
+      messages: [{ role: 'user', content: prompt }],
+      // Add top_p here if needed: top_p: 0.95,
+    });
+
+    logger.log(`[getClaudeChatCompletion] Received response from Claude.`); // Added logging
+
+    // Extract the text content
+    if (response.content && response.content.length > 0 && response.content[0].type === 'text') {
+       const resultText = response.content[0].text.trim();
+       logger.log(`[getClaudeChatCompletion] Extracted text. Length: ${resultText.length}`); // Added logging
+       return resultText;
+    } else {
+       logger.error("[getClaudeChatCompletion] Claude returned an unexpected response structure:", JSON.stringify(response, null, 2));
+       throw new Error("Failed to extract text from Claude response. Structure might have changed.");
+    }
+  } catch (error) {
+    logger.error("[getClaudeChatCompletion] Error calling Anthropic Claude API:", error);
+    // Include more details from the error if available (e.g., error.status, error.message)
+    let errorMessage = `Claude API request failed: ${error.message}`;
+    if (error.status) {
+        errorMessage += ` (Status: ${error.status})`;
+    }
+    // Re-throw a potentially more informative error
+    throw new Error(errorMessage);
+  }
+}
+
 const { OpenAI } = require('openai');
 
 const openai = new OpenAI({
@@ -170,16 +219,30 @@ const openai = new OpenAI({
 });
 
 // A helper function to centralize AI calls
-async function getOpenAIChatCompletion(prompt, model = 'gpt-4o', temperature = 0.85) {
-    const completion = await openai.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-        model: model,
-        temperature: temperature, // Corresponds to Gemini's temperature 
-        max_tokens: 1500, // Corresponds to Gemini's maxOutputTokens
-        top_p: 0.95,      // Corresponds to Gemini's topP 
-    });
-    return completion.choices[0].message.content.trim();
+// functions/index.js - REPLACE the old getOpenAIChatCompletion with this
+
+/**
+ * Gets a chat completion using the configured AI provider (now Claude).
+ * @param {string} prompt The user's prompt text.
+ * @param {string} [model='claude-3-opus-20240229'] The AI model to use.
+ * @param {number} [temperature=0.85] The temperature for generation.
+ * @returns {Promise<string>} The trimmed text content from the AI's response.
+ */
+async function getOpenAIChatCompletion(prompt, model = 'claude-3-opus-20240229', temperature = 0.85) { // Kept original name, updated default model
+    logger.log(`[getOpenAIChatCompletion -> getClaudeChatCompletion] Routing call. Model: ${model}`); // Added logging
+    try {
+        // Call the new Claude helper function
+        // Pass through parameters, using default max_tokens from the Claude helper
+        const claudeResult = await getClaudeChatCompletion(prompt, model, temperature);
+        return claudeResult;
+    } catch (error) {
+         // Log the error from the perspective of this wrapper function
+         logger.error("[getOpenAIChatCompletion wrapper] Error getting AI completion via Claude:", error);
+         // Re-throw the error so the original caller can handle it
+         throw error;
+    }
 }
+
 // ============== END OF AI INSIGHTS SETUP ==================
 
 const MINIMUM_DATAPOINTS_FOR_METRIC_STATS = 3;
@@ -220,7 +283,7 @@ const AI_STATS_ANALYSIS_PROMPT_TEMPLATE = (data) => {
   };
 
   return `
-You are a "Self Science" assistant. Your goal is to support the user's journey toward self love by analyzing their habit experiment data and presenting it as a supportive, insightful, and actionable story. Your tone is empowering and non-judgmental, but realistic, focusing on curiosity and small, sustainable changes.
+You are a "Self Science" assistant. Your goal is to support the user's journey toward self love by analyzing their habit experiment data and presenting it as a supportive, insightful, and actionable story. Your tone is empowering and non-judgmental, but realistic, focusing on curiosity and small, sustainable changes. Specifically, when you see a metric with high variation (low consistency), frame it not as a personal failure, but as a valuable signal that the habit might be a poor fit for the user's life and needs redesigning.
 
 **USER'S DATA SUMMARY:**
 - Deeper Wish: "${data.deeperProblem || "Not specified"}"
@@ -264,13 +327,13 @@ Write a summary of the user's experiment, broken into 3 distinct sections, each 
 
 **3. "nextExperimentSuggestions":**
 This key's value must be an array of exactly 3 JSON objects. Each object must have a "framework" (string) and a "suggestion" (string).
-Provide actionable, concise experiment ideas based on the data. Choose 3 distinct frameworks from the list below, ensuring variety and relevance.
-- **Framework "Seek More Evidence":** A small tweak to an existing habit to confirm or disprove a potential pattern. (Suggestion format: "To gain more clarity: Try [tweak] to observe if [specific effect].")
-- **Framework "Minimum Effective Dose":** Find an easier version of a habit that is still effective. (Suggestion format: "To find the easiest effective version: Try reducing [Habit Y] to [smaller amount] and see if you still notice a benefit in your [Outcome].")
-- **Framework "What if Not?":** Intentionally remove a habit to see its true impact. (Suggestion format: "To see what happens without it: For one or two days, try *skipping* [Habit X] and notice how it affects your [Outcome].")
+Provide actionable, concise experiment ideas based on the data. Choose 3 distinct frameworks from the list below, ensuring variety and relevance. Prioritize suggestions that address low-consistency habits. If a habit shows high variation, suggest an experiment to find an easier or better-fitting version. Emphasize that habit fit is more important than consistency for it's own sake.
 - **Framework "Context Swap":** Test if the timing or trigger of a habit is key. (Suggestion format: "To test a different trigger: Try doing [Habit Z] at [different time or location] and see how it impacts your [Outcome].")
-- **Framework "Flavor Swap":** Try a slight variation of a habit to find a more enjoyable version. (Suggestion format: "To try a different flavor: Instead of [Habit A], try [a similar but different Habit B] and see if it affects your [Outcome] differently.")
+- **Framework "Flavor Enhancement":** Try a slight variation of a habit to find a more enjoyable version. (Suggestion format: "To try a different flavor: Instead of [Habit A], try [a similar but different Habit B] and see if it affects your [Outcome] differently.")
+- **Framework "Widen the On-Ramp":** Encourage the user to redefine what "counts" for a habit. This is for when a user has an all-or-nothing view of a habit (e.g., "exercise" must be a 1-hour gym session). It suggests finding alternative, lower-effort actions that still achieve the desired feeling or outcome. (Suggestion format: "To widen the on-ramp for [Rigid Habit X]: For the next week, what if '[Original Action]' could also mean '[Lower-Effort Alternative A]' or even '[Wildly Different Alternative B]'? Let's get creative.")
 - **Framework "Upstream Intervention":** Based on the "Chain of Behavior" concept, suggest a small, indirect habit that addresses a root cause. (Suggestion format: "An upstream lever: Your notes mention [problem X]. What if you try [small, indirect habit Y] to address that?")
+- **Framework "Find the Friction Point":** A diagnostic tool for a low-consistency habit. Instead of trying to do the habit, the user's goal is to identify the precise moment of resistance and what they're thinking/feeling. This turns the 'failure' into the data point. (Suggestion format: "It seems like [Habit Y] has been a struggle. For the next 3 days, don't even try to do the habit. Instead, your task is to notice the *exact moment* you decide *not* to do it and write down what you're thinking or feeling right then. We're looking for the point of friction.")
+- **Framework "Temptation Bundling":** This links a habit the user wants to build with an activity they already enjoy. It's a creative way to make a less desirable habit more attractive. (Suggestion format: "To make [Habit Z] more enjoyable, let's bundle it with something you love. Could you *only* listen to your favorite podcast while you [do the habit], or *only* have your special cup of tea right after?")
 
 CRITICAL: If you include a quote from the user's notes that contains double quotes, you MUST escape them with a backslash (e.g., "He said \\"hello\\"").
 Return ONLY the raw JSON object. Do not include markdown or any other text.
@@ -1514,6 +1577,115 @@ exports.setExperimentSchedule = onCall(async (request) => {
     } catch (error) {
         logger.error("Error running setExperimentSchedule transaction for user:", userId, error);
         throw new HttpsError('internal', 'Could not save experiment schedule due to a server error.', error.message);
+    }
+});
+
+/**
+ * Ends a user's experiment early (or generates an on-demand report in continuous mode)
+ * and triggers the stats calculation process.
+ * Expects no data payload, uses authentication context.
+ */
+exports.endExperimentEarly = onCall(async (request) => {
+    // 1. Auth check
+    if (!request.auth) {
+        logger.warn("endExperimentEarly called without authentication.");
+        throw new HttpsError('unauthenticated', 'You must be logged in to end an experiment.');
+    }
+    const userId = request.auth.uid;
+    logger.log(`endExperimentEarly called by authenticated user: ${userId}`);
+
+    // 2. Fetch user data and schedule
+    const db = admin.firestore();
+    const userDocRef = db.collection('users').doc(userId);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists || !userDoc.data()?.experimentCurrentSchedule) {
+        throw new HttpsError('not-found', "You do not have an active experiment to end.");
+    }
+
+    const userData = userDoc.data();
+    const schedule = userData.experimentCurrentSchedule;
+    const userTag = userData.userTag || `User_${userId}`;
+
+    // 3. Validation and Logic Branching
+    let startDate, settings, experimentIdForStats;
+
+    if (schedule.statsMode === 'continuous') {
+        // --- CONTINUOUS MODE LOGIC ---
+        logger.log(`[endExperimentEarly] User ${userId} is in continuous mode. Generating on-demand report.`);
+        startDate = schedule.continuousStatsStartDate;
+        settings = schedule.scheduledExperimentSettings;
+        experimentIdForStats = schedule.statsDocumentId; // Reuse the ID
+
+        if (!startDate || !settings || !experimentIdForStats) {
+            throw new HttpsError('failed-precondition', 'Your continuous experiment schedule is missing key data. Cannot generate a report.');
+        }
+
+    } else if (schedule.statsProcessed === false) {
+        // --- ACTIVE, DEFINED EXPERIMENT LOGIC ---
+        logger.log(`[endExperimentEarly] User ${userId} is ending a defined experiment early. Experiment ID: ${schedule.experimentId}`);
+        startDate = schedule.experimentSetAt;
+        settings = schedule.scheduledExperimentSettings;
+        experimentIdForStats = schedule.experimentId;
+
+        if (!startDate || !settings || !experimentIdForStats) {
+            throw new HttpsError('failed-precondition', 'Your active experiment schedule is missing key data. Cannot generate a report.');
+        }
+
+    } else {
+        // --- NO ACTIVE EXPERIMENT TO END ---
+        throw new HttpsError('failed-precondition', "You do not have an active experiment to end. It may have already been completed.");
+    }
+
+    // 4. Call the core stats logic function
+    const statsResult = await _calculateAndStorePeriodStatsLogic(
+        userId,
+        userTag,
+        experimentIdForStats,
+        startDate,
+        new Date().toISOString(), // The end date is always NOW
+        settings,
+        "endExperimentEarly" // Caller identifier
+    );
+
+    // 5. Handle the result of the stats calculation
+    if (statsResult && statsResult.success) {
+        const nextWeeklyTimestamp = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+        // Regardless of the original mode, the user is now in continuous mode, with the timer reset.
+        await userDocRef.update({
+            'experimentCurrentSchedule.statsProcessed': true,
+            'experimentCurrentSchedule.statsDocumentId': statsResult.experimentId,
+            'experimentCurrentSchedule.statsCalculationTimestamp': FieldValue.serverTimestamp(),
+            'experimentCurrentSchedule.statsMode': 'continuous',
+            'experimentCurrentSchedule.continuousStatsStartDate': startDate,
+            'experimentCurrentSchedule.nextWeeklyStatsTimestamp': admin.firestore.Timestamp.fromDate(nextWeeklyTimestamp)
+        });
+
+        // Create notification for the bot to pick up
+        const notificationRef = db.collection('pendingStatsNotifications').doc(`${userId}_${statsResult.experimentId}`);
+        await notificationRef.set({
+            userId: userId,
+            userTag: userTag,
+            experimentId: statsResult.experimentId,
+            statsDocumentId: statsResult.experimentId,
+            status: 'ready',
+            generatedAt: FieldValue.serverTimestamp(),
+            message: statsResult.message
+        });
+
+        logger.log(`[endExperimentEarly] Successfully processed and created notification for user ${userId}.`);
+        
+        let successMessage = `✅ Your report is being generated and will be sent to your DMs shortly.`;
+        if (statsResult.status === 'insufficient_overall_data') {
+            successMessage = `✅ ${statsResult.message}`;
+        }
+        
+        return { success: true, message: successMessage };
+
+    } else {
+        // The stats logic itself failed
+        throw new HttpsError('internal', statsResult?.message || 'Failed to calculate statistics for an unknown reason.');
     }
 });
 
@@ -3679,8 +3851,10 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
                 Try to encourage mindfulness, a growth mindset, or realistic optimism. You should inspire feelings of patience and hope for tomorrow. Use the word "you" in the message.
                 **CRITICAL: Your message must be grounded in the provided notes. Make sure you are congruent with the user's meaning in the notes.**
             3.  **Public Post Suggestion (100-140 characters):** Create a concise 1-2 sentence message that the user *could* post to a chat group.
-                This should be from *their perspective* (first-person), positive, and encourage connection or shared experience.
-                It should highlight a key win, an interesting insight, or a gentle question/struggle. Avoid jargon.
+                This should be from *their perspective* (first-person), positive, and subtly invite conversation.
+                It should highlight a key win, an interesting insight, or a gentle question/struggle. Use vocabulary directly from the user's notes as much as possible.
+                **CRITICAL: Avoid generic, open-ended questions like 'Anyone else feel this way?' or 'Can anyone relate?'. Focus on sharing a personal experience or asking for specific advice (ONLY if the user is wondering about something or wanting to know the answer to a question).**
+                The post should highlight a key win, an interesting insight, or a gentle, *specific* question. Avoid jargon.
                 **CRITICAL: Be precise. If the user mentions a "first time feeling," do not generalize it to a "first time event." Preserve the user's specific nuance.**
                 Examples:
                     * "Today was a tough one for me with [Habit or Outcome]. Looking for some tips to stay consistent on low-energy days [or more specific problem from notes]?"
@@ -3689,7 +3863,8 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
                     * "I've been wanting [Deeper Wish], and today felt like a step in that direction because [reason from notes]. It's cool to feel progress."
                     * "My main takeaway from today: [brief, insightful summary of a learning]."
             
-                DO NOT use cliches. The language of the message *must* be in the style of the user's notes.
+                DO NOT use cliches.
+                **The language of the message *must* be in the style of the user's notes (e.g., if they are concise, you are concise; if they are expressive, you are more expressive).**
 
             Return your response ONLY as a JSON object with the following structure:
             {
