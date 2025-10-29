@@ -178,7 +178,10 @@ const anthropic = new Anthropic({
  * @param {number} [max_tokens=1500] The maximum number of tokens to generate.
  * @returns {Promise<string>} The trimmed text content from Claude's response.
  */
-async function getClaudeChatCompletion(prompt, model = 'claude-3-5-sonnet-20241022', temperature = 0.85, max_tokens = 1500) {
+async function getClaudeChatCompletion(prompt, model = 'claude-sonnet-4-5-20250929', temperature = 0.85, max_tokens = 1500) {
+    // ADD THIS LOG:
+  logger.log(`[getClaudeChatCompletion DEBUG] USING MODEL: "${model}" (Type: ${typeof model})`);
+    
   logger.log(`[getClaudeChatCompletion] Calling Claude model ${model}. Prompt length: ${prompt.length}`);
   try {
     const response = await anthropic.messages.create({
@@ -200,6 +203,9 @@ async function getClaudeChatCompletion(prompt, model = 'claude-3-5-sonnet-202410
        throw new Error("Failed to extract text from Claude response. Structure might have changed.");
     }
   } catch (error) {
+    // ADD THIS LOG to see the model name during the error too:
+    logger.error(`[getClaudeChatCompletion ERROR DEBUG] Failed using model: "${model}"`, error); 
+    // Existing error logging:
     logger.error("[getClaudeChatCompletion] Error calling Anthropic Claude API:", error);
     let errorMessage = `Claude API request failed: ${error.message}`;
     if (error.status) {
@@ -212,7 +218,7 @@ async function getClaudeChatCompletion(prompt, model = 'claude-3-5-sonnet-202410
 /**
  * Alias for backwards compatibility - calls Claude instead of OpenAI
  */
-async function getOpenAIChatCompletion(prompt, model = 'claude-3-5-sonnet-20241022', temperature = 0.85) {
+async function getOpenAIChatCompletion(prompt, model = 'claude-sonnet-4-5-20250929', temperature = 0.85) {
     return getClaudeChatCompletion(prompt, model, temperature);
 }
 
@@ -3721,14 +3727,22 @@ exports.fetchOrGenerateAiInsights = onCall(async (request) => {
     const responseText = await getOpenAIChatCompletion(finalPrompt); // Use the same variable name (finalPrompt, etc.)
 
     let newEnhancedInsights;
+    let jsonString = ""; // --- NEW ---
     try {
-    // Clean the raw response from the AI of any markdown code fences before parsing.
-    const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
-    newEnhancedInsights = JSON.parse(cleanedText);
-        } catch (parseError) {
-            logger.error(`[fetchOrGenerateAiInsights] Failed to parse Gemini JSON response for log ${targetExperimentId}. Raw: "${responseText}". Error:`, parseError);
-            throw new HttpsError('internal', `AI returned an invalid format that could not be automatically corrected: ${parseError.message}`);
+        // --- START FIX: Robust JSON Extraction ---
+        const jsonStartIndex = responseText.indexOf('{');
+        const jsonEndIndex = responseText.lastIndexOf('}');
+        if (jsonStartIndex === -1 || jsonEndIndex === -1 || jsonEndIndex < jsonStartIndex) {
+            logger.error(`[fetchOrGenerateAiInsights] Could not find a valid JSON object (start/end braces) in AI response. Raw: "${responseText}"`);
+            throw new Error('AI response did not contain a valid JSON object.');
         }
+        jsonString = responseText.substring(jsonStartIndex, jsonEndIndex + 1);
+        newEnhancedInsights = JSON.parse(jsonString);
+        // --- END FIX ---
+        } catch (parseError) {
+            logger.error(`[fetchOrGenerateAiInsights] Failed to parse extracted AI JSON response for log ${targetExperimentId}. Raw: "${responseText}". Extracted: "${jsonString}". Error:`, parseError); // --- MODIFIED ---
+throw new HttpsError('internal', `AI returned an invalid format that could not be automatically corrected: ${parseError.message}`);
+}
 
     if (!newEnhancedInsights.strikingInsight || !newEnhancedInsights.experimentStory || !newEnhancedInsights.nextExperimentSuggestions) {
         throw new HttpsError('internal', 'AI response was missing one or more required fields.');
@@ -3861,15 +3875,22 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
         }
 
         let aiResult;
+        let jsonString = ""; // --- NEW ---
         try {
-            // Clean the raw response from the AI
-            const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
-            // Parse the cleaned response
-            aiResult = JSON.parse(cleanedText);
-        } catch (parseError) {
-            logger.error(`[_analyzeNotesLogic] Failed to parse Gemini JSON response for log ${logId}. Raw: "${responseText}". Error:`, parseError);
+            // --- START FIX: Robust JSON Extraction ---
+            const jsonStartIndex = responseText.indexOf('{');
+            const jsonEndIndex = responseText.lastIndexOf('}');
+            if (jsonStartIndex === -1 || jsonEndIndex === -1 || jsonEndIndex < jsonStartIndex) {
+                logger.error(`[_analyzeNotesLogic] Could not find a valid JSON object (start/end braces) in AI response. Raw: "${responseText}"`);
+                throw new Error('AI response did not contain a valid JSON object.');
+            }
+            jsonString = responseText.substring(jsonStartIndex, jsonEndIndex + 1);
+            aiResult = JSON.parse(jsonString);
+            // --- END FIX ---
+            } catch (parseError) {
+                    logger.error(`[_analyzeNotesLogic] Failed to parse extracted AI JSON response for log ${logId}. Raw: "${responseText}". Extracted: "${jsonString}". Error:`, parseError); // --- MODIFIED ---
             throw new Error(`AI returned an invalid format: ${parseError.message}`);
-        }
+                }
 
         if (!aiResult.acknowledgment || !aiResult.comfortMessage || !aiResult.publicPostSuggestion) {
             logger.error(`[_analyzeNotesLogic] AI response missing required fields for log ${logId}. Result:`, aiResult);
@@ -3949,19 +3970,25 @@ exports.getHistoricalMetricMatches = onCall(async (request) => {
     const responseText = await getOpenAIChatCompletion(prompt); // or promptText, narrativePrompt
     let aiMatches = [];
     if (responseText) {
+        let jsonString = ""; // --- NEW ---
         try {
-        // ADD THIS LINE to remove the markdown formatting from the AI's response
-        const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
-        
-        // CHANGE THIS LINE to parse the cleaned text
-        aiMatches = JSON.parse(cleanedText);
-        } catch (parseError) {
-            logger.error(`[getHistoricalMetricMatches] Failed to parse OpenAI JSON response for user ${userId}. Raw: "${responseText}". Error:`, parseError);
+            // --- START FIX: Robust JSON Extraction for Array ---
+            const jsonStartIndex = responseText.indexOf('[');
+            const jsonEndIndex = responseText.lastIndexOf(']');
+            if (jsonStartIndex === -1 || jsonEndIndex === -1 || jsonEndIndex < jsonStartIndex) {
+                logger.error(`[getHistoricalMetricMatches] Could not find a valid JSON array (start/end brackets) in AI response. Raw: "${responseText}"`);
+                throw new Error('AI response did not contain a valid JSON array.');
+            }
+            jsonString = responseText.substring(jsonStartIndex, jsonEndIndex + 1);
+            aiMatches = JSON.parse(jsonString);
+            // --- END FIX ---
+            } catch (parseError) {
+                        logger.error(`[getHistoricalMetricMatches] Failed to parse extracted AI JSON response for user ${userId}. Raw: "${responseText}". Extracted: "${jsonString}". Error:`, parseError); // --- MODIFIED ---
             throw new HttpsError('internal', `AI returned an invalid format: ${parseError.message}`);
-        }
-    } else {
-        logger.warn(`[getHistoricalMetricMatches] OpenAI returned an empty response string for user ${userId}. Treating as "no matches found".`);
-    }
+                    }
+                } else {
+                    logger.warn(`[getHistoricalMetricMatches] OpenAI returned an empty response string for user ${userId}. Treating as "no matches found".`);
+                }
 
     // 5. Filter out any exact matches the AI might have included
     const normalizedSelectedLabel = normalizeLabel(selectedMetric.label);
@@ -4296,18 +4323,33 @@ Your entire response must be ONLY the raw JSON object, starting with { and endin
                     let aiNarrative = null;
 
                     if (responseText) {
+                        let jsonString = ""; // --- NEW ---
                         try {
-                            // Clean the raw response from the AI of any markdown code fences before parsing.
-                            const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
-                            aiNarrative = JSON.parse(cleanedText);
-                            logger.log(`[runHistoricalAnalysis V6] Successfully parsed AI response after cleaning.`);
-                        } catch (parseError) {
-                            logger.error(`[runHistoricalAnalysis V6] Failed to parse Gemini JSON response even after cleaning. Raw: "${responseText}". Error:`, parseError);
+                            // --- START FIX: Robust JSON Extraction ---
+                            // 1. Find the first '{' and the last '}' to extract the JSON object
+                            //    This handles cases where the AI adds text like "Here is the JSON:" or "```json ... ```"
+                            const jsonStartIndex = responseText.indexOf('{');
+                            const jsonEndIndex = responseText.lastIndexOf('}');
+
+                            if (jsonStartIndex === -1 || jsonEndIndex === -1 || jsonEndIndex < jsonStartIndex) {
+                                logger.error(`[runHistoricalAnalysis V6] Could not find a valid JSON object (start/end braces) in AI response. Raw: "${responseText}"`);
+                                throw new Error('AI response did not contain a valid JSON object.');
+                            }
+
+                            // 2. Extract the potential JSON string
+                            jsonString = responseText.substring(jsonStartIndex, jsonEndIndex + 1); // --- NEW ---
+
+                            // 3. Attempt to parse the extracted string
+                            aiNarrative = JSON.parse(jsonString);
+                            logger.log(`[runHistoricalAnalysis V6] Successfully extracted and parsed AI response.`);
+                            // --- END FIX ---
+                            } catch (parseError) {
+                                                        logger.error(`[runHistoricalAnalysis V6] Failed to parse extracted AI JSON response. Raw: "${responseText}". Extracted: "${jsonString}". Error:`, parseError); // --- MODIFIED ---
                             throw new HttpsError('internal', `The AI failed to generate a valid report. Details: ${parseError.message}`);
-                        }
-                    } else {
-                        logger.warn(`[runHistoricalAnalysis V6] AI returned an empty response for user ${userId}. This will result in a data-only report.`);
-                    }
+                            }
+                                                } else {
+                                                    logger.warn(`[runHistoricalAnalysis V6] AI returned an empty response for user ${userId}. This will result in a data-only report.`);
+                            }
 
                     if (aiNarrative) {
                         if (typeof aiNarrative.holisticInsight === 'string') {
@@ -4549,13 +4591,21 @@ const promptText = `
     }
 
     let suggestions;
+    let jsonString = ""; // --- NEW ---
     try {
-    // Clean the raw response from the AI of any markdown code fences before parsing.
-    const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
-    suggestions = JSON.parse(cleanedText);
+        // --- START FIX: Robust JSON Extraction for Array ---
+        const jsonStartIndex = responseText.indexOf('[');
+        const jsonEndIndex = responseText.lastIndexOf(']');
+        if (jsonStartIndex === -1 || jsonEndIndex === -1 || jsonEndIndex < jsonStartIndex) {
+            logger.error(`[generateOutcomeLabelSuggestions] Could not find a valid JSON array (start/end brackets) in AI response. Raw: "${responseText}"`);
+            throw new Error('AI response did not contain a valid JSON array.');
+        }
+        jsonString = responseText.substring(jsonStartIndex, jsonEndIndex + 1);
+        suggestions = JSON.parse(jsonString);
+        // --- END FIX ---
         } catch (parseError) {
-            logger.error(`[generateOutcomeLabelSuggestions] Failed to parse Gemini JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}"`);
-            throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
+            logger.error(`[generateOutcomeLabelSuggestions] Failed to parse extracted AI JSON response for user ${userId}. Error: ${parseError.message}. Raw response: "${responseText}". Extracted: "${jsonString}"`); // --- MODIFIED ---
+        throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
         }
 
     if (!Array.isArray(suggestions) || suggestions.length === 0) { // Check for empty array too
@@ -4671,14 +4721,22 @@ exports.generateInputLabelSuggestions = onCall(async (request) => {
     }
 
     let suggestions;
+    let jsonString = ""; // --- NEW ---
     try {
-    // Clean the raw response from the AI of any markdown code fences before parsing.
-    const cleanedText = responseText.replace(/```json\n|```/g, '').trim();
-    suggestions = JSON.parse(cleanedText);
-    } catch (parseError) {
-        logger.error(`[generateInputLabelSuggestions] Failed to parse Gemini JSON response. Error: ${parseError.message}. Raw: "${responseText}"`);
+        // --- START FIX: Robust JSON Extraction for Array ---
+        const jsonStartIndex = responseText.indexOf('[');
+        const jsonEndIndex = responseText.lastIndexOf(']');
+        if (jsonStartIndex === -1 || jsonEndIndex === -1 || jsonEndIndex < jsonStartIndex) {
+            logger.error(`[generateInputLabelSuggestions] Could not find a valid JSON array (start/end brackets) in AI response. Raw: "${responseText}"`);
+            throw new Error('AI response did not contain a valid JSON array.');
+        }
+        jsonString = responseText.substring(jsonStartIndex, jsonEndIndex + 1);
+        suggestions = JSON.parse(jsonString);
+        // --- END FIX ---
+        } catch (parseError) {
+            logger.error(`[generateInputLabelSuggestions] Failed to parse extracted AI JSON response. Error: ${parseError.message}. Raw: "${responseText}". Extracted: "${jsonString}"`); // --- MODIFIED ---
         throw new HttpsError('internal', `AI returned an invalid format. Details: ${parseError.message}`);
-    }
+        }
 
     if (!Array.isArray(suggestions) || suggestions.length === 0) {
         logger.error(`[generateInputLabelSuggestions] Parsed response is not a non-empty array. Found ${suggestions.length}.`);

@@ -186,10 +186,11 @@ function buildOutcomeStatsPage(embed, metricData) {
         const variation = metricData.variationPercentage;
         let consistencyLabel = "Not enough data";
         if (variation !== undefined && variation !== null) {
-            if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
-            else if (variation <= 35) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
-            else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
-        }
+        const consistency = Math.max(0, 100 - variation);
+        if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
+        else if (consistency >= 65) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
+        else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
+    }
         
         embed.addFields(
             { name: `Average: ${formatValue(metricData.average)}${unit}`, value: '\u200B', inline: true },
@@ -225,10 +226,11 @@ function buildHabitStatsPage(embed, metricData, habitNumber) {
         const variation = metricData.variationPercentage;
         let consistencyLabel = "Not enough data";
         if (variation !== undefined && variation !== null) {
-            if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
-            else if (variation <= 35) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
-            else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
-        }
+        const consistency = Math.max(0, 100 - variation);
+        if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
+        else if (consistency >= 65) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
+        else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
+    }
 
         embed.addFields(
             { name: `Average: ${formatValue(metricData.average)}${unit}`, value: '\u200B', inline: true },
@@ -602,9 +604,10 @@ function buildCoreOverviewPage(embed, statsReportData) {
             const variation = metricData.variationPercentage;
             let consistencyLabel = "Not enough data";
             if (variation !== undefined && variation !== null) {
-                if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
-                else if (variation <= 35) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
-                else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
+                const consistency = Math.max(0, 100 - variation);
+                if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
+                else if (consistency >= 60) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
+                else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
             }
             return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}\n` +
                    `**Consistency:** ${consistencyLabel}\n` +
@@ -727,9 +730,10 @@ function buildCoreStatsSummary(embed, statsReportData) {
             const variation = metricData.variationPercentage;
             let consistencyLabel = "Not enough data";
             if (variation !== undefined && variation !== null) {
-                if (variation < 20) consistencyLabel = `🟩 Consistent (${variation.toFixed(1)}%)`;
-                else if (variation <= 40) consistencyLabel = `🟨 Moderate (${variation.toFixed(1)}%)`;
-                else consistencyLabel = `🟧 Variable (${variation.toFixed(1)}%)`;
+                const consistency = Math.max(0, 100 - variation);
+                if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
+                else if (consistency >= 60) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
+                else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
             }
             return `**Avg:** ${formatValue(metricData.average)}${unit} | **Median:** ${formatValue(metricData.median)}${unit}\n**Consistency:** ${consistencyLabel} | **Data Points:** ${metricData.dataPoints}`;
         }
@@ -3100,8 +3104,8 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
           .setDescription('Begin the welcome and onboarding sequence.')
           .toJSON(),
           new SlashCommandBuilder()
-          .setName('test-embedding')
-          .setDescription('Tests the connection to the Vertex AI embedding model.')
+          .setName('end')
+          .setDescription('End your current experiment early and calculate stats.')
           .toJSON()
       ]}
     );
@@ -4914,7 +4918,7 @@ client.on(Events.InteractionCreate, async interaction => {
           }
 
           case 'reminders': {
-        try {
+            try {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const userId = interaction.user.id;
 
@@ -4973,11 +4977,27 @@ client.on(Events.InteractionCreate, async interaction => {
                     new ActionRowBuilder().addComponents(nextButtonSetTime)
                 ]
             });
-        } catch (error) {
-            console.error('[/reminders] Error:', error);
-            if (interaction.deferred) await interaction.editReply({ content: '❌ An error occurred.' });
-        }
-        break;
+            } catch (error) {
+                console.error('[/reminders] Error:', error);
+                if (interaction.deferred) await interaction.editReply({ content: '❌ An error occurred.' });
+            }
+            break;
+            }
+
+          case 'end': {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            try {
+              // This function will be created in the next step in functions/index.js
+              const result = await callFirebaseFunction('endExperimentEarly', {}, interaction.user.id);
+              if (result && result.success) {
+                await interaction.editReply({ content: result.message });
+              } else {
+                throw new Error(result?.message || 'The backend function did not return a success message.');
+              }
+            } catch (error) {
+              await interaction.editReply({ content: `❌ An error occurred while ending your experiment: ${error.message}` });
+            }
+            break;
           }
 
           case 'stats': {
@@ -6591,12 +6611,13 @@ client.on(Events.InteractionCreate, async interaction => {
             const temp_inputs = setupData.tempLogData?.inputValues || [];
 
             // 1. Add the Notes input first with the correct placeholder and temporary value
+            const deeperWish = settings?.deeperProblem || 'your deeper wish';
             const notesInput = new TextInputBuilder()
                 .setCustomId('log_notes')
                 .setLabel('💭 Experiment & Life Notes')
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(true)
-                .setPlaceholder("Ups and Downs of Your Habits Today?")
+                .setPlaceholder(`Thoughts on any habits or '${deeperWish}'?`)
                 .setValue(temp_notes);
             components.push(new ActionRowBuilder().addComponents(notesInput));
 
@@ -6618,7 +6639,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                     if (customId) {
                          return new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
                         );
                     }
                     return null;
@@ -6783,12 +6804,13 @@ client.on(Events.InteractionCreate, async interaction => {
         const temp_inputs = setupData.tempLogData?.inputValues || [];
 
         // 1. Add the Notes input first with the correct placeholder and temporary value
+        const deeperWish = settings?.deeperProblem || 'your deeper wish';
         const notesInput = new TextInputBuilder()
             .setCustomId('log_notes')
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder("Ups and Downs of Your Habits Today?")
+            .setPlaceholder(`Thoughts on any habits or '${deeperWish}'?`)
             .setValue(temp_notes);
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
@@ -6809,7 +6831,7 @@ client.on(Events.InteractionCreate, async interaction => {
             if (customId) {
                 components.push(
                     new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
                     )
                 );
             }
@@ -6851,12 +6873,13 @@ client.on(Events.InteractionCreate, async interaction => {
         const components = [];
 
         // 1. Add the Notes input first with the correct placeholder
+        const deeperWish = settings?.deeperProblem || 'your deeper wish';
         const notesInput = new TextInputBuilder()
             .setCustomId('log_notes')
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder("Ups and Downs of Your Habits Today?");
+            .setPlaceholder(`Thoughts on any habits or '${deeperWish}'?`)
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
         // 2. Create and add the metric inputs after the notes
@@ -6870,7 +6893,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 else if (metric.label === settings.input3.label) customId = 'log_input3_value';
 
                 return new ActionRowBuilder().addComponents(
-                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal}`).setStyle(TextInputStyle.Short).setRequired(true)
+                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true)
                 );
             });
         
@@ -7891,26 +7914,32 @@ client.on(Events.InteractionCreate, async interaction => {
               const { deeperProblem, outputSetting, inputSettings } = setupData.rawPayload;
 
               // Helper function to format metric strings for display
-              const formatMetricForDisplay = (metricString) => {
+              
+              const formatMetricForDisplay = (metricString) => { // Defined as a const arrow function
                   if (!metricString || typeof metricString !== 'string') return "Not specified";
                   const parts = metricString.split(',').map(p => p.trim());
                   if (parts.length !== 3) return metricString; // Return as is if format is wrong
 
                   const [goalStr, unit, label] = parts;
 
-                  // Check if the unit indicates a time-based metric
-                  const isTime = TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
-
-                  if (isTime) {
-                      const goal = parseFloat(goalStr);
-                      if (!isNaN(goal)) {
-                          // Format the decimal goal as a time string and reconstruct
-                          return `${formatDecimalAsTime(goal)}, ${unit}, ${label}`;
-                      }
+                  // Check for yes/no metric FIRST
+                  if (isYesNoMetric(unit)) { // isYesNoMetric checks yes/no keywords
+                      // For yes/no, only return Label (Unit)
+                      return `${label} (${unit})`;
                   }
-                  // If not a time metric or goal is not a number, return the original string
-                  return metricString;
-              };
+                  // Check for time metric NEXT
+                  else if (isTimeMetric(unit)) { // isTimeMetric checks TIME_OF_DAY_KEYWORDS
+                      const decimalTime = parseFloat(goalStr);
+                      // formatDecimalAsTime converts decimal hours to AM/PM
+                      const formattedGoal = isNaN(decimalTime) ? goalStr : formatDecimalAsTime(decimalTime);
+                      return `${label} (${formattedGoal} ${unit})`;
+                  }
+                  // Handle other numeric metrics LAST
+                  else {
+                      const formattedGoal = goalStr; // Keep numbers as they are
+                      return `${label} (${formattedGoal} ${unit})`;
+                  }
+              }; // End of formatMetricForDisplay definition
 
               const postEmbed = new EmbedBuilder()
                   .setColor('#7289DA') // Blue

@@ -186,7 +186,7 @@ function buildOutcomeStatsPage(embed, metricData) {
         const variation = metricData.variationPercentage;
         let consistencyLabel = "Not enough data";
         if (variation !== undefined && variation !== null) {
-        const consistency = 100 - variation;
+        const consistency = Math.max(0, 100 - variation);
         if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
         else if (consistency >= 65) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
         else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
@@ -226,7 +226,7 @@ function buildHabitStatsPage(embed, metricData, habitNumber) {
         const variation = metricData.variationPercentage;
         let consistencyLabel = "Not enough data";
         if (variation !== undefined && variation !== null) {
-        const consistency = 100 - variation;
+        const consistency = Math.max(0, 100 - variation);
         if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
         else if (consistency >= 65) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
         else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
@@ -604,7 +604,7 @@ function buildCoreOverviewPage(embed, statsReportData) {
             const variation = metricData.variationPercentage;
             let consistencyLabel = "Not enough data";
             if (variation !== undefined && variation !== null) {
-                const consistency = 100 - variation;
+                const consistency = Math.max(0, 100 - variation);
                 if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
                 else if (consistency >= 60) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
                 else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
@@ -730,7 +730,7 @@ function buildCoreStatsSummary(embed, statsReportData) {
             const variation = metricData.variationPercentage;
             let consistencyLabel = "Not enough data";
             if (variation !== undefined && variation !== null) {
-                const consistency = 100 - variation;
+                const consistency = Math.max(0, 100 - variation);
                 if (consistency > 80) consistencyLabel = `🟩 ${consistency.toFixed(1)}% Consistent`;
                 else if (consistency >= 60) consistencyLabel = `🟨 ${consistency.toFixed(1)}% Consistent`;
                 else consistencyLabel = `🟧 ${consistency.toFixed(1)}% Consistent`;
@@ -6639,7 +6639,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                     if (customId) {
                          return new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "-" or "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
                         );
                     }
                     return null;
@@ -6831,7 +6831,7 @@ client.on(Events.InteractionCreate, async interaction => {
             if (customId) {
                 components.push(
                     new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "-" or "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
                     )
                 );
             }
@@ -6893,7 +6893,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 else if (metric.label === settings.input3.label) customId = 'log_input3_value';
 
                 return new ActionRowBuilder().addComponents(
-                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "-" or "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true)
+                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true)
                 );
             });
         
@@ -7914,26 +7914,32 @@ client.on(Events.InteractionCreate, async interaction => {
               const { deeperProblem, outputSetting, inputSettings } = setupData.rawPayload;
 
               // Helper function to format metric strings for display
-              const formatMetricForDisplay = (metricString) => {
+              
+              const formatMetricForDisplay = (metricString) => { // Defined as a const arrow function
                   if (!metricString || typeof metricString !== 'string') return "Not specified";
                   const parts = metricString.split(',').map(p => p.trim());
                   if (parts.length !== 3) return metricString; // Return as is if format is wrong
 
                   const [goalStr, unit, label] = parts;
 
-                  // Check if the unit indicates a time-based metric
-                  const isTime = TIME_OF_DAY_KEYWORDS.includes(unit.toLowerCase().trim());
-
-                  if (isTime) {
-                      const goal = parseFloat(goalStr);
-                      if (!isNaN(goal)) {
-                          // Format the decimal goal as a time string and reconstruct
-                          return `${formatDecimalAsTime(goal)}, ${unit}, ${label}`;
-                      }
+                  // Check for yes/no metric FIRST
+                  if (isYesNoMetric(unit)) { // isYesNoMetric checks yes/no keywords
+                      // For yes/no, only return Label (Unit)
+                      return `${label} (${unit})`;
                   }
-                  // If not a time metric or goal is not a number, return the original string
-                  return metricString;
-              };
+                  // Check for time metric NEXT
+                  else if (isTimeMetric(unit)) { // isTimeMetric checks TIME_OF_DAY_KEYWORDS
+                      const decimalTime = parseFloat(goalStr);
+                      // formatDecimalAsTime converts decimal hours to AM/PM
+                      const formattedGoal = isNaN(decimalTime) ? goalStr : formatDecimalAsTime(decimalTime);
+                      return `${label} (${formattedGoal} ${unit})`;
+                  }
+                  // Handle other numeric metrics LAST
+                  else {
+                      const formattedGoal = goalStr; // Keep numbers as they are
+                      return `${label} (${formattedGoal} ${unit})`;
+                  }
+              }; // End of formatMetricForDisplay definition
 
               const postEmbed = new EmbedBuilder()
                   .setColor('#7289DA') // Blue
