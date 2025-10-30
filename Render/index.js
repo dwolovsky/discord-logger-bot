@@ -6612,12 +6612,17 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // 1. Add the Notes input first with the correct placeholder and temporary value
             const deeperWish = settings?.deeperProblem || 'your deeper wish';
+            const notesPlaceholder = `Thoughts on any habits or '${deeperWish}'?`;
+            const truncatedPlaceholder = notesPlaceholder.length > 100 
+                ? notesPlaceholder.substring(0, 97) + '...' 
+                : notesPlaceholder;
+
             const notesInput = new TextInputBuilder()
                 .setCustomId('log_notes')
                 .setLabel('💭 Experiment & Life Notes')
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(true)
-                .setPlaceholder(`Thoughts on any habits or '${deeperWish}'?`)
+                .setPlaceholder(truncatedPlaceholder)
                 .setValue(temp_notes);
             components.push(new ActionRowBuilder().addComponents(notesInput));
 
@@ -6625,21 +6630,23 @@ client.on(Events.InteractionCreate, async interaction => {
             const metricComponents = [settings.output, settings.input1, settings.input2, settings.input3]
                 .filter(metric => metric && metric.label)
                 .map((metric) => {
-                    let customId, tempValue = "";
+                    let customId, tempValue = "", placeholderText = "";
                     if (metric.label === settings.output.label) {
                         customId = 'log_output_value';
                         tempValue = temp_output;
+                        placeholderText = `Today's outcome`;
                     } else {
                         const inputIndex = [settings.input1, settings.input2, settings.input3].findIndex(s => s?.label === metric.label);
                         if (inputIndex !== -1) {
                             customId = `log_input${inputIndex + 1}_value`;
                             tempValue = temp_inputs[inputIndex] || "";
+                            placeholderText = `Goal: ${metric.goal} (put "na" if skipping)`;
                         }
                     }
 
                     if (customId) {
                          return new ActionRowBuilder().addComponents(
-                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                            new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(placeholderText).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
                         );
                     }
                     return null;
@@ -6805,33 +6812,40 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // 1. Add the Notes input first with the correct placeholder and temporary value
         const deeperWish = settings?.deeperProblem || 'your deeper wish';
+        const notesPlaceholder = `Thoughts on any habits or '${deeperWish}'?`;
+        const truncatedPlaceholder = notesPlaceholder.length > 100 
+            ? notesPlaceholder.substring(0, 97) + '...' 
+            : notesPlaceholder;
+
         const notesInput = new TextInputBuilder()
             .setCustomId('log_notes')
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder(`Thoughts on any habits or '${deeperWish}'?`)
+            .setPlaceholder(truncatedPlaceholder)
             .setValue(temp_notes);
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
         // 2. Add inputs for non-time metrics after the notes
         otherMetrics.forEach(metric => {
-            let customId, tempValue;
+            let customId, tempValue, placeholderText;
             if (metric.label === settings.output.label) {
                 customId = 'log_output_value';
                 tempValue = temp_output;
+                placeholderText = `Today's Outcome`;
             } else {
                 const inputIndex = [settings.input1, settings.input2, settings.input3].findIndex(s => s?.label === metric.label);
                 if (inputIndex !== -1) {
                     customId = `log_input${inputIndex + 1}_value`;
                     tempValue = temp_inputs[inputIndex] || "";
+                    placeholderText = `Goal: ${metric.goal} (put "na" if skipping)`;
                 }
             }
             
             if (customId) {
                 components.push(
                     new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
+                        new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(placeholderText).setStyle(TextInputStyle.Short).setRequired(true).setValue(tempValue)
                     )
                 );
             }
@@ -6874,26 +6888,32 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // 1. Add the Notes input first with the correct placeholder
         const deeperWish = settings?.deeperProblem || 'your deeper wish';
+        const notesPlaceholder = `Thoughts on any habits or '${deeperWish}'?`;
+        const truncatedPlaceholder = notesPlaceholder.length > 100 
+            ? notesPlaceholder.substring(0, 97) + '...' 
+            : notesPlaceholder;
+
         const notesInput = new TextInputBuilder()
             .setCustomId('log_notes')
             .setLabel('💭 Experiment & Life Notes')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder(`Thoughts on any habits or '${deeperWish}'?`)
+            .setPlaceholder(truncatedPlaceholder)
+            .setValue(temp_notes);
         components.push(new ActionRowBuilder().addComponents(notesInput));
 
         // 2. Create and add the metric inputs after the notes
         const metricComponents = [settings.output, settings.input1, settings.input2, settings.input3]
             .filter(metric => metric && metric.label)
             .map(metric => {
-                let customId;
-                if (metric.label === settings.output.label) customId = 'log_output_value';
-                else if (metric.label === settings.input1.label) customId = 'log_input1_value';
-                else if (metric.label === settings.input2.label) customId = 'log_input2_value';
-                else if (metric.label === settings.input3.label) customId = 'log_input3_value';
+                let customId, placeholderText;
+                if (metric.label === settings.output.label) { customId = 'log_output_value'; placeholderText = `Today's Outcome`; }
+                else if (metric.label === settings.input1.label) { customId = 'log_input1_value'; placeholderText = `Goal: ${metric.goal} (put "na" if skipping)`; }
+                else if (metric.label === settings.input2.label) { customId = 'log_input2_value'; placeholderText = `Goal: ${metric.goal} (put "na" if skipping)`; }
+                else if (metric.label === settings.input3.label) { customId = 'log_input3_value'; placeholderText = `Goal: ${metric.goal} (put "na" if skipping)`; }
 
                 return new ActionRowBuilder().addComponents(
-                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(`Goal: ${metric.goal} (put "na" if skipping)`).setStyle(TextInputStyle.Short).setRequired(true)
+                    new TextInputBuilder().setCustomId(customId).setLabel(`${metric.label} (${metric.unit})`.substring(0, 45)).setPlaceholder(placeholderText).setStyle(TextInputStyle.Short).setRequired(true)
                 );
             });
         
