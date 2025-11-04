@@ -1458,7 +1458,7 @@ exports.getWishHistory = onCall(async (request) => {
         experiments.sort((a, b) => {
             const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
             const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
-            return dateB - dateA;
+            return dateA - dateB;
         });
 
         // Format the message
