@@ -1411,6 +1411,74 @@ exports.getAllUserMetrics = onCall(async (request) => {
     }
 });
 
+exports.getWishHistory = onCall(async (request) => {
+    // 1. Authentication Check
+    if (!request.auth) {
+        logger.warn("getWishHistory called without authentication.");
+        throw new HttpsError('unauthenticated', 'You must be logged in to view your wish history.');
+    }
+    const userId = request.auth.uid;
+    logger.log(`getWishHistory called by authenticated user: ${userId}`);
+
+    const db = admin.firestore();
+    try {
+        // Query all experiment stats for this user
+        const experimentStatsSnapshot = await db.collection('users').doc(userId).collection('experimentStats').get();
+        
+        if (experimentStatsSnapshot.empty) {
+            return { 
+                success: true, 
+                message: "You haven't completed any experiments yet. Start your first one with `/go`!" 
+            };
+        }
+
+        // Collect all experiments with their deeper wishes and outcomes
+        const experiments = [];
+        experimentStatsSnapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.activeExperimentSettings) {
+                const settings = data.activeExperimentSettings;
+                experiments.push({
+                    experimentId: doc.id,
+                    deeperWish: settings.deeperProblem || "Not specified",
+                    outcome: settings.output ? `${settings.output.label} (${settings.output.unit})` : "Not specified",
+                    endDate: data.experimentEndDateISO || data.calculationTimestamp
+                });
+            }
+        });
+
+        if (experiments.length === 0) {
+            return { 
+                success: true, 
+                message: "No experiment data found with deeper wishes. This might be from older experiments before this feature was added." 
+            };
+        }
+
+        // Sort by end date (most recent first)
+        experiments.sort((a, b) => {
+            const dateA = a.endDate ? new Date(a.endDate) : new Date(0);
+            const dateB = b.endDate ? new Date(b.endDate) : new Date(0);
+            return dateB - dateA;
+        });
+
+        // Format the message
+        let message = `✨ **Your Wish History** ✨\n\nYou've completed ${experiments.length} experiment${experiments.length > 1 ? 's' : ''}:\n\n`;
+        
+        experiments.forEach((exp, index) => {
+            message += `**Experiment ${index + 1}**\n`;
+            message += `❣️ Deeper Wish: ${exp.deeperWish}\n`;
+            message += `📊 Outcome Tracked: ${exp.outcome}\n\n`;
+        });
+
+        logger.log(`[getWishHistory] Retrieved ${experiments.length} experiments for user ${userId}.`);
+        return { success: true, message: message };
+
+    } catch (error) {
+        logger.error(`[getWishHistory] Error fetching wish history for user ${userId}:`, error);
+        throw new HttpsError('internal', 'Could not retrieve your wish history due to a server error.', error.message);
+    }
+});
+
     /**
      * Saves the experiment duration, reminder schedule, generates an experimentId,
      * calculates the end timestamp, and snapshots active settings.

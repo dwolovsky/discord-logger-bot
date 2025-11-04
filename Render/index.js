@@ -2151,7 +2151,7 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
     if (settings.deeperProblem && settings.deeperProblem.trim() !== "") {
       finalDescription += `**❣️ Your Deeper Wish:**\n${settings.deeperProblem.trim()}\n\n---\n\n`;
     }
-    
+
     // --- NEW: Add AI appreciation message to the top ---
     if (aiResponse && aiResponse.acknowledgment && aiResponse.comfortMessage) {
         finalDescription += `${aiResponse.acknowledgment}\n${aiResponse.comfortMessage}\n\n---\n`;
@@ -3110,6 +3110,10 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
           new SlashCommandBuilder()
           .setName('end')
           .setDescription('End your current experiment early and calculate stats.')
+          .toJSON(),
+          new SlashCommandBuilder()
+          .setName('wish')
+          .setDescription('View all your past deeper wishes and outcomes.')
           .toJSON()
       ]}
     );
@@ -5090,6 +5094,21 @@ client.on(Events.InteractionCreate, async interaction => {
               break;
             } // End case 'hi'
 
+            case 'wish': {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+            try {
+              const result = await callFirebaseFunction('getWishHistory', {}, interaction.user.id);
+              if (result && result.success) {
+                await interaction.editReply({ content: result.message });
+              } else {
+                throw new Error(result?.message || 'Could not retrieve wish history.');
+              }
+            } catch (error) {
+              await interaction.editReply({ content: `❌ An error occurred: ${error.message}` });
+            }
+            break;
+          }
+          
           default: {
             console.warn('⚠️ Unrecognized command:', interaction.commandName);
             return await interaction.reply({
