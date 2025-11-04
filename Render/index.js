@@ -2148,6 +2148,10 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
 
     let finalDescription = "";
 
+    if (settings.deeperProblem && settings.deeperProblem.trim() !== "") {
+      finalDescription += `**❣️ Your Deeper Wish:**\n${settings.deeperProblem.trim()}\n\n---\n\n`;
+    }
+    
     // --- NEW: Add AI appreciation message to the top ---
     if (aiResponse && aiResponse.acknowledgment && aiResponse.comfortMessage) {
         finalDescription += `${aiResponse.acknowledgment}\n${aiResponse.comfortMessage}\n\n---\n`;

@@ -3577,7 +3577,7 @@ exports.sendScheduledReminders = onSchedule("every 55 minutes", async (event) =>
                         Generate ONLY the reminder message text. Be conversational and avoid greetings.`;
 
                         // C. Call AI
-                        const candidateText = await getOpenAIChatCompletion(aiPromptText, 'gpt-4o', 0.9);
+                        const candidateText = await getOpenAIChatCompletion(aiPromptText, 'claude-sonnet-4-5-20250929', 0.9);
 
                         if (candidateText && candidateText.length > 0 && candidateText.length <= 200) {
                             finalReminderMessage = candidateText;
