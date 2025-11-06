@@ -379,10 +379,10 @@ This key's value must be a string containing 2-4 sentences that reflect on the u
 **EXAMPLES OF TONE FOR experimentStory:**
 
 Example 1 - Metrics close to goal:
-"You showed up for what you said mattered. You practiced meditation an average of 14 minutes when you aimed for 15. You practiced exercise 28 minutes when you aimed for 30. If you hadn't been tracking these, you wouldn't see this progress. Most people lose track of whether they're actually doing the things they say they want to do. You have proof."
+"You showed up for what you said mattered. You practiced meditation an average of 14 minutes when you aimed for 15.\\n\\nYou practiced exercise 28 minutes when you aimed for 30. If you hadn't been tracking these, you wouldn't see this progress.\\n\\nMost people lose track of whether they're actually doing the things they say they want to do.\\n\\nYou have proof."
 
 Example 2 - Metrics far from goal:
-"This week showed you exactly where the gap is between what you thought might fit and what actually happened. Meditation averaged 6 minutes instead of 15. Exercise averaged 10 instead of 30. Without tracking this, you'd just feel like you 'failed' and not know why (and not see the tiny bit that did work, as a jumping off point for insight). Now you have data to advance you forward with finding the perfect fit for you. Most people try something, it doesn't work, they don't know why, so they give up and stop experimenting. But you actually have something to build on."
+"This week showed you exactly where the gap is between what you thought might fit and what actually happened.\\n\\nMeditation averaged 6 minutes instead of 15. Exercise averaged 10 instead of 30.\\n\\nWithout tracking this, you'd just feel like you 'failed' and not know why (and not see the tiny bit that did work, as a jumping off point for insight).\\n\\nNow you have data to advance you forward with finding the perfect fit for you.\\n\\nMost people try something, it doesn't work, they don't know why, so they give up and stop experimenting.\\n\\nBut you actually have something to build on."
 
 **3. "nextExperimentSuggestions":**
 This key's value must be an array of exactly 3 JSON objects. Each object must have a "framework" (string) and a "suggestion" (string).
