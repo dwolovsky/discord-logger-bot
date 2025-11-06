@@ -6627,7 +6627,7 @@ client.on(Events.InteractionCreate, async interaction => {
         
         // Helper function to build the standard log modal, now defined inside this handler
         const buildStandardLogModal = (settings, setupData) => {
-            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`📝 Fuel Your Experiment`);
+            const modal = new ModalBuilder().setCustomId('dailyLogModal_firebase').setTitle(`🚀 Data = Wisdom Fuel`);
             const components = [];
             const temp_notes = setupData.tempLogData?.notes || "";
             const temp_output = setupData.tempLogData?.outputValue || "";
@@ -6635,7 +6635,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // 1. Add the Notes input first with the correct placeholder and temporary value
             const deeperWish = settings?.deeperProblem || 'your deeper wish';
-            const notesPlaceholder = `Thoughts on any habits or '${deeperWish}'?`;
+            const notesPlaceholder = `What came at you today? Good and Bad?`;
             const truncatedPlaceholder = notesPlaceholder.length > 100 
                 ? notesPlaceholder.substring(0, 97) + '...' 
                 : notesPlaceholder;
@@ -6835,7 +6835,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // 1. Add the Notes input first with the correct placeholder and temporary value
         const deeperWish = settings?.deeperProblem || 'your deeper wish';
-        const notesPlaceholder = `Thoughts on any habits or '${deeperWish}'?`;
+        const notesPlaceholder = `What came at you today? Good and Bad?`;
         const truncatedPlaceholder = notesPlaceholder.length > 100 
             ? notesPlaceholder.substring(0, 97) + '...' 
             : notesPlaceholder;
@@ -6911,7 +6911,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // 1. Add the Notes input first with the correct placeholder
         const deeperWish = settings?.deeperProblem || 'your deeper wish';
-        const notesPlaceholder = `Thoughts on any habits or '${deeperWish}'?`;
+        const notesPlaceholder = `What came at you today? Good and Bad?`;
         const truncatedPlaceholder = notesPlaceholder.length > 100 
             ? notesPlaceholder.substring(0, 97) + '...' 
             : notesPlaceholder;
