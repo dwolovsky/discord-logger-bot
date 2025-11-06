@@ -2153,8 +2153,8 @@ async function sendAppreciationDM(interaction, aiResponse, settings, payload) {
     }
 
     // --- NEW: Add AI appreciation message to the top ---
-    if (aiResponse && aiResponse.acknowledgment && aiResponse.comfortMessage) {
-        finalDescription += `${aiResponse.acknowledgment}\n${aiResponse.comfortMessage}\n\n---\n`;
+    if (aiResponse && aiResponse.comfortMessage) {
+        finalDescription += `${aiResponse.comfortMessage}\n\n---\n`;
     }
     // --- End of New Logic ---
 
@@ -5108,7 +5108,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             break;
           }
-          
+
           default: {
             console.warn('⚠️ Unrecognized command:', interaction.commandName);
             return await interaction.reply({
@@ -9293,8 +9293,8 @@ else if (interaction.customId === 'historical_metric_select') {
 
             if (result.aiResponse) {
                 // When AI gives feedback, the message is direct and does NOT include an inspirational quote.
-                finalEphemeralMessage = `**Now Let Today Go!**\n\n${result.aiResponse.acknowledgment}\n\n${result.aiResponse.comfortMessage}\n\nI've got another thought. Would you like to see it?`;
-                
+                finalEphemeralMessage = `🎊**You paid attention**🎊\n\n${result.aiResponse.comfortMessage}\n\nI've got another thought. Would you like to see it?`;
+
                 const currentSetupData = userExperimentSetupData.get(interaction.user.id) || {};
                 userExperimentSetupData.set(interaction.user.id, {
                     ...currentSetupData,

@@ -263,6 +263,62 @@ const AI_STATS_ANALYSIS_PROMPT_TEMPLATE = (data) => {
     return `When combining ${interaction.input1Label} & ${interaction.input2Label}: ${interaction.summary}`;
   };
 
+  // NEW: Helper to get goals and calculate close vs far metrics
+  const getMetricsWithGoals = () => {
+    const activeSettings = data.activeExperimentSettings;
+    if (!activeSettings) return { close: [], far: [] };
+    
+    const metrics = data.calculatedMetrics || {};
+    const results = { close: [], far: [] };
+    
+    for (const metricKey in metrics) {
+      const metric = metrics[metricKey];
+      if (!metric || metric.status === 'skipped_insufficient_data') continue;
+      
+      // Find matching goal
+      let goalValue = null;
+      if (activeSettings.output && activeSettings.output.label === metric.label) {
+        goalValue = activeSettings.output.goal;
+      } else if (activeSettings.input1 && activeSettings.input1.label === metric.label) {
+        goalValue = activeSettings.input1.goal;
+      } else if (activeSettings.input2 && activeSettings.input2.label === metric.label) {
+        goalValue = activeSettings.input2.goal;
+      } else if (activeSettings.input3 && activeSettings.input3.label === metric.label) {
+        goalValue = activeSettings.input3.goal;
+      }
+      
+      if (goalValue === null || goalValue === undefined) continue;
+      
+      const average = metric.average;
+      const goal = parseFloat(goalValue);
+      const difference = Math.abs(average - goal);
+      const threshold = goal * 0.3;
+      const isClose = difference <= threshold;
+      const percentOfGoal = ((average / goal) * 100).toFixed(0);
+      
+      const metricInfo = {
+        label: metric.label,
+        unit: metric.unit,
+        average: average,
+        goal: goal,
+        percentOfGoal: percentOfGoal
+      };
+      
+      if (isClose) {
+        results.close.push(metricInfo);
+      } else {
+        results.far.push(metricInfo);
+      }
+    }
+    
+    return results;
+  };
+  
+  const metricsWithGoals = getMetricsWithGoals();
+  
+  const formatMetricForPrompt = (m) => 
+    `${m.label}: averaged ${m.average} ${m.unit} (goal was ${m.goal} ${m.unit}, hit ${m.percentOfGoal}% of goal)`;
+
   return `
 You are a "Self Science" assistant. Your goal is to support the user's journey toward self love by analyzing their habit experiment data and presenting it as a supportive, insightful, and actionable story. Your tone is empowering and non-judgmental, but realistic, focusing on curiosity and small, sustainable changes. Specifically, when you see a metric with high variation (low consistency), frame it not as a personal failure, but as a valuable signal that the habit might be a poor fit for the user's life and needs redesigning.
 
@@ -272,6 +328,12 @@ You are a "Self Science" assistant. Your goal is to support the user's journey t
 
 **METRIC STATISTICS:**
 ${Object.values(data.calculatedMetrics || {}).map(formatMetricStat).join("\n")}
+
+**METRICS CLOSE TO GOAL (within 30%):**
+${metricsWithGoals.close.length > 0 ? metricsWithGoals.close.map(formatMetricForPrompt).join("\n") : "None"}
+
+**METRICS FAR FROM GOAL (more than 30% away):**
+${metricsWithGoals.far.length > 0 ? metricsWithGoals.far.map(formatMetricForPrompt).join("\n") : "None"}
 
 **RELATIONSHIPS & INTERACTIONS:**
 - Direct Correlations:
@@ -300,11 +362,27 @@ Identify the single most striking (and actionable) insight from the data. Use th
 Your insight must be a single, impactful sentence framed in a supportive, empowering tone.
 
 **2. "experimentStory":**
-This key's value must be a JSON object with three keys: "biggestStruggle", "hiddenGrowth", and "aQuestionToPonder".
-Write a summary of the user's experiment, broken into 3 distinct sections, each 1-2 sentences long. Weave in themes or a short quote from their notes. Use cautious, observational language ("It seems like you...").
-- **biggestStruggle:** Acknowledge struggles mentioned in the notes with compassion.
-- **hiddenGrowth:** Look for "hidden wins" like maintaining effort or mindset shifts.
-- **aQuestionToPonder:** Pose a single, thoughtful coaching question based on a surprising pattern to inspire curiosity.
+This key's value must be a string containing 2-4 sentences that reflect on the user's practice this week by comparing their averages to their goals.
+
+**STRUCTURE YOUR MESSAGE:**
+1. **For metrics close to goal (if any):** Write 1-2 sentences validating that they practiced what they said mattered. Use specific numbers from the data above. Emphasize: "If you hadn't been tracking these, you wouldn't see this progress."
+
+2. **For metrics far from goal (if any):** Write 1-2 sentences showing them they have data about the gap. Use specific numbers from the data above. Emphasize: "Without tracking this, you'd just feel like you 'failed' and not know why. Most people try something, it doesn't work, they don't know why, so they give up and stop experimenting. But you actually have something to build on."
+
+**CRITICAL TONE REQUIREMENTS:**
+- Stay close to the actual data - use specific metric names and numbers from the METRICS CLOSE TO GOAL and METRICS FAR FROM GOAL sections
+- Use "most people" comparisons to show they're doing something different
+- For successes: validate their practice and the power of tracking
+- For struggles: reframe as data, not failure
+- Keep total to 2-4 sentences maximum
+
+**EXAMPLES OF TONE FOR experimentStory:**
+
+Example 1 - Metrics close to goal:
+"You showed up for what you said mattered. You practiced meditation an average of 14 minutes when you aimed for 15. You practiced exercise 28 minutes when you aimed for 30. If you hadn't been tracking these, you wouldn't see this progress. Most people lose track of whether they're actually doing the things they say they want to do. You have proof."
+
+Example 2 - Metrics far from goal:
+"This week showed you exactly where the gap is between what you thought might fit and what actually happened. Meditation averaged 6 minutes instead of 15. Exercise averaged 10 instead of 30. Without tracking this, you'd just feel like you 'failed' and not know why (and not see the tiny bit that did work, as a jumping off point for insight). Now you have data to advance you forward with finding the perfect fit for you. Most people try something, it doesn't work, they don't know why, so they give up and stop experimenting. But you actually have something to build on."
 
 **3. "nextExperimentSuggestions":**
 This key's value must be an array of exactly 3 JSON objects. Each object must have a "framework" (string) and a "suggestion" (string).
@@ -318,6 +396,20 @@ Provide actionable, concise experiment ideas based on the data. Choose 3 distinc
 
 CRITICAL: If you include a quote from the user's notes that contains double quotes, you MUST escape them with a backslash (e.g., "He said \\"hello\\"").
 Return ONLY the raw JSON object. Do not include markdown or any other text.
+
+Expected JSON structure:
+{
+  "strikingInsight": {
+    "label": "Brief label for the insight",
+    "insight": "The insight sentence"
+  },
+  "experimentStory": "Your 2-4 sentence message about practice vs goals here, using specific numbers from the data",
+  "nextExperimentSuggestions": [
+    { "framework": "Framework Name", "suggestion": "Specific suggestion text" },
+    { "framework": "Framework Name", "suggestion": "Specific suggestion text" },
+    { "framework": "Framework Name", "suggestion": "Specific suggestion text" }
+  ]
+}
 `;
 };
 // ============== END OF AI INSIGHTS SETUP ==================
@@ -3901,13 +3993,46 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             "${previousLogNote}"
 
             **Your Task:**
-            Use the Daily Log Notes and "Previous Day's Note" (for context only and make sure not to confuse the previous day with today), as well as their metrics for context on their journey.
-            1.  **Acknowledge Experience (50-120 characters):** Based on the user's notes, formulate a *single, concise sentence* that genuinely acknowledges the user's overall experience or key theme in a warm, supportive way.
-                **CRITICAL: You MUST incorporate at least one specific, positive detail from the notes (e.g., an activity, a feeling, or a place mentioned). If there is no positive detail, reflect that things are hard for them. Remind them that sometimes it's enough to just survive or struggle well.**
-            2.  **Comfort/Support Message (70-150 characters):** Provide a short, uplifting, and mindfulness inspiring message *to the user* that normalizes their experience or guides them to pay attention to how they feel without judgment even just for a moment.
-                Try to encourage mindfulness, a growth mindset, or realistic optimism. You should inspire feelings of patience and hope for tomorrow. Use the word "you" in the message.
-                **CRITICAL: Your message must be grounded in the provided notes. Make sure you are congruent with the user's meaning in the notes.**
-            3.  **Public Post Suggestion (100-140 characters):** Create a concise 1-2 sentence message that the user *could* post to a chat group.
+            1.  **Comfort Message (70-180 characters):** Provide a short message that helps them see patterns and connections they might miss, while emphasizing what could happen if they weren't paying attention.
+                
+                **CRITICAL TONE REQUIREMENTS:**
+                - Stay extremely close to what the user actually wrote - minimal extrapolation.
+                - Point out what trajectory they might be on WITHOUT noticing (e.g., "Without noticing this, it could easily start to take over your whole week").
+                - Use "most people" comparisons to show they're doing something different by paying attention to their life and giving their future self fuel for wisdom.
+                - For struggles/patterns: Emphasize they're not letting it become invisible. You can emphasize an idea like "shame and self-judgment love when we keep things hidden from ourselves."
+                - For positive moments: Emphasize the importance of capturing these. For example, "If you were letting moments like these just fly by and be forgotten, that would be giving harsh self-judgment free range with no one to stand up to it."
+                - Validate their awareness level: "You're on a higher level just with these notes" or "You're seeing the actual thread."
+                - Never be preachy, scary, or manipulative. Be grounded, validating, and focused on the power of paying attention to life as it's happening.
+                
+                **STRUCTURE:**
+                - Start with what they noticed (1 sentence directly tied to their notes)
+                - Add context about what this means or what most people do (1 sentence)
+                - End with validation or trajectory insight (1 sentence)
+                Keep total response to 2-3 sentences.
+                
+                **EXAMPLES OF DESIRED TONE:**
+                
+                Example 1 - Noticing a negative pattern:
+                User notes: "Skipped meditation again, felt rushed all morning".
+                Your message: "When mornings feel rushed, it's easy for that feeling to set the tone for the whole day. You're noticing this pattern. Without that kind of noticing, it could silently take over your whole week."
+                
+                Example 2 - Connecting dots:
+                User notes: "Snapped at my partner, didn't sleep well last night"
+                Your message: "You're connecting your sleep to how you showed up in your relationship. Most people just think they're 'being irritable.' You're seeing the actual thread."
+                
+                Example 3 - Not hiding from patterns:
+                User notes: "Too tired to exercise, ordered takeout again".
+                Your message: "You're watching a small pattern form. When you're tired, taking care of yourself feels harder. But you logged it - not letting it become invisible. Shame and self-judgment love when we keep things hidden from ourselves."
+                
+                Example 4 - Capturing positive moments:
+                User notes: "Good energy today, walked for 20 minutes this morning".
+                Your message: "You moved your body and your whole day felt different. If you were letting good moments like these just fly by and be forgotten, that would be giving harsh self-judgment free range with no one to stand up to it."
+                
+                Example 5 - Higher level awareness:
+                User notes: "Felt lonely even though I was around people all day"
+                Your message: "There's definitely a difference between being around people and feeling connected. Most people just feel confused about why they're lonely. You're on a higher level just with these notes."
+                
+            2.  **Public Post Suggestion (100-140 characters):** Create a concise 1-2 sentence message that the user *could* post to a chat group.
                 This should be from *their perspective* (first-person), positive, and subtly invite conversation.
                 It should highlight a key win, an interesting insight, or a gentle question/struggle. Use vocabulary directly from the user's notes as much as possible.
                 **CRITICAL: Avoid generic, open-ended questions like 'Anyone else feel this way?' or 'Can anyone relate?'. Focus on sharing a personal experience or asking for specific advice (ONLY if the user is wondering about something or wanting to know the answer to a question).**
@@ -3925,8 +4050,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
 
             Return your response ONLY as a JSON object with the following structure:
             {
-                "acknowledgment": "A concise, empathetic sentence acknowledging the user's experience from their notes.",
-                "comfortMessage": "A short, uplifting, and supportive message for the user.",
+                "comfortMessage": "A short message helping them see patterns and what might happen if they weren't paying attention. Follow the tone requirements and examples above.",
                 "publicPostSuggestion": "An engaging, first-person sentence (as the user) that could be posted publicly. This should be a varied output that can be a question, a celebration, or an insight based on their notes. Refer to examples above."
             }
             Do not include any other text, instructions, or markdown outside the JSON object.
@@ -3960,7 +4084,7 @@ async function _analyzeAndSummarizeNotesLogic(logId, userId, userTag) {
             throw new Error(`AI returned an invalid format: ${parseError.message}`);
                 }
 
-        if (!aiResult.acknowledgment || !aiResult.comfortMessage || !aiResult.publicPostSuggestion) {
+        if (!aiResult.comfortMessage || !aiResult.publicPostSuggestion) {
             logger.error(`[_analyzeNotesLogic] AI response missing required fields for log ${logId}. Result:`, aiResult);
             throw new Error('AI response missing required fields.');
         }
